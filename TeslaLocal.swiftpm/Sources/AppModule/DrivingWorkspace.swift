@@ -55,24 +55,7 @@ struct DrivingWorkspace: View {
                 }
             }
             .animation(.smooth(duration: 0.28), value: readout.speed)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol) car: {
-                    ZStack {
-                        if let camera = navigation.theme.carCamera {
-                            RealityVehicleView(runtime: model.runtime, presentation: readout.scenePresentation(theme: navigation.theme),
-                                command: VehicleCameraCommand(serial: NavigationTheme.allCases.firstIndex(of: navigation.theme) ?? 0, action: "angle", yaw: camera.yaw, pitch: camera.pitch, zoom: navigation.theme.carZoom),
-                                reducedMotion: true, appearance: appearance.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)),
-                                backgroundColor: .clear) { carError = $0 }
-                            if carError != nil { Text("차량 모델 표시 불가").font(.caption).foregroundStyle(.orange) }
-                        }
-                    }
-                } onMedia: { action in
-                    switch action {
-                    case "mediaVolumeUp": link.mediaCommand("mediaVolume", delta: 1)
-                    case "mediaVolumeDown": link.mediaCommand("mediaVolume", delta: -1)
-                    default: link.mediaCommand(action)
-                    }
-                }
-            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
         }.background(navigation.theme.canvas)
         .sheet(isPresented: $settings) {
             NavigationStack {

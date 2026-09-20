@@ -849,7 +849,6 @@ private struct TurnBanner: View {
         .accessibilityElement(children: .contain)
     }
 }
-}
 
 private struct TurnColumn: View {
     let data: NavigationReadout
