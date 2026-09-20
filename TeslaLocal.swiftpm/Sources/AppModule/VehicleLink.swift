@@ -597,8 +597,6 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
                         burst.insert("closures", at: 0)
                         burst.insert("location", at: 0)
                         SmartParkingManager.shared.onVehicleParked(vehicleTelemetry: telemetryGroups)
-                    }; burst.insert("location", at: 0)
-                        SmartParkingManager.shared.onVehicleParked(latitude: nil, longitude: nil, currentSOC: nil)
                     }
                     if let at = drive.number("at"), at <= receipt + 5000, receipt - at <= 30000, ["P", "D", "R", "N"].contains(gear) { lastReadGear = gear }
                     retryCount = 0
