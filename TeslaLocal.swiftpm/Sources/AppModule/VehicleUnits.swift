@@ -95,8 +95,7 @@ enum ControlVoice {
         let amount: String = {
             guard let value, value.isFinite else { return "" }
             let n = action == "temperature" ? units.temperatureValue(value) : value
-            // Round temperature to whole integer for voice so recorded voice clips always match
-            return String(format: "%.0f", n.rounded())
+            return n == n.rounded() ? String(format: "%.0f", n) : String(format: "%.1f", n)
         }()
         switch action {
         case "climateOn": return "공조를 시작합니다."
