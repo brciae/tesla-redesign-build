@@ -12,6 +12,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
     private let offline = OfflineSpeechEngine()
     private var offlineTicket: UUID?
     private let output = VoicePlaybackEngine()
+    private let recordedPlayer = RecordedAudioPlaylistPlayer()
     private var releaseWork: DispatchWorkItem?
     private var memoryObserver: NSObjectProtocol?
     private var queue = VoiceQueue()
@@ -172,7 +173,12 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         }
         let utterance = AVSpeechUtterance(string: item.text)
         let selectedVoice = d.string(forKey: "voiceIdentifier") ?? ""
-        utterance.voice = selectedVoice.isEmpty ? Self.yunaVoice() : AVSpeechSynthesisVoice(identifier: selectedVoice)
+        let fallbackVoice = Self.yunaVoice()
+        if selectedVoice.hasPrefix(RecordedVoice.prefix) || selectedVoice.hasPrefix("offline:") {
+            utterance.voice = fallbackVoice
+        } else {
+            utterance.voice = AVSpeechSynthesisVoice(identifier: selectedVoice) ?? fallbackVoice
+        }
         utterance.rate = min(0.6, max(0.3, Float(d.double(forKey: "voiceRate")) * BriefingStyle.selected.rateMultiplier))
         utterance.postUtteranceDelay = BriefingStyle.selected.pause
         utterance.pitchMultiplier = 1.0
@@ -202,6 +208,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         navigationSpeaking = false
         activePriority = 0
         offlineTicket = nil; offline.cancel(); output.stop()
+        recordedPlayer.stop()
         synth.stopSpeaking(at: .immediate); releaseAudio()
     }
     private func refreshOutput() {
@@ -226,9 +233,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
     private func activateAudio(_ defaults: UserDefaults) throws {
         releaseWork?.cancel(); releaseWork = nil
         let audio = AVAudioSession.sharedInstance()
-        let options: AVAudioSession.CategoryOptions = defaults.bool(forKey: "voiceDuck") ? [.duckOthers] : [.mixWithOthers]
-        if audio.category != .playback || audio.mode != .default || audio.categoryOptions != options {
-            try audio.setCategory(.playback, mode: .default, options: options)
+        var options: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
+        if defaults.bool(forKey: "voiceDuck") { options.insert(.duckOthers) } else { options.insert(.mixWithOthers) }
+        if audio.category != .playback || audio.mode != .voicePrompt || audio.categoryOptions != options {
+            try audio.setCategory(.playback, mode: .voicePrompt, options: options)
         }
         try audio.setActive(true)
     }
@@ -244,14 +252,13 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         let defaults = UserDefaults.standard
         guard defaults.double(forKey: "voiceVolume") > 0 else { notice = "브리핑 음량이 0임"; playbackState = "음량 0"; return true }
         guard Date() < item.expires else { playbackState = "안내 기한 만료"; drain(); return true }
-        let gain = RecordedVoice.resolved(identifier)?.gain ?? 1
-        guard let rendered = RecordedVoice.render(plan, gain: gain) else { return false }
-        let sampleRate = rendered.sampleRate
         let ticket = UUID(); offlineTicket = ticket; activeManual = item.manual
         lastText = item.text; notice = ""
         do {
             try activateAudio(defaults)
-            try output.begin(sampleRate: sampleRate) { [weak self] in
+            let volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
+            speaking = true; playbackState = "읽는 중 · 녹음 음성"; refreshOutput()
+            recordedPlayer.play(steps: plan, volume: volume) { [weak self] in
                 guard let self, self.offlineTicket == ticket else { return }
                 self.offlineTicket = nil; self.activeManual = false; self.speaking = false
                 self.navigationSpeaking = false; self.activePriority = 0
@@ -262,10 +269,6 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
                     self?.drain()
                 }
             }
-            output.volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
-            speaking = true; playbackState = "읽는 중 · 녹음 음성"; refreshOutput()
-            output.schedule(rendered.samples, gap: 0.10)
-            output.endInput()
         } catch {
             if navigationSpeaking { lastGuideText = ""; lastGuideAt = .distantPast }
             cancelCurrent(); playbackState = "오디오 출력 실패"

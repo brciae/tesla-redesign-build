@@ -84,3 +84,84 @@ final class VoicePlaybackEngine {
         done?()
     }
 }
+
+/// Hardware-accelerated playlist player for pre-recorded studio MP3 clips.
+/// Avoids AVAudioEngine buffer underrun, sample-rate conversion distortion, and clipping.
+final class RecordedAudioPlaylistPlayer: NSObject, AVAudioPlayerDelegate {
+    private var player: AVAudioPlayer?
+    private var steps: [(url: URL, gap: Double)] = []
+    private var currentIndex = 0
+    private var completion: (() -> Void)?
+    private var workItem: DispatchWorkItem?
+    private var currentVolume: Float = 1.0
+
+    func play(steps: [(url: URL, gap: Double)], volume: Float, completion: @escaping () -> Void) {
+        stop()
+        guard !steps.isEmpty else { completion(); return }
+        self.steps = steps
+        self.currentIndex = 0
+        self.completion = completion
+        self.currentVolume = volume
+        playCurrent()
+    }
+
+    private func playCurrent() {
+        guard currentIndex < steps.count else {
+            finish()
+            return
+        }
+        let step = steps[currentIndex]
+        do {
+            let p = try AVAudioPlayer(contentsOf: step.url)
+            p.delegate = self
+            p.volume = currentVolume
+            p.prepareToPlay()
+            p.play()
+            self.player = p
+        } catch {
+            currentIndex += 1
+            playCurrent()
+        }
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard currentIndex < steps.count else { finish(); return }
+        let currentStep = steps[currentIndex]
+        currentIndex += 1
+        if currentIndex < steps.count {
+            let gap = currentStep.gap
+            if gap > 0 {
+                let work = DispatchWorkItem { [weak self] in
+                    self?.playCurrent()
+                }
+                self.workItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + gap, execute: work)
+            } else {
+                playCurrent()
+            }
+        } else {
+            finish()
+        }
+    }
+
+    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        currentIndex += 1
+        playCurrent()
+    }
+
+    private func finish() {
+        let done = completion
+        stop()
+        done?()
+    }
+
+    func stop() {
+        workItem?.cancel()
+        workItem = nil
+        player?.stop()
+        player = nil
+        steps = []
+        currentIndex = 0
+        completion = nil
+    }
+}

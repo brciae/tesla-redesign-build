@@ -500,58 +500,192 @@ struct ControlsView: View {
     @ObservedObject var link: VehicleLink
     var body: some View {
         PageBody(title: "컨트롤") {
-            CardTitle(title: "수동 제어", systemImage: "car.front.waves.up",
-                      info: "상태 조회는 자동, 차량 제어는 확인 창에서 직접 전송함. 아래 3D 개폐는 화면 표시만 바뀌며 명령을 보내지 않음. 일반 도어 전동 열기·경적·원격 시동은 제공하지 않음.")
-            ControlPanel(link: link)
-            Vehicle3DPanel(link: link)
+            VStack(spacing: 16) {
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        CardTitle(title: "차량 도어 및 잠금 제어", systemImage: "car.front.waves.up")
+                        ControlPanel(link: link, category: "body")
+                    }
+                    .padding(16)
+                }
+
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        CardTitle(title: "3D 차량 모델", systemImage: "cube.transparent")
+                        Vehicle3DPanel(link: link)
+                    }
+                    .padding(16)
+                }
+            }
         }
     }
 }
+
 struct ClimateStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     var body: some View {
         let c = homePresentation(model, link).object("climate")
+        let inside = c.number("insideC")
+        let outside = c.number("outsideC")
         PageBody(title: "실내 온도") {
-            Image(systemName: "fanblades").font(.system(size: 64, weight: .ultraLight)).foregroundStyle(Theme.muted).frame(maxWidth: .infinity).padding(.vertical, 20).accessibilityHidden(true)
-            HStack { Metric(title: "실내", value: c.number("insideC"), digits: 1, suffix: "°C"); Metric(title: "외기", value: c.number("outsideC"), digits: 1, suffix: "°C") }
-            HStack(spacing: 2) {
-                StatusTimestamp(section: c)
-                InfoNote("실내 온도", "차량에서 받은 온도임. 화면의 팬 아이콘은 장식이며 공조 작동 상태가 아님. 공조를 제어한 뒤에는 실제 온도 변화로 확인해야 함.")
+            VStack(spacing: 16) {
+                // Large Temperature Header Cards
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("실내 온도")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.65))
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text(inside != nil ? String(format: "%.1f", inside!) : "--")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text("°C")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.6))
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("외기 온도")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.65))
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text(outside != nil ? String(format: "%.1f", outside!) : "--")
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text("°C")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.6))
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+                }
+
+                // Climate Control Center
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        CardTitle(title: "공조 제어", systemImage: "fanblades.fill")
+                        ControlPanel(link: link, category: "climate")
+                    }
+                    .padding(16)
+                }
             }
-            ControlPanel(link: link, category: "climate")
         }
     }
 }
+
 struct LocationStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     var body: some View {
         let l = homePresentation(model, link).object("location")
-        PageBody(title: "위치") {
-            InfoCard {
-                CardTitle(title: "마지막 차량 좌표", systemImage: "location.north",
-                          info: "차량이 마지막으로 보고한 좌표임. 지도를 열면 그 좌표가 지도 앱에 전달됨. 저장된 위치는 현재 위치와 다를 수 있고, 지하 주차장 층수는 차량이 제공하지 않으므로 주차 기록에서 직접 입력해야 함.")
-                StatusTimestamp(section: l)
-                if !l.string("diagnostic").isEmpty { Text(l.string("diagnostic")).font(.subheadline).foregroundStyle(Theme.muted) }
-                if !l.string("coordinateSource").isEmpty { Caption(l.string("coordinateSource")) }
-                if let gpsAt = l.number("gpsAt") { Caption("차량 GPS 측정 \(dateText(gpsAt))") }
-                if !l.string("gpsNote").isEmpty { Caption(l.string("gpsNote")) }
-                if l.flag("hasCoordinates"), let lat = l.number("latitude"), let lng = l.number("longitude") {
-                    Text("\(valueText(lat, digits: 5)), \(valueText(lng, digits: 5))").monospacedDigit().textSelection(.enabled)
-                    if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(lat),\(lng)") { Link("지도에서 저장 좌표 보기", destination: url).frame(minHeight: 44) }
-                } else { Text("위치 미수신").foregroundStyle(Theme.muted) }
-                Button("차량 위치 다시 받기") { link.refreshNow(retryUnavailable: true) }.disabled(model.demo || !link.authentic || link.refreshing)
+        let hasCoords = l.flag("hasCoordinates")
+        let lat = l.number("latitude")
+        let lng = l.number("longitude")
+        PageBody(title: "차량 위치") {
+            VStack(spacing: 16) {
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        CardTitle(title: "마지막 수신 위치", systemImage: "location.north.circle.fill")
+                        if hasCoords, let lat = lat, let lng = lng {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(String(format: "%.5f", lat)), \(String(format: "%.5f", lng))")
+                                        .font(.system(size: 17, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(.white)
+                                    if let gpsAt = l.number("gpsAt") {
+                                        Text("GPS 측정: \(dateText(gpsAt))")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.white.opacity(0.55))
+                                    }
+                                }
+                                Spacer()
+                                if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(lat),\(lng)") {
+                                    Link(destination: url) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "map.fill")
+                                            Text("지도 보기")
+                                        }
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: Capsule())
+                                        .foregroundStyle(.white)
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("위치 정보를 수신하지 못했습니다")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.white.opacity(0.6))
+                        }
+
+                        Button {
+                            link.refreshNow(retryUnavailable: true)
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text("위치 정보 새로고침")
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                            .foregroundStyle(.white)
+                        }
+                        .disabled(model.demo || !link.authentic || link.refreshing)
+                    }
+                    .padding(16)
+                }
+
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        CardTitle(title: "길안내 및 주차", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                        NavigationLink(value: Page.navigation) {
+                            HStack {
+                                Image(systemName: "safari.fill")
+                                    .foregroundStyle(Color.blue)
+                                Text("내장 내비게이션 시작")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.35))
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        Divider().background(Color.white.opacity(0.08))
+                        NavigationLink(value: Page.care) {
+                            HStack {
+                                Image(systemName: "parkingsign.circle.fill")
+                                    .foregroundStyle(Color.green)
+                                Text("주차 위치 및 사진 기록")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.35))
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    .padding(16)
+                }
             }
-            InfoCard {
-                CardTitle(title: "카카오 내장 내비", systemImage: "arrow.triangle.turn.up.right.diamond",
-                          info: "차량 목적지를 앱 내 카카오 길안내로 시작함. 위치는 휴대폰 GPS를 사용함.")
-                NavigationLink("내장 내비·화면 방향 설정", value: Page.navigation).frame(minHeight: 44)
-            }
-            NavigationLink("주차 위치·사진 기록", value: Page.care).frame(minHeight: 44)
         }
     }
 }
+
 struct ChargeStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
@@ -559,37 +693,104 @@ struct ChargeStatusView: View {
     var body: some View {
         let c = homePresentation(model, link).object("charge")
         PageBody(title: "충전") {
-            HStack { Metric(title: "배터리 잔량", value: c.number("soc"), suffix: "%"); Metric(title: "표시 주행 가능 거리", value: c.number("rangeKm"), suffix: " km") }
-            HStack(spacing: 2) {
-                StatusTimestamp(section: c)
-                InfoNote("충전 표시", "차량이 표시하는 주행 가능 거리는 최근 주행 효율로 계산된 값이라 실제 주행 거리와 다를 수 있음. 상태 조회는 자동이고, 제어는 확인 창에서 직접 전송함.")
+            VStack(spacing: 16) {
+                // Official Charging & Power Flow Visualizer Card
+                TeslaOfficialChargingCardView(c: c, link: link)
+
+                // Detailed Controls
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        CardTitle(title: "충전 제어", systemImage: "bolt.badge.clock.fill")
+                        ControlPanel(link: link, category: "charge")
+                    }
+                    .padding(16)
+                }
+
+                // History & Battery Analytics
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Button {
+                            add = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(Color.green)
+                                Text("충전 기록 및 영수증 추가")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.35))
+                            }
+                            .padding(.vertical, 8)
+                        }
+                        Divider().background(Color.white.opacity(0.08))
+                        NavigationLink(value: Page.battery) {
+                            HStack {
+                                Image(systemName: "waveform.path.ecg")
+                                    .foregroundStyle(Color.orange)
+                                Text("충전 이력 및 배터리 분석")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.35))
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    .padding(16)
+                }
             }
-            InfoCard {
-                CardTitle(title: "차량에서 받은 설정", systemImage: "bolt.badge.clock",
-                          info: "차량에 현재 설정된 충전 한도와 충전기 출력임. 아래에서 보내는 값과는 별개이며, 전송 후 이 값이 갱신되는지로 확인함.")
-                HStack { Metric(title: "충전 한도", value: c.number("limit"), suffix: "%"); Metric(title: "충전 출력", value: c.number("chargerKW"), suffix: " kW") }
-            }
-            ControlPanel(link: link, category: "charge")
-            Button { add = true } label: { Label("충전 기록·영수증 추가", systemImage: "plus.circle").frame(maxWidth: .infinity).frame(minHeight: 44) }.buttonStyle(.bordered)
-            NavigationLink("충전 이력·배터리 추정 보기", value: Page.battery).frame(minHeight: 44)
-        }.sheet(isPresented: $add) { ChargeForm() }
+        }
+        .sheet(isPresented: $add) { ChargeForm() }
     }
 }
+
 struct SecurityStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     var body: some View {
-        PageBody(title: "보안 및 운전자") {
-            InfoCard {
-                CardTitle(title: "잠금 제어", systemImage: "checkmark.shield.fill",
-                          info: "잠금 명령의 처리 응답은 받지만 잠금 센서 값은 수집하지 않으므로, 실제 잠금은 차량이나 공식 Tesla 앱에서 확인해야 함. 문이 닫힌 상태와 잠금은 다름. 자동 휴대폰 키·운전자 관리는 제공하지 않으며 이 앱은 Tesla 공식 앱이 아님.")
-                ControlPanel(link: link, category: "security")
-            }
-            InfoCard {
-                CardTitle(title: "조회 키 연결", systemImage: "key.radiowaves.forward",
-                          info: "차량 근처에서 상태를 읽기 위한 인증 경로임. 조회 키 등록은 연결 화면의 요청과 차량 키카드 승인이 필요함.")
-                Text(homePresentation(model, link).string("connection", "연결 상태 확인"))
-                NavigationLink("연결·조회 키 설정", value: Page.connection).frame(minHeight: 44)
+        PageBody(title: "보안 및 잠금") {
+            VStack(spacing: 16) {
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        CardTitle(title: "차량 잠금 제어", systemImage: "lock.shield.fill")
+                        ControlPanel(link: link, category: "security")
+                    }
+                    .padding(16)
+                }
+
+                GlassMenuCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        CardTitle(title: "차량 키 및 통신", systemImage: "key.radiowaves.forward.fill")
+                        HStack {
+                            Text("연결 상태")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.65))
+                            Spacer()
+                            Text(homePresentation(model, link).string("connection", "확인 중"))
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                        Divider().background(Color.white.opacity(0.08))
+                        NavigationLink(value: Page.connection) {
+                            HStack {
+                                Text("연결 및 키 설정")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.35))
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .padding(16)
+                }
             }
         }
     }
@@ -682,10 +883,10 @@ private struct TeslaOfficialChargingCardView: View {
     var body: some View {
         let soc = Int(round(c.number("soc") ?? 56))
         let rangeKm = Int(round(c.number("rangeKm") ?? 296))
-        let chargerKW = c.number("chargerKW") ?? 6.0
-        let addedKWh = c.number("addedKWh") ?? 12.0
-        let isCharging = chargerKW > 0.5 || c.flag("charging")
-        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 211
+        let chargerKW = c.number("chargerKW") ?? 0.0
+        let addedKWh = c.number("addedKWh") ?? 0.0
+        let isCharging = c.flag("charging") || chargerKW > 0.5
+        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 0
 
         VStack(spacing: 0) {
             // Main Card Body
@@ -794,7 +995,7 @@ private struct TeslaOfficialChargingCardView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.85))
                         Spacer()
-                        Text("충전기 출력 \(Int(round(chargerKW))) kW · +\(Int(round(addedKWh))) kWh")
+                        Text(isCharging ? "충전기 출력 \(Int(round(chargerKW))) kW · +\(Int(round(addedKWh))) kWh" : "충전 대기 상태")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.55))
                     }

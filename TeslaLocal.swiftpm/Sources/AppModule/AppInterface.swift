@@ -93,17 +93,13 @@ struct VoiceAdvancedControls: View {
     }
 }
 
-/// Form row whose explanation lives in an ⓘ popover instead of a paragraph under the control.
+/// Form row explanation placeholder: renders EmptyView to keep settings forms clean.
 struct InfoRow: View {
     let title: String
     let text: String
     init(_ title: String, _ text: String) { self.title = title; self.text = text }
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer(minLength: 4)
-            InfoNote(title, text)
-        }
+        EmptyView()
     }
 }
 
