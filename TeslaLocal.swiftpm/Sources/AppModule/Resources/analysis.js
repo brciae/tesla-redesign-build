@@ -66,7 +66,7 @@
         this.absence=previous&&event.receivedAt>previous.last&&event.receivedAt-previous.last<=20000?
           {first:previous.first,last:event.receivedAt,count:previous.count+1}:{first:event.receivedAt,last:event.receivedAt,count:1};
         // Established guidance tolerates transient empty route groups (stops, Tesla re-routing, BLE partials). 
-        const need=this.active&&guiding?{count:2,span:5000}:{count:2,span:2000};
+        const need=this.active&&guiding?{count:6,span:45000}:{count:3,span:3000};
         if(this.absence.count>=need.count&&this.absence.last-this.absence.first>=need.span){
           this.cancel(false);this.blocked=null;return {type:'clear',reason:'vehicleRouteAbsent'};
         }
