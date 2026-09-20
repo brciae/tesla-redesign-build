@@ -20,16 +20,18 @@ struct NavigationProbe: View {
     @StateObject private var model = AppModel()
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
-                Button(blank ? "수신됨" : "미수신") { blank.toggle() }
-                    .buttonStyle(.bordered).accessibilityIdentifier("navigation.empty")
-                if theme == .minimal && ProcessInfo.processInfo.arguments.contains("motion-probe") {
-                    Button("좌") { bend = -0.7 }.accessibilityIdentifier("motion.left")
-                    Button("우") { bend = 0.7 }.accessibilityIdentifier("motion.right")
-                    Button(moving ? "정지" : "이동") { moving.toggle() }.accessibilityIdentifier("motion.toggle")
-                }
-            }.frame(height: 44).padding(.horizontal, 8)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                    Button(blank ? "수신됨" : "미수신") { blank.toggle() }
+                        .buttonStyle(.bordered).accessibilityIdentifier("navigation.empty")
+                    if theme == .minimal && ProcessInfo.processInfo.arguments.contains("motion-probe") {
+                        Button("좌") { bend = -0.7 }.accessibilityIdentifier("motion.left")
+                        Button("우") { bend = 0.7 }.accessibilityIdentifier("motion.right")
+                        Button(moving ? "정지" : "이동") { moving.toggle() }.accessibilityIdentifier("motion.toggle")
+                    }
+                }.padding(.horizontal, 8)
+            }.frame(height: 44)
             NavigationDashboard(theme: theme, data: sample) {
                 NavigationMapFixture()
             } car: {

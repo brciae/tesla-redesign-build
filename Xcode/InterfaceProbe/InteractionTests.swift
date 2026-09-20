@@ -26,19 +26,27 @@ final class InteractionTests: XCTestCase {
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Battery baseline"; shot.lifetime = .keepAlways; add(shot)
     }
     func testRouteMotionDirections() {
-        XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "motion-probe"]; app.launch()
-        app.segmentedControls.buttons["미니멀"].tap()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let minimal = app.segmentedControls.buttons["미니멀"]
+        XCTAssertTrue(minimal.waitForExistence(timeout: 8))
+        minimal.tap()
         for direction in ["left", "right"] {
-            app.buttons["motion." + direction].tap()
+            let btn = app.buttons["motion." + direction]
+            XCTAssertTrue(btn.waitForExistence(timeout: 8))
+            btn.tap()
             let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Motion " + direction; shot.lifetime = .keepAlways; add(shot)
         }
-        app.buttons["motion.toggle"].tap()
+        let toggle = app.buttons["motion.toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        toggle.tap()
         for frame in 0..<3 {
             let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Motion flowing \(frame)"; shot.lifetime = .keepAlways; add(shot)
         }
-        app.buttons["motion.toggle"].tap()
-        app.buttons["navigation.empty"].tap()
+        toggle.tap()
+        let empty = app.buttons["navigation.empty"]
+        XCTAssertTrue(empty.waitForExistence(timeout: 8))
+        empty.tap()
         XCTAssertTrue(app.staticTexts["경로 미수신"].waitForExistence(timeout: 5))
         XCUIDevice.shared.orientation = .portrait
     }
