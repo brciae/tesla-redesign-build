@@ -293,9 +293,9 @@ final class DrivingSceneDecor {
         stopLine.position = [0, 0.005, 3.2]
         container.addChild(stopLine)
 
-        // FSD Context 2: Lane Bollards / Flexible Posts (white cylinder with orange reflective bands on left edge)
-        let postMesh = MeshResource.generateCylinder(height: 0.75, radius: 0.042)
-        let bandMesh = MeshResource.generateCylinder(height: 0.14, radius: 0.044)
+        // FSD Context 2: Lane Bollards / Flexible Posts (white post with orange reflective bands on left edge)
+        let postMesh = MeshResource.generateBox(width: 0.084, height: 0.75, depth: 0.084, cornerRadius: 0.03)
+        let bandMesh = MeshResource.generateBox(width: 0.088, height: 0.14, depth: 0.088, cornerRadius: 0.03)
         var postMat = UnlitMaterial(color: UIColor(white: 0.95, alpha: 0.95))
         var bandMat = UnlitMaterial(color: UIColor(red: 1.0, green: 0.48, blue: 0.12, alpha: 0.95))
         for zOffset: Float in [-2, 2, 6, 10, 14, 18, 22] {
