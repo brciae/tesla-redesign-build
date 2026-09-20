@@ -484,7 +484,7 @@ static NSString *YLSpokenDistance(SInt32 metres) {
     float angle = 0;
     if (loc && isfinite(loc.pos.x) && isfinite(loc.pos.y)) {
         pos = FloatPointMake(loc.pos.x, loc.pos.y);
-        angle = loc.angle;
+        angle = (gps && gps.angleTrust) ? gps.angle : 0;
     } else if (gps && isfinite(gps.pos.x) && isfinite(gps.pos.y)) {
         pos = FloatPointMake(gps.pos.x, gps.pos.y);
         angle = gps.angleTrust ? gps.angle : 0;
