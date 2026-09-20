@@ -43,15 +43,13 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
             if !(defaults.string(forKey: "voiceIdentifier") ?? "").hasPrefix("offline:") { defaults.set("", forKey: "voiceIdentifier") }
             defaults.set(1.0, forKey: "voicePitch"); defaults.set(true, forKey: "voiceNaturalV19")
         }
-        // v42: the recorded guidance voice ships with the app. It is the first voice here that sounds like
-        // a person rather than a synthesiser, so it becomes the selection once, and can be changed back.
-        if !defaults.bool(forKey: "voiceRecordedV42") {
-            if let first = RecordedVoice.voices.first {
-                defaults.set(first.id, forKey: "voiceIdentifier")
-                notice = "녹음 안내 음성(\(first.name))으로 변경됨 · 설정에서 되돌릴 수 있음"
-            }
-            defaults.set(true, forKey: "voiceRecordedV42")
+        // Ensure default voice is the bundled recorded voice (yumi) if unset or invalid
+        let currentVoice = defaults.string(forKey: "voiceIdentifier") ?? ""
+        if currentVoice.isEmpty || (!currentVoice.hasPrefix(RecordedVoice.prefix) && !currentVoice.hasPrefix("offline:") && AVSpeechSynthesisVoice(identifier: currentVoice) == nil) {
+            let defaultId = RecordedVoice.voices.first?.id ?? "recorded:yumi"
+            defaults.set(defaultId, forKey: "voiceIdentifier")
         }
+        defaults.set(true, forKey: "voiceRecordedV42")
         if defaults.object(forKey: "voiceTrip") == nil, let old = defaults.object(forKey: "briefOnArrival") as? Bool { defaults.set(old, forKey: "voiceTrip") }
         UserDefaults.standard.register(defaults: ["voiceAutomations": true, "voiceEnabled": true, "voiceConnection": true, "voiceTrip": true,
             "voiceCharge": true, "voiceBattery": true, "voiceDestination": true, "voiceControl": true,
@@ -164,7 +162,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         // anything they do not cover falls through to the engine so nothing is ever left unsaid.
         if let selection = d.string(forKey: "voiceIdentifier"), selection.hasPrefix(RecordedVoice.prefix) {
             if playRecorded(item, voice: selection) { return }
-            if let profile = VoiceLibrary.profile(for: RecordedVoice.fallbackProfileID) { playOffline(item, profile: profile); return }
+            if VoicePackManifest.installed, let profile = VoiceLibrary.profile(for: RecordedVoice.fallbackProfileID) {
+                playOffline(item, profile: profile); return
+            }
         }
         if let selection = d.string(forKey: "voiceIdentifier"), selection.hasPrefix("offline:") {
             guard let profile = VoiceLibrary.profile(for: String(selection.dropFirst(8))) else { notice = "음성 선택 확인 필요"; return }
@@ -227,8 +227,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         releaseWork?.cancel(); releaseWork = nil
         let audio = AVAudioSession.sharedInstance()
         let options: AVAudioSession.CategoryOptions = defaults.bool(forKey: "voiceDuck") ? [.duckOthers] : [.mixWithOthers]
-        if audio.category != .playback || audio.mode != .voicePrompt || audio.categoryOptions != options {
-            try audio.setCategory(.playback, mode: .voicePrompt, options: options)
+        if audio.category != .playback || audio.mode != .default || audio.categoryOptions != options {
+            try audio.setCategory(.playback, mode: .default, options: options)
         }
         try audio.setActive(true)
     }
@@ -256,15 +256,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
                 self.offlineTicket = nil; self.activeManual = false; self.speaking = false
                 self.navigationSpeaking = false; self.activePriority = 0
                 self.playbackState = "재생 완료"; self.releaseAudio()
-                // Natural 1.2s breathing gap before the next queued guidance
-                self.quietUntil = Date().addingTimeInterval(1.2)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                // Natural 0.25s breathing gap before the next queued guidance
+                self.quietUntil = Date().addingTimeInterval(0.25)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
                     self?.drain()
                 }
             }
             output.volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
             speaking = true; playbackState = "읽는 중 · 녹음 음성"; refreshOutput()
-            output.schedule(rendered.samples, gap: 0.60)
+            output.schedule(rendered.samples, gap: 0.10)
             output.endInput()
         } catch {
             if navigationSpeaking { lastGuideText = ""; lastGuideAt = .distantPast }

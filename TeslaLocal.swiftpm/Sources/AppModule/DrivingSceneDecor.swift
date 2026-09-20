@@ -286,64 +286,9 @@ final class DrivingSceneDecor {
         for i in 0..<44 {
             let e = ModelEntity(mesh: guideMesh, materials: [guideMaterial()]); container.addChild(e)
             marks.append(Mark(entity: e, kind: .guide, boundary: -1, base: 1.5 + Float(i) * 2, spacing: 0))
-        }
-        // FSD Context 1: Stop Line (white bar across lane in front of car)
-        let stopLineMesh = MeshResource.generateBox(width: 3.6, height: 0.008, depth: 0.48)
-        let stopLine = ModelEntity(mesh: stopLineMesh, materials: [edgeMaterial()])
-        stopLine.position = [0, 0.005, 3.2]
-        container.addChild(stopLine)
+    }
 
-        // FSD Context 2: Lane Bollards / Flexible Posts (white post with orange reflective bands on left edge)
-        let postMesh = MeshResource.generateBox(width: 0.084, height: 0.75, depth: 0.084, cornerRadius: 0.03)
-        let bandMesh = MeshResource.generateBox(width: 0.088, height: 0.14, depth: 0.088, cornerRadius: 0.03)
-        var postMat = UnlitMaterial(color: UIColor(white: 0.95, alpha: 0.95))
-        var bandMat = UnlitMaterial(color: UIColor(red: 1.0, green: 0.48, blue: 0.12, alpha: 0.95))
-        for zOffset: Float in [-2, 2, 6, 10, 14, 18, 22] {
-            let postRoot = Entity()
-            let p = ModelEntity(mesh: postMesh, materials: [postMat])
-            p.position.y = 0.375
-            let b1 = ModelEntity(mesh: bandMesh, materials: [bandMat])
-            b1.position.y = 0.52
-            let b2 = ModelEntity(mesh: bandMesh, materials: [bandMat])
-            b2.position.y = 0.30
-            postRoot.addChild(p); postRoot.addChild(b1); postRoot.addChild(b2)
-            postRoot.position = [-laneWidth * 0.5 - 0.22, 0, zOffset]
-            container.addChild(postRoot)
-        }
-
-        // FSD Context 3: Adjacent Vehicle (stylized car waiting in right lane)
-        let adjCar = Entity()
-        let bodyMesh = MeshResource.generateBox(width: 1.88, height: 0.95, depth: 4.45)
-        let cabinMesh = MeshResource.generateBox(width: 1.55, height: 0.58, depth: 2.30)
-        var carMat = UnlitMaterial(color: UIColor(red: 0.78, green: 0.80, blue: 0.84, alpha: 0.92))
-        var glassMat = UnlitMaterial(color: UIColor(red: 0.15, green: 0.18, blue: 0.22, alpha: 0.95))
-        let bEnt = ModelEntity(mesh: bodyMesh, materials: [carMat])
-        bEnt.position = [0, 0.48, 0]
-        let cEnt = ModelEntity(mesh: cabinMesh, materials: [glassMat])
-        cEnt.position = [0, 1.05, -0.2]
-        adjCar.addChild(bEnt)
-        adjCar.addChild(cEnt)
-        adjCar.position = [laneWidth * 1.05, 0, 1.4]
-        container.addChild(adjCar)
-
-        // FSD Context 4: Traffic Signals (twin signal posts with green lights ahead)
-        let signalRoot = Entity()
-        let boxMesh = MeshResource.generateBox(width: 0.32, height: 0.95, depth: 0.22)
-        var signalMat = UnlitMaterial(color: UIColor(red: 0.12, green: 0.13, blue: 0.15, alpha: 1))
-        let greenMesh = MeshResource.generatePlane(width: 0.24, height: 0.24)
-        var greenMat = UnlitMaterial(color: UIColor(red: 0.15, green: 0.95, blue: 0.35, alpha: 1))
-        for xOffset: Float in [-0.85, 0.85] {
-            let box = ModelEntity(mesh: boxMesh, materials: [signalMat])
-            let light = ModelEntity(mesh: greenMesh, materials: [greenMat])
-            light.position = [0, -0.18, -0.12]
-            light.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
-            box.addChild(light)
-            box.position = [xOffset, 3.6, 26]
-            signalRoot.addChild(box)
-        }
-        container.addChild(signalRoot)
-
-        let set = MarkSet(container: container, marks: marks, ground: groundEntity)
+    let set = MarkSet(container: container, marks: marks, ground: groundEntity)
         markSets[style] = set
         activate(set)
     }

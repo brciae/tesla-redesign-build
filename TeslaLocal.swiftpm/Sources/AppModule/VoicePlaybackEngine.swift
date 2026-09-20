@@ -43,10 +43,10 @@ final class VoicePlaybackEngine {
 
     func schedule(_ samples: [Float], gap: Double) {
         guard let format, !samples.isEmpty else { return }
-        // 300ms leading silence (7,200 frames @ 24kHz): un-mutes DAC / car Bluetooth amp cleanly before the first syllable
-        let lead = Int(format.sampleRate * 0.30)
-        // 600ms trailing silence (14,400 frames @ 24kHz): ensures final syllables completely exit the hardware/Bluetooth buffer before completion
-        let trail = Int(format.sampleRate * max(0.60, gap))
+        // 60ms leading silence: un-mutes DAC / Bluetooth amp cleanly without perceptible lag
+        let lead = Int(format.sampleRate * 0.06)
+        // 80-100ms trailing silence: ensures final syllables exit hardware buffer cleanly
+        let trail = Int(format.sampleRate * min(max(0.08, gap), 0.25))
         let total = lead + samples.count + trail
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(total)) else { return }
         buffer.frameLength = AVAudioFrameCount(total)

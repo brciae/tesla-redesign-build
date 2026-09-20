@@ -12,7 +12,7 @@ struct PreferencesView: View {
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
     @AppStorage("voiceEnabled") private var enabled = true
-    @AppStorage("voiceIdentifier") private var identifier = ""
+    @AppStorage("voiceIdentifier") private var identifier = "recorded:yumi"
     @AppStorage("voiceDeliveryStyle") private var deliveryStyle = "standard"
     @AppStorage("voiceRate") private var rate = 0.47
     @AppStorage("voiceVolume") private var volume = 0.8
@@ -107,6 +107,11 @@ struct PreferencesView: View {
             .onChange(of: identifier) { _, _ in model.stopSpeech() }
             .onChange(of: deliveryStyle) { _, _ in model.stopSpeech() }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in model.navigation.applyAudioPreferences() }
+            .onAppear {
+                if identifier.isEmpty || (!identifier.hasPrefix(RecordedVoice.prefix) && !identifier.hasPrefix("offline:") && AVSpeechSynthesisVoice(identifier: identifier) == nil) {
+                    identifier = RecordedVoice.voices.first?.id ?? "recorded:yumi"
+                }
+            }
     }
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading) { HStack { Text(title); Spacer(); Text(String(format: "%.2f", value.wrappedValue)).monospacedDigit() }; Slider(value: value, in: range) }
