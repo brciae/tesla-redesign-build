@@ -1,3 +1,5 @@
+import SwiftUI
+
 /// InfoNote renders EmptyView to keep all cards clean and free from developer disclaimers.
 struct InfoNote: View {
     let title: String
