@@ -161,7 +161,7 @@ enum RecordedVoice {
         return best.map { (file: $0.0, length: $0.1) }
     }
 
-    /// A sentence built from recorded words: an optional opening clause, one to three number words,
+    /// A sentence built from recorded words: an optional opening clause, one number word,
     /// then a closing clause that must finish the sentence. Anything else is left to the engine —
     /// free-form concatenation would happily produce nonsense that still "matches".
     private static func composed(_ key: String, bank: Bank) -> [String]? {
@@ -169,16 +169,9 @@ enum RecordedVoice {
         var files: [String] = []
         var rest = Substring(key)
         if let head = longestMatch(rest, bank.head) { files.append(head.file); rest = rest.dropFirst(head.length) }
-        // Match up to two number clips (e.g. hundreds + tens: "삼백" + "오십" for 350 km range)
-        guard let number1 = longestMatch(rest, bank.number) else { return nil }
-        files.append(number1.file); rest = rest.dropFirst(number1.length)
-        if let tail = longestMatch(rest, bank.tail), tail.length == rest.count {
-            files.append(tail.file)
-            return files
-        }
-        if let number2 = longestMatch(rest, bank.number) {
-            files.append(number2.file); rest = rest.dropFirst(number2.length)
-        }
+        guard let num = longestMatch(rest, bank.number) else { return nil }
+        files.append(num.file)
+        rest = rest.dropFirst(num.length)
         guard let tail = longestMatch(rest, bank.tail), tail.length == rest.count else { return nil }
         files.append(tail.file)
         return files
