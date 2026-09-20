@@ -73,20 +73,7 @@ struct Vehicle3DPanel: View {
                     }
                 }
             }.clipped()
-            if compact {
-                NavigationLink(value: Page.vehicle3D) {
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(p.flag("restricted") ? "정차 확인 전 · 조작 제한" : "드래그 회전 · 핀치 확대").font(.caption)
-                            Text(example ? "화면 체험 · 실차 조작 아님" : "개폐 상태 미확인 \(Int(p.number("unknownCount") ?? 6))개").font(.caption2)
-                        }.foregroundStyle(example ? .orange : Theme.muted)
-                        Spacer(minLength: 0)
-                        Text("3D 자세히").font(.caption.weight(.semibold))
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
-                    }.frame(minHeight: 44).contentShape(Rectangle())
-                }.buttonStyle(MotionButtonStyle())
-                    .accessibilityHint("개폐 상태 \(Int(p.number("unknownCount") ?? 6))개 미확인. 상세 화면에서 부품별 상태 확인 가능")
-            } else {
+            if !compact {
                 NavigationLink(value: Page.appearance) { Label("차꾸미기", systemImage: "paintpalette") }.buttonStyle(.bordered)
                 if p.flag("restricted") { Caption("정차 P 상태 확인 전에는 회전·개폐 체험을 제한함. 상태 변화는 애니메이션 없이 표시함.") }
                 else { Caption("좌우 드래그로 360° 회전 · 두 손가락으로 확대") }

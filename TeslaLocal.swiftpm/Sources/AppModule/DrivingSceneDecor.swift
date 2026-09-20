@@ -133,7 +133,8 @@ final class DrivingSceneDecor {
         }
         lightRig.isEnabled = lightsEnabled
         if lightsEnabled { buildLightsIfNeeded() }
-        brakeTarget = state.flag("brake") ? 1 : 0
+        let isBrakingOrStopped = state.flag("brake") || state.string("gear") == "P" || (state.number("speed") ?? 0) <= 1.5 || state.flag("hold")
+        brakeTarget = isBrakingOrStopped ? 1.0 : 0.0
         let newNight: Float = state.flag("headlights") ? 1 : 0
         if abs(newNight - nightTarget) > 0.01 {
             nightTarget = newNight
@@ -389,44 +390,40 @@ final class DrivingSceneDecor {
         guard !lightsBuilt else { return }
         lightsBuilt = true
         glowTexture = Self.radialTexture()
-        beamTexture = Self.beamTexture()
         barTexture = Self.barTexture()
         washTexture = Self.washTexture()
-        let red = UIColor(red: 1, green: 0.10, blue: 0.06, alpha: 1)
+        let red = UIColor(red: 1, green: 0.12, blue: 0.08, alpha: 1)
         let white = UIColor(red: 0.92, green: 0.97, blue: 1, alpha: 1)
-        // One slim bar across the tail, like the car's own light strip, rather than two round blobs.
-        let tailMesh = MeshResource.generatePlane(width: 1.86, height: 0.12)
-        let bar = LevelSprite(parent: lightRig, mesh: tailMesh) { barMaterial(red, $0) }
-        bar.root.position = [0, 1.06, -2.37]
-        bar.root.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
-        tailGlows.append(bar)
-        let tipMesh = MeshResource.generatePlane(width: 0.34, height: 0.1)
-        for x: Float in [0.74, -0.74] {
-            let sprite = LevelSprite(parent: lightRig, mesh: tipMesh) { barMaterial(red, $0 * 0.9) }
+
+        // Left & right taillights (Model Y signature C-shape cluster)
+        let clusterMesh = MeshResource.generatePlane(width: 0.44, height: 0.12)
+        for x: Float in [-0.74, 0.74] {
+            let sprite = LevelSprite(parent: lightRig, mesh: clusterMesh) { barMaterial(red, $0) }
             sprite.root.position = [x, 1.05, -2.36]
             sprite.root.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
             tailGlows.append(sprite)
         }
-        let headMesh = MeshResource.generatePlane(width: 0.62, height: 0.16)
+        // Center high-mount brake light
+        let highMountMesh = MeshResource.generatePlane(width: 0.54, height: 0.05)
+        let highMount = LevelSprite(parent: lightRig, mesh: highMountMesh) { barMaterial(red, $0) }
+        highMount.root.position = [0, 1.34, -2.12]
+        highMount.root.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
+        tailGlows.append(highMount)
+
+        // Front corner headlight accents
+        let headMesh = MeshResource.generatePlane(width: 0.58, height: 0.14)
         for x: Float in [0.62, -0.62] {
             let sprite = LevelSprite(parent: lightRig, mesh: headMesh) { barMaterial(white, $0) }
             sprite.root.position = [x, 0.82, 2.43]
             headGlows.append(sprite)
         }
-        if let beamTexture {
-            // Narrower, dimmer pool of light in front of the car; the road itself stays readable.
-            let sprite = LevelSprite(parent: lightRig, mesh: .generatePlane(width: 4.6, depth: 13)) { level in
-                var m = UnlitMaterial()
-                m.color = .init(tint: UIColor(red: 0.86, green: 0.92, blue: 1, alpha: 1), texture: .init(beamTexture))
-                m.blending = .transparent(opacity: .init(scale: level * 0.3, texture: .init(beamTexture)))
-                return m
-            }
-            sprite.root.position = [0, 0.01, 8.6]
-            beam = sprite
-        }
+
+        // Clean road: NO beam polygon on asphalt in front of car (Tesla FSD authentic)
+        beam = nil
+
         // Vibrant red wash on the asphalt behind the car: covers lane width, smooth falloff matching Tesla FSD night view
-        let pool = LevelSprite(parent: lightRig, mesh: .generatePlane(width: 3.6, depth: 5.2)) { washMaterial(red, $0 * 0.85) }
-        pool.root.position = [0, 0.012, -3.2]
+        let pool = LevelSprite(parent: lightRig, mesh: .generatePlane(width: 3.8, depth: 5.4)) { washMaterial(red, $0 * 0.95) }
+        pool.root.position = [0, 0.012, -3.0]
         brakePool = pool
     }
 
@@ -473,7 +470,7 @@ final class DrivingSceneDecor {
         tailGlows.forEach { $0.set(red) }
         brakePool?.set(brake)
         headGlows.forEach { $0.set(head) }
-        beam?.set(max(0, head - 0.35) / 0.65)
+        beam?.set(0)
         applied = (red, brake, head)
     }
 
@@ -520,12 +517,15 @@ final class DrivingSceneDecor {
               let data = ctx.data else { return nil }
         let pixels = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
         for y in 0..<h {
-            let v = Float(y) / Float(h - 1)          // 0 near the car, 1 far behind
-            let along = pow(max(0, 1 - v), 2.2)
+            let v = Float(y) / Float(h - 1)
+            // Gaussian center at v = 0.72 (under bumper / rear tires)
+            let dv = (v - 0.72) / (v > 0.72 ? 0.28 : 0.65)
             for x in 0..<w {
-                let u = abs(Float(x) / Float(w - 1) - 0.5) * 2
-                let across = pow(max(0, 1 - u * u), 1.6)
-                let a = UInt8(max(0, min(255, along * across * 255)))
+                let u = Float(x) / Float(w - 1)
+                let du = (u - 0.5) / 0.45
+                let r2 = du * du + dv * dv
+                let intensity = exp(-r2 * 2.2)
+                let a = UInt8(max(0, min(255, intensity * 255)))
                 let i = (y * w + x) * 4
                 pixels[i] = a; pixels[i + 1] = a; pixels[i + 2] = a; pixels[i + 3] = a
             }

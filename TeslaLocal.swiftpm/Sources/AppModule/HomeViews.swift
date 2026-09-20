@@ -36,74 +36,45 @@ struct HomeView: View {
                     )
                     .padding(.top, 2)
 
-                // Tesla Wordmark & Vehicle Selector
-                VStack(spacing: 8) {
-                    Text("T E S L A")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .tracking(8)
-                        .foregroundStyle(.white.opacity(0.85))
-
-                    NavigationLink(value: Page.connection) {
-                        HStack(spacing: 6) {
-                            Text("대표")
-                                .font(.system(size: 11, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 4))
-                                .foregroundStyle(.white.opacity(0.85))
-                            Text(model.settings.string("name", "Model Y 2026"))
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.45))
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule()
-                                .fill(Color(white: 0.14).opacity(0.85))
-                                .background(.ultraThinMaterial, in: Capsule())
-                        )
-                        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.8))
-                    }
-                    .buttonStyle(MotionButtonStyle())
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 6)
-
-                // Quick Controls: 4 Tactile Glass Action Tiles
+                // Quick Controls: 4 Tactile Glass Action Tiles (Official Tesla App layout)
                 HStack(spacing: 10) {
                     quickControlTile(
                         .security,
                         "lock.fill",
-                        "잠금",
-                        link.authentic ? "보안 켬" : "잠금",
+                        link.authentic ? "잠금 해제" : "잠금",
                         highlight: false
                     )
                     let insideC = climate.number("insideC")
                     quickControlTile(
                         .climate,
                         "fanblades.fill",
-                        "실내온도",
-                        insideC != nil ? "\(Int(round(insideC!)))°C" : "공조 제어",
+                        insideC != nil ? "\(Int(round(insideC!)))°C" : "실내온도",
                         highlight: false
                     )
                     quickControlTile(
                         .charging,
                         "bolt.fill",
-                        "충전",
-                        isCharging ? "충전 중" : "충전 포트",
+                        isCharging ? "충전 중" : "충전",
                         highlight: isCharging
                     )
                     quickControlTile(
                         .controls,
                         "car.side.rear.open.fill",
                         "트렁크",
-                        "개폐 제어",
                         highlight: false
                     )
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color(white: 0.12).opacity(0.72))
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8)
+                )
 
                 // Battery & Power Visualization Card (Tesla Official / Jijijik)
                 TeslaOfficialChargingCardView(c: c, link: link)
@@ -292,42 +263,30 @@ struct HomeView: View {
         }
     }
 
-    private func quickControlTile(_ page: Page, _ symbol: String, _ title: String, _ subtitle: String, highlight: Bool = false) -> some View {
+    private func quickControlTile(_ page: Page, _ symbol: String, _ title: String, highlight: Bool = false) -> some View {
         NavigationLink(value: page) {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ZStack {
                     Circle()
                         .fill(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.2) : Color.white.opacity(0.08))
-                        .frame(width: 42, height: 42)
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Circle()
+                                .stroke(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.5) : Color.white.opacity(0.10), lineWidth: 0.8)
+                        )
                     Image(systemName: symbol)
                         .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : .white)
                 }
-                VStack(spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.white.opacity(0.55))
-                        .lineLimit(1)
-                }
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.white.opacity(0.85))
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(white: 0.12).opacity(0.75))
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-            )
         }
         .buttonStyle(MotionButtonStyle())
-        .accessibilityLabel("\(title) \(subtitle)")
+        .accessibilityLabel(title)
     }
 
     private var driveButton: some View {
@@ -1001,8 +960,10 @@ private struct TeslaOfficialChargingCardView: View {
                     }
                 }
 
-                // Power Flow & Energy Waveform Visualization
-                PowerFlowGraphView(chargerKW: chargerKW, isCharging: isCharging)
+                // Power Flow & Energy Waveform Visualization (Only when actively charging)
+                if isCharging {
+                    PowerFlowGraphView(chargerKW: chargerKW, isCharging: isCharging)
+                }
 
                 // Current Stepper Pill (< 32 A >)
                 HStack {
@@ -1051,17 +1012,19 @@ private struct TeslaOfficialChargingCardView: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(height: 1)
 
-            // Bottom Action Buttons (충전 중지 | 충전 포트 잠금 해제)
+            // Bottom Action Buttons (충전 제어 | 충전 포트)
             HStack(spacing: 0) {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    isStoppingCharge.toggle()
-                    let action = isStoppingCharge ? "chargeStart" : "chargeStop"
-                    link.askControl(action, title: isStoppingCharge ? "충전 시작" : "충전 중지")
+                    if isCharging {
+                        link.askControl("chargeStop", title: "충전 중지")
+                    } else {
+                        link.askControl("chargeStart", title: "충전 시작")
+                    }
                 } label: {
-                    Text(isStoppingCharge ? "충전 시작" : "충전 중지")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.85))
+                    Text(isCharging ? "충전 중지" : "충전 시작")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(isCharging ? Color(red: 1.0, green: 0.38, blue: 0.38) : Color(red: 0.28, green: 0.88, blue: 0.42))
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                 }
@@ -1073,9 +1036,9 @@ private struct TeslaOfficialChargingCardView: View {
 
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    link.askControl("portOpen", title: "충전 포트 잠금 해제")
+                    link.askControl("portOpen", title: isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
                 } label: {
-                    Text("충전 포트 잠금 해제")
+                    Text(isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.85))
                         .frame(maxWidth: .infinity)

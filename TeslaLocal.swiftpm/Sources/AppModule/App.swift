@@ -128,7 +128,20 @@ struct PageBody<Content: View>: View {
 }
 struct InfoCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
-    var body: some View { VStack(alignment: .leading, spacing: 14, content: content).frame(maxWidth: .infinity, alignment: .leading).padding(20).background(Theme.surface.opacity(0.85), in: RoundedRectangle(cornerRadius: 20, style: .continuous)) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(white: 0.12).opacity(0.75))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            )
+    }
 }
 struct Caption: View {
     let text: String

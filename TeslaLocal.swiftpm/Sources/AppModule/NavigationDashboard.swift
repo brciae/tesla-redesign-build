@@ -396,28 +396,14 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
 
     private func minimalLayer(_ m: NavMetrics) -> some View {
         let stage = m.wide
-            ? CGRect(x: m.w * 0.12, y: m.h * 0.24, width: m.w * 0.76, height: m.h * 0.76)
-            : CGRect(x: 0, y: m.h * 0.36, width: m.w, height: m.h * 0.50)
-        let side = m.wide ? m.w * 0.24 : m.w * 0.5 - m.pad * 1.5
+            ? CGRect(x: m.w * 0.12, y: m.h * 0.20, width: m.w * 0.76, height: m.h * 0.80)
+            : CGRect(x: 0, y: m.h * 0.18, width: m.w, height: m.h * 0.82)
+        let side = m.wide ? m.w * 0.24 : m.w * 0.46
         return ZStack(alignment: .topLeading) {
-            HorizonGlow()
-                .frame(width: m.wide ? m.w * 0.44 : m.w * 0.9, height: m.h * 0.46)
-                .position(x: m.w / 2, y: stage.minY + stage.height * 0.12)
-                .opacity(0.5)
-                .allowsHitTesting(false)
             carStage("내 차량 · 뒤에서 보기")
                 .frame(width: stage.width, height: stage.height)
                 .offset(x: stage.minX, y: stage.minY)
-            VStack(spacing: 0) {
-                Text(data.speed)
-                    .font(.system(size: (m.wide ? 70 : 80) * m.u, weight: .light))
-                    .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(.smooth(duration: 0.25), value: data.speed)
-                Text(data.speedUnit.uppercased())
-                    .font(.system(size: 14 * m.u, weight: .semibold)).tracking(2 * m.u)
-                    .foregroundStyle(.white.opacity(0.75))
-
+            VStack(spacing: 2 * m.u) {
                 // Tesla Autopilot Light Status Icons (matching Tesla screen)
                 HStack(spacing: 8 * m.u) {
                     Image(systemName: "headlight.low.beam.fill")
@@ -436,27 +422,41 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                         .foregroundStyle(Color.green)
                         .font(.system(size: 12 * m.u))
                 }
-                .padding(.top, 4 * m.u)
+                .padding(.bottom, 2 * m.u)
 
-                GearRow(gear: data.gear, u: m.u * 0.85, style: .quiet).padding(.top, 6 * m.u)
+                // Speed & Speed Limit Sign side-by-side (Tesla FSD authentic cluster)
+                HStack(alignment: .center, spacing: 12 * m.u) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4 * m.u) {
+                        Text(data.speed)
+                            .font(.system(size: (m.wide ? 68 : 76) * m.u, weight: .light))
+                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
+                            .contentTransition(.numericText(countsDown: true))
+                            .animation(.smooth(duration: 0.25), value: data.speed)
+                        Text(data.speedUnit.uppercased())
+                            .font(.system(size: 13 * m.u, weight: .semibold)).tracking(1.5 * m.u)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+
+                    LimitSign(limit: data.speedLimit ?? 30, distance: data.speedLimitDistance, size: 40 * m.u)
+                }
+
+                GearRow(gear: data.gear, u: m.u * 0.85, style: .quiet).padding(.top, 4 * m.u)
             }
-            .frame(width: m.wide ? m.w * 0.36 : m.w)
-            .offset(x: m.wide ? m.w * 0.32 : 0, y: m.h * (m.wide ? 0.03 : 0.14))
+            .frame(width: m.wide ? m.w * 0.40 : m.w)
+            .offset(x: m.wide ? m.w * 0.30 : 0, y: m.h * (m.wide ? 0.03 : 0.08))
 
-            // Speed Limit Sign (Korean urban 30 km/h matching user photo)
-            LimitSign(limit: data.speedLimit ?? 30, distance: data.speedLimitDistance, size: 44 * m.u)
-                .offset(x: m.wide ? m.w * 0.65 : m.w - 68 * m.u, y: m.pad)
+            // Navigation Info (Left: Turn instruction, Right: Arrival time)
             TurnColumn(data: data, u: m.u)
                 .frame(width: side, alignment: .leading)
                 .offset(x: m.pad * 1.5, y: m.wide ? m.h * 0.24 : m.pad)
             RangeTag(data: data, u: m.u)
-                .offset(x: m.pad * 1.5, y: m.wide ? m.pad : m.h * 0.30)
+                .offset(x: m.pad * 1.5, y: m.wide ? m.pad : m.h * 0.26)
             ArrivalColumn(data: data, u: m.u)
                 .frame(width: side, alignment: .trailing)
                 .offset(x: m.w - side - m.pad * 1.5, y: m.wide ? m.h * 0.24 : m.pad)
             ClimateTag(data: data, u: m.u)
                 .frame(width: side, alignment: .trailing)
-                .offset(x: m.w - side - m.pad * 1.5, y: m.wide ? m.pad : m.h * 0.30)
+                .offset(x: m.w - side - m.pad * 1.5, y: m.wide ? m.pad : m.h * 0.26)
             if data.showsMedia {
                 // Bottom-left, clear of the speed and the road, like the Tesla music card.
                 island(m)
