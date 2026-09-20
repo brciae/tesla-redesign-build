@@ -1,0 +1,23 @@
+2025 Tesla Model Y by BloxBloger
+Source: https://sketchfab.com/3d-models/2025-tesla-model-y-619601e7800d418da5922c4fa7833f74
+Creator: https://sketchfab.com/BloxBloger
+License: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+License URL: https://creativecommons.org/licenses/by-nc/4.0/
+Legal code: https://creativecommons.org/licenses/by-nc/4.0/legalcode.en
+
+Modified for YL Companion personal, noncommercial use on 2026-09-14.
+Changes: axis/units normalization; approximate Model Y L length, width, height and wheelbase;
+part-separated illustrative door/frunk/trunk hinges; dark reverse panels;
+single-color materials; omitted transparent light covers to retain visible lamps;
+hidden brake geometry removal; tyre and rear-detail clustering.
+Original OBJ SHA256: afea8573b9b0262cbafaed9f1e0a83d78b3fc42e12865c8f8bf8efd15cc7d788
+
+This is a modified third-party Model Y asset, not Tesla's official Model Y L CAD or app resource.
+Tesla and the creator do not endorse this app. No warranty of exact vehicle shape or operation.
+Credit, license link and modification notice must remain with this material.
+Commercial use is not permitted under this license. The original license governs this model;
+it is separate from the Apache-licensed Tesla protocol source used elsewhere in the app.
+
+차량 모델: BloxBloger의 2025 Tesla Model Y / CC BY-NC 4.0.
+개인 비상업용으로 비율·재질·가동부·면 수를 수정함. 정식 Tesla 자산이 아니며,
+실제 Y L의 창문·휠·램프·루프·실내 및 개폐 구조와 차이가 있을 수 있음.

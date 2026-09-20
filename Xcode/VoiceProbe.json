@@ -1,0 +1,54 @@
+{
+ "name": "VoiceProbe",
+ "options": {
+  "deploymentTarget": {
+   "macOS": "14.0"
+  }
+ },
+ "packages": {
+  "onnxruntime": {
+   "url": "https://github.com/microsoft/onnxruntime-swift-package-manager.git",
+   "exactVersion": "1.24.2"
+  }
+ },
+ "targets": {
+  "VoiceProbe": {
+   "type": "tool",
+   "platform": "macOS",
+   "sources": [
+    "../tools/voice-engine-probe.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/SupertonicEngine.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VoicePackManifest.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VoiceEffects.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/CharacterVoiceDSP.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/CharacterTone.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/RecordedVoice.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VoiceProfiles.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleAppearance.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift"
+   ],
+   "dependencies": [
+    {
+     "package": "onnxruntime",
+     "product": "onnxruntime"
+    }
+   ],
+   "settings": {
+    "base": {
+     "SWIFT_VERSION": "5.0",
+     "CODE_SIGNING_ALLOWED": "NO",
+     "PRODUCT_BUNDLE_IDENTIFIER": "local.ylcompanion.voiceprobe"
+    }
+   }
+  }
+ },
+ "schemes": {
+  "VoiceProbe": {
+   "build": {
+    "targets": {
+     "VoiceProbe": "all"
+    }
+   }
+  }
+ }
+}
