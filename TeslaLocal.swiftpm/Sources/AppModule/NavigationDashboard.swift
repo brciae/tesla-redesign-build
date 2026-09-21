@@ -268,7 +268,11 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     }
 
     private func routeNotice(_ m: NavMetrics, y: CGFloat) -> some View {
-        EmptyView()
+        Text("경로 미수신")
+            .font(.system(size: 13 * m.u, weight: .medium))
+            .foregroundStyle(.white.opacity(0.6))
+            .frame(width: m.w, alignment: .center)
+            .offset(y: y)
     }
 
     private func media(_ style: MediaCard.Style, _ m: NavMetrics) -> MediaCard {
@@ -382,6 +386,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(width: inner, height: rect.height - 24 * m.u, alignment: .bottom)
             .offset(x: rect.minX + 12 * m.u, y: rect.minY + 12 * m.u)
+            if !data.motionValid { routeNotice(m, y: card.maxY - 22 * m.u) }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -474,6 +479,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     .frame(width: m.w - m.pad * 3, height: m.h - m.pad, alignment: .bottomLeading)
                     .offset(x: m.pad * 1.5, y: 0)
             }
+            if !data.motionValid { routeNotice(m, y: stage.minY + stage.height * 0.12) }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
