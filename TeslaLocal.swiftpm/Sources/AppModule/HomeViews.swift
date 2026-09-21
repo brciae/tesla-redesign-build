@@ -131,7 +131,7 @@ struct HomeView: View {
                         .font(.system(size: 16, weight: .light, design: .rounded))
                         .tracking(4)
                         .foregroundStyle(Color.white.opacity(0.6))
-                    Caption("YL COMPANION · v0.72 (Build 72)")
+                    Caption("YL COMPANION · v0.73 (Build 73)")
                     if model.demo {
                         Button("예시 모드 종료") { model.exitDemo() }
                             .font(.caption.weight(.semibold))

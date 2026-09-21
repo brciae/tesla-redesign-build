@@ -143,6 +143,9 @@ struct PreferencesView: View {
     private var currentVoiceName: String {
         let clean = identifier.replacingOccurrences(of: "typecast:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         if clean.isEmpty { return TypecastClient.defaultVoiceId }
+        if let char = TypecastCatalog.find(clean) {
+            return char.nameKo
+        }
         if let preset = TypecastClient.presetVoices.first(where: { $0.id == clean || $0.name == clean }) {
             return preset.name
         }
@@ -150,8 +153,11 @@ struct PreferencesView: View {
     }
 
     private var currentVoiceDesc: String {
-        let name = currentVoiceName
-        if let preset = TypecastClient.presetVoices.first(where: { $0.name == name || $0.id == name }) {
+        let clean = identifier.replacingOccurrences(of: "typecast:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if let char = TypecastCatalog.find(clean) {
+            return char.desc
+        }
+        if let preset = TypecastClient.presetVoices.first(where: { $0.name == clean || $0.id == clean }) {
             return preset.desc
         }
         return "사용자 지정 Voice ID"
@@ -165,6 +171,7 @@ struct PreferencesView: View {
 struct TypecastSettingsSection: View {
     @ObservedObject private var typecast = TypecastClient.shared
     @EnvironmentObject private var model: AppModel
+    @State private var showCharacterPicker = false
 
     var body: some View {
         Toggle("타입캐스트 AI 음성 사용", isOn: $typecast.isEnabled)
@@ -291,7 +298,31 @@ struct TypecastSettingsSection: View {
                 }
             }
 
-            TextField("Voice ID 또는 캐릭터명 직접 입력 (예: 은경, 서현, tc_...)", text: $typecast.selectedVoiceId)
+            // Button to open full 131-character browser sheet
+            Button {
+                showCharacterPicker = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.crop.rectangle.stack.fill")
+                        .font(.caption)
+                    Text("전체 캐릭터 둘러보기 (한국어/여성/청년 131명)")
+                        .font(.caption.weight(.bold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(Color.blue)
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showCharacterPicker) {
+                TypecastCharacterPickerSheet()
+            }
+
+            TextField("Voice ID 또는 캐릭터명 직접 입력 (예: 은경, 나윤, 수아, tc_...)", text: $typecast.selectedVoiceId)
                 .font(.system(size: 13, design: .monospaced))
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()

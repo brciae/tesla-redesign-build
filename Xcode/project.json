@@ -22,8 +22,8 @@
    "SWIFT_VERSION": "5.0",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "CODE_SIGNING_ALLOWED": "NO",
-   "MARKETING_VERSION": "0.72",
-   "CURRENT_PROJECT_VERSION": "72"
+   "MARKETING_VERSION": "0.73",
+   "CURRENT_PROJECT_VERSION": "73"
   }
  },
  "targets": {
@@ -88,6 +88,11 @@
     },
     {
      "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/recorded",
+     "type": "folder",
+     "buildPhase": "resources"
+    },
+    {
+     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/typecast_portraits",
      "type": "folder",
      "buildPhase": "resources"
     }

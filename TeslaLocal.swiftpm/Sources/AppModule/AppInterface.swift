@@ -25,15 +25,19 @@ struct VoiceSelectionControls: View {
 
     private var selectionListed: Bool {
         if identifier.hasPrefix("typecast:") {
-            let vId = String(identifier.dropFirst(9))
-            return TypecastClient.presetVoices.contains(where: { $0.id == vId })
+            let vId = String(identifier.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
+            return TypecastClient.presetVoices.contains(where: { $0.id == vId || $0.name == vId })
         }
         return false
     }
 
     private func customLabel(for id: String) -> String {
         if id.hasPrefix("typecast:") {
-            return "✨ " + String(id.dropFirst(9))
+            let raw = String(id.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if let char = TypecastCatalog.find(raw) {
+                return "✨ \(char.nameKo) (\(char.desc))"
+            }
+            return "✨ " + raw
         }
         return "✨ " + id
     }
@@ -113,10 +117,26 @@ struct TypecastVoiceThumbnail: View {
 
     private func resolveImage() -> UIImage? {
         let name = cleanName
-        // 1. Direct Asset Catalog check
+
+        // 1. Direct Asset Catalog check by name
         if let img = UIImage(named: "typecast_portrait_\(name)") { return img }
 
-        // 2. English alias check
+        // 2. TypecastCatalog lookup (supports 131 Korean Female Young Adult characters!)
+        if let char = TypecastCatalog.find(name) {
+            // Check Asset Catalog by actor_id
+            if let img = UIImage(named: "typecast_portrait_\(char.id)") { return img }
+            // Check bundle resource path typecast_portraits/[actor_id].png
+            if let path = Bundle.main.path(forResource: char.id, ofType: "png", inDirectory: "typecast_portraits"),
+               let img = UIImage(contentsOfFile: path) {
+                return img
+            }
+            if let resourceURL = Bundle.main.resourceURL {
+                let direct = resourceURL.appendingPathComponent("typecast_portraits/\(char.id).png")
+                if let img = UIImage(contentsOfFile: direct.path) { return img }
+            }
+        }
+
+        // 3. English alias check
         let alias: String
         let folder: String
         switch name {
@@ -133,7 +153,7 @@ struct TypecastVoiceThumbnail: View {
         }
         if let img = UIImage(named: "typecast_portrait_\(alias)") { return img }
 
-        // 3. Bundled resource folder fallback
+        // 4. Bundled resource folder fallback
         if let path = Bundle.main.path(forResource: "portrait", ofType: "png", inDirectory: "recorded/\(folder)"),
            let img = UIImage(contentsOfFile: path) {
             return img

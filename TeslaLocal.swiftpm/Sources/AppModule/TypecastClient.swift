@@ -252,10 +252,21 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             return trimmed
         }
 
+        // 2. Check TypecastCatalog (131 Korean Female Young Adult voices)
+        if let char = TypecastCatalog.find(trimmed) {
+            if let cached = voiceCatalog[char.nameKo.lowercased()] ?? voiceCatalog[char.id.lowercased()] {
+                return cached
+            }
+            // Return character's actor_id
+            if char.id.count >= 20 {
+                return char.id
+            }
+        }
+
         let lower = trimmed.lowercased()
         let noSpaces = lower.replacingOccurrences(of: " ", with: "")
 
-        // 2. Check local voice catalog
+        // 3. Check local voice catalog
         if let match = voiceCatalog[lower] ?? voiceCatalog[noSpaces] {
             return match
         }
