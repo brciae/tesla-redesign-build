@@ -1,4 +1,4 @@
-name: iOS Build v60 Redesign
+name: iOS Build v61 Redesign
 on:
   workflow_dispatch:
   push:
@@ -17,7 +17,7 @@ jobs:
         run: bash tools/build-ios.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: YLCompanion-v60-Redesign
+          name: YLCompanion-v61-Redesign
           path: Xcode/BuildOutput/*.ipa
       - uses: actions/upload-artifact@v4
         if: always()
