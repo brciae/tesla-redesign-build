@@ -2,7 +2,8 @@ import SwiftUI
 import AVFoundation
 
 /// Single selected-voice output for navigation, safety and vehicle announcements.
-/// Unconditionally powered by Typecast AI with permanent local audio caching.
+/// Exclusively powered by Typecast AI with permanent local audio caching,
+/// with instant button-preemption (0ms interruption latency) and zero default-voice clutter.
 final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var speaking = false
     @Published private(set) var lastText = ""
@@ -102,17 +103,20 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let d = UserDefaults.standard, now = Date()
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
         let timeSinceLast = now.timeIntervalSince(lastGuideAt)
-        // 1. Never repeat identical guidance within 12 seconds
         if text == lastGuideText && timeSinceLast < 12.0 { return }
-        // 2. Minimum interval between distinct navigation guidance
         if timeSinceLast < 3.5 && !safety { return }
         if safety && timeSinceLast < 2.5 { return }
         lastGuideText = text
         lastGuideAt = now
 
         let priority = safety ? 5 : 4
-        // Clear outdated navigation items from queue
         queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn")
+
+        // Safety guidance interrupts regular chatter immediately
+        if safety {
+            cancelCurrent()
+            quietUntil = .distantPast
+        }
 
         queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text), expires: now.addingTimeInterval(8), priority: priority, manual: true), now: now)
         drain()
@@ -139,6 +143,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
     }
 
+    /// Speaks an announcement with instant button preemption (cancels previous speech immediately with 0ms delay).
     func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true) {
         let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
@@ -146,7 +151,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let now = Date()
         if !manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: now), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
         let styled = BriefingStyle.selected.phrase(text, category: category)
-        queue.add(VoiceItem(key: actualKey, text: SpeechText.prepare(styled), expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
+        let prepared = SpeechText.prepare(styled)
+
+        // INSTANT PREEMPTION: When user taps a button or triggers guidance, immediately cut off previous speech
+        // mid-utterance without waiting for it to finish and with zero delay!
+        cancelCurrent()
+        queue.clear()
+        quietUntil = .distantPast
+
+        queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
         drain()
     }
 
@@ -166,6 +179,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         if !item.manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: Date()), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
 
         let tc = TypecastClient.shared
+        guard tc.isEnabled && tc.hasKey else {
+            notice = "타입캐스트 API Key를 등록해 주세요."
+            playbackState = "API Key 필요"
+            activeTicket = nil
+            navigationSpeaking = false
+            activePriority = 0
+            return
+        }
+
         let selection = d.string(forKey: "voiceIdentifier") ?? ""
         let targetVoice: String
         if selection.hasPrefix("typecast:") {
@@ -184,7 +206,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func playTypecast(_ item: VoiceItem, voiceId: String? = nil) -> Bool {
         let tc = TypecastClient.shared
         guard tc.isEnabled && tc.hasKey else {
-            notice = "타입캐스트 API Key를 설정해 주세요."
+            notice = "타입캐스트 API Key를 등록해 주세요."
             playbackState = "API Key 필요"
             activeTicket = nil
             navigationSpeaking = false
@@ -234,8 +256,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                     self.speaking = false
                     self.navigationSpeaking = false
                     self.activePriority = 0
-                    self.playbackState = "합성 실패"
                     self.notice = "타입캐스트 안내 실패: \(error.localizedDescription)"
+                    self.playbackState = "합성 실패"
                     self.drain()
                 }
             }
@@ -256,12 +278,6 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             self.speaking = true
             self.playbackState = "읽는 중 · 타입캐스트 AI 음성"
             self.refreshOutput()
-
-            let duration = max(0.4, p.duration)
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.15) { [weak self] in
-                guard let self, self.activeTicket == ticket else { return }
-                self.finishPlayback()
-            }
         } catch {
             activeTicket = nil
             notice = "타입캐스트 오디오 재생 실패"
@@ -284,10 +300,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         playbackState = "재생 완료"
         typecastPlayer = nil
         releaseAudio()
-        quietUntil = Date().addingTimeInterval(0.2)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.drain()
-        }
+        quietUntil = .distantPast
+        drain()
     }
 
     func stopAutomatic() {
@@ -305,14 +319,16 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         notice = ""
     }
 
-    private func cancelCurrent() {
+    func cancelCurrent() {
         activeTicket = nil
         activeManual = false
         speaking = false
         navigationSpeaking = false
         activePriority = 0
+
         typecastPlayer?.stop()
         typecastPlayer = nil
+
         releaseAudio()
     }
 
@@ -333,7 +349,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         }
         releaseWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
     }
 
     private func activateAudio(_ defaults: UserDefaults) throws {

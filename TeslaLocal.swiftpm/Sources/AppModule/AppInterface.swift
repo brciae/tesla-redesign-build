@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import AVFoundation
 
 struct VoiceSelectionControls: View {
@@ -9,11 +10,14 @@ struct VoiceSelectionControls: View {
         Picker("안내 음성", selection: $identifier) {
             Section("타입캐스트 AI 고품질 음성") {
                 ForEach(TypecastClient.presetVoices, id: \.id) { preset in
-                    Text("✨ " + preset.name + " (" + preset.desc + ")").tag("typecast:" + preset.id)
+                    let label = "✨ \(preset.name) (\(preset.desc))"
+                    let tagValue = "typecast:\(preset.id)"
+                    Text(label).tag(tagValue)
                 }
             }
             if !selectionListed {
-                Text(customLabel(for: identifier) + " (사용자 지정 Voice ID)").tag(identifier)
+                let custom = "\(customLabel(for: identifier)) (사용자 지정 Voice ID)"
+                Text(custom).tag(identifier)
             }
         }
         .accessibilityIdentifier("voice.profile")
@@ -68,6 +72,77 @@ struct VoicePortrait: View {
         guard let image = UIImage(contentsOfFile: url.path) else { return nil }
         cache[url] = image
         return image
+    }
+}
+
+/// Moderate, clean thumbnail portrait for Typecast AI and character voices.
+/// Fits cleanly in pickers, status cards, and preset selection buttons without being overly huge.
+struct TypecastVoiceThumbnail: View {
+    let voice: String
+    var size: CGFloat = 38
+
+    var body: some View {
+        Group {
+            if let image = resolveImage() {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [Color.blue.opacity(0.8), Color.purple.opacity(0.8)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Text(String(cleanName.prefix(1)))
+                        .font(.system(size: size * 0.45, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+        .accessibilityHidden(true)
+    }
+
+    private var cleanName: String {
+        voice.replacingOccurrences(of: "typecast:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func resolveImage() -> UIImage? {
+        let name = cleanName
+        // 1. Direct Asset Catalog check
+        if let img = UIImage(named: "typecast_portrait_\(name)") { return img }
+
+        // 2. English alias check
+        let alias: String
+        let folder: String
+        switch name {
+        case "은경": alias = "eunkyung"; folder = "yumi"
+        case "서현": alias = "seohyun"; folder = "seohee"
+        case "아엘": alias = "ael"; folder = "hyeonji"
+        case "한영": alias = "hanyoung"; folder = "subin"
+        default:
+            if name.contains("은경") { alias = "eunkyung"; folder = "yumi" }
+            else if name.contains("서현") { alias = "seohyun"; folder = "seohee" }
+            else if name.contains("아엘") { alias = "ael"; folder = "hyeonji" }
+            else if name.contains("한영") { alias = "hanyoung"; folder = "subin" }
+            else { return nil }
+        }
+        if let img = UIImage(named: "typecast_portrait_\(alias)") { return img }
+
+        // 3. Bundled resource folder fallback
+        if let path = Bundle.main.path(forResource: "portrait", ofType: "png", inDirectory: "recorded/\(folder)"),
+           let img = UIImage(contentsOfFile: path) {
+            return img
+        }
+        if let resourceURL = Bundle.main.resourceURL {
+            let direct = resourceURL.appendingPathComponent("recorded/\(folder)/portrait.png")
+            if let img = UIImage(contentsOfFile: direct.path) { return img }
+        }
+        return nil
     }
 }
 

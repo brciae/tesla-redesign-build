@@ -63,6 +63,37 @@ struct MainView: View {
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
     @State private var selectedTab: AppTab = .home
+    @State private var homePath = NavigationPath()
+    @State private var controlsPath = NavigationPath()
+    @State private var energyPath = NavigationPath()
+    @State private var drivePath = NavigationPath()
+    @State private var menuPath = NavigationPath()
+
+    private var tabBinding: Binding<AppTab> {
+        Binding(
+            get: { selectedTab },
+            set: { newTab in
+                if newTab == selectedTab {
+                    // Re-tapping current tab pops to root
+                    switch newTab {
+                    case .home: homePath = NavigationPath()
+                    case .controls: controlsPath = NavigationPath()
+                    case .energy: energyPath = NavigationPath()
+                    case .drive: drivePath = NavigationPath()
+                    case .menu: menuPath = NavigationPath()
+                    default: break
+                    }
+                } else {
+                    // Switching away or returning to menu immediately resets menu to root
+                    if newTab == .menu || selectedTab == .menu {
+                        menuPath = NavigationPath()
+                    }
+                    selectedTab = newTab
+                }
+            }
+        )
+    }
+
     var body: some View {
         mainContent
             .environment(\.vehicleUnits, VehicleUnits(distance: distance, temperature: temperature, pressure: pressure))
@@ -74,25 +105,28 @@ struct MainView: View {
             .onChange(of: phase) { _, p in handlePhase(p) }
             .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
             .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
-            .onChange(of: selectedTab) { _, newTab in handleTabVoice(newTab) }
+            .onChange(of: selectedTab) { _, newTab in
+                if newTab == .menu { menuPath = NavigationPath() }
+                handleTabVoice(newTab)
+            }
             .onChange(of: model.chargingPresented) { _, presented in
-                if presented { model.voice.say("충전 상세 화면을 열었습니다.", category: "voiceControl") }
+                if presented { model.voice.say("충전 상세 화면을 열었습니다.", category: "voiceControl", manual: true) }
             }
             .onChange(of: navigation.presented) { _, presented in handleNavVoice(presented) }
     }
 
     private var mainContent: some View {
         ZStack {
-            Commercial5TabScaffold(selection: $selectedTab) {
-                NavigationStack { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+            Commercial5TabScaffold(selection: tabBinding) {
+                NavigationStack(path: $homePath) { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
             } controls: {
-                NavigationStack { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $controlsPath) { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
             } energy: {
-                NavigationStack { EnergyTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $energyPath) { EnergyTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
             } drive: {
-                NavigationStack { DriveTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $drivePath) { DriveTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
             } menu: {
-                NavigationStack { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $menuPath) { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
             }
             .opacity(navigation.presented ? 0 : 1).allowsHitTesting(!navigation.presented).accessibilityHidden(navigation.presented)
 
@@ -117,14 +151,14 @@ struct MainView: View {
         case .menu: prompt = "전체 메뉴로 이동했습니다."
         default: prompt = ""
         }
-        if !prompt.isEmpty { model.voice.say(prompt, category: "voiceControl") }
+        if !prompt.isEmpty { model.voice.say(prompt, category: "voiceControl", manual: true) }
     }
 
     private func handleNavVoice(_ presented: Bool) {
         if presented {
-            model.voice.say("주행 대시보드를 표시합니다.", category: "voiceControl")
+            model.voice.say("주행 대시보드를 표시합니다.", category: "voiceControl", manual: true)
         } else {
-            model.voice.say("주행 대시보드를 닫았습니다.", category: "voiceControl")
+            model.voice.say("주행 대시보드를 닫았습니다.", category: "voiceControl", manual: true)
         }
     }
 }
@@ -137,7 +171,7 @@ private struct AppDestinations: ViewModifier {
         content.navigationDestination(for: Page.self) { page in
             destinationView(for: page)
                 .onAppear {
-                    model.voice.say("\(page.rawValue) 화면입니다.", category: "voiceControl")
+                    model.voice.say("\(page.rawValue) 화면입니다.", category: "voiceControl", manual: true)
                 }
         }
     }

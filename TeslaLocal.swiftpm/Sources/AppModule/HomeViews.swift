@@ -1127,19 +1127,86 @@ struct MenuTabRootView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @ObservedObject var navigation: EmbeddedNavigation
+
     var body: some View {
         PageBody(title: "메뉴 및 설정") {
             VStack(spacing: 16) {
-                GlassMenuCard {
-                    glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 · 운전자 프로필", colors: [Color.blue, Color.cyan])
-                    glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "차량 외장 색상 · 휠 · 틴팅 커스텀", colors: [Color.purple, Color.pink])
-                    glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "차량 관리 및 케어", subtitle: "타이어 공기압(TPMS) · 와이퍼 · 서비스 모드", colors: [Color.orange, Color.yellow])
-                    glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "시간대 및 출발/도착 자동 제어 규칙", colors: [Color.green, Color.mint])
-                    glassMenuItem(.briefing, "sun.max.fill", title: "오늘의 브리핑", subtitle: "출발 시 배터리/주행거리 음성 안내", colors: [Color.yellow, Color.orange])
-                    glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 음성 설정", subtitle: "음성 선택 · 볼륨 · 단위 설정", colors: [Color.gray, Color.white], isLast: false)
-                    glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "연결 상태", subtitle: link.authentic ? "차량 BLE 정상 연결됨" : "대기 중", colors: [Color.teal, Color.blue], isLast: true)
+                // Vehicle Identity & Connection Status Card
+                vehicleStatusHeader
+
+                // Group 1: 차량 커스텀 & 점검
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("차량 커스텀 & 점검")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .padding(.leading, 6)
+
+                    GlassMenuCard {
+                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 컬러 · 휠 · 캘리퍼 · 틴팅 · 시트/인테리어", colors: [Color.purple, Color.pink])
+                        glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "차량 관리 및 케어", subtitle: "타이어 공기압(TPMS) · 와이퍼 모드 · 서비스 점검", colors: [Color.orange, Color.yellow])
+                        glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 알림 · 운전자 프로필", colors: [Color.blue, Color.cyan], isLast: true)
+                    }
+                }
+
+                // Group 2: 스마트 기능 & 설정
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("스마트 기능 & 설정")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .padding(.leading, 6)
+
+                    GlassMenuCard {
+                        glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
+                        glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 AI 음성 선택 · 다중 계정 풀 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
+                    }
                 }
             }
         }
+    }
+
+    private var vehicleStatusHeader: some View {
+        let vin = model.settings.string("vin")
+        let cleanVin = vin.isEmpty ? "VIN 미등록" : vin
+        let isConnected = link.authentic || model.fleet.isAuthenticated
+        let connText = link.authentic ? "차량 BLE 정상 연결" : (model.fleet.isAuthenticated ? "Tesla Fleet API 연결됨" : "차량 연결 대기 중")
+        let connColor = isConnected ? Color.green : Color.orange
+
+        return HStack(spacing: 14) {
+            Image(systemName: "car.side.fill")
+                .font(.system(size: 28))
+                .foregroundStyle(Color.white.opacity(0.85))
+                .frame(width: 52, height: 52)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Tesla Model Y")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Text(cleanVin)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.5))
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(connColor)
+                        .frame(width: 7, height: 7)
+                    Text(connText)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(connColor)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(white: 0.12).opacity(0.75))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
     }
 }

@@ -31,7 +31,14 @@ struct PreferencesView: View {
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
-                VoicePreviewControls(preview: { model.voice.preview("안녕하세요. 타입캐스트 안내를 시작합니다.") }, stop: { model.stopSpeech() })
+
+                // Moderate thumbnail portrait card (38pt, clean and sleek)
+                selectedVoiceCard
+
+                VoicePreviewControls(preview: {
+                    let name = currentVoiceName
+                    model.voice.preview("안녕하세요. \(name) 음성 안내입니다. 안전 운전하세요.")
+                }, stop: { model.stopSpeech() })
                 VoiceStatus(voice: model.voice)
             }
 
@@ -82,14 +89,73 @@ struct PreferencesView: View {
             }
         }.navigationTitle("표시·음성 설정").navigationBarTitleDisplayMode(.inline)
             .onChange(of: enabled) { _, value in if !value { model.stopSpeech() } }
-            .onChange(of: identifier) { _, _ in model.stopSpeech() }
+            .onChange(of: identifier) { _, newId in
+                if newId.hasPrefix("typecast:") {
+                    let clean = String(newId.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    typecast.selectedVoiceId = clean
+                }
+                model.stopSpeech()
+            }
             .onChange(of: deliveryStyle) { _, _ in model.stopSpeech() }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in model.navigation.applyAudioPreferences() }
             .onAppear {
                 if identifier.isEmpty || identifier.hasPrefix("recorded:") || identifier.hasPrefix("offline:") || (!identifier.hasPrefix("typecast:") && !TypecastClient.presetVoices.contains(where: { $0.id == identifier })) {
                     identifier = "typecast:은경"
                 }
+                if identifier.hasPrefix("typecast:") {
+                    typecast.selectedVoiceId = String(identifier.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             }
+    }
+
+    private var selectedVoiceCard: some View {
+        let name = currentVoiceName
+        let desc = currentVoiceDesc
+
+        return HStack(spacing: 12) {
+            TypecastVoiceThumbnail(voice: name, size: 38)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(name)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.primary)
+
+                    Text("타입캐스트 AI")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.15), in: Capsule())
+                        .foregroundStyle(.blue)
+                }
+
+                Text(desc)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var currentVoiceName: String {
+        let clean = identifier.replacingOccurrences(of: "typecast:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty { return TypecastClient.defaultVoiceId }
+        if let preset = TypecastClient.presetVoices.first(where: { $0.id == clean || $0.name == clean }) {
+            return preset.name
+        }
+        return clean
+    }
+
+    private var currentVoiceDesc: String {
+        let name = currentVoiceName
+        if let preset = TypecastClient.presetVoices.first(where: { $0.name == name || $0.id == name }) {
+            return preset.desc
+        }
+        return "사용자 지정 Voice ID"
+    }
     }
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading) { HStack { Text(title); Spacer(); Text(String(format: "%.2f", value.wrappedValue)).monospacedDigit() }; Slider(value: value, in: range) }
@@ -199,23 +265,27 @@ struct TypecastSettingsSection: View {
     }
 
     private var presetsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("음성 캐릭터 프리셋 & Voice ID")
                 .font(.caption.weight(.semibold))
 
             HStack(spacing: 6) {
                 ForEach(TypecastClient.presetVoices, id: \.id) { preset in
+                    let isSelected = typecast.selectedVoiceId == preset.id || typecast.selectedVoiceId == preset.name
                     Button {
                         typecast.selectedVoiceId = preset.id
                         UserDefaults.standard.set("typecast:\(preset.id)", forKey: "voiceIdentifier")
-                        model.voice.say("\(preset.name) 음성을 선택했습니다.", category: "voiceControl")
+                        model.voice.say("\(preset.name) 음성을 선택했습니다.", category: "voiceControl", manual: true)
                     } label: {
-                        Text(preset.name)
-                            .font(.caption.weight(.bold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(typecast.selectedVoiceId == preset.id ? Color.blue : Color.white.opacity(0.12), in: Capsule())
-                            .foregroundStyle(.white)
+                        HStack(spacing: 5) {
+                            TypecastVoiceThumbnail(voice: preset.name, size: 22)
+                            Text(preset.name)
+                                .font(.caption.weight(.bold))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(isSelected ? Color.blue : Color.white.opacity(0.12), in: Capsule())
+                        .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
                 }

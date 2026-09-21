@@ -94,6 +94,7 @@ final class AppModel: ObservableObject {
                 }
                 if self.state.rows("trips").count > previousCount || self.state.rows("charges").count > previousCharges || Date().timeIntervalSince(self.lastSaved) > 5 { self.saveRecordsWhenAvailable() }
                 self.automations.observe(output: self.output, previousTrips: previousCount, previousCharges: previousCharges, link: self.link, voice: self.voice, demo: self.demo)
+                self.triggerDepartureBriefingIfNeeded()
             } catch {
                 self.automations.resetObservation(); self.link.cancelPendingAutomation()
                 self.errorMessage = error.localizedDescription
@@ -187,18 +188,39 @@ final class AppModel: ObservableObject {
         guard !demo else { errorMessage = "예시 모드를 종료한 뒤 실차에 연결해야 함"; return }
         link.connect(vin: settings.string("vin"))
     }
-    func pause() { automations.resetObservation(); link.pauseForBackground(); saveRecordsWhenAvailable(); stopSpeech() }
-    func resignActive() { automations.resetObservation(); link.resignActive(); navigation.suspendPending() }
+    private var sessionBriefed = false
+
+    func triggerDepartureBriefingIfNeeded() {
+        guard !sessionBriefed, !demo, UIApplication.shared.applicationState == .active else { return }
+        let charge = output.object("groups").object("charge")
+        guard let soc = charge.number("soc"), soc.isFinite, (0...100).contains(soc) else { return }
+        sessionBriefed = true
+
+        let units = VehicleUnits.saved
+        let hour = Calendar.current.component(.hour, from: Date())
+        let greeting = AutomationPolicy.greeting(hour: hour)
+        var msg = "\(greeting) 현재 배터리는 \(Int(soc))퍼센트입니다."
+        if let range = charge.number("rangeKm"), range.isFinite, (0...2000).contains(range) {
+            msg += " 주행 가능 거리는 \(units.format(range, suffix: " km"))입니다."
+        }
+        msg += " 오늘도 안전 운전하세요."
+        voice.say(msg, key: "session.departure.briefing", category: "voiceConnection", priority: 2, ttl: 20, manual: false)
+    }
+
+    func pause() { sessionBriefed = false; automations.resetObservation(); link.pauseForBackground(); saveRecordsWhenAvailable(); stopSpeech() }
+    func resignActive() { sessionBriefed = false; automations.resetObservation(); link.resignActive(); navigation.suspendPending() }
     func resume() {
         guard !recoveryLock, !demo, UIApplication.shared.applicationState == .active else { return }
         nextSaveAttempt = .distantPast
         if savePending { saveRecordsWhenAvailable() }
         link.resume(vin: settings.string("vin")); navigation.foregrounded(); refresh()
+        triggerDepartureBriefingIfNeeded()
     }
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
         if link.authentic { link.refreshNow(retryUnavailable: true) } else { connect() }
         refresh()
+        triggerDepartureBriefingIfNeeded()
     }
     func speak(_ text: String? = nil) {
         let fresh = output.object("fresh")

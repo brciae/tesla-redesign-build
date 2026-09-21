@@ -67,13 +67,51 @@ private struct AutomationDashboard: View {
             InfoCard {
                 if rules.isEmpty { Caption("＋에서 조건·동작을 정하거나 AI로 규칙을 만들 수 있음.") }
                 ForEach(rules) { r in
-                    HStack(spacing: 14) {
+                    HStack(spacing: 12) {
+                        Button {
+                            let sampleMsg: String
+                            if !r.message.isEmpty {
+                                sampleMsg = r.message
+                            } else {
+                                switch r.trigger {
+                                case .boarding: sampleMsg = "좋은 시간입니다. 탑승을 환영합니다. 배터리 82퍼센트입니다."
+                                case .departure: sampleMsg = "출발합니다. 안전 운전하세요."
+                                case .arrival: sampleMsg = "운행이 종료되었습니다. 수고하셨습니다."
+                                case .chargeStart: sampleMsg = "충전을 시작합니다."
+                                case .chargeEnd: sampleMsg = "충전이 완료되었습니다."
+                                case .batteryLow: sampleMsg = "배터리 잔량이 부족합니다. 충전이 필요합니다."
+                                case .tireLow: sampleMsg = "타이어 공기압이 낮습니다. 점검해 주세요."
+                                default: sampleMsg = "\(r.name) 조건이 감지되었습니다."
+                                }
+                            }
+                            model.voice.say(sampleMsg, key: "rule.preview.\(r.id)", category: "voiceAutomations", priority: 3, ttl: 10, manual: true)
+                        } label: {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.cyan)
+                                .frame(width: 32, height: 32)
+                                .background(Color.cyan.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("\(r.name) 음성 테스트")
+
                         Button { editor = r } label: {
-                            VStack(alignment: .leading, spacing: 5) { Text(r.name).font(.headline); Text(r.trigger.detail).font(.caption).foregroundStyle(Theme.muted); if r.action != .speech { Text(r.action.title).font(.caption).foregroundStyle(.cyan) } }.frame(maxWidth: .infinity, alignment: .leading)
-                        }.buttonStyle(.plain)
-                        Toggle(r.name, isOn: Binding(get: { r.enabled }, set: { store.enable(r.id, $0) })).labelsHidden().tint(.cyan)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(r.name).font(.headline)
+                                Text(r.trigger.detail).font(.caption).foregroundStyle(Theme.muted)
+                                if r.action != .speech { Text(r.action.title).font(.caption).foregroundStyle(.cyan) }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+
+                        Toggle(r.name, isOn: Binding(get: { r.enabled }, set: { store.enable(r.id, $0) }))
+                            .labelsHidden()
+                            .tint(.cyan)
+
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.muted).accessibilityHidden(true)
-                    }.padding(.vertical, 8)
+                    }
+                    .padding(.vertical, 6)
                     if r.id != rules.last?.id { Divider() }
                 }
             }

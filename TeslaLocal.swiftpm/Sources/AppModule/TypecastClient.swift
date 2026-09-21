@@ -224,6 +224,25 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
+    func queryVoiceRecommendation(name: String) async -> String? {
+        guard hasKey, let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://api.typecast.ai/v1/voices/recommendations?query=\(encoded)&count=1") else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue(activeApiKey, forHTTPHeaderField: "X-API-KEY")
+        req.timeoutInterval = 8.0
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        let items: [[String: Any]]
+        if let arr = json as? [[String: Any]] { items = arr }
+        else if let dict = json as? [String: Any], let arr = (dict["voices"] ?? dict["result"] ?? dict["data"]) as? [[String: Any]] { items = arr }
+        else { items = [] }
+        if let first = items.first, let voiceId = (first["voice_id"] ?? first["actor_id"] ?? first["id"]) as? String, !voiceId.isEmpty {
+            return voiceId
+        }
+        return nil
+    }
+
     func resolveVoiceId(for input: String) async -> String {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return Self.defaultVoiceId }
@@ -241,7 +260,19 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             return match
         }
 
-        // 3. Dynamic lookup from Typecast /v3/voices or /v2/voices API
+        // 3. Dynamic lookup from recommendations endpoint
+        if let rec = await queryVoiceRecommendation(name: trimmed) {
+            await MainActor.run {
+                self.voiceCatalog[lower] = rec
+                self.voiceCatalog[noSpaces] = rec
+                if let encoded = try? JSONEncoder().encode(self.voiceCatalog) {
+                    UserDefaults.standard.set(encoded, forKey: "typecastVoiceCatalog")
+                }
+            }
+            return rec
+        }
+
+        // 4. Fallback: refresh whole catalog from /v3/voices
         if hasKey {
             await refreshVoiceCatalog()
             if let match = voiceCatalog[lower] ?? voiceCatalog[noSpaces] {
@@ -250,6 +281,10 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             // Partial match
             if let partial = voiceCatalog.first(where: { $0.key.contains(noSpaces) || noSpaces.contains($0.key) })?.value {
                 return partial
+            }
+            // First valid tc_ voice
+            if let first = voiceCatalog.values.first(where: { $0.hasPrefix("tc_") || $0.count >= 20 }) {
+                return first
             }
         }
 
@@ -269,23 +304,43 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func cachedURL(for text: String, voiceId: String) -> URL? {
-        let key = cacheKey(for: text, voiceId: voiceId)
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = cacheKey(for: clean, voiceId: voiceId)
         let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-               let size = attrs[.size] as? UInt64, size > 100 {
-                return fileURL
-            }
+        if isFileValid(fileURL) { return fileURL }
+
+        // Also check mapped alias / resolved voice ID
+        let lower = voiceId.lowercased()
+        let noSpaces = lower.replacingOccurrences(of: " ", with: "")
+        if let mapped = voiceCatalog[lower] ?? voiceCatalog[noSpaces], mapped != voiceId {
+            let mappedKey = cacheKey(for: clean, voiceId: mapped)
+            let mappedURL = cacheDirectory.appendingPathComponent("\(mappedKey).wav")
+            if isFileValid(mappedURL) { return mappedURL }
         }
         return nil
     }
 
-    private func saveToCache(data: Data, for text: String, voiceId: String) -> URL? {
+    private func isFileValid(_ url: URL) -> Bool {
+        if FileManager.default.fileExists(atPath: url.path),
+           let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attrs[.size] as? UInt64, size > 100 {
+            return true
+        }
+        return false
+    }
+
+    private func saveToCache(data: Data, for text: String, voiceId: String, alias: String? = nil) -> URL? {
         guard data.count > 100 else { return nil }
-        let key = cacheKey(for: text, voiceId: voiceId)
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = cacheKey(for: clean, voiceId: voiceId)
         let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
         do {
             try data.write(to: fileURL, options: .atomic)
+            if let alias, !alias.isEmpty, alias != voiceId {
+                let aliasKey = cacheKey(for: clean, voiceId: alias)
+                let aliasURL = cacheDirectory.appendingPathComponent("\(aliasKey).wav")
+                try? data.write(to: aliasURL, options: .atomic)
+            }
             updateCacheCount()
             return fileURL
         } catch {
@@ -330,7 +385,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let resolvedVoice = await resolveVoiceId(for: targetVoice.isEmpty ? Self.defaultVoiceId : targetVoice)
 
         // 1. Instant Cache Hit (0 credits, 0ms latency)
-        if let cached = cachedURL(for: cleanText, voiceId: resolvedVoice) {
+        if let cached = cachedURL(for: cleanText, voiceId: targetVoice) ?? cachedURL(for: cleanText, voiceId: resolvedVoice) {
             return cached
         }
 
@@ -390,7 +445,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                             self.lastStatus = "계정 \(currentTryIdx + 1)번으로 자동 전환 및 정상 합성 완료"
                         }
                     }
-                    guard let savedURL = saveToCache(data: data, for: cleanText, voiceId: resolvedVoice) else {
+                    guard let savedURL = saveToCache(data: data, for: cleanText, voiceId: resolvedVoice, alias: targetVoice) else {
                         throw NSError(domain: "Typecast", code: 500, userInfo: [NSLocalizedDescriptionKey: "오디오 캐시 저장 실패"])
                     }
                     return savedURL

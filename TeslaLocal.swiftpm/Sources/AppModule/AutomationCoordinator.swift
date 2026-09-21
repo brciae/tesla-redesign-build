@@ -83,8 +83,12 @@ final class AutomationCoordinator: ObservableObject {
         }
         let d = groups.object("drive"), c = groups.object("closures"), charge = groups.object("charge"), tire = groups.object("tire")
         let units = VehicleUnits.saved
-        var s = AutomationSample(now: now, vehicle: state.object("settings").string("vin"))
-        s.active = !demo && link.authentic && UIApplication.shared.applicationState == .active
+        var vin = state.object("settings").string("vin")
+        if vin.isEmpty {
+            vin = UserDefaults.standard.string(forKey: "vin") ?? ""
+        }
+        var s = AutomationSample(now: now, vehicle: vin)
+        s.active = !demo && (link.authentic || link.controlEnabled || !vin.isEmpty) && UIApplication.shared.applicationState == .active
         // Do not consume the first boarding event while its enabled HVAC key is still authenticating.
         let needsHVAC = rules.contains { $0.enabled && $0.action != .speech && $0.vehicle == s.vehicle }
         s.boardingReady = !needsHVAC || !link.controlEnabled || link.controlsReady(category: "climate")
