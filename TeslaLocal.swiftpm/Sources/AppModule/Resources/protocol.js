@@ -244,7 +244,8 @@
     }
     sign(payload,pending,now){
       if (!this.info) throw Error('No authenticated session');
-      if (this.pending && now-this.pending.at < 15000) throw Error('Previous request pending');
+      const ttl = this.pending?.type === 'query' ? 3500 : 15000;
+      if (this.pending && now-this.pending.at < ttl) throw Error('Previous request pending');
       if(now<this.info.local)throw Error('Local clock rollback');
       if(this.domain===2)this.routing=this.c('random',{count:16});
       const s = this.info, id = this.c('random',{count:16}), nonce = this.c('random',{count:12});
@@ -257,7 +258,8 @@
       return hex(this.envelope(this.domain,bfield(10,unhex(sealed.cipher)),id,sig,flags));
     }
     expire(now) {
-      if (!this.pending || now-this.pending.at < 15000) return false;
+      const ttl = this.pending?.type === 'query' ? 3500 : 15000;
+      if (!this.pending || now-this.pending.at < ttl) return false;
       this.pending=null; return true;
     }
     updateSession(m,p,now) {
@@ -278,7 +280,8 @@
       const p=this.pending;
       // BLE notifications may contain other clients' or delayed replies. They
       // must not consume this request, reset its deadline, or become snapshots.
-      if (!p || now-p.at >= 15000) return {type:'ignored',reason:'late'};
+      const ttl = p?.type === 'query' ? 4000 : 15000;
+      if (!p || now-p.at >= ttl) return {type:'ignored',reason:'late'};
       const m = parse(unhex(h));
       const to=sub(m,6), from=sub(m,7);
       if (!to || hex(raw(to,2)||bytes()) !== this.routing) return {type:'ignored',reason:'routing'};

@@ -360,20 +360,29 @@ struct NavigationSetupView: View {
             // real person's voice, but Naver Map already ships those voices, so the destination can be
             // handed to it and Naver speaks the turns.
             InfoCard {
-                CardTitle(title: "네이버 지도로 안내", systemImage: "arrow.up.forward.app.fill",
-                          info: "차량이 보고한 목적지를 네이버 지도로 넘겨 그 앱이 길안내를 하도록 함. 유인나·차은우 같은 안내 음성은 네이버가 계약한 목소리라 네이버 지도 안에서만 선택할 수 있고, 이 앱이 그 목소리를 만들어 낼 수는 없음. 넘긴 뒤에는 이 앱의 안내 음성은 멈춤. 네이버 지도 앱 → 설정 → 안내 음성에서 원하는 목소리를 먼저 받아 두면 됨.")
-                Button { model.openInNaverMap() } label: {
-                    Label("현재 목적지를 네이버 지도로 보내기", systemImage: "paperplane.fill").frame(minHeight: 44)
-                }.buttonStyle(.bordered).disabled(model.demo)
-                Toggle("새 목적지를 받으면 자동으로 넘기기", isOn: $handOffToNaver)
-                Caption("자동 전환을 켜면 앱 내장 카카오 안내는 시작하지 않음.")
+                CardTitle(title: "외부 내비게이션으로 목적지 전송", systemImage: "arrow.triangle.turn.up.right.diamond.fill",
+                          info: "차량에 설정된 목적지 좌표를 선호하는 내비게이션 앱으로 즉시 전송하여 음성 길안내를 시작합니다.")
+                HStack(spacing: 8) {
+                    Button { model.openInTMap() } label: {
+                        Label("티맵", systemImage: "arrow.turn.up.right").frame(maxWidth: .infinity, minHeight: 40)
+                    }.buttonStyle(.bordered).disabled(model.demo)
+                    
+                    Button { model.openInKakaoNavi() } label: {
+                        Label("카카오내비", systemImage: "map.fill").frame(maxWidth: .infinity, minHeight: 40)
+                    }.buttonStyle(.bordered).disabled(model.demo)
+                    
+                    Button { model.openInNaverMap() } label: {
+                        Label("네이버", systemImage: "paperplane.fill").frame(maxWidth: .infinity, minHeight: 40)
+                    }.buttonStyle(.bordered).disabled(model.demo)
+                }
+                Toggle("새 목적지를 받으면 자동으로 네이버 지도로 넘기기", isOn: $handOffToNaver)
             }
             InfoCard {
-                Label("앱 안에서 바로 길안내", systemImage: "arrow.triangle.turn.up.right.diamond.fill").font(.title3)
-                Text(navigation.status)
-                Caption("카카오 길안내 · 차량 내비와 경로·도착시간 차이 가능")
-                if navigation.guiding { Button("진행 중인 내비 보기") { navigation.presented = true } }
-                Button("최신 목적지로 다시 시도") { navigation.retry(); model.refreshVehicle() }.disabled(navigation.ownsAudio || model.demo)
+                Label("운전 대시보드 3D 지도", systemImage: "map.fill").font(.title3)
+                Text(navigation.hasKey ? "카카오 정밀 내비 연동됨" : "Apple Maps 3D 내비 상시 활성화됨")
+                Caption("별도 키 등록 없이도 실시간 차량 위치·목적지 3D 지도 및 남은 거리·도착시간이 대시보드에 즉시 연동됩니다.")
+                Button("운전 대시보드 열기") { navigation.presented = true }
+                    .buttonStyle(.borderedProminent)
             }
             InfoCard {
                 Text("화면 방향").font(.headline)

@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 struct DrivingWorkspace: View {
     @EnvironmentObject private var model: AppModel
@@ -29,6 +30,11 @@ struct DrivingWorkspace: View {
                 Menu {
                     Picker("내비 테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
                 } label: { Text(navigation.theme.title).font(.subheadline).frame(minHeight: 44) }.accessibilityLabel("내비 테마 선택")
+                Menu {
+                    Button { model.openInTMap() } label: { Label("티맵으로 안내", systemImage: "arrow.turn.up.right") }
+                    Button { model.openInKakaoNavi() } label: { Label("카카오내비로 안내", systemImage: "map") }
+                    Button { model.openInNaverMap() } label: { Label("네이버 지도로 안내", systemImage: "paperplane") }
+                } label: { Image(systemName: "arrow.triangle.turn.up.right.circle").frame(width: 44, height: 44) }
                 Button { settings = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44) }.accessibilityLabel("운전 화면 설정")
             }.padding(.horizontal, 8)
             .animation(.easeInOut(duration: 0.2), value: navigation.following)
@@ -36,7 +42,13 @@ struct DrivingWorkspace: View {
                         NavigationDashboard(theme: navigation.theme, data: readout) {
                 if let controller = navigation.controller {
                     KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
-                } else { Color.black.overlay { Text(navigation.status).font(.caption).foregroundStyle(.secondary) } }
+                } else {
+                    let d = model.groups.object("drive")
+                    let lat = d.number("destinationLat")
+                    let lng = d.number("destinationLng")
+                    let destCoord: CLLocationCoordinate2D? = (lat != nil && lng != nil && lat! != 0 && lng! != 0) ? CLLocationCoordinate2D(latitude: lat!, longitude: lng!) : nil
+                    AppleMapSurface(destinationCoordinate: destCoord, destinationName: readout.destination.isEmpty ? nil : readout.destination)
+                }
             } car: {
                 ZStack {
                     if let camera = navigation.theme.carCamera {
@@ -86,7 +98,25 @@ struct DrivingWorkspace: View {
             // v29: BLE drive group stale → show the phone GPS speed from the Kakao engine instead of "—".
             r.speed = String(format: "%.0f", units.distanceValue(gpsSpeed)); r.speedFraction = gpsSpeed / 140; r.speedKmh = gpsSpeed
         }
-        r.destination = d.string("destination")
+        let dest = d.string("destination")
+        r.destination = dest
+        if !dest.isEmpty {
+            r.turn = dest
+            r.turnSymbol = "arrow.triangle.turn.up.right.diamond.fill"
+            if let arrMin = d.number("arrivalMinutes"), arrMin.isFinite, arrMin > 0 {
+                r.remaining = "\(Int(round(arrMin)))분 남음"
+                r.arrival = Date().addingTimeInterval(arrMin * 60).formatted(date: .omitted, time: .shortened)
+            }
+            if let arrKm = d.number("arrivalKm"), arrKm.isFinite, arrKm > 0 {
+                r.remainingDistance = String(format: "%.1f km", arrKm)
+                r.turnDistance = String(format: "%.1f km", arrKm)
+            }
+        } else {
+            let isMoving = (d.string("gear") == "D" || (d.number("speedKmh") ?? 0) > 2)
+            r.turn = isMoving ? "목적지 미설정 · 자유 주행" : "목적지 대기"
+            r.turnSymbol = "location.north"
+        }
+        r.road = "실시간 주행"
         if fresh.flag("charge") { r.batterySOC = c.number("soc"); r.battery = units.format(c.number("soc"), suffix: "%"); r.range = units.format(c.number("rangeKm"), suffix: " km"); r.rangeKm = c.number("rangeKm") }
         if fresh.flag("drive"), let arrival = d.number("arrivalSOC"), arrival.isFinite, (0...100).contains(arrival) { r.arrivalSOC = arrival }
         // Head/tail lights after sunset (solar elevation at the car position, Seoul when unknown).
@@ -101,47 +131,51 @@ struct DrivingWorkspace: View {
         readMedia(into: &r, fresh: fresh)
         if fresh.flag("climate") { r.inside = units.format(t.number("insideC"), suffix: "°C"); r.outside = units.format(t.number("outsideC"), suffix: "°C") }
         let n = navigation.telemetry
-        guard let stamp = n["at"] as? Double, (0...10).contains(Date().timeIntervalSince1970 - stamp), n["valid"] as? Bool == true else { return r }
-        func text(_ key: String, _ fallback: String = "") -> String { n[key] as? String ?? fallback }
-        func distance(_ key: String) -> String {
-            guard let metres = n[key] as? Double, metres.isFinite, metres >= 0 else { return "—" }
-            if units.distance == "mi" { return units.format(metres / 1000, suffix: " km", digits: 1) }
-            return metres >= 1000 ? String(format: "%.1f km", metres / 1000) : String(format: "%.0f m", metres)
-        }
-        if n["braking"] as? Bool == true { r.braking = true }
-        if let through = n["laneThrough"] as? Int, through > 0 {
-            r.currentRoadLanes = through
-        } else if let lanes = n["roadLanes"] as? Int, lanes > 0 {
-            r.currentRoadLanes = lanes
-        }
-        if let roadClass = n["roadClass"] as? String, !roadClass.isEmpty { r.currentRoadClass = roadClass }
-        if let path = n["routePath"] as? [[NSNumber]] { r.routePath = path.flatMap { $0.prefix(2).map(\.doubleValue) } }
-        r.road = text("road", "위치 확인 중"); r.turn = text("turn", "경로 확인 중"); r.turnSymbol = text("symbol", "location.north")
-        r.exitClock = n["exitClock"] as? Int ?? 0
-        r.nextExitClock = n["nextExitClock"] as? Int ?? 0
-        if n["motionValid"] as? Bool == true, let bend = n["routeBend"] as? Double, bend.isFinite {
-            r.routeBend = max(-1, min(1, bend)); r.motionValid = true
-        }
-        r.turnDistance = distance("turnMetres"); r.highway = text("highway")
-        if !text("nextTurn").isEmpty { r.next = distance("nextMetres") + " · " + text("nextTurn"); r.nextSymbol = text("nextSymbol", "arrow.up") }
-        r.remainingDistance = distance("remainMetres")
-        r.gpsLive = n["gps"] as? Bool == true
-        if let count = n["laneCount"] as? Int, count > 0 {
-            r.laneCount = count
-            r.laneSuggested = (n["laneSuggested"] as? [NSNumber] ?? []).map(\.intValue).filter { $0 >= 0 && $0 < count }
-            if n["laneMetres"] != nil { r.laneDistance = distance("laneMetres") }
-        }
-        if let raw = n["laneRaw"] as? String { r.laneRaw = raw }
-        if let limit = n["speedLimit"] as? Int, limit > 0 {
-            r.speedLimit = limit
-            if n["speedLimitMetres"] != nil { r.speedLimitDistance = distance("speedLimitMetres") }
-        }
-        if let remain = n["remainMetres"] as? Double, let total = n["routeTotalMetres"] as? Double, total > 0 {
-            r.routeProgress = max(0, min(1, 1 - remain / total))
-        }
-        if let seconds = n["remainSeconds"] as? Double, seconds.isFinite, seconds >= 0 {
-            r.remaining = "\(Int(ceil(seconds / 60)))분 남음"
-            r.arrival = Date(timeIntervalSinceNow: seconds).formatted(date: .omitted, time: .shortened)
+        if let stamp = n["at"] as? Double, (0...10).contains(Date().timeIntervalSince1970 - stamp), n["valid"] as? Bool == true {
+            func text(_ key: String, _ fallback: String = "") -> String { n[key] as? String ?? fallback }
+            func distance(_ key: String) -> String {
+                guard let metres = n[key] as? Double, metres.isFinite, metres >= 0 else { return "—" }
+                if units.distance == "mi" { return units.format(metres / 1000, suffix: " km", digits: 1) }
+                return metres >= 1000 ? String(format: "%.1f km", metres / 1000) : String(format: "%.0f m", metres)
+            }
+            if n["braking"] as? Bool == true { r.braking = true }
+            if let through = n["laneThrough"] as? Int, through > 0 {
+                r.currentRoadLanes = through
+            } else if let lanes = n["roadLanes"] as? Int, lanes > 0 {
+                r.currentRoadLanes = lanes
+            }
+            if let roadClass = n["roadClass"] as? String, !roadClass.isEmpty { r.currentRoadClass = roadClass }
+            if let path = n["routePath"] as? [[NSNumber]] { r.routePath = path.flatMap { $0.prefix(2).map(\.doubleValue) } }
+            if !text("road").isEmpty { r.road = text("road") }
+            if !text("turn").isEmpty { r.turn = text("turn") }
+            if !text("symbol").isEmpty { r.turnSymbol = text("symbol") }
+            r.exitClock = n["exitClock"] as? Int ?? 0
+            r.nextExitClock = n["nextExitClock"] as? Int ?? 0
+            if n["motionValid"] as? Bool == true, let bend = n["routeBend"] as? Double, bend.isFinite {
+                r.routeBend = max(-1, min(1, bend)); r.motionValid = true
+            }
+            if n["turnMetres"] != nil { r.turnDistance = distance("turnMetres") }
+            r.highway = text("highway")
+            if !text("nextTurn").isEmpty { r.next = distance("nextMetres") + " · " + text("nextTurn"); r.nextSymbol = text("nextSymbol", "arrow.up") }
+            if n["remainMetres"] != nil { r.remainingDistance = distance("remainMetres") }
+            r.gpsLive = n["gps"] as? Bool == true
+            if let count = n["laneCount"] as? Int, count > 0 {
+                r.laneCount = count
+                r.laneSuggested = (n["laneSuggested"] as? [NSNumber] ?? []).map(\.intValue).filter { $0 >= 0 && $0 < count }
+                if n["laneMetres"] != nil { r.laneDistance = distance("laneMetres") }
+            }
+            if let raw = n["laneRaw"] as? String { r.laneRaw = raw }
+            if let limit = n["speedLimit"] as? Int, limit > 0 {
+                r.speedLimit = limit
+                if n["speedLimitMetres"] != nil { r.speedLimitDistance = distance("speedLimitMetres") }
+            }
+            if let remain = n["remainMetres"] as? Double, let total = n["routeTotalMetres"] as? Double, total > 0 {
+                r.routeProgress = max(0, min(1, 1 - remain / total))
+            }
+            if let seconds = n["remainSeconds"] as? Double, seconds.isFinite, seconds >= 0 {
+                r.remaining = "\(Int(ceil(seconds / 60)))분 남음"
+                r.arrival = Date(timeIntervalSinceNow: seconds).formatted(date: .omitted, time: .shortened)
+            }
         }
         return r
     }

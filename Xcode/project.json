@@ -141,7 +141,9 @@
       "audio"
      ],
      "LSApplicationQueriesSchemes": [
-      "nmap"
+      "nmap",
+      "tmap",
+      "kakaonavi"
      ],
      "UISupportedInterfaceOrientations": [
       "UIInterfaceOrientationPortrait",

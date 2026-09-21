@@ -80,7 +80,17 @@ final class AppModel: ObservableObject {
                 let previousCount = self.state.rows("trips").count
                 let previousCharges = self.state.rows("charges").count
                 self.output = try self.runtime.call("ingest", snapshot) as? Object ?? [:]
-                if snapshot.object("groups")["drive"] != nil { self.considerNavigation() }
+                if snapshot.object("groups")["drive"] != nil {
+                    self.considerNavigation()
+                    let d = snapshot.object("groups").object("drive")
+                    let gear = d.string("gear")
+                    let speed = d.number("speedKmh") ?? 0
+                    if (gear == "D" || gear == "R" || speed > 5), !self.navigation.presented, UIApplication.shared.applicationState == .active {
+                        if UserDefaults.standard.object(forKey: "autoDrivingDashboard") == nil || UserDefaults.standard.bool(forKey: "autoDrivingDashboard") {
+                            self.navigation.presented = true
+                        }
+                    }
+                }
                 if self.state.rows("trips").count > previousCount || self.state.rows("charges").count > previousCharges || Date().timeIntervalSince(self.lastSaved) > 5 { self.saveRecordsWhenAvailable() }
                 self.automations.observe(output: self.output, previousTrips: previousCount, previousCharges: previousCharges, link: self.link, voice: self.voice, demo: self.demo)
             } catch {
@@ -214,6 +224,36 @@ final class AppModel: ObservableObject {
             // Naver speaks the turns from here on; this app going on talking over it helps nobody.
             voice.stop()
         } catch { errorMessage = error.localizedDescription }
+    }
+    func openInTMap() {
+        guard !demo else { errorMessage = "예시 모드에서는 길안내를 넘기지 않음"; return }
+        let d = groups.object("drive")
+        guard let lat = d.number("destinationLat"), let lng = d.number("destinationLng"), lat != 0, lng != 0 else {
+            errorMessage = "목적지 좌표 미수신 · 차량 내비 목적지 설정 필요"
+            return
+        }
+        let name = (d.string("destination").isEmpty ? "목적지" : d.string("destination")).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "목적지"
+        if let url = URL(string: "tmap://route?goalname=\(name)&goallat=\(lat)&goallng=\(lng)") {
+            UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                if opened { self?.voice.stop() }
+                else if let store = URL(string: "https://apps.apple.com/kr/app/id431589174") { UIApplication.shared.open(store) }
+            }
+        }
+    }
+    func openInKakaoNavi() {
+        guard !demo else { errorMessage = "예시 모드에서는 길안내를 넘기지 않음"; return }
+        let d = groups.object("drive")
+        guard let lat = d.number("destinationLat"), let lng = d.number("destinationLng"), lat != 0, lng != 0 else {
+            errorMessage = "목적지 좌표 미수신 · 차량 내비 목적지 설정 필요"
+            return
+        }
+        let name = (d.string("destination").isEmpty ? "목적지" : d.string("destination")).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "목적지"
+        if let url = URL(string: "kakaonavi://navigate?name=\(name)&x=\(lng)&y=\(lat)&coord_type=wgs84") {
+            UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                if opened { self?.voice.stop() }
+                else if let store = URL(string: "https://apps.apple.com/kr/app/id417698864") { UIApplication.shared.open(store) }
+            }
+        }
     }
     private func considerNavigation() {
         // v29: observe in background too — clear/refresh decisions must keep flowing while locked.

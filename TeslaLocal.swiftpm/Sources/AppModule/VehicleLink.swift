@@ -429,9 +429,9 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         if !foreground, backgroundWanted, !userDisconnected, let p = peripheral, central?.state == .poweredOn { backgroundReconnect(p); return }
         resetTransport(); status = message
         guard foreground, !userDisconnected, !wantedVIN.isEmpty, central?.state == .poweredOn else { return }
-        let delays: [Double] = [2, 5, 10, 20, 30]
+        let delays: [Double] = [1, 2, 4, 8, 15]
         let delay = delays[min(retryCount, delays.count - 1)]; retryCount += 1
-        status = "\(message) · \(Int(delay))초 후 재검색"
+        status = "\(message) · \(Int(delay))초 후 재연결"
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in self?.retryTimer = nil; self?.beginConnection() }
         retryTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
@@ -522,8 +522,8 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
             let hex = try runtime.call(op, argument) as? String ?? ""
             if op == "wireQuery" { currentReadGroup = argument.string("group") }
             awaitingReply = true; try send(hex)
-            // JS pending TTL is 15 seconds. Never issue a new request before it expires.
-            timeout(16) { [weak self] in self?.responseTimedOut(op: op) }
+            let waitTime: TimeInterval = op == "wireQuery" ? 4.0 : 12.0
+            timeout(waitTime) { [weak self] in self?.responseTimedOut(op: op) }
         } catch { awaitingReply = false; fail(error.localizedDescription) }
     }
     private func responseTimedOut(op: String) {
@@ -532,22 +532,23 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         do {
             guard (try runtime.call("wireExpire") as? Bool) == true else { fail("응답 기한 처리 실패 · 다시 연결 필요"); return }
         } catch { fail(error.localizedDescription); return }
-        awaitingReply = false; responseTimeouts += 1; consecutiveTimeouts += 1
+        awaitingReply = false; responseTimeouts += 1
+        if currentReadGroup == "drive" { consecutiveTimeouts += 1 }
         guard op == "wireQuery", authentic, !writeInFlight, chunks.isEmpty else {
-            recoverTransport("차량 응답 없음 · 키 승인·수면 상태 확인 필요"); return
+            recoverTransport("차량 응답 없음 · 재검색 중"); return
         }
         // A silent data group must not repeatedly starve all following groups.
         // Retry these groups after cooldown, explicit refresh or a new connection.
         if currentReadGroup == "drive" || currentReadGroup == "location" {
-            groupRetryAt[currentReadGroup] = ProcessInfo.processInfo.systemUptime + 2
+            groupRetryAt[currentReadGroup] = ProcessInfo.processInfo.systemUptime + 1.5
         } else if !currentReadGroup.isEmpty {
             timedOutGroups.insert(currentReadGroup)
-            groupRetryAt[currentReadGroup] = ProcessInfo.processInfo.systemUptime + 30
+            groupRetryAt[currentReadGroup] = ProcessInfo.processInfo.systemUptime + 15
         }
         if pendingControl != nil { cancelConfirmation(); controlStatus = "정차 상태 조회 지연 · 명령 전송 없음" }
-        if consecutiveTimeouts < 2 { status = "일부 조회 응답 지연 · 다음 항목 조회 유지"; poll(); return }
-        guard recoveryAttempts < 1 else { recoverTransport("응답 지연 반복 · 연결 복구 중"); return }
-        recoveryAttempts += 1; status = "응답 지연 · 조회 세션 재인증 1회"; authenticate()
+        if consecutiveTimeouts < 3 { poll(); return }
+        guard recoveryAttempts < 3 else { recoverTransport("응답 지연 반복 · 연결 복구 중"); return }
+        recoveryAttempts += 1; status = "응답 지연 · 조회 세션 재인증"; authenticate()
     }
     private func send(_ hex: String) throws {
         guard let p = peripheral, writer != nil, chunks.isEmpty, !writeInFlight else { throw LocalError.message("BLE 전송 상태 오류") }
@@ -586,6 +587,8 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
                     queryIndex = 0; startPolling(); refreshNow()
                 } else if result.string("type") == "data" {
                     protocolResyncs = 0
+                    consecutiveTimeouts = 0
+                    recoveryAttempts = 0
                     let snapshot = result.object("snapshot")
                     for (k, v) in snapshot.object("groups") { telemetryGroups[k] = v }
                     let drive = snapshot.object("groups").object("drive"), gear = drive.string("gear")
