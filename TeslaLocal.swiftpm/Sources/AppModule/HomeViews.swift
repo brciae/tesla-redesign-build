@@ -81,6 +81,7 @@ struct HomeView: View {
 
                 // Active Charging Indicator (Only shown when vehicle is charging)
                 if isCharging {
+                    let soc = c.number("soc")
                     NavigationLink(value: Page.charging) {
                         HStack(spacing: 12) {
                             ZStack {
@@ -92,7 +93,7 @@ struct HomeView: View {
                                     .foregroundStyle(Color(red: 0.28, green: 0.88, blue: 0.42))
                             }
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("충전 중 · \(Int(round(batterySOC)))%")
+                                Text(soc != nil ? "충전 중 · \(Int(round(soc!)))%" : "충전 중")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(.white)
                                 if let kmH = c.number("chargeKmH"), kmH > 0 {
