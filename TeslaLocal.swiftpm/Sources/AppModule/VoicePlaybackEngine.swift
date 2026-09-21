@@ -211,9 +211,9 @@ final class RecordedAudioPlaylistPlayer: NSObject, AVAudioPlayerDelegate {
         data.append(contentsOf: [UInt8]("WAVE".utf8))
 
         data.append(contentsOf: [UInt8]("fmt ".utf8))
-        var subchunk1Size: UInt32 = 16.littleEndian
+        var subchunk1Size: UInt32 = UInt32(16).littleEndian
         data.append(Data(bytes: &subchunk1Size, count: 4))
-        var audioFormat: UInt16 = 1.littleEndian
+        var audioFormat: UInt16 = UInt16(1).littleEndian
         data.append(Data(bytes: &audioFormat, count: 2))
         var channels = numChannels.littleEndian
         data.append(Data(bytes: &channels, count: 2))
