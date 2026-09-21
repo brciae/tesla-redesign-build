@@ -156,7 +156,7 @@ struct PreferencesView: View {
         }
         return "사용자 지정 Voice ID"
     }
-    }
+
     private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         VStack(alignment: .leading) { HStack { Text(title); Spacer(); Text(String(format: "%.2f", value.wrappedValue)).monospacedDigit() }; Slider(value: value, in: range) }
     }
