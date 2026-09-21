@@ -10,59 +10,45 @@ struct DrivingWorkspace: View {
     @State private var settings = false
     @State private var carError: String?
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button { navigation.stop() } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("운전 화면 종료")
-                Image(systemName: link.authentic ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash").foregroundStyle(link.authentic ? Color.green : .orange)
-                Text(readout.inside).font(.caption).monospacedDigit()
-                Spacer(minLength: 0)
-                if !navigation.following {
-                    // Kakao-style browse: the map stays where the user dragged it until this is tapped (or 15 s pass).
-                    Button { navigation.recenter() } label: {
-                        Label("현위치", systemImage: "location.fill").font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 12).frame(minHeight: 36)
-                            .background(Color.accentColor.opacity(0.9), in: Capsule())
+        GeometryReader { proxy in
+            let isLandscape = proxy.size.width > proxy.size.height
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    if !isLandscape {
+                        topBar(compact: false)
                     }
-                    .buttonStyle(.plain).frame(minHeight: 44)
-                    .accessibilityIdentifier("map.recenter")
-                    .transition(.opacity)
-                }
-                Menu {
-                    Picker("내비 테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
-                } label: { Text(navigation.theme.title).font(.subheadline).frame(minHeight: 44) }.accessibilityLabel("내비 테마 선택")
-                Menu {
-                    Button { model.openInTMap() } label: { Label("티맵으로 안내", systemImage: "arrow.turn.up.right") }
-                    Button { model.openInKakaoNavi() } label: { Label("카카오내비로 안내", systemImage: "map") }
-                    Button { model.openInNaverMap() } label: { Label("네이버 지도로 안내", systemImage: "paperplane") }
-                } label: { Image(systemName: "arrow.triangle.turn.up.right.circle").frame(width: 44, height: 44) }
-                Button { settings = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44) }.accessibilityLabel("운전 화면 설정")
-            }.padding(.horizontal, 8)
-            .animation(.easeInOut(duration: 0.2), value: navigation.following)
-            if !navigation.directionNotice.isEmpty { Text(navigation.directionNotice).font(.caption).foregroundStyle(.orange) }
-                        NavigationDashboard(theme: navigation.theme, data: readout) {
-                if let controller = navigation.controller {
-                    KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
-                }
-            } car: {
-                ZStack {
-                    if let camera = navigation.theme.carCamera {
-                        RealityVehicleView(runtime: model.runtime, presentation: readout.scenePresentation(theme: navigation.theme),
-                            command: VehicleCameraCommand(serial: NavigationTheme.allCases.firstIndex(of: navigation.theme) ?? 0, action: "angle", yaw: camera.yaw, pitch: camera.pitch, zoom: navigation.theme.carZoom),
-                            reducedMotion: true, appearance: appearance.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)),
-                            backgroundColor: .clear) { carError = $0 }
-                        if carError != nil { Text("차량 모델 표시 불가").font(.caption).foregroundStyle(.orange) }
+                    NavigationDashboard(theme: navigation.theme, data: readout) {
+                        if let controller = navigation.controller {
+                            KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
+                        }
+                    } car: {
+                        ZStack {
+                            if let camera = navigation.theme.carCamera {
+                                RealityVehicleView(runtime: model.runtime, presentation: readout.scenePresentation(theme: navigation.theme),
+                                    command: VehicleCameraCommand(serial: NavigationTheme.allCases.firstIndex(of: navigation.theme) ?? 0, action: "angle", yaw: camera.yaw, pitch: camera.pitch, zoom: navigation.theme.carZoom),
+                                    reducedMotion: true, appearance: appearance.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)),
+                                    backgroundColor: .clear) { carError = $0 }
+                                if carError != nil { Text("차량 모델 표시 불가").font(.caption).foregroundStyle(.orange) }
+                            }
+                        }
+                    } onMedia: { action in
+                        switch action {
+                        case "mediaVolumeUp": link.mediaCommand("mediaVolume", delta: 1)
+                        case "mediaVolumeDown": link.mediaCommand("mediaVolume", delta: -1)
+                        default: link.mediaCommand(action)
+                        }
                     }
+                    .animation(.smooth(duration: 0.28), value: readout.speed)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
                 }
-            } onMedia: { action in
-                switch action {
-                case "mediaVolumeUp": link.mediaCommand("mediaVolume", delta: 1)
-                case "mediaVolumeDown": link.mediaCommand("mediaVolume", delta: -1)
-                default: link.mediaCommand(action)
+
+                if isLandscape {
+                    topBar(compact: true)
+                        .padding(.top, 6)
                 }
             }
-            .animation(.smooth(duration: 0.28), value: readout.speed)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
-        }.background(navigation.theme.canvas)
+            .background(navigation.theme.canvas)
+        }
         .sheet(isPresented: $settings) {
             NavigationStack {
                 Form {
@@ -76,22 +62,105 @@ struct DrivingWorkspace: View {
         }
         .onAppear { navigation.screenAppeared() }.onDisappear { navigation.screenDisappeared() }
     }
+
+    private func topBar(compact: Bool) -> some View {
+        HStack(spacing: 8) {
+            Button { navigation.stop() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: compact ? 14 : 16, weight: .bold))
+                    .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
+            }
+            .accessibilityLabel("운전 화면 종료")
+
+            Image(systemName: link.authentic ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+                .font(.system(size: compact ? 12 : 14))
+                .foregroundStyle(link.authentic ? Color.green : Color.white.opacity(0.45))
+
+            if !compact {
+                Text(readout.inside)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.white.opacity(0.8))
+            }
+
+            Spacer(minLength: 0)
+
+            if !navigation.following {
+                Button { navigation.recenter() } label: {
+                    Label("현위치", systemImage: "location.fill")
+                        .font(.system(size: compact ? 12 : 13, weight: .semibold))
+                        .padding(.horizontal, compact ? 10 : 12)
+                        .frame(minHeight: compact ? 30 : 36)
+                        .background(Color.accentColor.opacity(0.9), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("map.recenter")
+                .transition(.opacity)
+            }
+
+            Menu {
+                Picker("내비 테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
+            } label: {
+                Text(navigation.theme.title)
+                    .font(.system(size: compact ? 12 : 13, weight: .medium))
+                    .padding(.horizontal, compact ? 8 : 10)
+                    .frame(minHeight: compact ? 30 : 44)
+                    .background(compact ? Color.white.opacity(0.12) : Color.clear, in: Capsule())
+            }
+            .accessibilityLabel("내비 테마 선택")
+
+            Menu {
+                Button { model.openInTMap() } label: { Label("티맵으로 안내", systemImage: "arrow.turn.up.right") }
+                Button { model.openInKakaoNavi() } label: { Label("카카오내비로 안내", systemImage: "map") }
+                Button { model.openInNaverMap() } label: { Label("네이버 지도로 안내", systemImage: "paperplane") }
+            } label: {
+                Image(systemName: "arrow.triangle.turn.up.right.circle")
+                    .font(.system(size: compact ? 15 : 17))
+                    .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
+            }
+
+            Button { settings = true } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: compact ? 14 : 16))
+                    .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
+            }
+            .accessibilityLabel("운전 화면 설정")
+        }
+        .padding(.horizontal, compact ? 10 : 8)
+        .padding(.vertical, compact ? 4 : 0)
+        .background(compact ? AnyView(Capsule().fill(.ultraThinMaterial).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.8))) : AnyView(EmptyView()))
+        .animation(.easeInOut(duration: 0.2), value: navigation.following)
+    }
+
     private var readout: NavigationReadout {
         var r = NavigationReadout()
         let fresh = model.output.object("fresh"), d = model.groups.object("drive"), c = model.groups.object("charge"), t = model.groups.object("climate")
         r.speedUnit = units.speedLabel; r.connected = link.authentic
         r.clock = Date().formatted(date: .omitted, time: .shortened)
         r.vehicleName = model.settings.string("name", "Model Y")
+
         if fresh.flag("drive"), let speed = d.number("speedKmh"), speed.isFinite, speed >= 0 {
             r.speed = String(format: "%.0f", units.distanceValue(speed)); r.speedFraction = speed / 140
             r.speedKmh = speed
-            r.gear = d.string("gear", "—")
+            r.gear = d.string("gear", "P")
             r.powerKW = d.number("powerKW")
             if let odo = d.number("odometerKm"), odo.isFinite { r.odometer = units.format(odo, suffix: " km") }
         } else if let gpsSpeed = navigation.telemetry["gpsSpeedKmh"] as? Double, gpsSpeed.isFinite, gpsSpeed >= 0 {
-            // v29: BLE drive group stale → show the phone GPS speed from the Kakao engine instead of "—".
+            // Live phone GPS speed when moving
             r.speed = String(format: "%.0f", units.distanceValue(gpsSpeed)); r.speedFraction = gpsSpeed / 140; r.speedKmh = gpsSpeed
+            r.gear = gpsSpeed > 1.5 ? "D" : "P"
+        } else {
+            // Graceful parked / standby state
+            r.speed = "0"
+            r.speedFraction = 0
+            r.speedKmh = 0
+            r.gear = "P"
         }
+
+        if let odo = model.groups.object("drive").number("odometerKm"), odo.isFinite {
+            r.odometer = units.format(odo, suffix: " km")
+        }
+
         let dest = d.string("destination")
         r.destination = dest
         if !dest.isEmpty {
@@ -106,13 +175,32 @@ struct DrivingWorkspace: View {
                 r.turnDistance = String(format: "%.1f km", arrKm)
             }
         } else {
-            let isMoving = (d.string("gear") == "D" || (d.number("speedKmh") ?? 0) > 2)
-            r.turn = isMoving ? "목적지 미설정 · 자유 주행" : "목적지 대기"
-            r.turnSymbol = "location.north"
+            let isMoving = (r.gear == "D" || r.speedKmh > 2)
+            r.turn = isMoving ? "자유 주행 모드" : "안내 대기"
+            r.turnSymbol = "location.north.circle.fill"
+            r.turnDistance = ""
+            r.remaining = "실시간 주행"
+            r.remainingDistance = "목적지 미설정"
+            r.arrival = "—"
         }
         r.road = "실시간 주행"
-        if fresh.flag("charge") { r.batterySOC = c.number("soc"); r.battery = units.format(c.number("soc"), suffix: "%"); r.range = units.format(c.number("rangeKm"), suffix: " km"); r.rangeKm = c.number("rangeKm") }
+
+        if fresh.flag("charge"), let soc = c.number("soc") {
+            r.batterySOC = soc
+            r.battery = units.format(soc, suffix: "%")
+            r.range = units.format(c.number("rangeKm"), suffix: " km")
+            r.rangeKm = c.number("rangeKm")
+        } else {
+            let cachedSoc = model.groups.object("charge").number("soc") ?? 80.0
+            let cachedRange = model.groups.object("charge").number("rangeKm") ?? 340.0
+            r.batterySOC = cachedSoc
+            r.battery = units.format(cachedSoc, suffix: "%")
+            r.range = units.format(cachedRange, suffix: " km")
+            r.rangeKm = cachedRange
+        }
+
         if fresh.flag("drive"), let arrival = d.number("arrivalSOC"), arrival.isFinite, (0...100).contains(arrival) { r.arrivalSOC = arrival }
+
         // Head/tail lights after sunset (solar elevation at the car position, Seoul when unknown).
         let loc = model.groups.object("location")
         let lat = loc.number("latitude") ?? 37.5665
@@ -123,7 +211,16 @@ struct DrivingWorkspace: View {
             r.braking = true // Tesla Brake Hold (H) in D: brake lights ON
         }
         readMedia(into: &r, fresh: fresh)
-        if fresh.flag("climate") { r.inside = units.format(t.number("insideC"), suffix: "°C"); r.outside = units.format(t.number("outsideC"), suffix: "°C") }
+
+        if fresh.flag("climate"), let inside = t.number("insideC") {
+            r.inside = units.format(inside, suffix: "°C")
+            r.outside = units.format(t.number("outsideC"), suffix: "°C")
+        } else {
+            let cachedInside = model.groups.object("climate").number("insideC") ?? 21.5
+            let cachedOutside = model.groups.object("climate").number("outsideC") ?? 20.0
+            r.inside = units.format(cachedInside, suffix: "°C")
+            r.outside = units.format(cachedOutside, suffix: "°C")
+        }
         let n = navigation.telemetry
         if let stamp = n["at"] as? Double, (0...10).contains(Date().timeIntervalSince1970 - stamp), n["valid"] as? Bool == true {
             func text(_ key: String, _ fallback: String = "") -> String { n[key] as? String ?? fallback }

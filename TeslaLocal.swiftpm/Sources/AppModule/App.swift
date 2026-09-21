@@ -126,8 +126,19 @@ struct PageBody<Content: View>: View {
     let title: String
     @ViewBuilder var content: () -> Content
     var body: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 24, content: content).frame(maxWidth: 680).padding(24).frame(maxWidth: .infinity) }
-            .background(Theme.bg).navigationTitle(title).navigationBarTitleDisplayMode(.inline).toolbar(.visible, for: .navigationBar)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24, content: content)
+                .frame(maxWidth: 680)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 32)
+                .frame(maxWidth: .infinity)
+        }
+        .background(Theme.bg)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Theme.bg, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 }
 struct InfoCard<Content: View>: View {
@@ -229,9 +240,17 @@ struct TripsView: View {
     @State private var period = 30
     @State private var assumedCapacity = 75.0
 
-    private static let tripDateFormatter: DateFormatter = {
+    private static let shortMonthDayFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "M/d"
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "M.d"
+        return f
+    }()
+
+    private static let shortTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "HH:mm"
         return f
     }()
 
@@ -277,16 +296,16 @@ struct TripsView: View {
                 }
                 let recentTrips = Array(model.state.rows("trips").suffix(7))
                 if !recentTrips.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
+                    let maxDist = recentTrips.compactMap { $0.number("distanceKm") }.map { units.distanceValue($0) }.max() ?? 10.0
+                    let yDomainMax = max(maxDist * 1.30, 20.0)
+
+                    VStack(alignment: .leading, spacing: 10) {
                         Text("최근 운행 거리").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Chart {
-                            ForEach(Array(recentTrips.enumerated()), id: \.element.selfID) { idx, t in
-                                let date = Date(timeIntervalSince1970: (t.number("start") ?? 0) / 1000)
-                                let dateLabel = Self.tripDateFormatter.string(from: date)
-                                let label = recentTrips.count > 1 ? "\(dateLabel) (#\(idx + 1))" : dateLabel
+                            ForEach(recentTrips, id: \.selfID) { t in
                                 let dist = units.distanceValue(t.number("distanceKm") ?? 0)
                                 BarMark(
-                                    x: .value("일시", label),
+                                    x: .value("운행", t.selfID),
                                     y: .value("거리", dist)
                                 )
                                 .cornerRadius(6)
@@ -301,12 +320,37 @@ struct TripsView: View {
                                     if dist > 0 {
                                         Text(String(format: "%.1f", dist))
                                             .font(.system(size: 9, weight: .bold))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(Color.white.opacity(0.8))
+                                            .padding(.bottom, 2)
                                     }
                                 }
                             }
                         }
-                        .frame(height: 140)
+                        .chartXAxis {
+                            AxisMarks(values: recentTrips.map(\.selfID)) { value in
+                                if let id = value.as(String.self),
+                                   let t = recentTrips.first(where: { $0.selfID == id }) {
+                                    let date = Date(timeIntervalSince1970: (t.number("start") ?? 0) / 1000)
+                                    AxisValueLabel {
+                                        VStack(spacing: 2) {
+                                            Text(Self.shortMonthDayFormatter.string(from: date))
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .foregroundStyle(Color.white.opacity(0.9))
+                                            Text(Self.shortTimeFormatter.string(from: date))
+                                                .font(.system(size: 8, weight: .regular))
+                                                .foregroundStyle(Color.white.opacity(0.55))
+                                        }
+                                        .fixedSize()
+                                    }
+                                }
+                            }
+                        }
+                        .chartYScale(domain: 0...yDomainMax)
+                        .chartPlotStyle { plotArea in
+                            plotArea.clipped()
+                        }
+                        .frame(height: 155)
+                        .clipped()
                     }
                     .padding(.top, 6)
                 }

@@ -7,6 +7,20 @@ struct BatteryOverview: View {
     let usage: Object
     @Binding var days: Int
     private let accent = Color(red: 0.30, green: 0.86, blue: 0.65)
+    private static let batteryChartDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "M/d HH시"
+        return f
+    }()
+
+    private static let tripRowDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "M월 d일 HH:mm"
+        return f
+    }()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
@@ -41,55 +55,91 @@ struct BatteryOverview: View {
                 measure("거리당 잔량 사용", usage.number("socPer100Km"), "%p/100km")
                 measure("기록 거리", usage.number("distanceKm"), "km")
             }
-            let trend = usage.rows("trend").sorted { ($0.number("at") ?? 0) < ($1.number("at") ?? 0) }
-            if !trend.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
+            let rawTrend = usage.rows("trend").sorted { ($0.number("at") ?? 0) < ($1.number("at") ?? 0) }
+            var cleanedTrend: [Object] {
+                var list: [Object] = []
+                var lastAt: Double = -1
+                for pt in rawTrend {
+                    guard let at = pt.number("at"), let soc = pt.number("soc"), soc >= 0, soc <= 100 else { continue }
+                    if at >= lastAt + 60_000 {
+                        list.append(pt)
+                        lastAt = at
+                    } else if !list.isEmpty {
+                        list[list.count - 1] = pt
+                        lastAt = at
+                    }
+                }
+                return list
+            }
+            if !cleanedTrend.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("배터리 잔량 추이").font(.headline)
                         Spacer()
-                        if let lastSOC = trend.last?.number("soc") {
+                        if let lastSOC = cleanedTrend.last?.number("soc") {
                             Text("\(Int(lastSOC))%")
-                                .font(.subheadline.bold())
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
                                 .foregroundStyle(Color.cyan)
                         }
                     }
+                    .padding(.bottom, 2)
+
                     Chart {
-                        ForEach(trend, id: \.batteryRowID) { point in
+                        ForEach(cleanedTrend, id: \.batteryRowID) { point in
+                            let at = (point.number("at") ?? 0) / 1000
+                            let soc = min(100.0, max(0.0, point.number("soc") ?? 0))
                             AreaMark(
-                                x: .value("시각", Date(timeIntervalSince1970: (point.number("at") ?? 0) / 1000)),
-                                y: .value("잔량", point.number("soc") ?? 0)
+                                x: .value("시각", Date(timeIntervalSince1970: at)),
+                                y: .value("잔량", soc)
                             )
-                            .interpolationMethod(.monotone)
+                            .interpolationMethod(.linear)
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.cyan.opacity(0.35), Color.blue.opacity(0.05)],
+                                    colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.04)],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )
                             )
 
                             LineMark(
-                                x: .value("시각", Date(timeIntervalSince1970: (point.number("at") ?? 0) / 1000)),
-                                y: .value("잔량", point.number("soc") ?? 0)
+                                x: .value("시각", Date(timeIntervalSince1970: at)),
+                                y: .value("잔량", soc)
                             )
-                            .interpolationMethod(.monotone)
+                            .interpolationMethod(.linear)
                             .foregroundStyle(Color.cyan)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5))
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                         }
                     }
                     .chartYScale(domain: 0...100)
                     .chartYAxis {
                         AxisMarks(values: [0, 25, 50, 75, 100]) { value in
                             AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
-                                .foregroundStyle(Color.white.opacity(0.15))
+                                .foregroundStyle(Color.white.opacity(0.12))
                             AxisValueLabel {
                                 if let intVal = value.as(Int.self) {
-                                    Text("\(intVal)%").font(.caption2).foregroundStyle(.secondary)
+                                    Text("\(intVal)%").font(.caption2).foregroundStyle(Color.white.opacity(0.55))
                                 }
                             }
                         }
                     }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
+                                .foregroundStyle(Color.white.opacity(0.08))
+                            AxisValueLabel {
+                                if let date = value.as(Date.self) {
+                                    Text(Self.batteryChartDateFormatter.string(from: date))
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Color.white.opacity(0.55))
+                                }
+                            }
+                        }
+                    }
+                    .chartPlotStyle { plotArea in
+                        plotArea.clipped()
+                    }
                     .frame(height: 155)
+                    .clipped()
                 }
             }
             DisclosureGroup("자세한 수치") {
@@ -144,10 +194,16 @@ struct BatteryOverview: View {
 
 
     private func tripRow(_ trip: Object) -> some View {
-        HStack {
-            Text(Date(timeIntervalSince1970: (trip.number("at") ?? 0)/1000), style: .date)
-            Spacer()
+        HStack(spacing: 8) {
+            let start = trip.number("at") ?? 0
+            Text(Self.tripRowDateFormatter.string(from: Date(timeIntervalSince1970: start / 1000)))
+                .lineLimit(1)
+                .foregroundStyle(Color.white.opacity(0.85))
+            Spacer(minLength: 4)
             Text(number(trip.number("km")) + " km · " + number(trip.number("soc")) + "%p")
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .foregroundStyle(Color.white.opacity(0.7))
             if trip.flag("partial") { Image(systemName: "exclamationmark.circle").foregroundStyle(.orange).accessibilityLabel("부분 기록") }
         }.font(.caption).monospacedDigit()
     }

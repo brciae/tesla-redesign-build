@@ -1,4 +1,4 @@
-name: iOS Build v65 OAuth
+name: iOS Build v66
 on:
   workflow_dispatch:
   push:
@@ -17,7 +17,7 @@ jobs:
         run: bash tools/build-ios.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: YLCompanion-v65-OAuth
+          name: YLCompanion-v66
           path: Xcode/BuildOutput/*.ipa
       - uses: actions/upload-artifact@v4
         if: always()

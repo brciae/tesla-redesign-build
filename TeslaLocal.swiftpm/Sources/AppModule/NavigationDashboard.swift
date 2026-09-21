@@ -222,9 +222,10 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             // Minimal keeps the map mounted full-size but transparent (a 1 pt Kakao map view is not safe).
             return CGRect(x: 0, y: 0, width: m.w, height: m.h)
         case .touring:
+            let cardH = min(m.h * 0.38, 270 * m.u)
             return m.wide
                 ? CGRect(x: m.w * 0.40, y: m.pad, width: m.w * 0.60 - m.pad, height: m.h - m.pad * 2)
-                : CGRect(x: m.pad, y: m.h * 0.45, width: m.w - m.pad * 2, height: m.h * 0.55 - m.pad)
+                : CGRect(x: m.pad, y: cardH + m.pad * 1.5, width: m.w - m.pad * 2, height: m.h - cardH - m.pad * 2.5)
         case .panorama:
             return m.wide
                 ? CGRect(x: 0, y: 0, width: m.w * 0.38, height: m.h)
@@ -267,12 +268,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     }
 
     private func routeNotice(_ m: NavMetrics, y: CGFloat) -> some View {
-        Text("경로 미수신")
-            .font(.system(size: 13 * m.u, weight: .medium))
-            .foregroundStyle(.white.opacity(0.6))
-            .frame(width: m.w, alignment: .center)
-            .offset(y: y)
-            .accessibilityLabel("경로 미수신")
+        EmptyView()
     }
 
     private func media(_ style: MediaCard.Style, _ m: NavMetrics) -> MediaCard {
@@ -353,7 +349,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         let rect = mapRect(m)
         let card = m.wide
             ? CGRect(x: m.pad, y: m.pad, width: m.w * 0.40 - m.pad * 2, height: m.h - m.pad * 2)
-            : CGRect(x: m.pad, y: m.pad, width: m.w - m.pad * 2, height: m.h * 0.45 - m.pad * 1.5)
+            : CGRect(x: m.pad, y: m.pad, width: m.w - m.pad * 2, height: min(m.h * 0.38, 270 * m.u))
         let inner = rect.width - 24 * m.u
         return ZStack(alignment: .topLeading) {
             VehicleCard(data: data, u: m.u, reduced: reducedMotion, car: car)
@@ -386,7 +382,6 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(width: inner, height: rect.height - 24 * m.u, alignment: .bottom)
             .offset(x: rect.minX + 12 * m.u, y: rect.minY + 12 * m.u)
-            if !data.motionValid { routeNotice(m, y: card.maxY - 22 * m.u) }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -396,8 +391,8 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     private func minimalLayer(_ m: NavMetrics) -> some View {
         let stage = m.wide
             ? CGRect(x: m.w * 0.12, y: m.h * 0.20, width: m.w * 0.76, height: m.h * 0.80)
-            : CGRect(x: 0, y: m.h * 0.18, width: m.w, height: m.h * 0.82)
-        let side = m.wide ? m.w * 0.24 : m.w * 0.46
+            : CGRect(x: 0, y: m.h * 0.22, width: m.w, height: m.h * 0.78)
+        let side = m.wide ? m.w * 0.24 : m.w * 0.44
         return ZStack(alignment: .topLeading) {
             carStage("내 차량 · 뒤에서 보기")
                 .frame(width: stage.width, height: stage.height)
@@ -427,7 +422,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 HStack(alignment: .center, spacing: 12 * m.u) {
                     HStack(alignment: .firstTextBaseline, spacing: 4 * m.u) {
                         Text(data.speed)
-                            .font(.system(size: (m.wide ? 68 : 76) * m.u, weight: .light))
+                            .font(.system(size: (m.wide ? 68 : 72) * m.u, weight: .light))
                             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                             .contentTransition(.numericText(countsDown: true))
                             .animation(.smooth(duration: 0.25), value: data.speed)
@@ -442,27 +437,43 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 GearRow(gear: data.gear, u: m.u * 0.85, style: .quiet).padding(.top, 4 * m.u)
             }
             .frame(width: m.wide ? m.w * 0.40 : m.w)
-            .offset(x: m.wide ? m.w * 0.30 : 0, y: m.h * (m.wide ? 0.03 : 0.08))
+            .offset(x: m.wide ? m.w * 0.30 : 0, y: m.pad)
 
-            // Navigation Info (Left: Turn instruction, Right: Arrival time)
-            TurnColumn(data: data, u: m.u)
-                .frame(width: side, alignment: .leading)
-                .offset(x: m.pad * 1.5, y: m.wide ? m.h * 0.24 : m.pad)
-            RangeTag(data: data, u: m.u)
-                .offset(x: m.pad * 1.5, y: m.wide ? m.pad : m.h * 0.26)
-            ArrivalColumn(data: data, u: m.u)
-                .frame(width: side, alignment: .trailing)
-                .offset(x: m.w - side - m.pad * 1.5, y: m.wide ? m.h * 0.24 : m.pad)
-            ClimateTag(data: data, u: m.u)
-                .frame(width: side, alignment: .trailing)
-                .offset(x: m.w - side - m.pad * 1.5, y: m.wide ? m.pad : m.h * 0.26)
+            if m.wide {
+                TurnColumn(data: data, u: m.u)
+                    .frame(width: side, alignment: .leading)
+                    .offset(x: m.pad * 1.5, y: m.h * 0.24)
+                RangeTag(data: data, u: m.u)
+                    .offset(x: m.pad * 1.5, y: m.pad)
+                ArrivalColumn(data: data, u: m.u)
+                    .frame(width: side, alignment: .trailing)
+                    .offset(x: m.w - side - m.pad * 1.5, y: m.h * 0.24)
+                ClimateTag(data: data, u: m.u)
+                    .frame(width: side, alignment: .trailing)
+                    .offset(x: m.w - side - m.pad * 1.5, y: m.pad)
+            } else {
+                HStack {
+                    RangeTag(data: data, u: m.u)
+                    Spacer()
+                    ClimateTag(data: data, u: m.u)
+                }
+                .frame(width: m.w - m.pad * 3)
+                .offset(x: m.pad * 1.5, y: m.h * 0.17)
+
+                HStack(alignment: .bottom) {
+                    TurnColumn(data: data, u: m.u)
+                    Spacer()
+                    ArrivalColumn(data: data, u: m.u)
+                }
+                .frame(width: m.w - m.pad * 3)
+                .offset(x: m.pad * 1.5, y: m.h * 0.70)
+            }
+
             if data.showsMedia {
-                // Bottom-left, clear of the speed and the road, like the Tesla music card.
                 island(m)
                     .frame(width: m.w - m.pad * 3, height: m.h - m.pad, alignment: .bottomLeading)
                     .offset(x: m.pad * 1.5, y: 0)
             }
-            if !data.motionValid { routeNotice(m, y: stage.minY + stage.height * 0.12) }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -797,12 +808,14 @@ private struct TurnBanner: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4 * u) {
             HStack(spacing: 10 * u) {
-                ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 30 * u)
-                Text(data.turnDistance)
-                    .font(.system(size: 28 * u, weight: .semibold)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.6)
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(.smooth(duration: 0.25), value: data.turnDistance)
+                ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 28 * u)
+                if !data.turnDistance.isEmpty && data.turnDistance != "—" {
+                    Text(data.turnDistance)
+                        .font(.system(size: 26 * u, weight: .semibold)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.smooth(duration: 0.25), value: data.turnDistance)
+                }
             }
             Text(data.turn)
                 .font(.system(size: 15 * u, weight: .semibold))
@@ -1012,12 +1025,13 @@ private struct DestinationCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8 * u) {
             HStack(spacing: 10 * u) {
-                Image(systemName: "flag.checkered")
+                Image(systemName: data.destination.isEmpty ? "location.circle.fill" : "flag.checkered")
                     .font(.system(size: 15 * u, weight: .semibold))
+                    .foregroundStyle(data.destination.isEmpty ? Color.cyan : Color.white)
                     .frame(width: 32 * u, height: 32 * u)
                     .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12 * u, style: .continuous))
-                Text(data.destination.isEmpty ? "목적지" : data.destination)
-                    .font(.system(size: 17 * u, weight: .semibold))
+                Text(data.destination.isEmpty ? "자유 주행 모드" : data.destination)
+                    .font(.system(size: 16 * u, weight: .semibold))
                     .lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if let soc = data.arrivalSOC, soc.isFinite {
@@ -1028,16 +1042,28 @@ private struct DestinationCard: View {
                         .accessibilityLabel("도착 시 배터리 \(Int(soc.rounded()))%")
                 }
             }
-            ProgressTrack(value: data.routeProgress, u: u)
-            HStack(alignment: .firstTextBaseline, spacing: 6 * u) {
-                Text(data.remainingDistance).font(.system(size: 18 * u, weight: .semibold))
-                Text("·").foregroundStyle(NavInk.muted)
-                Text(data.remaining).font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(NavInk.neon)
-                Spacer(minLength: 4 * u)
-                if !compact { Text("도착").font(.system(size: 14 * u)).foregroundStyle(NavInk.muted) }
-                Text(data.arrival).font(.system(size: 16 * u, weight: .semibold))
+            if !data.destination.isEmpty {
+                ProgressTrack(value: data.routeProgress, u: u)
+                HStack(alignment: .firstTextBaseline, spacing: 6 * u) {
+                    Text(data.remainingDistance).font(.system(size: 18 * u, weight: .semibold))
+                    Text("·").foregroundStyle(NavInk.muted)
+                    Text(data.remaining).font(.system(size: 16 * u, weight: .semibold)).foregroundStyle(NavInk.neon)
+                    Spacer(minLength: 4 * u)
+                    if !compact { Text("도착").font(.system(size: 14 * u)).foregroundStyle(NavInk.muted) }
+                    Text(data.arrival).font(.system(size: 16 * u, weight: .semibold))
+                }
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
+            } else {
+                HStack(spacing: 6 * u) {
+                    Text("실시간 차량 속도 및 지도 연동 활성")
+                        .font(.system(size: 13 * u, weight: .medium))
+                        .foregroundStyle(NavInk.muted)
+                    Spacer()
+                    Text(data.clock)
+                        .font(.system(size: 14 * u, weight: .semibold))
+                        .monospacedDigit()
+                }
             }
-            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
         }
         .padding(14 * u)
         .background { GlassFill(radius: 14 * u) }
@@ -1071,7 +1097,8 @@ private struct VehicleCard<CarContent: View>: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width, h = geo.size.height
-            let stageH = h * 0.50
+            let dynamicU = min(u, max(0.72, h / 290))
+            let stageH = min(h * 0.42, w * 0.45)
             VStack(alignment: .leading, spacing: 0) {
                 ZStack {
                     RadialGradient(colors: [NavInk.neon.opacity(0.22), .clear], center: UnitPoint(x: 0.5, y: 0.75),
@@ -1084,30 +1111,30 @@ private struct VehicleCard<CarContent: View>: View {
                 }
                 .frame(width: w, height: stageH)
                 .clipped()
-                HStack(alignment: .firstTextBaseline, spacing: 6 * u) {
+                HStack(alignment: .firstTextBaseline, spacing: 6 * dynamicU) {
                     Text(data.speed)
-                        .font(.system(size: min(46 * u, h * 0.13), weight: .regular)).monospacedDigit()
+                        .font(.system(size: min(42 * dynamicU, h * 0.15), weight: .regular)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.5)
-                    Text(data.speedUnit).font(.system(size: 15 * u)).foregroundStyle(NavInk.muted)
+                    Text(data.speedUnit).font(.system(size: 14 * dynamicU)).foregroundStyle(NavInk.muted)
                     Spacer(minLength: 0)
-                    GearRow(gear: data.gear, u: u * 0.72, style: .letters)
+                    GearRow(gear: data.gear, u: dynamicU * 0.72, style: .letters)
                 }
-                .padding(.horizontal, 16 * u)
-                HStack(spacing: 8 * u) {
-                    Tile(icon: "fanblades.fill", title: "실내", value: data.inside, u: u)
-                    Tile(icon: "thermometer.sun.fill", title: "외기", value: data.outside, u: u)
+                .padding(.horizontal, 14 * dynamicU)
+                HStack(spacing: 8 * dynamicU) {
+                    Tile(icon: "fanblades.fill", title: "실내", value: data.inside, u: dynamicU)
+                    Tile(icon: "thermometer.sun.fill", title: "외기", value: data.outside, u: dynamicU)
                 }
-                .padding(.horizontal, 12 * u).padding(.top, 6 * u)
-                Spacer(minLength: 4 * u)
+                .padding(.horizontal, 12 * dynamicU).padding(.top, 4 * dynamicU)
+                Spacer(minLength: 2 * dynamicU)
                 HStack {
-                    Text("주행 가능").font(.system(size: 15 * u)).foregroundStyle(NavInk.muted)
+                    Text("주행 가능").font(.system(size: 14 * dynamicU)).foregroundStyle(NavInk.muted)
                     Spacer()
-                    Text(data.range).font(.system(size: 14 * u, weight: .semibold)).monospacedDigit()
+                    Text(data.range).font(.system(size: 13 * dynamicU, weight: .semibold)).monospacedDigit()
                 }
-                .padding(.horizontal, 16 * u)
-                TickBar(value: data.batterySOC.map { $0 / 100 }, u: u)
-                    .frame(height: 16 * u)
-                    .padding(.horizontal, 16 * u).padding(.top, 4 * u).padding(.bottom, 12 * u)
+                .padding(.horizontal, 14 * dynamicU)
+                TickBar(value: data.batterySOC.map { $0 / 100 }, u: dynamicU)
+                    .frame(height: 14 * dynamicU)
+                    .padding(.horizontal, 14 * dynamicU).padding(.top, 2 * dynamicU).padding(.bottom, 10 * dynamicU)
             }
             .frame(width: w, height: h)
             .background(

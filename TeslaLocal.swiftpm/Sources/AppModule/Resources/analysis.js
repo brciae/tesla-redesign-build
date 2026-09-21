@@ -476,8 +476,27 @@
       const unmixed=parking.filter(p=>!mixed(p)&&num(p.deltaSOC,-100,100));
       const power=trips.filter(t=>num(t.powerSeconds,0.001,1e8)&&num(t.powerUsedKWh,0,1e5)&&num(t.powerRecoveredKWh,0,1e5));
       const trend=[];
-      for(const t of trips){if(num(t.startSOC,0,100))trend.push({id:t.id+'s',segment:t.id,at:t.start,soc:t.startSOC,kind:'주행'});if(num(t.endSOC,0,100))trend.push({id:t.id+'e',segment:t.id,at:t.end,soc:t.endSOC,kind:'주행'});}
-      for(const c of charges){if(num(c.startSOC,0,100))trend.push({id:c.id+'s',segment:c.id,at:c.at,soc:c.startSOC,kind:'충전'});if(num(c.endSOC,0,100))trend.push({id:c.id+'e',segment:c.id,at:c.end??c.lastAt??c.at,soc:c.endSOC,kind:'충전'});}
+      for(const t of trips){
+        if(num(t.startSOC,0,100))trend.push({id:t.id+'s',segment:t.id,at:t.start,soc:t.startSOC,kind:'주행'});
+        const endAt=(num(t.end,t.start+1,1e14))?t.end:(t.start+60000);
+        if(num(t.endSOC,0,100))trend.push({id:t.id+'e',segment:t.id,at:endAt,soc:t.endSOC,kind:'주행'});
+      }
+      for(const c of charges){
+        const startAt=c.at;
+        const rawEnd=c.end??c.lastAt??c.at;
+        const endAt=(rawEnd>startAt)?rawEnd:(startAt+60000);
+        if(num(c.startSOC,0,100))trend.push({id:c.id+'s',segment:c.id,at:startAt,soc:c.startSOC,kind:'충전'});
+        if(num(c.endSOC,0,100))trend.push({id:c.id+'e',segment:c.id,at:endAt,soc:c.endSOC,kind:'충전'});
+      }
+      const rawTrendList=trend.filter(t=>inPeriod(t.at)).sort((a,b)=>a.at-b.at);
+      const cleanTrendList=[];
+      for(const pt of rawTrendList){
+        if(!cleanTrendList.length||pt.at>cleanTrendList[cleanTrendList.length-1].at+30000){
+          cleanTrendList.push(pt);
+        }else{
+          cleanTrendList[cleanTrendList.length-1]=pt;
+        }
+      }
       const observedSeconds=sum(power,t=>t.powerSeconds),duration=sum(trips,t=>t.powerDurationSeconds??Math.max(0,(t.end-t.start)/1000));
       return {days,energy:this.energyEstimates(now,since),tripCount:trips.length,completeTrips:trips.filter(t=>!t.missing).length,excludedRateTrips:trips.length-rateTrips.length,
         observedDischargeCycles:usable.length?round(driveSOC/100,2):null,
@@ -492,7 +511,7 @@
         chargeCount:charges.length,unexplainedParkingSOC:round(sum(unmixed,p=>Math.max(0,p.deltaSOC)),1),mixedParkingCount:parking.length-unmixed.length,
         observedUsedKWh:power.length?round(sum(power,t=>t.powerUsedKWh),2):null,observedRecoveredKWh:power.length?round(sum(power,t=>t.powerRecoveredKWh),2):null,
         powerCoverage:duration>0?round(Math.min(1,observedSeconds/duration)*100,1):null,
-        trend:trend.filter(t=>inPeriod(t.at)).sort((a,b)=>a.at-b.at).slice(-120),
+        trend:cleanTrendList.slice(-120),
         tripRows:trips.slice(-30).reverse().map(t=>({id:t.id,at:t.end,km:t.distanceKm,soc:num(t.startSOC,0,100)&&num(t.endSOC,0,100)?round(soc(t),1):null,partial:!!t.missing})),
         note:'관측 기록 기준. 주차 전후 변화는 미관측 충전·이동·온도 영향을 포함할 수 있으며 대기 소모로 단정하지 않음. 공조·감시모드·열관리 사용량은 미분리.'};
     }

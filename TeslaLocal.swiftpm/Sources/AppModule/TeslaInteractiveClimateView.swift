@@ -109,14 +109,17 @@ struct TeslaInteractiveClimateView: View {
 
                 Spacer()
 
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(String(format: "%.1f", targetTemperature))
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .font(.system(size: 46, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Text("°C")
-                        .font(.system(size: 24, weight: .semibold, design: .rounded))
+                        .font(.system(size: 22, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.white.opacity(0.6))
                 }
+                .layoutPriority(1)
 
                 Spacer()
 
@@ -173,211 +176,150 @@ struct TeslaInteractiveClimateView: View {
 
     // MARK: - Interactive Interior Cabin View
 
+    // MARK: - Interactive Interior Cabin View
+
     private var interiorCabinView: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                // Cabin Glass Enclosure Silhouette
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(white: 0.08), Color(white: 0.04)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+        ZStack {
+            // Dark Stage Ambient Base
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(white: 0.10), Color(white: 0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 32, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.18), Color.white.opacity(0.05)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 1.2
-                            )
-                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
 
-                VStack(spacing: 24) {
-                    // Front Row: Steering Wheel (Driver side) & Front Passenger
-                    HStack(spacing: 36) {
-                        // Driver Seat & Steering Wheel
-                        VStack(spacing: 12) {
-                            // Steering Wheel Heater Button
-                            Button {
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    steeringWheelHeat.toggle()
-                                }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "steeringwheel")
-                                        .font(.system(size: 16, weight: .bold))
-                                    if steeringWheelHeat {
-                                        Image(systemName: "flame.fill")
-                                            .font(.system(size: 12))
-                                    }
-                                }
-                                .foregroundStyle(steeringWheelHeat ? Color(red: 1.0, green: 0.5, blue: 0.1) : Color.white.opacity(0.7))
-                                .frame(width: 80, height: 38)
-                                .background(
-                                    steeringWheelHeat
-                                        ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.2)
-                                        : Color.white.opacity(0.06),
-                                    in: Capsule()
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(
-                                            steeringWheelHeat
-                                                ? Color(red: 1.0, green: 0.5, blue: 0.1).opacity(0.6)
-                                                : Color.white.opacity(0.12),
-                                            lineWidth: 1
-                                        )
-                                )
-                                .shadow(
-                                    color: steeringWheelHeat ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.35) : .clear,
-                                    radius: 8
-                                )
-                            }
-                            .buttonStyle(PlainButtonStyle())
+            // High-Resolution 3D Tesla Cabin Interior Render
+            Image("TeslaTopInterior")
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: 370)
+                .shadow(color: Color.black.opacity(0.85), radius: 18, y: 8)
 
-                            // Driver Seat
-                            seatButton(title: "운전석", level: $driverSeatHeat)
-                        }
-
-                        // Center Console Graphic
-                        VStack(spacing: 8) {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.white.opacity(0.12))
-                                .frame(width: 28, height: 44)
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(0.08))
-                                .frame(width: 32, height: 70)
-                        }
-
-                        // Front Passenger Seat
-                        VStack(spacing: 12) {
-                            // Spacer to align with steering wheel
-                            Color.clear.frame(width: 80, height: 38)
-                            seatButton(title: "동승자석", level: $passengerSeatHeat)
-                        }
-                    }
-                    .padding(.top, 24)
-
-                    // Rear Row: 3 Seats (Left, Center, Right)
-                    HStack(spacing: 16) {
-                        rearSeatButton(title: "후열 좌", level: $rearLeftHeat)
-                        rearSeatButton(title: "후열 중", level: $rearCenterHeat)
-                        rearSeatButton(title: "후열 우", level: $rearRightHeat)
-                    }
-                    .padding(.bottom, 24)
+            // Steering Wheel Heater Button (In front of driver seat)
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    steeringWheelHeat.toggle()
                 }
-                .padding(.horizontal, 20)
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "steeringwheel")
+                        .font(.system(size: 15, weight: .bold))
+                    if steeringWheelHeat {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 11))
+                    }
+                }
+                .foregroundStyle(steeringWheelHeat ? Color(red: 1.0, green: 0.5, blue: 0.1) : Color.white.opacity(0.85))
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(
+                    steeringWheelHeat
+                        ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.3)
+                        : Color(white: 0.15).opacity(0.75),
+                    in: Capsule()
+                )
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            steeringWheelHeat
+                                ? Color(red: 1.0, green: 0.5, blue: 0.1).opacity(0.7)
+                                : Color.white.opacity(0.2),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(
+                    color: steeringWheelHeat ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.5) : .clear,
+                    radius: 8
+                )
             }
-            .frame(height: 360)
+            .buttonStyle(PlainButtonStyle())
+            .offset(x: -80, y: -105)
+
+            // Driver Seat Hotspot
+            seatHotspot(title: "운전석", level: $driverSeatHeat)
+                .offset(x: -74, y: -20)
+
+            // Front Passenger Seat Hotspot
+            seatHotspot(title: "조수석", level: $passengerSeatHeat)
+                .offset(x: 74, y: -20)
+
+            // Rear Left Seat Hotspot
+            seatHotspot(title: "후열 좌", level: $rearLeftHeat)
+                .offset(x: -82, y: 105)
+
+            // Rear Center Seat Hotspot
+            seatHotspot(title: "후열 중", level: $rearCenterHeat)
+                .offset(x: 0, y: 105)
+
+            // Rear Right Seat Hotspot
+            seatHotspot(title: "후열 우", level: $rearRightHeat)
+                .offset(x: 82, y: 105)
         }
+        .frame(height: 390)
     }
 
-    // MARK: - Seat Component
+    // MARK: - Seat Hotspot Component
 
-    private func seatButton(title: String, level: Binding<Int>) -> some View {
+    private func seatHotspot(title: String, level: Binding<Int>) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 level.wrappedValue = (level.wrappedValue + 1) % 4
             }
         } label: {
-            ZStack {
-                // Leather seat base silhouette
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(white: 0.18),
-                                Color(white: 0.11)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(
-                                level.wrappedValue > 0
-                                    ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.8)
-                                    : Color.white.opacity(0.15),
-                                lineWidth: level.wrappedValue > 0 ? 1.5 : 1
-                            )
-                    )
-                    .shadow(
-                        color: level.wrappedValue > 0
-                            ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(Double(level.wrappedValue) * 0.22)
-                            : .clear,
-                        radius: 12
-                    )
-
-                VStack(spacing: 6) {
-                    // Headrest
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: 42, height: 16)
-
-                    // Seat Back stitching lines
-                    HStack(spacing: 4) {
-                        ForEach(0..<level.wrappedValue, id: \.self) { _ in
-                            Capsule()
-                                .fill(Color(red: 1.0, green: 0.55, blue: 0.15))
-                                .frame(width: 4, height: 14)
-                        }
+            let active = level.wrappedValue > 0
+            VStack(spacing: 3) {
+                HStack(spacing: 2) {
+                    Image(systemName: active ? "flame.fill" : "flame")
+                        .font(.system(size: 14, weight: .bold))
+                    if active {
+                        Text("\(level.wrappedValue)")
+                            .font(.system(size: 12, weight: .black))
                     }
-                    .frame(height: 14)
-
-                    // Heat Icon
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(
-                            level.wrappedValue > 0
-                                ? Color(red: 1.0, green: 0.50, blue: 0.1)
-                                : Color.white.opacity(0.3)
-                        )
-
-                    // Level indicator badge
-                    Text(level.wrappedValue == 0 ? "꺼짐" : "\(level.wrappedValue)단계")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(
-                            level.wrappedValue > 0
-                                ? Color(red: 1.0, green: 0.6, blue: 0.2)
-                                : Color.white.opacity(0.5)
-                        )
                 }
-                .padding(.vertical, 10)
-            }
-            .frame(width: 96, height: 120)
-        }
-        .buttonStyle(MotionButtonStyle())
-    }
+                .foregroundStyle(
+                    active
+                        ? Color(red: 1.0, green: 0.45, blue: 0.1)
+                        : Color.white.opacity(0.65)
+                )
 
-    private func rearSeatButton(title: String, level: Binding<Int>) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                level.wrappedValue = (level.wrappedValue + 1) % 4
+                Text(active ? "\(level.wrappedValue)단" : "꺼짐")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(active ? .white : Color.white.opacity(0.45))
             }
-        } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(white: 0.14))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(
-                                level.wrappedValue > 0
-                                    ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.8)
-                                    : Color.white.opacity(0.12),
-                                lineWidth: 1.2
-                            )
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                active
+                    ? Color(red: 1.0, green: 0.42, blue: 0.08).opacity(0.28)
+                    : Color(white: 0.12).opacity(0.72),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        active
+                            ? Color(red: 1.0, green: 0.5, blue: 0.1).opacity(0.8)
+                            : Color.white.opacity(0.18),
+                        lineWidth: 1
                     )
-                    .shadow(
-                        color: level.wrappedValue > 0
+            )
+            .shadow(
+                color: active ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.45) : .clear,
+                radius: 10
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
                             ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(Double(level.wrappedValue) * 0.2)
                             : .clear,
                         radius: 8

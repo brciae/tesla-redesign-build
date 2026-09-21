@@ -175,7 +175,7 @@ struct TeslaInteractiveControlsView: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color(white: 0.09), Color(white: 0.05)],
+                        colors: [Color(white: 0.10), Color(white: 0.05)],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -185,67 +185,55 @@ struct TeslaInteractiveControlsView: View {
                         .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 )
 
-            // Top-View Vehicle Body Graphic Representation
-            VStack {
-                Spacer()
-                vehicleTopSilhouette
-                Spacer()
-            }
+            // Top-View Vehicle Body Graphic (High-Resolution 3D Tesla Render)
+            vehicleTopSilhouette
 
-            // Interactive Hotspots Layer
-            VStack {
-                // Front Hood Hotspot (Frunk)
-                hotspotPill(
+            // Front Hood Hotspot (Frunk)
+            hotspotPill(
+                title: "프렁크 열기",
+                icon: "car.side.front.open.fill",
+                accent: Color(red: 0.35, green: 0.65, blue: 1.0)
+            ) {
+                dispatchHybridAction(
                     title: "프렁크 열기",
-                    icon: "car.side.front.open.fill",
-                    accent: Color(red: 0.35, green: 0.65, blue: 1.0)
-                ) {
-                    dispatchHybridAction(
-                        title: "프렁크 열기",
-                        bleAction: "frunkOpen",
-                        fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }
-                    )
-                }
-                .padding(.top, 28)
-
-                Spacer()
-
-                // Center Roof Hotspot (Lock / Unlock)
-                centerLockHotspot
-
-                Spacer()
-
-                // Rear Trunk & Charge Port Row
-                HStack(alignment: .center, spacing: 20) {
-                    // Charge Port Hotspot (Rear Left)
-                    hotspotPill(
-                        title: isPortOpen ? "포트 닫기" : "충전 포트",
-                        icon: isPortOpen ? "bolt.slash.fill" : "bolt.fill",
-                        accent: isPortOpen ? Color.orange : Color(red: 0.28, green: 0.88, blue: 0.42)
-                    ) {
-                        withAnimation { isPortOpen.toggle() }
-                        dispatchHybridAction(
-                            title: isPortOpen ? "포트 닫기" : "포트 열기",
-                            bleAction: isPortOpen ? "portClose" : "portOpen",
-                            fleetAction: { try await model.fleet.chargePortDoor(open: !isPortOpen) }
-                        )
-                    }
-
-                    // Rear Trunk Hotspot
-                    hotspotPill(
-                        title: "트렁크 동작",
-                        icon: "car.side.rear.open.fill",
-                        accent: Color(red: 0.35, green: 0.65, blue: 1.0)
-                    ) {
-                        dispatchHybridAction(
-                            title: "트렁크 동작",
-                            bleAction: "trunkMove",
-                            fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }
-                        )
-                    }
-                }
-                .padding(.bottom, 28)
+                    bleAction: "frunkOpen",
+                    fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }
+                )
             }
+            .offset(y: -140)
+
+            // Center Roof Hotspot (Lock / Unlock)
+            centerLockHotspot
+                .offset(y: -15)
+
+            // Rear Left Charge Port Hotspot
+            hotspotPill(
+                title: isPortOpen ? "포트 닫기" : "충전 포트",
+                icon: isPortOpen ? "bolt.slash.fill" : "bolt.fill",
+                accent: isPortOpen ? Color.orange : Color(red: 0.28, green: 0.88, blue: 0.42)
+            ) {
+                withAnimation { isPortOpen.toggle() }
+                dispatchHybridAction(
+                    title: isPortOpen ? "포트 닫기" : "포트 열기",
+                    bleAction: isPortOpen ? "portClose" : "portOpen",
+                    fleetAction: { try await model.fleet.chargePortDoor(open: !isPortOpen) }
+                )
+            }
+            .offset(x: -80, y: 145)
+
+            // Rear Trunk Hotspot
+            hotspotPill(
+                title: "트렁크 동작",
+                icon: "car.side.rear.open.fill",
+                accent: Color(red: 0.35, green: 0.65, blue: 1.0)
+            ) {
+                dispatchHybridAction(
+                    title: "트렁크 동작",
+                    bleAction: "trunkMove",
+                    fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }
+                )
+            }
+            .offset(x: 80, y: 145)
         }
         .frame(height: 440)
     }
@@ -254,48 +242,11 @@ struct TeslaInteractiveControlsView: View {
 
     private var vehicleTopSilhouette: some View {
         ZStack {
-            Capsule()
-                .fill(Color.black.opacity(0.7))
-                .frame(width: 140, height: 340)
-                .blur(radius: 12)
-
-            RoundedRectangle(cornerRadius: 64, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(white: 0.20), Color(white: 0.12)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 136, height: 330)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 64, style: .continuous)
-                        .stroke(Color.white.opacity(0.22), lineWidth: 1.5)
-                )
-
-            RoundedRectangle(cornerRadius: 38, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(white: 0.08), Color(white: 0.03)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 104, height: 200)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 38, style: .continuous)
-                        .stroke(Color.cyan.opacity(0.25), lineWidth: 1)
-                )
-
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                .frame(width: 90, height: 38)
-                .offset(y: -70)
-
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                .frame(width: 90, height: 40)
-                .offset(y: 70)
+            Image("TeslaTopExterior")
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: 380)
+                .shadow(color: Color.black.opacity(0.85), radius: 20, y: 10)
         }
     }
 
@@ -592,85 +543,89 @@ struct TeslaFleetTokenSheet: View {
     @State private var vinText = ""
     @State private var isLoading = false
     @State private var message: String? = nil
-    @State private var showWebAuth = false
+    @State private var showTokenGuide = false
 
     var body: some View {
         NavigationStack {
             Form {
-                // MARK: - Official 1-Click Tesla OAuth Section
+                // MARK: - Dual Connection Architecture Guide
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("지지직·테시 등 공식 서드파티 앱과 동일한 테슬라 정식 인증 방식입니다. 테슬라 공식 보안 서버(auth.tesla.com)에서 로그인하면 토큰이 자동 발급됩니다.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        Label("스마트 듀얼 통신 시스템", systemImage: "antenna.radiowaves.left.and.right")
+                            .font(.headline)
+                            .foregroundStyle(.cyan)
 
-                        Button {
-                            showWebAuth = true
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "shield.lefthalf.filled")
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundStyle(Color(red: 0.90, green: 0.15, blue: 0.20))
-
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .font(.subheadline)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("테슬라 공식 계정으로 간편 로그인")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundStyle(.primary)
-                                    Text("원클릭으로 로그인 및 차량 데이터 접근 허가")
-                                        .font(.system(size: 12))
+                                    Text("근거리 BLE 직결 제어 (기본 & 상시 활성)")
+                                        .font(.system(size: 14, weight: .semibold))
+                                    Text("차량 근처에서는 서버나 토큰 없이 아이폰 블루투스(BLE)로 100% 무료, 실시간 즉시 제어됩니다.")
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 6)
-                        }
-                    }
-                } header: {
-                    Text("원클릭 공식 로그인 (추천)")
-                }
-                .sheet(isPresented: $showWebAuth) {
-                    TeslaWebAuthView(fleet: fleet) {
-                        message = "🎉 테슬라 공식 계정 연동이 완료되었습니다!"
-                        tokenText = fleet.getStoredToken() ?? ""
-                        vinText = fleet.selectedVin
-                    }
-                }
-
-                // MARK: - Advanced Manual Entry Section
-                Section {
-                    DisclosureGroup("토큰 / VIN 직접 입력 (고급 설정)") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Bearer Access Token")
-                                    .font(.caption.weight(.semibold))
-                                TextField("테슬라 계정 액세스 토큰 입력", text: $tokenText)
-                                    .font(.system(size: 13, design: .monospaced))
-                                    .autocorrectionDisabled()
-                                    .textInputAutocapitalization(.never)
                             }
 
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("차량 식별번호 (VIN)")
-                                    .font(.caption.weight(.semibold))
-                                HStack {
-                                    TextField("17자리 VIN 입력 (예: 5YJ3E1EB...)", text: $vinText)
-                                        .font(.system(size: 13, design: .monospaced))
-                                        .autocorrectionDisabled()
-                                        .textInputAutocapitalization(.characters)
+                            Divider().padding(.vertical, 4)
 
-                                    Button("목록 조회") {
-                                        fetchVehicleList()
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    .disabled(tokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "globe")
+                                    .foregroundStyle(.blue)
+                                    .font(.subheadline)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("원격 LTE 클라우드 제어 (Fleet API)")
+                                        .font(.system(size: 14, weight: .semibold))
+                                    Text("원격에서 차량을 제어하려면 테슬라 공식 토큰을 등록하세요.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
+
+                        Button {
+                            showTokenGuide = true
+                        } label: {
+                            Label("토큰 발급 방법 안내 (1분 소요)", systemImage: "questionmark.circle")
+                                .font(.footnote.weight(.semibold))
+                        }
                         .padding(.top, 4)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .sheet(isPresented: $showTokenGuide) {
+                    tokenGuideSheet
+                }
+
+                // MARK: - Fleet API Token Input Section
+                Section("원격 Fleet API 토큰 등록") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Bearer Access Token (또는 Refresh Token)")
+                            .font(.caption.weight(.semibold))
+                        TextField("테슬라 계정 토큰 입력", text: $tokenText)
+                            .font(.system(size: 13, design: .monospaced))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("차량 식별번호 (VIN)")
+                            .font(.caption.weight(.semibold))
+                        HStack {
+                            TextField("17자리 VIN 입력 (예: 5YJ3E1EB...)", text: $vinText)
+                                .font(.system(size: 13, design: .monospaced))
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.characters)
+
+                            Button("목록 조회") {
+                                fetchVehicleList()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(tokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                        }
                     }
                 }
 
@@ -809,4 +764,89 @@ struct TeslaFleetTokenSheet: View {
             }
         }
     }
+
+    private var tokenGuideSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("테슬라 공식 토큰 발급 안내")
+                            .font(.title2.weight(.bold))
+                        Text("테슬라 본사는 보안상 미등록 타사 앱의 직접 로그인을 차단하며, 본인 인증을 거친 안전한 토큰(Token) 통신만 허용합니다.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("가장 쉽고 안전한 발급 방법 (1분 소요)")
+                            .font(.headline)
+
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("1")
+                                .font(.system(size: 13, weight: .bold))
+                                .frame(width: 24, height: 24)
+                                .background(Color.blue.opacity(0.15), in: Circle())
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("iOS App Store 'Auth for Tesla' 설치")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("전세계 테슬라 차주들이 사용하는 100% 온디바이스 토큰 생성 앱입니다.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("2")
+                                .font(.system(size: 13, weight: .bold))
+                                .frame(width: 24, height: 24)
+                                .background(Color.blue.opacity(0.15), in: Circle())
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("공식 테슬라 로그인 후 토큰 복사")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("앱에서 테슬라 로그인 후 생성된 [Access Token] 또는 [Refresh Token]을 복사합니다.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        HStack(alignment: .top, spacing: 12) {
+                            Text("3")
+                                .font(.system(size: 13, weight: .bold))
+                                .frame(width: 24, height: 24)
+                                .background(Color.blue.opacity(0.15), in: Circle())
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("본 앱의 토큰 입력창에 붙여넣기")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("토큰을 붙여넣고 [목록 조회]를 누르면 내 테슬라 차량이 즉시 연동됩니다.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("안전성 및 개인정보 보호", systemImage: "lock.shield.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.green)
+                        Text("사용자 계정 비밀번호는 본 앱에 절대 저장되지 않으며, 등록된 토큰은 애플 기기 보안 영역(iOS Keychain)에만 암호화되어 안전하게 보관됩니다.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .background(Color.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(20)
+            }
+            .navigationTitle("토큰 발급 안내")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("확인") { showTokenGuide = false }
+                }
+            }
+        }
+    }
 }
+
