@@ -626,11 +626,11 @@ struct TeslaInteractiveClimateView: View {
                 .foregroundStyle(Color.white.opacity(0.75))
 
             HStack(spacing: 3) {
-                // Heated Seat Button (♨️ SSS: Red 3-2-1-Off)
+                // Heated Seat Button (♨️ SSS: Red 1-2-3-Off)
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                        let next = heat.wrappedValue == 0 ? 3 : (heat.wrappedValue - 1)
+                        let next = heat.wrappedValue >= 3 ? 0 : (heat.wrappedValue + 1)
                         heat.wrappedValue = next
                         if next > 0 { vent.wrappedValue = 0 }
                         sendSeatCommand(seatPosition: seatPosition, heat: next, vent: vent.wrappedValue)
@@ -655,11 +655,11 @@ struct TeslaInteractiveClimateView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
 
-                // Ventilated Seat Button (💨 SSS: Blue 3-2-1-Off)
+                // Ventilated Seat Button (💨 SSS: Blue 1-2-3-Off)
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                        let next = vent.wrappedValue == 0 ? 3 : (vent.wrappedValue - 1)
+                        let next = vent.wrappedValue >= 3 ? 0 : (vent.wrappedValue + 1)
                         vent.wrappedValue = next
                         if next > 0 { heat.wrappedValue = 0 }
                         sendSeatCommand(seatPosition: seatPosition, heat: heat.wrappedValue, vent: next)
@@ -700,7 +700,7 @@ struct TeslaInteractiveClimateView: View {
         return Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                let next = heat.wrappedValue == 0 ? 3 : (heat.wrappedValue - 1)
+                let next = heat.wrappedValue >= 3 ? 0 : (heat.wrappedValue + 1)
                 heat.wrappedValue = next
                 sendSeatCommand(seatPosition: seatPosition, heat: next, vent: 0)
             }
