@@ -386,7 +386,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(width: inner, height: rect.height - 24 * m.u, alignment: .bottom)
             .offset(x: rect.minX + 12 * m.u, y: rect.minY + 12 * m.u)
-            if !data.motionValid { routeNotice(m, y: card.maxY - 22 * m.u) }
+            if !data.motionValid && data.destination.isEmpty { routeNotice(m, y: card.maxY - 22 * m.u) }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -463,15 +463,15 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     ClimateTag(data: data, u: m.u)
                 }
                 .frame(width: m.w - m.pad * 3)
-                .offset(x: m.pad * 1.5, y: m.h * 0.17)
+                .offset(x: m.pad * 1.5, y: m.h * 0.16)
 
-                HStack(alignment: .bottom) {
+                HStack(alignment: .top) {
                     TurnColumn(data: data, u: m.u)
                     Spacer()
                     ArrivalColumn(data: data, u: m.u)
                 }
                 .frame(width: m.w - m.pad * 3)
-                .offset(x: m.pad * 1.5, y: m.h * 0.70)
+                .offset(x: m.pad * 1.5, y: m.h * 0.21)
             }
 
             if data.showsMedia {
@@ -479,7 +479,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     .frame(width: m.w - m.pad * 3, height: m.h - m.pad, alignment: .bottomLeading)
                     .offset(x: m.pad * 1.5, y: 0)
             }
-            if !data.motionValid { routeNotice(m, y: stage.minY + stage.height * 0.12) }
+            if !data.motionValid && data.destination.isEmpty { routeNotice(m, y: stage.minY + stage.height * 0.12) }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -559,7 +559,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .frame(width: m.w - m.pad * 2, height: m.h - m.pad * 2, alignment: .bottom)
                 .offset(x: m.pad, y: m.pad)
             }
-            if !data.motionValid { routeNotice(m, y: center.maxY - carH * 0.5) }
+            if !data.motionValid && data.destination.isEmpty { routeNotice(m, y: center.maxY - carH * 0.5) }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
