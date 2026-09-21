@@ -141,7 +141,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
             say("운전 대시보드를 시작합니다. 안전 운전하세요.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
         }
     }
-    func say(_ text: String, key: String, category: String, priority: Int = 1, ttl: TimeInterval = 15, manual: Bool = false) {
+    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true) {
+        let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
         guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { return }
         let now = Date()
@@ -149,7 +150,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         // v37: the character persona rewrites the sentence endings, so a 10대 voice actually talks like one.
         let styled = BriefingStyle.selected.phrase(text, category: category)
         let spoken = activeTone?.rewrite(styled) ?? styled
-        queue.add(VoiceItem(key: key, text: SpeechText.prepare(spoken), expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
+        queue.add(VoiceItem(key: actualKey, text: SpeechText.prepare(spoken), expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
         drain()
     }
     private func drain() {
