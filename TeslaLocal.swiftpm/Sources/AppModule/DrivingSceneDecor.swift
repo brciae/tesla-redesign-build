@@ -281,9 +281,7 @@ final class DrivingSceneDecor {
                 marks.append(Mark(entity: e, kind: .dash, boundary: boundary, base: Float(i) * 8 - 30, spacing: 8))
             }
         }
-    }
-
-    let set = MarkSet(container: container, marks: marks, ground: groundEntity)
+        let set = MarkSet(container: container, marks: marks, ground: groundEntity)
         markSets[style] = set
         activate(set)
     }
