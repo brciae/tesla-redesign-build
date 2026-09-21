@@ -79,7 +79,10 @@ final class InteractionTests: XCTestCase {
         for tab in ["색상", "틴팅", "번호판", "랩핑"] {
             app.segmentedControls.buttons[tab].tap()
             if tab == "번호판" {
-                let plate = app.textFields["appearance.plate"]; plate.tap(); plate.typeText("123가 4567\n")
+                let plate = app.textFields["appearance.plate"]
+                XCTAssertTrue(plate.waitForExistence(timeout: 5))
+                plate.tap()
+                plate.typeText("123가 4567\n")
                 XCTAssertEqual(plate.value as? String, "123가 4567")
             }
             if tab == "랩핑" {
@@ -91,8 +94,12 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["appearance.save"].exists)
         app.buttons["appearance.save"].tap()
         XCTAssertTrue(app.buttons["home.appearance"].waitForExistence(timeout: 3))
-        app.buttons["home.appearance"].tap(); app.segmentedControls.buttons["번호판"].tap()
-        XCTAssertEqual(app.textFields["appearance.plate"].value as? String, "123가 4567")
+        app.buttons["home.appearance"].tap()
+        XCTAssertTrue(app.segmentedControls.buttons["번호판"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["번호판"].tap()
+        let savedPlate = app.textFields["appearance.plate"]
+        XCTAssertTrue(savedPlate.waitForExistence(timeout: 5))
+        XCTAssertEqual(savedPlate.value as? String, "123가 4567")
     }
     private func expectCounts(_ app: XCUIApplication, _ value: String) {
         let expected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", value), object: app.staticTexts["voice.counts"])

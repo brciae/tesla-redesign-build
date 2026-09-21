@@ -76,17 +76,54 @@ struct HomeView: View {
                         .stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8)
                 )
 
-                // Battery & Power Visualization Card (Tesla Official / Jijijik)
-                TeslaOfficialChargingCardView(c: c, link: link)
-
                 // Driving Dashboard Banner
                 driveButton
 
-                // Smart Parking Card
-                SmartParkingCard(link: link)
-
-                // Daily Briefing
-                briefing
+                // Active Charging Indicator (Only shown when vehicle is charging)
+                if isCharging {
+                    NavigationLink(value: Page.charging) {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.2))
+                                    .frame(width: 38, height: 38)
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(Color(red: 0.28, green: 0.88, blue: 0.42))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("충전 중 · \(Int(round(batterySOC)))%")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                if let kmH = c.number("chargeKmH"), kmH > 0 {
+                                    Text("+\(Int(kmH)) km/h · 충전 설정 보기")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.white.opacity(0.6))
+                                } else {
+                                    Text("충전 상세 설정 보기")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.white.opacity(0.6))
+                                }
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.4))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color(white: 0.12).opacity(0.75))
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.35), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(MotionButtonStyle())
+                }
 
                 // Grouped Menu Cards (Frosted Glass)
                 let controls = layout.shown.filter(\.isControl)
@@ -94,19 +131,18 @@ struct HomeView: View {
 
                 if !controls.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("차량 제어 및 상태")
+                        Text("차량 제어")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Theme.muted)
                             .padding(.leading, 4)
 
                         GlassMenuCard {
                             ForEach(Array(controls.enumerated()), id: \.element.id) { index, module in
-                                let subtitle = (module == .location ? p.object("location").string("subtitle", "위치 미수신") : module.subtitle)
                                 glassMenuItem(
                                     module.page,
                                     module.icon,
                                     title: module.title,
-                                    subtitle: subtitle,
+                                    subtitle: module.subtitle,
                                     colors: moduleColors(module),
                                     isLast: index == controls.count - 1
                                 )
@@ -117,7 +153,7 @@ struct HomeView: View {
 
                 if !records.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("기록 및 스마트 기능")
+                        Text("운행 및 설정")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Theme.muted)
                             .padding(.leading, 4)
@@ -453,7 +489,7 @@ struct StatusTimestamp: View {
     var body: some View { Caption("\(section.string("label", "미수신")) · 자료 시각 \(dateText(section.number("at")))") }
 }
 struct ReadOnlyNotice: View {
-    var body: some View { Label("상태 조회는 자동 · 차량 제어는 직접 확인 후 전송", systemImage: "info.circle").font(.footnote).foregroundStyle(Theme.muted) }
+    var body: some View { EmptyView() }
 }
 struct ControlsView: View {
     @ObservedObject var link: VehicleLink
@@ -604,6 +640,9 @@ struct LocationStatusView: View {
                     }
                     .padding(16)
                 }
+
+                // Smart Parking Card (Floor, Pillar, Photo, Memo)
+                SmartParkingCard(link: link)
 
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 12) {

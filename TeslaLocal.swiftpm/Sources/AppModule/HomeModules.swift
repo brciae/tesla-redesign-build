@@ -65,21 +65,21 @@ enum HomeModule: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .automation: return "나만의 룰·실행 내역"
-        case .appearance: return "색상·틴팅·번호판·랩핑"
-        case .controls: return "수동 잠금·트렁크"
-        case .climate: return "온도 조회·공조 제어"
-        case .location: return "차량 위치·주차 기록"
-        case .charging: return "충전 상태·제어"
-        case .schedule: return "앱 알림·브리핑 일정"
-        case .security: return "조회 키·지원 범위"
-        case .trips: return "회차별 요약·거리·잔량"
-        case .battery: return "충전 이력·용량 추정"
-        case .drive: return "주행 정보"
-        case .navigation: return "내장 안내·네이버 넘기기"
-        case .care: return "주차·타이어·정비"
-        case .preferences: return "단위·안내 음성"
-        case .connection: return "진단·백업·복원"
+        case .automation: return "자동화 룰 · Siri 단축어"
+        case .appearance: return "차량 색상 · 틴팅 · 번호판"
+        case .controls: return "도어 · 트렁크 · 라이트"
+        case .climate: return "온도 조절 · 공조 제어"
+        case .location: return "차량 위치 · 스마트 주차"
+        case .charging: return "충전 제어 · 목표량 설정"
+        case .schedule: return "출발 알림 · 브리핑 일정"
+        case .security: return "차량 보안 · 키 관리"
+        case .trips: return "주행 기록 · 전비 · 브리핑"
+        case .battery: return "배터리 헬스 · 충전 이력"
+        case .drive: return "실시간 주행 정보"
+        case .navigation: return "길안내 · 외부 내비 연동"
+        case .care: return "주차 위치 · 정비 기록"
+        case .preferences: return "단위 · 음성 안내 · 시스템"
+        case .connection: return "BLE 연결 진단 · 백업"
         }
     }
 }

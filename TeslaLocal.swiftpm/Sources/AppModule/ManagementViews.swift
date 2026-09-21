@@ -211,7 +211,7 @@ struct ParkingForm: View {
                 if let error = model.errorMessage { Text(error).foregroundStyle(.orange) }
                 Section {
                     TextField("예: 지하 3층 C구역 기둥 옆", text: $note, axis: .vertical).lineLimit(1...4)
-                } header: { Text("메모") } footer: { Text("층수·구역은 차량이 알려주지 않으므로 직접 입력함.") }
+                } header: { Text("메모") }
                 Section {
                     DisclosureGroup("사진 추가 (선택)") {
                         InfoRow("차량 카메라", "센트리·주행 영상은 차 안 USB에만 남고 블루투스로는 받을 수 없어 자동 첨부가 불가함.")
@@ -344,32 +344,30 @@ struct AutomationUtilitiesView: View {
     @State private var weatherConsent = false
     var body: some View {
         PageBody(title: title) {
-            Caption("이 앱의 알림·브리핑 일정임. 차량 출발 예약·예약 충전·공조 예약을 변경하지 않음.")
             InfoCard {
                 Text("연속 상태 수집").font(.headline)
                 Toggle("앱 전환 후 BLE 조회 유지", isOn: $backgroundRead)
-                Caption("연결된 차량의 조회를 유지하도록 요청함. iOS 종료·메모리 회수·Bluetooth 단절 시 누락 가능함. 백그라운드 제어는 실행하지 않으며 차량과 기기 배터리를 더 사용할 수 있음.")
             }
             InfoCard {
                 Text("음성 브리핑").font(.headline)
                 Button("현재 자료로 브리핑 듣기") { model.speak() }
                 Button("음성 중지") { model.stopSpeech() }
-                Caption("자동 안내의 조건·문구는 자동화에서 설정함. iOS가 앱을 종료하거나 잠근 상태의 실행은 보장하지 않음.")
             }
             InfoCard {
                 Text("매일 출발 확인 알림").font(.headline)
                 DatePicker("시간", selection: $time, displayedComponents: .hourAndMinute)
                 HStack { Button("알림 설정") { let parts = Calendar.current.dateComponents([.hour, .minute], from: time); model.scheduleReminder(hour: parts.hour ?? 8, minute: parts.minute ?? 0) }; Spacer(); Button("해제") { model.removeReminder() } }
-                Caption("알림은 저장값 기준 · 앱 연결 시 갱신")
             }
             InfoCard {
                 Text("날씨").font(.headline)
-                if !model.state.object("weather").isEmpty { let w = model.state.object("weather"); Text("기온 \(valueText(w.number("temperature_2m"), digits: 1))°C · 강수 \(valueText(w.number("precipitation"), digits: 1)) mm"); Caption("조회 \(dateText(w.number("receivedAt"))) · Open-Meteo") }
+                if !model.state.object("weather").isEmpty { let w = model.state.object("weather"); Text("기온 \(valueText(w.number("temperature_2m"), digits: 1))°C · 강수 \(valueText(w.number("precipitation"), digits: 1)) mm"); Caption("조회 \(dateText(w.number("receivedAt")))") }
                 Button("차량 위치로 날씨 조회") { weatherConsent = true }
-                Caption("선택 시 최신 차량 좌표를 Open-Meteo에 보내 날씨를 조회함. 자동 반복 조회하지 않음.")
             }
-            InfoCard { Text("iPhone 단축어").font(.headline); Caption("차량 오디오 Bluetooth 연결 → YL Companion 열기"); DisclosureGroup("설정·실행 조건") { Caption("단축어 등록은 직접 설정. 잠금 실행·자동 내비·백그라운드 BLE는 기기 검증 필요. 예정 거리·알림 시각은 직접 입력.") } }
-        }.confirmationDialog("차량 위치를 Open-Meteo에 보내 날씨를 조회함", isPresented: $weatherConsent) { Button("위치 전송 후 조회") { model.fetchWeather() } }
+            InfoCard {
+                Text("iPhone 단축어").font(.headline)
+                Text("차량 오디오 Bluetooth 연결 → YL Companion 자동 실행").font(.subheadline).foregroundStyle(Theme.muted)
+            }
+        }.confirmationDialog("차량 위치를 기반으로 날씨를 조회합니다", isPresented: $weatherConsent) { Button("위치 전송 후 조회") { model.fetchWeather() } }
     }
 }
 struct ConnectionView: View {
@@ -391,7 +389,7 @@ struct ConnectionView: View {
                 NavigationLink("표시 단위·자동 음성 안내", value: Page.preferences)
                 TextField("표시 이름", text: $name)
                 TextField("VIN 17자리", text: $vin).textInputAutocapitalization(.characters).autocorrectionDisabled().font(.system(.body, design: .monospaced))
-            } header: { Text("차량 프로필") } footer: { Text("실시간 상태는 차량 연결 후 표시됨.") }
+            } header: { Text("차량 프로필") }
             Section("충전 계획") {
                 TextField("예정 거리 km", text: $km).keyboardType(.decimalPad)
                 TextField("여유 잔량 %", text: $reserve).keyboardType(.decimalPad)
@@ -417,7 +415,6 @@ struct ConnectionView: View {
                     Button("조회 전용 키 등록 요청") { enroll = true }.disabled(!link.connected || model.demo)
                     Button("차량 승인 후 조회") { link.authenticate() }.disabled(!link.connected || model.demo)
                     Button("연결 해제") { link.disconnect() }
-                    Text("조회 키는 차량 키카드 승인이 필요하고, 제어 키는 컨트롤에서 등록함.").font(.caption).foregroundStyle(Theme.muted)
                 }
                 DisclosureGroup("진단") {
                     ForEach(["drive", "charge", "climate", "tire", "location", "closures"], id: \.self) { key in

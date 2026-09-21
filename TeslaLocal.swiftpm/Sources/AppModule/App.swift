@@ -229,6 +229,30 @@ struct TripsView: View {
             let estimates = model.output.object("energyPeriods").object(String(period))
             let trips = Array(estimates.rows("trips").reversed())
             Picker("기간", selection: $period) { Text("7일").tag(7); Text("30일").tag(30); Text("90일").tag(90); Text("전체").tag(36500) }.pickerStyle(.segmented)
+
+            // Daily briefing
+            if !model.output.string("briefing").isEmpty {
+                InfoCard {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("오늘의 브리핑").font(.headline)
+                                Spacer()
+                                Button { model.speak() } label: {
+                                    Label("읽어주기", systemImage: "speaker.wave.2.fill")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            Caption(model.output.string("briefing"))
+                        }
+                    }
+                }
+            }
+
             // v34: summary first — the numbers that matter, then a chart, then only the recent runs.
             InfoCard {
                 CardTitle(title: "요약", systemImage: "chart.bar.fill",
