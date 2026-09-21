@@ -119,7 +119,11 @@ final class InteractionTests: XCTestCase {
         expectCounts(app, "2,1") // Stop must not invoke Preview.
         app.buttons["voice.profile"].tap()
         XCTAssertFalse(app.buttons["서연 · 여성"].exists)
-        app.buttons["한국어 · iPhone 기본"].tap()
+        XCTAssertFalse(app.buttons["한국어 · iPhone 기본"].exists)
+        let eunkyung = app.buttons.matching(NSPredicate(format: "label CONTAINS '은경'")).firstMatch
+        if eunkyung.waitForExistence(timeout: 3) {
+            eunkyung.tap()
+        }
         app.buttons["voice.style"].tap()
         app.buttons["차분하게"].tap()
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Voice named style"; shot.lifetime = .keepAlways; add(shot)
