@@ -623,6 +623,11 @@ struct ChargeStatusView: View {
         let c = homePresentation(model, link).object("charge")
         PageBody(title: "충전") {
             VStack(spacing: 16) {
+                // 3D Charging Vehicle with connected cable and animated flowing green energy
+                Vehicle3DPanel(link: link, compact: true, chargingMode: true)
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
                 // Official Charging & Power Flow Visualizer Card
                 TeslaOfficialChargingCardView(c: c, link: link)
 
@@ -808,6 +813,9 @@ private struct TeslaOfficialChargingCardView: View {
     @State private var currentAmps: Int = 32
     @State private var maxAmps: Int = 32
     @State private var isStoppingCharge = false
+    @State private var isDraggingThumb = false
+    @State private var isLeftPressed = false
+    @State private var isRightPressed = false
 
     var body: some View {
         let soc = Int(round(c.number("soc") ?? 56))
@@ -904,16 +912,24 @@ private struct TeslaOfficialChargingCardView: View {
                                 .fill(Color.white)
                                 .frame(width: 20, height: 20)
                                 .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+                                .scaleEffect(isDraggingThumb ? 1.25 : 1.0)
+                                .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isDraggingThumb)
                                 .offset(x: min(w - 20, max(0, w * targetFrac - 10)))
                                 .gesture(
-                                    DragGesture().onChanged { value in
-                                        let frac = max(0.5, min(1.0, value.location.x / w))
-                                        let newLimit = round(frac * 100.0 / 5.0) * 5.0
-                                        if newLimit != targetLimit {
-                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                            targetLimit = newLimit
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { value in
+                                            isDraggingThumb = true
+                                            let frac = max(0.5, min(1.0, value.location.x / w))
+                                            let newLimit = round(frac * 100.0 / 5.0) * 5.0
+                                            if newLimit != targetLimit {
+                                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                                targetLimit = newLimit
+                                            }
                                         }
-                                    }
+                                        .onEnded { _ in
+                                            isDraggingThumb = false
+                                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        }
                                 )
                         }
                     }
@@ -940,13 +956,20 @@ private struct TeslaOfficialChargingCardView: View {
                     Button {
                         if currentAmps > 5 {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            currentAmps -= 1
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
+                                isLeftPressed = true
+                                currentAmps -= 1
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                                isLeftPressed = false
+                            }
                         }
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(currentAmps > 5 ? Color.white.opacity(0.85) : Color.white.opacity(0.25))
                             .frame(width: 44, height: 40)
+                            .scaleEffect(isLeftPressed ? 0.85 : 1.0)
                     }
                     .buttonStyle(PlainButtonStyle())
 
@@ -961,13 +984,20 @@ private struct TeslaOfficialChargingCardView: View {
                     Button {
                         if currentAmps < maxAmps {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            currentAmps += 1
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
+                                isRightPressed = true
+                                currentAmps += 1
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                                isRightPressed = false
+                            }
                         }
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(currentAmps < maxAmps ? Color.white.opacity(0.85) : Color.white.opacity(0.25))
                             .frame(width: 44, height: 40)
+                            .scaleEffect(isRightPressed ? 0.85 : 1.0)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }

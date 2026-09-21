@@ -30,6 +30,7 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/CharacterTone.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/InfoNote.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/DrivingSceneDecor.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargingSceneDecor.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/VehicleAppearance.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/VehicleAppearanceStore.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/VehicleAppearanceMaterials.swift",

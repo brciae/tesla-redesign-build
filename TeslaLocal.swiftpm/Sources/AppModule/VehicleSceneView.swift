@@ -77,6 +77,7 @@ struct RealityVehicleView: UIViewRepresentable {
         /// v29: every car part hangs under `vehicle` so the car can yaw on the road while the camera stays put.
         private let vehicle = Entity()
         private var decor: DrivingSceneDecor?
+        private var chargingDecor: ChargingSceneDecor?
         private var lookAhead: Float = 0
         private var lastYaw: Float = 0
         private var hinges: [String: Entity] = [:]
@@ -238,6 +239,14 @@ struct RealityVehicleView: UIViewRepresentable {
             let driving = state["roadLanes"] != nil
             if driving, decor == nil { decor = DrivingSceneDecor(root: root, vehicle: vehicle) }
             decor?.configure(state, lightsEnabled: driving)
+            // Charging decor: cable, flowing green energy wave, and pulsing port LED
+            let charging = state.flag("charging") || (state.number("chargerKW") ?? 0) > 0.5 || state.flag("chargingDecor")
+            if charging {
+                if chargingDecor == nil { chargingDecor = ChargingSceneDecor(vehicle: vehicle) }
+                chargingDecor?.setIsCharging(true)
+            } else {
+                chargingDecor?.setIsCharging(false)
+            }
             let lead = Float(state.number("lookAhead") ?? 0)
             if lead.isFinite, abs(lead - lookAhead) > 0.01 { lookAhead = max(0, min(20, lead)); placeCamera() }
             updateMotionLink()
@@ -274,7 +283,7 @@ struct RealityVehicleView: UIViewRepresentable {
             }
         }
         private var motionActive: Bool {
-            !UIAccessibility.isReduceMotionEnabled && (wheelSpeed > 0.1 || decor?.needsAnimation == true)
+            !UIAccessibility.isReduceMotionEnabled && (wheelSpeed > 0.1 || decor?.needsAnimation == true || chargingDecor?.needsAnimation == true)
         }
         private func updateMotionLink() {
             if motionActive, motionLink == nil {
@@ -289,6 +298,7 @@ struct RealityVehicleView: UIViewRepresentable {
             wheelAngle = (wheelAngle + wheelSpeed / 0.37 * dt).truncatingRemainder(dividingBy: 2 * .pi)
             for wheel in wheels { wheel.orientation = simd_quatf(angle: wheelAngle, axis: [1, 0, 0]) }
             if let decor { _ = decor.step(dt: dt, speed: wheelSpeed) }
+            if let chargingDecor { chargingDecor.step(dt: dt) }
             if !motionActive { updateMotionLink() }
         }
         private func placeCamera() {
@@ -354,6 +364,7 @@ struct RealityVehicleView: UIViewRepresentable {
             stopTween(); motionLink?.invalidate(); motionLink = nil
             // Release the driving decor with the scene: its entities must not outlive the RealityKit scene.
             decor?.teardown(); decor = nil
+            chargingDecor?.teardown(); chargingDecor = nil
             hinges = [:]; definitions = [:]; previous = [:]; expanded = []; closingUntil = [:]
             root.children.forEach { $0.removeFromParent() }
         }

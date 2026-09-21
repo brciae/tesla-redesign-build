@@ -295,7 +295,7 @@ struct ControlPanel: View {
             .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(MotionButtonStyle())
         .disabled(blocked || !link.controlsReady(category: category))
         .opacity(blocked || !link.controlsReady(category: category) ? 0.45 : 1.0)
     }

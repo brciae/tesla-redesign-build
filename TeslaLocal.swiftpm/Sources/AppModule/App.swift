@@ -43,9 +43,9 @@ func jsonNumber(_ s: String) throws -> Any {
 struct MotionButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduced
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.opacity(configuration.isPressed ? 0.68 : 1)
-            .scaleEffect(configuration.isPressed && !reduced ? 0.97 : 1)
-            .animation(reduced ? nil : .spring(response: 0.3, dampingFraction: 0.75), value: configuration.isPressed)
+        configuration.label.opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed && !reduced ? 0.94 : 1)
+            .animation(reduced ? nil : .spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
 struct SheetShare: UIViewControllerRepresentable {
@@ -65,7 +65,7 @@ struct MainView: View {
     @State private var selectedTab: AppTab = .home
     var body: some View {
         ZStack {
-        AppTabScaffold(selection: $selectedTab) {
+        Commercial5TabScaffold(selection: $selectedTab) {
             NavigationStack { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
         } controls: {
             NavigationStack { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }

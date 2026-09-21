@@ -12,6 +12,7 @@ struct Vehicle3DPanel: View {
     @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduced
     var compact = false
+    var chargingMode = false
     @State private var preview = false
     @State private var confirmPreview = false
     @State private var overrides: [String: Bool] = [:]
@@ -19,7 +20,11 @@ struct Vehicle3DPanel: View {
     @State private var sceneError: String?
     @State private var sceneVisible = false
     private var presentation: Object {
-        (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
+        var base = (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
+        if chargingMode {
+            base["chargingDecor"] = true
+        }
+        return base
     }
     var body: some View {
         let p = presentation, states = p.object("states"), example = p.string("mode") == "preview"
@@ -119,7 +124,13 @@ struct Vehicle3DPanel: View {
         .confirmationDialog("정차 중에 화면 모형만 조작함. 실제 차량에 문·트렁크 명령은 보내지 않음.", isPresented: $confirmPreview) { Button("정차 중임 · 화면 체험 시작") { preview = true; overrides = [:] } }
         .onChange(of: p.flag("restricted")) { _, restricted in if restricted { preview = false; overrides = [:] } }
         .onChange(of: model.demo) { _, _ in preview = false; overrides = [:] }
-        .onAppear { sceneError = nil; sceneVisible = true }
+        .onAppear {
+            sceneError = nil
+            if chargingMode {
+                camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 1.15)
+            }
+            sceneVisible = true
+        }
         .onDisappear { sceneVisible = false }
     }
     private func cameraButton(_ title: String, yaw: Float) -> some View { Button(title) { camera.serial += 1; camera.action = "angle"; camera.yaw = yaw } }

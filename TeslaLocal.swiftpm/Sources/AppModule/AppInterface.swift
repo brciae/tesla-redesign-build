@@ -105,17 +105,31 @@ struct InfoRow: View {
 
 enum AppTab: Hashable {
     case home, controls, energy, drive, menu
-    static var vehicle: AppTab { .home }
-    static var automation: AppTab { .menu }
-    static var settings: AppTab { .menu }
+    case vehicle, automation, settings
 }
 private struct SelectAppTabKey: EnvironmentKey { static let defaultValue: (AppTab) -> Void = { _ in } }
 extension EnvironmentValues {
     var selectAppTab: (AppTab) -> Void { get { self[SelectAppTabKey.self] } set { self[SelectAppTabKey.self] = newValue } }
 }
 
+/// Three independent navigation roots; used by InterfaceProbe test fixture
+struct AppTabScaffold<Vehicle: View, Automation: View, Settings: View>: View {
+    @Binding var selection: AppTab
+    @ViewBuilder var vehicle: () -> Vehicle
+    @ViewBuilder var automation: () -> Automation
+    @ViewBuilder var settings: () -> Settings
+    var body: some View {
+        TabView(selection: $selection) {
+            vehicle().tabItem { Label("차량", systemImage: "car.fill") }.tag(AppTab.vehicle)
+            automation().tabItem { Label("자동화", systemImage: "bolt.circle") }.tag(AppTab.automation)
+            settings().tabItem { Label("설정", systemImage: "gearshape") }.tag(AppTab.settings)
+        }
+        .environment(\.selectAppTab, { selection = $0 })
+    }
+}
+
 /// 5 primary navigation roots matching commercial EV app standards; driving mode is presented outside this container.
-struct AppTabScaffold<Home: View, Controls: View, Energy: View, Drive: View, Menu: View>: View {
+struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: View, Menu: View>: View {
     @Binding var selection: AppTab
     @ViewBuilder var home: () -> Home
     @ViewBuilder var controls: () -> Controls
