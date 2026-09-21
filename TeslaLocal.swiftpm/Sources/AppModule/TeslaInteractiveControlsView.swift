@@ -592,43 +592,86 @@ struct TeslaFleetTokenSheet: View {
     @State private var vinText = ""
     @State private var isLoading = false
     @State private var message: String? = nil
+    @State private var showWebAuth = false
 
     var body: some View {
         NavigationStack {
             Form {
+                // MARK: - Official 1-Click Tesla OAuth Section
                 Section {
-                    Text("테슬라 공식 Fleet API(클라우드 & 차량 LTE)와 연동하여, 스마트폰이 블루투스 범위를 벗어나도 원격 시동, 전조등 점멸, 경적, 원격 공조 제어를 수행할 수 있습니다.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("지지직·테시 등 공식 서드파티 앱과 동일한 테슬라 정식 인증 방식입니다. 테슬라 공식 보안 서버(auth.tesla.com)에서 로그인하면 토큰이 자동 발급됩니다.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Bearer Access Token")
-                            .font(.caption.weight(.semibold))
-                        TextField("테슬라 계정 액세스 토큰 입력", text: $tokenText)
-                            .font(.system(size: 13, design: .monospaced))
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                    }
+                        Button {
+                            showWebAuth = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "shield.lefthalf.filled")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundStyle(Color(red: 0.90, green: 0.15, blue: 0.20))
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("차량 식별번호 (VIN)")
-                            .font(.caption.weight(.semibold))
-                        HStack {
-                            TextField("17자리 VIN 입력 (예: 5YJ3E1EB...)", text: $vinText)
-                                .font(.system(size: 13, design: .monospaced))
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.characters)
-
-                            Button("목록 조회") {
-                                fetchVehicleList()
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("테슬라 공식 계정으로 간편 로그인")
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundStyle(.primary)
+                                    Text("원클릭으로 로그인 및 차량 데이터 접근 허가")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(tokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                            .padding(.vertical, 6)
                         }
                     }
                 } header: {
-                    Text("테슬라 공식 클라우드 계정 연동")
+                    Text("원클릭 공식 로그인 (추천)")
+                }
+                .sheet(isPresented: $showWebAuth) {
+                    TeslaWebAuthView(fleet: fleet) {
+                        message = "🎉 테슬라 공식 계정 연동이 완료되었습니다!"
+                        tokenText = fleet.getStoredToken() ?? ""
+                        vinText = fleet.selectedVin
+                    }
+                }
+
+                // MARK: - Advanced Manual Entry Section
+                Section {
+                    DisclosureGroup("토큰 / VIN 직접 입력 (고급 설정)") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Bearer Access Token")
+                                    .font(.caption.weight(.semibold))
+                                TextField("테슬라 계정 액세스 토큰 입력", text: $tokenText)
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("차량 식별번호 (VIN)")
+                                    .font(.caption.weight(.semibold))
+                                HStack {
+                                    TextField("17자리 VIN 입력 (예: 5YJ3E1EB...)", text: $vinText)
+                                        .font(.system(size: 13, design: .monospaced))
+                                        .autocorrectionDisabled()
+                                        .textInputAutocapitalization(.characters)
+
+                                    Button("목록 조회") {
+                                        fetchVehicleList()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .disabled(tokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
                 }
 
                 if let message {
