@@ -42,12 +42,6 @@ struct DrivingWorkspace: View {
                         NavigationDashboard(theme: navigation.theme, data: readout) {
                 if let controller = navigation.controller {
                     KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
-                } else {
-                    let d = model.groups.object("drive")
-                    let lat = d.number("destinationLat")
-                    let lng = d.number("destinationLng")
-                    let destCoord: CLLocationCoordinate2D? = (lat != nil && lng != nil && lat! != 0 && lng! != 0) ? CLLocationCoordinate2D(latitude: lat!, longitude: lng!) : nil
-                    AppleMapSurface(destinationCoordinate: destCoord, destinationName: readout.destination.isEmpty ? nil : readout.destination)
                 }
             } car: {
                 ZStack {
@@ -125,8 +119,8 @@ struct DrivingWorkspace: View {
         let lng = loc.number("longitude") ?? 126.978
         r.night = SunClock.isDark(latitude: lat, longitude: lng)
         if fresh.flag("drive"), let power = d.number("powerKW"), power <= -15 { r.braking = true }
-        if fresh.flag("drive"), let speed = d.number("speedKmh"), speed <= 1.5 || d.string("gear") == "P" {
-            r.braking = true // Tesla Brake Hold (H) / Park: brake lights & ground reflection ON
+        if fresh.flag("drive"), d.string("gear") == "D", let speed = d.number("speedKmh"), speed <= 0.8 {
+            r.braking = true // Tesla Brake Hold (H) in D: brake lights ON
         }
         readMedia(into: &r, fresh: fresh)
         if fresh.flag("climate") { r.inside = units.format(t.number("insideC"), suffix: "°C"); r.outside = units.format(t.number("outsideC"), suffix: "°C") }

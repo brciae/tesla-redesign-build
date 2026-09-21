@@ -133,8 +133,8 @@ final class DrivingSceneDecor {
         }
         lightRig.isEnabled = lightsEnabled
         if lightsEnabled { buildLightsIfNeeded() }
-        let isBrakingOrStopped = state.flag("brake") || state.string("gear") == "P" || (state.number("speed") ?? 0) <= 1.5 || state.flag("hold")
-        brakeTarget = isBrakingOrStopped ? 1.0 : 0.0
+        let isBraking = state.flag("brake") || (state.string("gear") == "D" && (state.flag("hold") || (state.number("speed") ?? 0) <= 0.8))
+        brakeTarget = isBraking ? 1.0 : 0.0
         let newNight: Float = state.flag("headlights") ? 1 : 0
         if abs(newNight - nightTarget) > 0.01 {
             nightTarget = newNight
@@ -406,9 +406,9 @@ final class DrivingSceneDecor {
         // Clean road: NO beam polygon on asphalt in front of car (Tesla FSD authentic)
         beam = nil
 
-        // Vibrant red wash on the asphalt behind the car: covers lane width, smooth falloff matching Tesla FSD night view
-        let pool = LevelSprite(parent: lightRig, mesh: .generatePlane(width: 3.8, depth: 5.4)) { washMaterial(red, $0 * 0.95) }
-        pool.root.position = [0, 0.012, -3.0]
+        // Subtle, realistic red wash on asphalt behind the rear bumper matching real vehicle lighting
+        let pool = LevelSprite(parent: lightRig, mesh: .generatePlane(width: 2.2, depth: 1.8)) { washMaterial(red, $0 * 0.35) }
+        pool.root.position = [0, 0.005, -2.4]
         brakePool = pool
     }
 

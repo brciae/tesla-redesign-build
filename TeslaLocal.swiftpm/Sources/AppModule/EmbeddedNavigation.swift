@@ -378,9 +378,11 @@ struct NavigationSetupView: View {
                 Toggle("새 목적지를 받으면 자동으로 네이버 지도로 넘기기", isOn: $handOffToNaver)
             }
             InfoCard {
-                Label("운전 대시보드 3D 지도", systemImage: "map.fill").font(.title3)
-                Text(navigation.hasKey ? "카카오 정밀 내비 연동됨" : "Apple Maps 3D 내비 상시 활성화됨")
-                Caption("별도 키 등록 없이도 실시간 차량 위치·목적지 3D 지도 및 남은 거리·도착시간이 대시보드에 즉시 연동됩니다.")
+                Label("앱 안에서 바로 길안내", systemImage: "arrow.triangle.turn.up.right.diamond.fill").font(.title3)
+                Text(navigation.status)
+                Caption("카카오 정밀 길안내 · 차량 내비와 경로·도착시간 차이 가능")
+                if navigation.guiding { Button("진행 중인 내비 보기") { navigation.presented = true } }
+                Button("최신 목적지로 다시 시도") { navigation.retry(); model.refreshVehicle() }.disabled(navigation.ownsAudio || model.demo)
                 Button("운전 대시보드 열기") { navigation.presented = true }
                     .buttonStyle(.borderedProminent)
             }

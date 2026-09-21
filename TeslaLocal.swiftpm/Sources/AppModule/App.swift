@@ -62,15 +62,19 @@ struct MainView: View {
     @AppStorage("unitDistance") private var distance = "km"
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
-    @State private var selectedTab: AppTab = .vehicle
+    @State private var selectedTab: AppTab = .home
     var body: some View {
         ZStack {
         AppTabScaffold(selection: $selectedTab) {
             NavigationStack { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
-        } automation: {
-            NavigationStack { AutomationView().modifier(AppDestinations(link: link, navigation: navigation)) }
-        } settings: {
-            NavigationStack { PreferencesView().modifier(AppDestinations(link: link, navigation: navigation)) }
+        } controls: {
+            NavigationStack { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+        } energy: {
+            NavigationStack { EnergyTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+        } drive: {
+            NavigationStack { DriveTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
+        } menu: {
+            NavigationStack { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
         }
         .opacity(navigation.presented ? 0 : 1).allowsHitTesting(!navigation.presented).accessibilityHidden(navigation.presented)
         if navigation.presented { DrivingWorkspace(navigation: navigation, link: link).transition(.opacity).zIndex(1) }

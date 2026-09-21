@@ -11,8 +11,6 @@ struct HomeView: View {
     @ObservedObject var link: VehicleLink
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var summaryOpen = false
-    @State private var editing = false
-    @ObservedObject private var layout = HomeLayoutStore.shared
 
     var body: some View {
         let p = homePresentation(model, link), c = p.object("charge")
@@ -126,80 +124,13 @@ struct HomeView: View {
                     .buttonStyle(MotionButtonStyle())
                 }
 
-                // Grouped Menu Cards (Frosted Glass)
-                let controls = layout.shown.filter(\.isControl)
-                let records = layout.shown.filter { !$0.isControl }
-
-                if !controls.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("차량 제어")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.muted)
-                            .padding(.leading, 4)
-
-                        GlassMenuCard {
-                            ForEach(Array(controls.enumerated()), id: \.element.id) { index, module in
-                                glassMenuItem(
-                                    module.page,
-                                    module.icon,
-                                    title: module.title,
-                                    subtitle: module.subtitle,
-                                    colors: moduleColors(module),
-                                    isLast: index == controls.count - 1
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if !records.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("운행 및 설정")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.muted)
-                            .padding(.leading, 4)
-
-                        GlassMenuCard {
-                            ForEach(Array(records.enumerated()), id: \.element.id) { index, module in
-                                glassMenuItem(
-                                    module.page,
-                                    module.icon,
-                                    title: module.title,
-                                    subtitle: module.subtitle,
-                                    colors: moduleColors(module),
-                                    isLast: index == records.count - 1
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Edit Layout & Footer
-                Button { editing = true } label: {
-                    Label("홈 메뉴 편집", systemImage: "square.grid.2x2")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.85))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color.white.opacity(0.06))
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                }
-                .buttonStyle(MotionButtonStyle())
-                .padding(.top, 8)
-
+                // Minimal Vehicle Footer
                 VStack(spacing: 4) {
                     Text(model.settings.string("model", "Model Y L").uppercased())
                         .font(.system(size: 16, weight: .light, design: .rounded))
                         .tracking(4)
                         .foregroundStyle(Color.white.opacity(0.6))
-                    Caption("YL COMPANION · v0.61 (Build 61)")
+                    Caption("YL COMPANION · v0.62 (Build 62)")
                     if model.demo {
                         Button("예시 모드 종료") { model.exitDemo() }
                             .font(.caption.weight(.semibold))
@@ -208,7 +139,7 @@ struct HomeView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
+                .padding(.vertical, 24)
             }
             .frame(maxWidth: HomeVisualStyle.contentWidth)
             .padding(.horizontal, HomeVisualStyle.gutter)
@@ -219,7 +150,6 @@ struct HomeView: View {
         .background(Theme.bg)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { model.refreshVehicle() }
-        .sheet(isPresented: $editing) { HomeLayoutEditor() }
     }
 
     private func headerView(p: Object, c: Object) -> some View {
@@ -1096,5 +1026,90 @@ private struct TeslaOfficialChargingCardView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
         )
+    }
+}
+
+// MARK: - 5-Tab Navigation Root Views
+
+struct ControlsTabRootView: View {
+    @ObservedObject var link: VehicleLink
+    var body: some View {
+        ControlsView(link: link)
+    }
+}
+
+struct EnergyTabRootView: View {
+    @ObservedObject var link: VehicleLink
+    @State private var selectedSection = 0
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("에너지 구분", selection: $selectedSection) {
+                Text("충전 관리").tag(0)
+                Text("실내 공조").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            .background(Theme.bg)
+
+            if selectedSection == 0 {
+                ChargeStatusView(link: link)
+            } else {
+                ClimateStatusView(link: link)
+            }
+        }
+        .background(Theme.bg)
+    }
+}
+
+struct DriveTabRootView: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var link: VehicleLink
+    @ObservedObject var navigation: EmbeddedNavigation
+    @State private var selectedSection = 0
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("운행 구분", selection: $selectedSection) {
+                Text("길안내").tag(0)
+                Text("위치·주차").tag(1)
+                Text("운행 기록").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            .background(Theme.bg)
+
+            if selectedSection == 0 {
+                NavigationSetupView(navigation: navigation)
+            } else if selectedSection == 1 {
+                LocationStatusView(link: link)
+            } else {
+                TripsView()
+            }
+        }
+        .background(Theme.bg)
+    }
+}
+
+struct MenuTabRootView: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var link: VehicleLink
+    @ObservedObject var navigation: EmbeddedNavigation
+    var body: some View {
+        PageBody(title: "메뉴 및 설정") {
+            VStack(spacing: 16) {
+                GlassMenuCard {
+                    glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 · 운전자 프로필", colors: [Color.blue, Color.cyan])
+                    glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "차량 외장 색상 · 휠 · 틴팅 커스텀", colors: [Color.purple, Color.pink])
+                    glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "차량 관리 및 케어", subtitle: "타이어 공기압(TPMS) · 와이퍼 · 서비스 모드", colors: [Color.orange, Color.yellow])
+                    glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "시간대 및 출발/도착 자동 제어 규칙", colors: [Color.green, Color.mint])
+                    glassMenuItem(.briefing, "sun.max.fill", title: "오늘의 브리핑", subtitle: "출발 시 배터리/주행거리 음성 안내", colors: [Color.yellow, Color.orange])
+                    glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 음성 설정", subtitle: "음성 선택 · 볼륨 · 단위 설정", colors: [Color.gray, Color.white], isLast: false)
+                    glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "연결 상태", subtitle: link.authentic ? "차량 BLE 정상 연결됨" : "대기 중", colors: [Color.teal, Color.blue], isLast: true)
+                }
+            }
+        }
     }
 }

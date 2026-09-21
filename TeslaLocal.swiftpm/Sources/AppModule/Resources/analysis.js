@@ -497,19 +497,26 @@
         note:'관측 기록 기준. 주차 전후 변화는 미관측 충전·이동·온도 영향을 포함할 수 있으며 대기 소모로 단정하지 않음. 공조·감시모드·열관리 사용량은 미분리.'};
     }
     briefing(now=Date.now()){
-      const g=this.state.groups,c=g.charge,parts=[];
-      const soc=(fresh(c,now,TTL.charge)&&c.soc!=null)?c.soc:41;
-      const isChg=c&&(c.charging===1||(c.chargerKW||0)>0);
+      const g=this.state.groups,c=g.charge,t=g.climate,parts=[];
+      const soc=(c&&fresh(c,now,TTL.charge)&&c.soc!=null)?c.soc:null;
+      const rangeKm=(c&&fresh(c,now,TTL.charge)&&c.rangeKm!=null)?Math.round(c.rangeKm):null;
+      const insideC=(t&&fresh(t,now,TTL.climate)&&t.insideC!=null)?Math.round(t.insideC):null;
+      const isChg=c&&(c.charging===1||(c.chargerKW||0)>0.5);
+      const hour=new Date(now).getHours();
+      const greeting=hour<12?'좋은 아침입니다.':(hour<18?'좋은 오후입니다.':'좋은 저녁입니다.');
+
       if(isChg){
-        parts.push('충전이 시작되었습니다.');
-        parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
-        if(c.minutesToLimit)parts.push(`약 ${c.minutesToLimit}분 남았습니다.`);
-        else parts.push('충전이 완료되었습니다.');
+        parts.push(greeting);
+        parts.push('차량이 현재 충전 중입니다.');
+        if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
+        if(c.minutesToLimit&&c.minutesToLimit>0)parts.push(`충전 완료까지 약 ${c.minutesToLimit}분 남았습니다.`);
+        else parts.push('충전이 정상적으로 진행되고 있습니다.');
       }else{
-        parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
-        parts.push('삼백 미터 앞, 좌회전입니다.');
-        parts.push('어린이 보호구역입니다.');
-        parts.push('공조를 시작합니다.');
+        parts.push(greeting);
+        if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
+        if(rangeKm!=null&&rangeKm>0)parts.push(`주행 가능 거리는 약 ${rangeKm}킬로미터입니다.`);
+        if(insideC!=null)parts.push(`차량 실내 온도는 ${insideC}도입니다.`);
+        parts.push('오늘도 안전 운전 하세요.');
       }
       return parts.join(' '); /* charging & departure briefing                                                                                                                                               */
     }

@@ -236,7 +236,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
         if defaults.bool(forKey: "voiceDuck") { options.insert(.duckOthers) } else { options.insert(.mixWithOthers) }
         do {
-            try audio.setCategory(.playback, mode: .voicePrompt, options: options)
+            try audio.setCategory(.playback, mode: .spokenAudio, options: options)
         } catch {
             do {
                 try audio.setCategory(.playback, options: options)

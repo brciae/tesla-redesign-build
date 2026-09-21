@@ -103,23 +103,32 @@ struct InfoRow: View {
     }
 }
 
-enum AppTab: Hashable { case vehicle, automation, settings }
+enum AppTab: Hashable {
+    case home, controls, energy, drive, menu
+    static var vehicle: AppTab { .home }
+    static var automation: AppTab { .menu }
+    static var settings: AppTab { .menu }
+}
 private struct SelectAppTabKey: EnvironmentKey { static let defaultValue: (AppTab) -> Void = { _ in } }
 extension EnvironmentValues {
     var selectAppTab: (AppTab) -> Void { get { self[SelectAppTabKey.self] } set { self[SelectAppTabKey.self] = newValue } }
 }
 
-/// Three independent navigation roots; driving mode is presented outside this container.
-struct AppTabScaffold<Vehicle: View, Automation: View, Settings: View>: View {
+/// 5 primary navigation roots matching commercial EV app standards; driving mode is presented outside this container.
+struct AppTabScaffold<Home: View, Controls: View, Energy: View, Drive: View, Menu: View>: View {
     @Binding var selection: AppTab
-    @ViewBuilder var vehicle: () -> Vehicle
-    @ViewBuilder var automation: () -> Automation
-    @ViewBuilder var settings: () -> Settings
+    @ViewBuilder var home: () -> Home
+    @ViewBuilder var controls: () -> Controls
+    @ViewBuilder var energy: () -> Energy
+    @ViewBuilder var drive: () -> Drive
+    @ViewBuilder var menu: () -> Menu
     var body: some View {
         TabView(selection: $selection) {
-            vehicle().tabItem { Label("차량", systemImage: "car.fill") }.tag(AppTab.vehicle)
-            automation().tabItem { Label("자동화", systemImage: "bolt.circle") }.tag(AppTab.automation)
-            settings().tabItem { Label("설정", systemImage: "gearshape") }.tag(AppTab.settings)
+            home().tabItem { Label("홈", systemImage: "car.fill") }.tag(AppTab.home)
+            controls().tabItem { Label("컨트롤", systemImage: "slider.horizontal.2.square.on.square") }.tag(AppTab.controls)
+            energy().tabItem { Label("에너지", systemImage: "bolt.fill") }.tag(AppTab.energy)
+            drive().tabItem { Label("운행", systemImage: "map.fill") }.tag(AppTab.drive)
+            menu().tabItem { Label("메뉴", systemImage: "ellipsis.circle.fill") }.tag(AppTab.menu)
         }
         .environment(\.selectAppTab, { selection = $0 })
     }
