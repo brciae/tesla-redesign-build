@@ -129,30 +129,40 @@ struct MainView: View {
     }
 }
 private struct AppDestinations: ViewModifier {
+    @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @ObservedObject var navigation: EmbeddedNavigation
+
     func body(content: Content) -> some View {
         content.navigationDestination(for: Page.self) { page in
-                    switch page {
-                    case .controls: ControlsView(link: link)
-                    case .climate: ClimateStatusView(link: link)
-                    case .location: LocationStatusView(link: link)
-                    case .charging: ChargeStatusView(link: link)
-                    case .schedule: AutomationUtilitiesView(title: "일정 예약 설정")
-                    case .security: SecurityStatusView(link: link)
-                    case .drive: DriveView()
-                    case .navigation: NavigationSetupView(navigation: navigation)
-                    case .preferences: PreferencesView()
-                    case .appearance: VehicleAppearanceView()
-                    case .battery: BatteryView()
-                    case .trips: TripsView()
-                    case .care: CareView()
-                    case .automation: AutomationView()
-                    case .connection: ConnectionView(link: link)
-                    case .briefing: BriefingView()
-                    case .vehicle3D: PageBody(title: "차량 3D") { Vehicle3DPanel(link: link) }
-                    }
+            destinationView(for: page)
+                .onAppear {
+                    model.voice.say("\(page.rawValue) 화면입니다.", category: "voiceControl")
                 }
+        }
+    }
+
+    @ViewBuilder
+    private func destinationView(for page: Page) -> some View {
+        switch page {
+        case .controls: ControlsView(link: link)
+        case .climate: ClimateStatusView(link: link)
+        case .location: LocationStatusView(link: link)
+        case .charging: ChargeStatusView(link: link)
+        case .schedule: AutomationUtilitiesView(title: "일정 예약 설정")
+        case .security: SecurityStatusView(link: link)
+        case .drive: DriveView()
+        case .navigation: NavigationSetupView(navigation: navigation)
+        case .preferences: PreferencesView()
+        case .appearance: VehicleAppearanceView()
+        case .battery: BatteryView()
+        case .trips: TripsView()
+        case .care: CareView()
+        case .automation: AutomationView()
+        case .connection: ConnectionView(link: link)
+        case .briefing: BriefingView()
+        case .vehicle3D: PageBody(title: "차량 3D") { Vehicle3DPanel(link: link) }
+        }
     }
 }
 struct PageBody<Content: View>: View {

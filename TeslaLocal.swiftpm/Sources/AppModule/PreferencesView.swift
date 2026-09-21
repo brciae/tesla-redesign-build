@@ -12,7 +12,7 @@ struct PreferencesView: View {
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
     @AppStorage("voiceEnabled") private var enabled = true
-    @AppStorage("voiceIdentifier") private var identifier = "recorded:yumi"
+    @AppStorage("voiceIdentifier") private var identifier = "typecast:은경"
     @AppStorage("voiceDeliveryStyle") private var deliveryStyle = "standard"
     @AppStorage("voiceRate") private var rate = 0.47
     @AppStorage("voiceVolume") private var volume = 0.8
@@ -24,39 +24,14 @@ struct PreferencesView: View {
     @AppStorage("navSafetyVoice") private var navSafety = true
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
-    @ObservedObject private var voicePack = OfflineVoicePack.shared
     @ObservedObject private var typecast = TypecastClient.shared
+
     var body: some View {
         Form {
-            // v34: one decision per row. Everything that is not "which voice" moved to 고급.
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
-                // v42: what the recorded voice does and does not cover, said plainly rather than left
-                // for the owner to work out from which sentences suddenly sound different.
-                if let recorded = RecordedVoice.resolved(identifier) {
-                    // v43: the picker is a menu, so the chosen character is shown once more here,
-                    // where there is room for the portrait at a size worth looking at.
-                    HStack(spacing: 12) {
-                        VoicePortrait(url: recorded.portrait, name: recorded.name, size: 52)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(recorded.name).font(.headline)
-                            if !recorded.style.isEmpty {
-                                Text(recorded.style).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    InfoRow("녹음 안내 음성", "자주 쓰는 안내 \(recorded.count)문장은 합성하지 않고 미리 녹음된 음원을 그대로 재생함. 회전 안내는 '삼백 미터 앞'과 '좌회전입니다' 두 음원을 이어 붙이고, 말하는 거리는 녹음이 있는 값(50·100·200·300·400·500·700m, 1·2·3km)으로 맞춰 안내함. 녹음에 없는 문장(숫자·지명이 들어간 브리핑 등)은 앱 내장 엔진이 읽음. " + RecordedVoice.credit + " · 개인용.")
-                }
-                // v37: the 10/20/30대 character voices exist only once the on-device engine is installed,
-                // so the download sits right under the picker instead of three screens away.
-                if !voicePack.ready {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("캐릭터 음성 (10대·20대·30대)은 앱 내장 음성 엔진이 필요함").font(.subheadline)
-                        OfflineVoicePackRow()
-                    }
-                }
-                VoicePreviewControls(preview: { model.voice.preview("안녕하세요. 안내를 시작합니다.") }, stop: { model.stopSpeech() })
+                VoicePreviewControls(preview: { model.voice.preview("안녕하세요. 타입캐스트 안내를 시작합니다.") }, stop: { model.stopSpeech() })
                 VoiceStatus(voice: model.voice)
             }
 
@@ -102,10 +77,6 @@ struct PreferencesView: View {
                             }
                             InfoRow("적용 범위", "시작과 종료가 같은 시각이면 제한하지 않음. 직접 누른 읽기와 길안내 음성은 조용시간에도 나옴.")
                         }
-                        Section("음성 만들기") {
-                            NavigationLink("음성 스튜디오") { VoiceStudioView(identifier: $identifier) }
-                            OfflineVoicePackRow()
-                        }
                     }.navigationTitle("음성 세부 설정").navigationBarTitleDisplayMode(.inline)
                 }
             }
@@ -115,8 +86,8 @@ struct PreferencesView: View {
             .onChange(of: deliveryStyle) { _, _ in model.stopSpeech() }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in model.navigation.applyAudioPreferences() }
             .onAppear {
-                if identifier.isEmpty || (!identifier.hasPrefix(RecordedVoice.prefix) && !identifier.hasPrefix("offline:") && AVSpeechSynthesisVoice(identifier: identifier) == nil) {
-                    identifier = RecordedVoice.voices.first?.id ?? "recorded:yumi"
+                if identifier.isEmpty || identifier.hasPrefix("recorded:") || identifier.hasPrefix("offline:") || (!identifier.hasPrefix("typecast:") && !TypecastClient.presetVoices.contains(where: { $0.id == identifier })) {
+                    identifier = "typecast:은경"
                 }
             }
     }
@@ -130,13 +101,11 @@ struct TypecastSettingsSection: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        Toggle("타입캐스트 AI 음성 사용 (선택)", isOn: $typecast.isEnabled)
+        Toggle("타입캐스트 AI 음성 사용", isOn: $typecast.isEnabled)
 
         if typecast.isEnabled {
             keyPoolSection
             presetsSection
-            complementSection
-            bypassSection
             auditionSection
 
             if !typecast.lastStatus.isEmpty {
@@ -145,14 +114,14 @@ struct TypecastSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            InfoRow("타입캐스트 멀티 계정 안내", "계정을 4~5개 등록해두시면 각 계정의 15,000 크레딧(4개 등록 시 60,000자, 5개 등록 시 75,000자)을 1번부터 차례대로 자동 소진합니다. 한 번 생성된 오디오는 앱에 영구 캐싱되어 0크레딧으로 즉시 재생됩니다.")
+            InfoRow("타입캐스트 멀티 계정 안내", "계정을 추가하여 등록해두시면 각 계정의 15,000 크레딧을 1번부터 차례대로 자동 소진합니다. 한 번 생성된 오디오는 앱에 영구 캐싱되어 0크레딧으로 즉시 재생됩니다.")
         }
     }
 
     private var keyPoolSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("API Key 계정 풀 (최대 5개 연계)")
+                Text("API Key 계정 풀 (매월 계정당 15,000자 무료)")
                     .font(.caption.weight(.semibold))
                 Spacer()
                 if typecast.validApiKeys.count > 1 {
@@ -174,7 +143,7 @@ struct TypecastSettingsSection: View {
                 .foregroundStyle(count > 1 ? .green : .secondary)
 
             VStack(spacing: 6) {
-                ForEach(0..<5, id: \.self) { idx in
+                ForEach(0..<typecast.apiKeys.count, id: \.self) { idx in
                     HStack(spacing: 6) {
                         Text("\(idx + 1)")
                             .font(.caption2.weight(.bold))
@@ -184,8 +153,9 @@ struct TypecastSettingsSection: View {
                         SecureField(idx == 0 ? "1번 메인 API Key (기본)" : "\(idx + 1)번 보조 계정 API Key (선택)", text: Binding(
                             get: { typecast.apiKeys.indices.contains(idx) ? typecast.apiKeys[idx] : "" },
                             set: { newVal in
-                                while typecast.apiKeys.count <= idx { typecast.apiKeys.append("") }
-                                typecast.apiKeys[idx] = newVal
+                                if typecast.apiKeys.indices.contains(idx) {
+                                    typecast.apiKeys[idx] = newVal
+                                }
                             }
                         ))
                         .font(.system(size: 12, design: .monospaced))
@@ -200,9 +170,31 @@ struct TypecastSettingsSection: View {
                                 .background(Color.green.opacity(0.2), in: Capsule())
                                 .foregroundStyle(.green)
                         }
+
+                        if typecast.apiKeys.count > 1 {
+                            Button {
+                                typecast.removeAccount(at: idx)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.caption)
+                                    .foregroundStyle(.red.opacity(0.8))
+                            }
+                            .buttonStyle(.borderless)
+                        }
                     }
                 }
             }
+
+            Button {
+                typecast.addAccount()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus.circle.fill")
+                    Text("계정 추가 (+15,000 크레딧 슬롯)")
+                }
+                .font(.caption.weight(.semibold))
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -215,6 +207,7 @@ struct TypecastSettingsSection: View {
                 ForEach(TypecastClient.presetVoices, id: \.id) { preset in
                     Button {
                         typecast.selectedVoiceId = preset.id
+                        UserDefaults.standard.set("typecast:\(preset.id)", forKey: "voiceIdentifier")
                         model.voice.say("\(preset.name) 음성을 선택했습니다.", category: "voiceControl")
                     } label: {
                         Text(preset.name)
@@ -237,40 +230,6 @@ struct TypecastSettingsSection: View {
         }
     }
 
-    private var complementSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("기존 녹음 음성 미수록 문장 보완", isOn: $typecast.complementRecordedVoices)
-                .font(.subheadline.weight(.semibold))
-
-            Text("서희·유미·현지·수빈 음성 선택 시, 녹음 파일이 없는 문장(상세 브리핑·제어 알림 등)을 타입캐스트 AI가 각 캐릭터 Voice ID로 읽어줍니다.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            if typecast.complementRecordedVoices {
-                VStack(spacing: 5) {
-                    characterVoiceRow(name: "유미", text: $typecast.voiceIdYumi)
-                    characterVoiceRow(name: "현지", text: $typecast.voiceIdHyeonji)
-                    characterVoiceRow(name: "수빈", text: $typecast.voiceIdSubin)
-                    characterVoiceRow(name: "서희", text: $typecast.voiceIdSeohee)
-                }
-                .padding(.top, 4)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private var bypassSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("100% 타입캐스트 AI 생성 및 캐시 사용", isOn: $typecast.bypassRecordedVoices)
-                .font(.subheadline.weight(.semibold))
-
-            Text("조각난 기존 녹음 파일(WAV)을 일체 사용하지 않고, 모든 안내(길안내·안전운전·브리핑·차량제어)를 100% 타입캐스트 고품질 AI로만 합성하여 로컬 캐시에 영구 보관합니다.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 4)
-    }
-
     private var auditionSection: some View {
         HStack {
             Button {
@@ -285,43 +244,28 @@ struct TypecastSettingsSection: View {
             Spacer()
 
             if typecast.cacheFileCount > 0 {
-                Button("캐시 삭제 (\(typecast.cacheFileCount)개)") {
-                    typecast.clearCache()
-                }
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-        }
-    }
-
-    private func characterVoiceRow(name: String, text: Binding<String>) -> some View {
-        HStack(spacing: 8) {
-            Text(name)
-                .font(.caption.weight(.bold))
-                .frame(width: 32, alignment: .leading)
-            TextField("\(name) Voice ID 또는 캐릭터명", text: text)
-                .font(.system(size: 12, design: .monospaced))
-                .textFieldStyle(.roundedBorder)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            Button {
-                typecast.testSpeech(text: "안녕하세요, \(name) 안내 음성입니다.", voiceId: text.wrappedValue)
-            } label: {
-                Image(systemName: "speaker.wave.2.fill")
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("영구 보관 캐시: \(typecast.cacheFileCount)개 (\(String(format: "%.1f", typecast.cacheTotalSizeMB))MB)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Button("캐시 비우기") {
+                        typecast.clearCache()
+                    }
                     .font(.caption)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.red)
+                }
             }
-            .buttonStyle(.borderless)
-            .disabled(typecast.isSynthesizing || !typecast.hasKey)
         }
     }
 }
+
 private struct VoiceCategoryToggle: View {
     let title: String
     @AppStorage private var enabled: Bool
     init(title: String, key: String) { self.title = title; _enabled = AppStorage(wrappedValue: true, key) }
     var body: some View { Toggle(title, isOn: $enabled) }
 }
+
 struct VoiceStatus: View {
     @ObservedObject var voice: VoiceCoordinator
     var body: some View {

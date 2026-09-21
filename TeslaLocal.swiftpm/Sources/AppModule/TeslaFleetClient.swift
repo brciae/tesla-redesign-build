@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import CryptoKit
 
 /// Tesla official Fleet API endpoints by geographical region and authorization system.
 enum FleetRegion: String, CaseIterable, Identifiable {
@@ -65,6 +66,7 @@ final class TeslaFleetClient: ObservableObject {
     private let clientIdKey = "TeslaFleetClient.ClientId"
     private let redirectUriKey = "TeslaFleetClient.RedirectUri"
     private let clientSecretKey = "TeslaFleetClient.ClientSecret"
+    private let codeVerifierKey = "TeslaFleetClient.CodeVerifier"
 
     func getClientId() -> String {
         readKeychain(key: clientIdKey) ?? Self.defaultClientId
@@ -97,18 +99,62 @@ final class TeslaFleetClient: ObservableObject {
         }
     }
 
-    /// Generates the official Tesla OAuth 2.0 Web Authorize URL for the user's browser.
-    func buildAuthorizeURL() -> URL? {
+    // MARK: - RFC 7636 PKCE Helpers
+
+    private func generateCodeVerifier() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return Data(bytes)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "="))
+    }
+
+    private func generateCodeChallenge(from verifier: String) -> String {
+        guard let data = verifier.data(using: .utf8) else { return "" }
+        let hashed = SHA256.hash(data: data)
+        return Data(hashed)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "="))
+    }
+
+    /// Generates a fresh PKCE code verifier and builds the Tesla OAuth 2.0 Web Authorize URL for the user's browser.
+    func startWebAuthorization() -> URL? {
+        let verifier = generateCodeVerifier()
+        saveKeychain(key: codeVerifierKey, value: verifier)
+        let challenge = generateCodeChallenge(from: verifier)
+        return buildAuthorizeURL(challenge: challenge)
+    }
+
+    /// Generates the official Tesla OAuth 2.0 Web Authorize URL with PKCE (S256).
+    func buildAuthorizeURL(challenge: String? = nil) -> URL? {
         let cid = getClientId()
         let rUri = getRedirectUri()
         var components = URLComponents(string: "https://auth.tesla.com/oauth2/v3/authorize")
+
+        let activeChallenge: String
+        if let challenge, !challenge.isEmpty {
+            activeChallenge = challenge
+        } else if let storedVerifier = readKeychain(key: codeVerifierKey), !storedVerifier.isEmpty {
+            activeChallenge = generateCodeChallenge(from: storedVerifier)
+        } else {
+            let newVerifier = generateCodeVerifier()
+            saveKeychain(key: codeVerifierKey, value: newVerifier)
+            activeChallenge = generateCodeChallenge(from: newVerifier)
+        }
+
         components?.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: cid),
             URLQueryItem(name: "redirect_uri", value: rUri),
             URLQueryItem(name: "scope", value: "openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds"),
             URLQueryItem(name: "state", value: "tesla_app_auth"),
-            URLQueryItem(name: "prompt", value: "login")
+            URLQueryItem(name: "prompt", value: "login"),
+            URLQueryItem(name: "code_challenge", value: activeChallenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
         ]
         return components?.url
     }
@@ -149,6 +195,9 @@ final class TeslaFleetClient: ObservableObject {
             "redirect_uri": rUri,
             "audience": currentBaseURL
         ]
+        if let verifier = readKeychain(key: codeVerifierKey), !verifier.isEmpty {
+            bodyParams["code_verifier"] = verifier
+        }
         if let secret = getClientSecret(), !secret.isEmpty {
             bodyParams["client_secret"] = secret
         }

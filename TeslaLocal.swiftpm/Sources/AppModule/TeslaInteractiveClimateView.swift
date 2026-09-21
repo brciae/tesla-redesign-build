@@ -471,28 +471,6 @@ struct TeslaInteractiveClimateView: View {
         }
     }
 
-    private var interiorThemeBadge: some View {
-        let seatLeatherColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))
-
-        return NavigationLink(value: Page.appearance) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(seatLeatherColor)
-                    .frame(width: 7, height: 7)
-                Text(VehicleInteriorPreset.presets.first { $0.hex.uppercased() == currentAppearance.interiorColor.uppercased() }?.name ?? "인테리어 시트")
-                    .font(.system(size: 9, weight: .bold))
-                Image(systemName: "paintbrush.fill")
-                    .font(.system(size: 7))
-            }
-            .foregroundStyle(Color.white.opacity(0.85))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color.black.opacity(0.55), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-
     private var teslaInteriorCabinStage: some View {
         ZStack {
             // Dark Base Stage
@@ -508,10 +486,6 @@ struct TeslaInteractiveClimateView: View {
 
             // 3D Interior Graphic with Custom Seat Leather Tint
             interiorCabinGraphic
-
-            // Interior Theme Badge at Top
-            interiorThemeBadge
-                .offset(y: -175)
 
             // Left Side Controls: Wiper Defrost [4] & Steering Wheel Heat [5]
             VStack(spacing: 8) {

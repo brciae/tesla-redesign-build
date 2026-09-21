@@ -11,7 +11,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var isEnabled: Bool {
         didSet { UserDefaults.standard.set(isEnabled, forKey: "typecastEnabled") }
     }
-    // Up to 5 Typecast accounts (each 15,000 free credits = 75,000 credits total per month)
+    // Dynamic Typecast accounts pool (each account 15,000 free credits)
     @Published var apiKeys: [String] {
         didSet {
             UserDefaults.standard.set(apiKeys, forKey: "typecastApiKeys")
@@ -29,39 +29,11 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             UserDefaults.standard.set(clean.isEmpty ? Self.defaultVoiceId : clean, forKey: "typecastVoiceId")
         }
     }
-    @Published var complementRecordedVoices: Bool {
-        didSet { UserDefaults.standard.set(complementRecordedVoices, forKey: "typecastComplementRecorded") }
-    }
-    @Published var bypassRecordedVoices: Bool {
-        didSet { UserDefaults.standard.set(bypassRecordedVoices, forKey: "typecastBypassRecorded") }
-    }
-    @Published var voiceIdYumi: String {
-        didSet {
-            let clean = voiceIdYumi.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(clean, forKey: "typecastVoiceId_yumi")
-        }
-    }
-    @Published var voiceIdHyeonji: String {
-        didSet {
-            let clean = voiceIdHyeonji.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(clean, forKey: "typecastVoiceId_hyeonji")
-        }
-    }
-    @Published var voiceIdSubin: String {
-        didSet {
-            let clean = voiceIdSubin.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(clean, forKey: "typecastVoiceId_subin")
-        }
-    }
-    @Published var voiceIdSeohee: String {
-        didSet {
-            let clean = voiceIdSeohee.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(clean, forKey: "typecastVoiceId_seohee")
-        }
-    }
     @Published var isSynthesizing = false
     @Published var lastStatus = ""
     @Published var cacheFileCount = 0
+    @Published var cacheTotalSizeMB: Double = 0.0
+    @Published var voiceCatalog: [String: String] = [:]
 
     var apiKey: String {
         get { activeApiKey }
@@ -69,7 +41,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if !apiKeys.isEmpty {
                 apiKeys[0] = newValue
             } else {
-                apiKeys = [newValue, "", "", "", ""]
+                apiKeys = [newValue]
             }
         }
     }
@@ -83,6 +55,18 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         guard !valid.isEmpty else { return "" }
         let idx = min(max(0, activeKeyIndex), valid.count - 1)
         return valid[idx]
+    }
+
+    func addAccount() {
+        apiKeys.append("")
+    }
+
+    func removeAccount(at index: Int) {
+        guard apiKeys.indices.contains(index), apiKeys.count > 1 else { return }
+        apiKeys.remove(at: index)
+        if activeKeyIndex >= apiKeys.count {
+            activeKeyIndex = max(0, apiKeys.count - 1)
+        }
     }
 
     func switchToNextKey() -> Bool {
@@ -103,50 +87,140 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         ("한영", "한영", "표현력이 풍부하고 생생한 대화 톤")
     ]
 
-    private var resolvedVoiceIds: [String: String] = [:]
-
     private var player: AVAudioPlayer?
     private var testCompletion: (() -> Void)?
 
+    // Permanent local disk storage: files in Application Support are NEVER purged by iOS
     private var cacheDirectory: URL {
-        let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
-        let dir = paths[0].appendingPathComponent("TypecastAudioCache", isDirectory: true)
+        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        let dir = paths[0].appendingPathComponent("YLCompanion/TypecastAudioCache", isDirectory: true)
         if !FileManager.default.fileExists(atPath: dir.path) {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return dir
     }
 
+    private func migrateLegacyCacheIfNeeded() {
+        let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+        let legacyDir = paths[0].appendingPathComponent("TypecastAudioCache", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: legacyDir.path),
+              let files = try? FileManager.default.contentsOfDirectory(atPath: legacyDir.path) else { return }
+        let targetDir = cacheDirectory
+        for file in files {
+            let src = legacyDir.appendingPathComponent(file)
+            let dst = targetDir.appendingPathComponent(file)
+            if !FileManager.default.fileExists(atPath: dst.path) {
+                try? FileManager.default.moveItem(at: src, to: dst)
+            }
+        }
+        try? FileManager.default.removeItem(at: legacyDir)
+    }
+
     override init() {
-        self.isEnabled = UserDefaults.standard.bool(forKey: "typecastEnabled")
+        self.isEnabled = UserDefaults.standard.object(forKey: "typecastEnabled") != nil ? UserDefaults.standard.bool(forKey: "typecastEnabled") : true
         if let savedKeys = UserDefaults.standard.stringArray(forKey: "typecastApiKeys"), !savedKeys.isEmpty {
-            var keys = savedKeys
-            while keys.count < 5 { keys.append("") }
-            self.apiKeys = Array(keys.prefix(5))
+            self.apiKeys = savedKeys
         } else {
             let legacyKey = UserDefaults.standard.string(forKey: "typecastApiKey") ?? ""
             self.apiKeys = [legacyKey, "", "", "", ""]
         }
         self.activeKeyIndex = UserDefaults.standard.integer(forKey: "typecastActiveKeyIndex")
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "typecastVoiceId") ?? Self.defaultVoiceId
-        self.complementRecordedVoices = UserDefaults.standard.object(forKey: "typecastComplementRecorded") != nil ? UserDefaults.standard.bool(forKey: "typecastComplementRecorded") : true
-        self.bypassRecordedVoices = UserDefaults.standard.bool(forKey: "typecastBypassRecorded")
-        self.voiceIdYumi = UserDefaults.standard.string(forKey: "typecastVoiceId_yumi") ?? "유미"
-        self.voiceIdHyeonji = UserDefaults.standard.string(forKey: "typecastVoiceId_hyeonji") ?? "현지"
-        self.voiceIdSubin = UserDefaults.standard.string(forKey: "typecastVoiceId_subin") ?? "수빈"
-        self.voiceIdSeohee = UserDefaults.standard.string(forKey: "typecastVoiceId_seohee") ?? "서희"
+        if let catalogData = UserDefaults.standard.data(forKey: "typecastVoiceCatalog"),
+           let dict = try? JSONDecoder().decode([String: String].self, from: catalogData) {
+            self.voiceCatalog = dict
+        }
         super.init()
+        migrateLegacyCacheIfNeeded()
         updateCacheCount()
+        if hasKey && voiceCatalog.isEmpty {
+            Task { await refreshVoiceCatalog() }
+        }
     }
 
-    func voiceIdForRecorded(identifier: String) -> String {
-        let key = identifier.replacingOccurrences(of: RecordedVoice.prefix, with: "")
-        switch key {
-        case "yumi": return voiceIdYumi.isEmpty ? "유미" : voiceIdYumi
-        case "hyeonji": return voiceIdHyeonji.isEmpty ? "현지" : voiceIdHyeonji
-        case "subin": return voiceIdSubin.isEmpty ? "수빈" : voiceIdSubin
-        case "seohee": return voiceIdSeohee.isEmpty ? "서희" : voiceIdSeohee
-        default: return selectedVoiceId
+    // MARK: - Voice Catalog & Parsing
+
+    func parseVoices(from data: Data) -> [String: String] {
+        var result: [String: String] = [:]
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { return result }
+
+        let list: [[String: Any]]
+        if let array = json as? [[String: Any]] {
+            list = array
+        } else if let dict = json as? [String: Any],
+                  let array = (dict["result"] ?? dict["voices"] ?? dict["data"]) as? [[String: Any]] {
+            list = array
+        } else {
+            return result
+        }
+
+        for item in list {
+            guard let voiceId = (item["voice_id"] ?? item["actor_id"] ?? item["id"]) as? String, !voiceId.isEmpty else {
+                continue
+            }
+
+            var names: [String] = []
+            if let vNameStr = item["voice_name"] as? String {
+                names.append(vNameStr)
+            } else if let vNameDict = item["voice_name"] as? [String: Any] {
+                for v in vNameDict.values {
+                    if let s = v as? String { names.append(s) }
+                }
+            }
+
+            if let nameStr = item["name"] as? String {
+                names.append(nameStr)
+            } else if let nameDict = item["name"] as? [String: Any] {
+                for v in nameDict.values {
+                    if let s = v as? String { names.append(s) }
+                }
+            }
+
+            if let actorStr = item["actor_name"] as? String {
+                names.append(actorStr)
+            }
+
+            for name in names {
+                let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !clean.isEmpty {
+                    result[clean.lowercased()] = voiceId
+                    result[clean.replacingOccurrences(of: " ", with: "").lowercased()] = voiceId
+                }
+            }
+            result[voiceId.lowercased()] = voiceId
+        }
+        return result
+    }
+
+    func refreshVoiceCatalog() async {
+        guard hasKey else { return }
+        let endpoints = [
+            "https://api.typecast.ai/v3/voices",
+            "https://api.typecast.ai/v2/voices",
+            "https://api.typecast.ai/v1/voices"
+        ]
+        for endpoint in endpoints {
+            guard let url = URL(string: endpoint) else { continue }
+            var req = URLRequest(url: url)
+            req.setValue(activeApiKey, forHTTPHeaderField: "X-API-KEY")
+            req.timeoutInterval = 10.0
+
+            if let (data, response) = try? await URLSession.shared.data(for: req),
+               let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                let parsed = parseVoices(from: data)
+                if !parsed.isEmpty {
+                    await MainActor.run {
+                        for (k, v) in parsed {
+                            self.voiceCatalog[k] = v
+                        }
+                        if let encoded = try? JSONEncoder().encode(self.voiceCatalog) {
+                            UserDefaults.standard.set(encoded, forKey: "typecastVoiceCatalog")
+                        }
+                        self.lastStatus = "보이스 카탈로그 동기화 완료 (\(self.voiceCatalog.count)개)"
+                    }
+                    break
+                }
+            }
         }
     }
 
@@ -154,35 +228,28 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return Self.defaultVoiceId }
 
-        // Explicit Typecast ID format (e.g., tc_..., uc_..., or hex format)
-        if trimmed.hasPrefix("tc_") || trimmed.hasPrefix("uc_") || trimmed.count >= 24 {
+        // 1. Explicit Typecast ID format (e.g., tc_..., uc_..., or hex format)
+        if trimmed.hasPrefix("tc_") || trimmed.hasPrefix("uc_") || (trimmed.count >= 20 && !trimmed.contains(" ")) {
             return trimmed
         }
 
-        if let cached = resolvedVoiceIds[trimmed] {
-            return cached
+        let lower = trimmed.lowercased()
+        let noSpaces = lower.replacingOccurrences(of: " ", with: "")
+
+        // 2. Check local voice catalog
+        if let match = voiceCatalog[lower] ?? voiceCatalog[noSpaces] {
+            return match
         }
 
-        guard hasKey else { return trimmed }
-
-        // Dynamic lookup from Typecast /v2/voices API using current active API key
-        if let url = URL(string: "https://api.typecast.ai/v2/voices") {
-            var request = URLRequest(url: url)
-            request.setValue(activeApiKey, forHTTPHeaderField: "X-API-KEY")
-            request.timeoutInterval = 8.0
-
-            if let (data, response) = try? await URLSession.shared.data(for: request),
-               let http = response as? HTTPURLResponse, http.statusCode == 200,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                for item in json {
-                    let vId = item["voice_id"] as? String ?? ""
-                    let vName = item["voice_name"] as? String ?? ""
-                    let vKoName = item["name"] as? String ?? ""
-                    if !vId.isEmpty && (vName.localizedCaseInsensitiveContains(trimmed) || vKoName.localizedCaseInsensitiveContains(trimmed)) {
-                        resolvedVoiceIds[trimmed] = vId
-                        return vId
-                    }
-                }
+        // 3. Dynamic lookup from Typecast /v3/voices or /v2/voices API
+        if hasKey {
+            await refreshVoiceCatalog()
+            if let match = voiceCatalog[lower] ?? voiceCatalog[noSpaces] {
+                return match
+            }
+            // Partial match
+            if let partial = voiceCatalog.first(where: { $0.key.contains(noSpaces) || noSpaces.contains($0.key) })?.value {
+                return partial
             }
         }
 
@@ -205,16 +272,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let key = cacheKey(for: text, voiceId: voiceId)
         let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
         if FileManager.default.fileExists(atPath: fileURL.path) {
-            return fileURL
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+               let size = attrs[.size] as? UInt64, size > 100 {
+                return fileURL
+            }
         }
         return nil
     }
 
     private func saveToCache(data: Data, for text: String, voiceId: String) -> URL? {
+        guard data.count > 100 else { return nil }
         let key = cacheKey(for: text, voiceId: voiceId)
         let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
         do {
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: .atomic)
             updateCacheCount()
             return fileURL
         } catch {
@@ -231,8 +302,18 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func updateCacheCount() {
         if let files = try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path) {
             cacheFileCount = files.count
+            var totalBytes: UInt64 = 0
+            for file in files {
+                let filePath = cacheDirectory.appendingPathComponent(file).path
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
+                   let size = attrs[.size] as? UInt64 {
+                    totalBytes += size
+                }
+            }
+            cacheTotalSizeMB = Double(totalBytes) / (1024.0 * 1024.0)
         } else {
             cacheFileCount = 0
+            cacheTotalSizeMB = 0.0
         }
     }
 
@@ -339,6 +420,9 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             }
         }
 
+        await MainActor.run {
+            self.lastStatus = "타입캐스트 실패: \(lastErrorMsg)"
+        }
         throw NSError(domain: "Typecast", code: 402, userInfo: [NSLocalizedDescriptionKey: "모든 타입캐스트 계정 크레딧 소진 또는 호출 실패: \(lastErrorMsg)"])
     }
 

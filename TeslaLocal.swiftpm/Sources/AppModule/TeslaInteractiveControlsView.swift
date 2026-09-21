@@ -194,10 +194,6 @@ struct TeslaInteractiveControlsView: View {
                 // Top-View Vehicle Body Graphic (Rotated 180° so Front Hood is at Top)
                 vehicleTopSilhouette
 
-                // Exterior Customization Badge
-                appearanceBadge
-                    .offset(y: -178)
-
                 // Front Hood Hotspot (Frunk) - Top Center
                 sleekHotspot(
                     icon: "car.side.front.open.fill",
@@ -302,33 +298,6 @@ struct TeslaInteractiveControlsView: View {
         }
     }
 
-    private var appearanceBadge: some View {
-        NavigationLink(value: Page.appearance) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(Color(uiColor: UIColor(appearanceHex: currentAppearance.paint)))
-                    .frame(width: 8, height: 8)
-                Text(VehiclePaintPreset.modelYL.first { $0.hex == currentAppearance.paint }?.name ?? "차꾸미기")
-                    .font(.system(size: 10, weight: .bold))
-                if currentAppearance.enabled {
-                    Text("· \(currentAppearance.finish.rawValue)")
-                        .font(.system(size: 10))
-                }
-                if !currentAppearance.plate.isEmpty {
-                    Text("· \(currentAppearance.plate)")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                Image(systemName: "paintbrush.fill")
-                    .font(.system(size: 8))
-            }
-            .foregroundStyle(Color.white.opacity(0.85))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(Color.black.opacity(0.55), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.8))
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
 
     // MARK: - Center Lock Hotspot
 
@@ -740,6 +709,7 @@ struct TeslaFleetTokenSheet: View {
     @State private var authCodeText = ""
     @State private var clientIdText = TeslaFleetClient.defaultClientId
     @State private var redirectUriText = TeslaFleetClient.defaultRedirectUri
+    @State private var clientSecretText = ""
     @State private var isExchanging = false
     @State private var isLoading = false
     @State private var message: String? = nil
@@ -815,8 +785,8 @@ struct TeslaFleetTokenSheet: View {
                             }
                         }
 
-                        // Client ID & Redirect URI Display
-                        VStack(alignment: .leading, spacing: 4) {
+                        // Client ID, Redirect URI & Client Secret
+                        VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text("OAuth 2.0 Client ID:")
                                     .font(.caption.weight(.semibold))
@@ -835,25 +805,54 @@ struct TeslaFleetTokenSheet: View {
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(.blue)
                             }
+                            Divider().padding(.vertical, 2)
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("고객 비밀번호 (Client Secret - 선택/권장):")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    if !clientSecretText.isEmpty {
+                                        Text("저장됨")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                                SecureField("테슬라 개발자 포털의 Client Secret 입력", text: $clientSecretText)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                    .padding(6)
+                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                                    .onChange(of: clientSecretText) { newVal in
+                                        fleet.saveClientSecret(newVal)
+                                    }
+                            }
                         }
                         .padding(8)
                         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
-                        // Step 1: Web Login Button
-                        if let authURL = fleet.buildAuthorizeURL() {
-                            Link(destination: authURL) {
-                                HStack {
-                                    Spacer()
-                                    Image(systemName: "safari.fill")
-                                    Text("1단계: 테슬라 공식 웹 로그인 (브라우저 열기)")
-                                        .font(.system(size: 13, weight: .bold))
-                                    Spacer()
-                                }
-                                .padding(.vertical, 10)
+                        // Step 1: Web Login Button (Generates fresh PKCE and opens Safari)
+                        Button {
+                            fleet.saveClientId(clientIdText)
+                            fleet.saveRedirectUri(redirectUriText)
+                            fleet.saveClientSecret(clientSecretText)
+                            if let authURL = fleet.startWebAuthorization() {
+                                UIApplication.shared.open(authURL)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.red)
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "safari.fill")
+                                Text("1단계: 테슬라 공식 웹 로그인 (브라우저 열기)")
+                                    .font(.system(size: 13, weight: .bold))
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
                         }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+
 
                         Divider().padding(.vertical, 2)
 
@@ -1031,6 +1030,7 @@ struct TeslaFleetTokenSheet: View {
                 vinText = fleet.selectedVin
                 clientIdText = fleet.getClientId()
                 redirectUriText = fleet.getRedirectUri()
+                clientSecretText = fleet.getClientSecret() ?? ""
                 if let clip = UIPasteboard.general.string, clip.contains("code=") {
                     authCodeText = clip
                 }
@@ -1048,6 +1048,7 @@ struct TeslaFleetTokenSheet: View {
             do {
                 fleet.saveClientId(clientIdText)
                 fleet.saveRedirectUri(redirectUriText)
+                fleet.saveClientSecret(clientSecretText)
                 _ = try await fleet.exchangeAuthorizationCode(code: code)
                 let list = try await fleet.fetchVehicles()
                 await MainActor.run {

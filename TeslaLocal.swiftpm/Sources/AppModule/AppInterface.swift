@@ -7,34 +7,31 @@ struct VoiceSelectionControls: View {
 
     var body: some View {
         Picker("안내 음성", selection: $identifier) {
-            Text("한국어 · iPhone 기본").tag("")
-            ForEach(VoiceLibrary.curated()) { choice in
-                HStack(spacing: 10) {
-                    VoicePortrait(url: choice.portrait, name: choice.name, size: 34)
-                    VStack(alignment: .leading) {
-                        Text(choice.name)
-                        Text(choice.detail).font(.caption).foregroundStyle(.secondary)
-                    }
-                }.tag(choice.id)
-            }
-            let mine = VoiceLibrary.customs
-            if !mine.isEmpty {
-                Section("내가 만든 음성") {
-                    ForEach(mine) { p in Text(p.name).tag("offline:" + p.id) }
+            Section("타입캐스트 AI 고품질 음성") {
+                ForEach(TypecastClient.presetVoices, id: \.id) { preset in
+                    Text("✨ " + preset.name + " (" + preset.desc + ")").tag("typecast:" + preset.id)
                 }
             }
             if !selectionListed {
-                Text(VoiceLibrary.label(for: identifier) + " (현재 선택)").tag(identifier)
+                Text(customLabel(for: identifier) + " (사용자 지정 Voice ID)").tag(identifier)
             }
         }
         .accessibilityIdentifier("voice.profile")
     }
 
     private var selectionListed: Bool {
-        if identifier.isEmpty { return true }
-        if VoiceLibrary.curated().contains(where: { $0.id == identifier }) { return true }
-        if identifier.hasPrefix("offline:custom:") { return true }
-        return VoiceLibrary.systemChoices().contains { $0.id == identifier }
+        if identifier.hasPrefix("typecast:") {
+            let vId = String(identifier.dropFirst(9))
+            return TypecastClient.presetVoices.contains(where: { $0.id == vId })
+        }
+        return false
+    }
+
+    private func customLabel(for id: String) -> String {
+        if id.hasPrefix("typecast:") {
+            return "✨ " + String(id.dropFirst(9))
+        }
+        return "✨ " + id
     }
 }
 
@@ -78,18 +75,10 @@ struct VoicePortrait: View {
 struct VoiceAdvancedControls: View {
     @Binding var identifier: String
     @Binding var style: String
-    @State private var allVoices = false
     var body: some View {
         Picker("말하기 스타일", selection: $style) {
             ForEach(BriefingStyle.allCases) { item in Text(item.title).tag(item.rawValue) }
         }.accessibilityIdentifier("voice.style")
-        DisclosureGroup("모든 iPhone 음성", isExpanded: $allVoices) {
-            Picker("iPhone 음성", selection: $identifier) {
-                Text("iPhone 기본").tag("")
-                ForEach(VoiceLibrary.systemChoices()) { choice in Text(choice.name + " · " + choice.detail).tag(choice.id) }
-            }.pickerStyle(.inline).labelsHidden()
-            InfoRow("음성 추가", "iPhone 설정 → 손쉬운 사용 → 콘텐츠 말하기 → 음성 → 한국어에서 프리미엄 음성을 내려받으면 여기 목록에 나타남.")
-        }
     }
 }
 
