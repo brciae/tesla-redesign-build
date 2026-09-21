@@ -15,12 +15,14 @@ struct TeslaInteractiveClimateView: View {
     @State private var rearCenterHeat = 0
     @State private var rearRightHeat = 0
     @State private var steeringWheelHeat = false
+    @State private var frontDefrost = false
 
     @State private var targetTemperature = 21.5
     @State private var isPowerOn = true
 
     private var blocked: Bool {
-        model.demo || !link.authentic || !link.controlEnabled || link.controlBusy || link.preparingControl || link.confirmation != nil
+        if model.fleet.isAuthenticated { return false }
+        return model.demo || !link.authentic || !link.controlEnabled || link.controlBusy || link.preparingControl || link.confirmation != nil
     }
 
     var body: some View {
@@ -149,7 +151,24 @@ struct TeslaInteractiveClimateView: View {
         guard newTemp != targetTemperature else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         targetTemperature = newTemp
-        link.askControl("temperature", title: "온도 설정", args: ["value": targetTemperature])
+        if !model.demo && link.authentic && link.controlEnabled && !link.controlBusy {
+            link.askControl("temperature", title: "온도 설정", args: ["value": targetTemperature])
+        } else if model.fleet.isAuthenticated {
+            Task {
+                try? await model.fleet.setTemps(driverTemp: targetTemperature, passengerTemp: targetTemperature)
+            }
+        }
+    }
+
+    private func toggleClimatePower() {
+        isPowerOn.toggle()
+        if !model.demo && link.authentic && link.controlEnabled && !link.controlBusy {
+            link.askControl(isPowerOn ? "climateOn" : "climateOff", title: isPowerOn ? "공조 켜기" : "공조 끄기")
+        } else if model.fleet.isAuthenticated {
+            Task {
+                try? await model.fleet.setAutoConditioning(on: isPowerOn)
+            }
+        }
     }
 
     // MARK: - Interactive Interior Cabin View
@@ -391,7 +410,22 @@ struct TeslaInteractiveClimateView: View {
 
     private var quickClimateBar: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
+                // Front Windshield Defrost Max
+                quickBarButton(
+                    icon: "windshield.front.and.heat.waves",
+                    title: frontDefrost ? "성에 끄기" : "최대 성에",
+                    isActive: frontDefrost,
+                    activeColor: Color(red: 1.0, green: 0.5, blue: 0.1)
+                ) {
+                    withAnimation {
+                        frontDefrost.toggle()
+                        if model.fleet.isAuthenticated {
+                            Task { try? await model.fleet.setPreconditioningMax(on: frontDefrost) }
+                        }
+                    }
+                }
+
                 // Climate Power On/Off
                 quickBarButton(
                     icon: "power",
@@ -400,15 +434,14 @@ struct TeslaInteractiveClimateView: View {
                     activeColor: Color(red: 0.28, green: 0.88, blue: 0.42)
                 ) {
                     withAnimation {
-                        isPowerOn.toggle()
-                        link.askControl(isPowerOn ? "climateOn" : "climateOff", title: isPowerOn ? "공조 켜기" : "공조 끄기")
+                        toggleClimatePower()
                     }
                 }
 
                 // Preset Comfort Temperature (21.5°C)
                 quickBarButton(
                     icon: "sparkles",
-                    title: "쾌적 온도 21.5°C",
+                    title: "쾌적 21.5°C",
                     isActive: targetTemperature == 21.5,
                     activeColor: Color(red: 0.35, green: 0.65, blue: 1.0)
                 ) {
@@ -416,7 +449,7 @@ struct TeslaInteractiveClimateView: View {
                 }
             }
 
-            Text("※ 블루투스(BLE) 근거리 통신으로 실내 희망 온도 및 공조 전원을 제어합니다. 좌석 열선은 사용자 편의용 상태 표시를 제공합니다.")
+            Text("※ 스마트 하이브리드 제어: 차 근처에서는 초고속 BLE로, 멀리서는 테슬라 Fleet API(LTE)로 전송됩니다.")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.white.opacity(0.45))
                 .multilineTextAlignment(.center)
