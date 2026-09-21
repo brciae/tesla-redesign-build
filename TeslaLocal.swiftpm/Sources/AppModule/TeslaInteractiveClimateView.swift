@@ -448,6 +448,51 @@ struct TeslaInteractiveClimateView: View {
 
     // MARK: - Interior Cabin Stage (Tesla Manual Items 4, 5, 8, 9, 10)
 
+    private var interiorCabinGraphic: some View {
+        let isCustomInterior = currentAppearance.enabled && currentAppearance.interiorColor.uppercased() != "17191B"
+        let seatLeatherColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))
+
+        return ZStack {
+            Image("TeslaTopInterior")
+                .resizable()
+                .scaledToFit()
+                .frame(maxHeight: 380)
+                .shadow(color: Color.black.opacity(0.9), radius: 16, y: 6)
+
+            if isCustomInterior {
+                Image("TeslaTopInterior")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 380)
+                    .colorMultiply(seatLeatherColor)
+                    .opacity(0.42)
+                    .blendMode(.screen)
+            }
+        }
+    }
+
+    private var interiorThemeBadge: some View {
+        let seatLeatherColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))
+
+        return NavigationLink(value: Page.appearance) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(seatLeatherColor)
+                    .frame(width: 7, height: 7)
+                Text(VehicleInteriorPreset.presets.first { $0.hex.uppercased() == currentAppearance.interiorColor.uppercased() }?.name ?? "인테리어 시트")
+                    .font(.system(size: 9, weight: .bold))
+                Image(systemName: "paintbrush.fill")
+                    .font(.system(size: 7))
+            }
+            .foregroundStyle(Color.white.opacity(0.85))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.black.opacity(0.55), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
     private var teslaInteriorCabinStage: some View {
         ZStack {
             // Dark Base Stage
@@ -462,46 +507,11 @@ struct TeslaInteractiveClimateView: View {
                 .overlay(RoundedRectangle(cornerRadius: 26).stroke(Color.white.opacity(0.12), lineWidth: 1))
 
             // 3D Interior Graphic with Custom Seat Leather Tint
-            let isCustomInterior = currentAppearance.enabled && currentAppearance.interiorColor.uppercased() != "17191B"
-            let seatLeatherColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))
-
-            ZStack {
-                Image("TeslaTopInterior")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 380)
-                    .shadow(color: Color.black.opacity(0.9), radius: 16, y: 6)
-
-                if isCustomInterior {
-                    Image("TeslaTopInterior")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 380)
-                        .colorMultiply(seatLeatherColor)
-                        .opacity(0.42)
-                        .blendMode(.screen)
-                }
-            }
+            interiorCabinGraphic
 
             // Interior Theme Badge at Top
-            NavigationLink(value: Page.appearance) {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(seatLeatherColor)
-                        .frame(width: 7, height: 7)
-                    Text(VehicleInteriorPreset.presets.first { $0.hex.uppercased() == currentAppearance.interiorColor.uppercased() }?.name ?? "인테리어 시트")
-                        .font(.system(size: 9, weight: .bold))
-                    Image(systemName: "paintbrush.fill")
-                        .font(.system(size: 7))
-                }
-                .foregroundStyle(Color.white.opacity(0.85))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.black.opacity(0.55), in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
-            }
-            .buttonStyle(PlainButtonStyle())
-            .offset(y: -175)
+            interiorThemeBadge
+                .offset(y: -175)
 
             // Left Side Controls: Wiper Defrost [4] & Steering Wheel Heat [5]
             VStack(spacing: 8) {
@@ -659,6 +669,10 @@ struct TeslaInteractiveClimateView: View {
     ) -> some View {
         let isHeatActive = heat.wrappedValue > 0
         let isVentActive = vent.wrappedValue > 0
+        let tintColor: Color = Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))
+        let idleColor: Color = currentAppearance.enabled ? tintColor.opacity(0.16) : Color.white.opacity(0.08)
+        let heatBg: Color = isHeatActive ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28) : idleColor
+        let ventBg: Color = isVentActive ? Color.cyan.opacity(0.28) : idleColor
 
         return VStack(spacing: 3) {
             Text(title)
@@ -683,12 +697,7 @@ struct TeslaInteractiveClimateView: View {
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 5)
-                    .background(
-                        isHeatActive
-                            ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28)
-                            : (currentAppearance.enabled ? Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor)).opacity(0.16) : Color.white.opacity(0.08)),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .background(heatBg, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(isHeatActive ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.8) : Color.white.opacity(0.15), lineWidth: 1)
@@ -714,12 +723,7 @@ struct TeslaInteractiveClimateView: View {
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 5)
-                    .background(
-                        isVentActive
-                            ? Color.cyan.opacity(0.28)
-                            : (currentAppearance.enabled ? Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor)).opacity(0.16) : Color.white.opacity(0.08)),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
+                    .background(ventBg, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(isVentActive ? Color.cyan.opacity(0.8) : Color.white.opacity(0.15), lineWidth: 1)
@@ -740,6 +744,9 @@ struct TeslaInteractiveClimateView: View {
         seatPosition: Int
     ) -> some View {
         let isHeatActive = heat.wrappedValue > 0
+        let tintColor: Color = Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))
+        let idleColor: Color = currentAppearance.enabled ? tintColor.opacity(0.18) : Color(white: 0.14).opacity(0.85)
+        let heatBg: Color = isHeatActive ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28) : idleColor
 
         return Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -761,12 +768,7 @@ struct TeslaInteractiveClimateView: View {
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
-                .background(
-                    isHeatActive
-                        ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28)
-                        : (currentAppearance.enabled ? Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor)).opacity(0.18) : Color(white: 0.14).opacity(0.85)),
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
+                .background(heatBg, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(isHeatActive ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(0.8) : Color.white.opacity(0.15), lineWidth: 1)
