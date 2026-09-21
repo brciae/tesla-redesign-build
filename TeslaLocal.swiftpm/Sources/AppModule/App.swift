@@ -64,60 +64,67 @@ struct MainView: View {
     @AppStorage("unitPressure") private var pressure = "bar"
     @State private var selectedTab: AppTab = .home
     var body: some View {
+        mainContent
+            .environment(\.vehicleUnits, VehicleUnits(distance: distance, temperature: temperature, pressure: pressure))
+            .animation(reduced ? nil : .easeInOut(duration: 0.25), value: navigation.presented)
+            .tint(.white)
+            .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
+            .onOpenURL { url in model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
+            .task { if phase == .active { model.resume() } }
+            .onChange(of: phase) { _, p in handlePhase(p) }
+            .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
+            .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
+            .onChange(of: selectedTab) { _, newTab in handleTabVoice(newTab) }
+            .onChange(of: model.chargingPresented) { _, presented in
+                if presented { model.voice.say("충전 상세 화면을 열었습니다.", category: "voiceControl") }
+            }
+            .onChange(of: navigation.presented) { _, presented in handleNavVoice(presented) }
+    }
+
+    private var mainContent: some View {
         ZStack {
-        Commercial5TabScaffold(selection: $selectedTab) {
-            NavigationStack { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
-        } controls: {
-            NavigationStack { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
-        } energy: {
-            NavigationStack { EnergyTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
-        } drive: {
-            NavigationStack { DriveTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
-        } menu: {
-            NavigationStack { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
-        }
-        .opacity(navigation.presented ? 0 : 1).allowsHitTesting(!navigation.presented).accessibilityHidden(navigation.presented)
-        if navigation.presented { DrivingWorkspace(navigation: navigation, link: link).transition(.opacity).zIndex(1) }
-        if model.chargingPresented { ChargingWorkspace(link: link, isPresented: $model.chargingPresented).transition(.opacity).zIndex(2) }
-        }
-        .environment(\.vehicleUnits, VehicleUnits(distance: distance, temperature: temperature, pressure: pressure))
-        .animation(reduced ? nil : .easeInOut(duration: 0.25), value: navigation.presented)
-        .tint(.white)
-        .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
-        .onOpenURL { url in model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
-        .task { if phase == .active { model.resume() } }
-        .onChange(of: phase) { _, phase in
-            if phase == .active { model.resume() }
-            else if phase == .background { model.pause() }
-            else { model.resignActive() }
-        }
-        .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
-        .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
-        .onChange(of: selectedTab) { _, newTab in
-            let prompt: String
-            switch newTab {
-            case .home: prompt = "홈 화면으로 이동했습니다."
-            case .controls: prompt = "차량 컨트롤 화면으로 이동했습니다."
-            case .energy: prompt = "에너지 화면으로 이동했습니다."
-            case .drive: prompt = "운행 내비 화면으로 이동했습니다."
-            case .menu: prompt = "전체 메뉴로 이동했습니다."
-            default: prompt = ""
+            Commercial5TabScaffold(selection: $selectedTab) {
+                NavigationStack { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+            } controls: {
+                NavigationStack { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+            } energy: {
+                NavigationStack { EnergyTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+            } drive: {
+                NavigationStack { DriveTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
+            } menu: {
+                NavigationStack { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
             }
-            if !prompt.isEmpty {
-                model.voice.say(prompt, category: "voiceControl")
-            }
+            .opacity(navigation.presented ? 0 : 1).allowsHitTesting(!navigation.presented).accessibilityHidden(navigation.presented)
+
+            if navigation.presented { DrivingWorkspace(navigation: navigation, link: link).transition(.opacity).zIndex(1) }
+            if model.chargingPresented { ChargingWorkspace(link: link, isPresented: $model.chargingPresented).transition(.opacity).zIndex(2) }
         }
-        .onChange(of: model.chargingPresented) { _, presented in
-            if presented {
-                model.voice.say("충전 상세 화면을 열었습니다.", category: "voiceControl")
-            }
+    }
+
+    private func handlePhase(_ p: ScenePhase) {
+        if p == .active { model.resume() }
+        else if p == .background { model.pause() }
+        else { model.resignActive() }
+    }
+
+    private func handleTabVoice(_ tab: AppTab) {
+        let prompt: String
+        switch tab {
+        case .home: prompt = "홈 화면으로 이동했습니다."
+        case .controls: prompt = "차량 컨트롤 화면으로 이동했습니다."
+        case .energy: prompt = "에너지 화면으로 이동했습니다."
+        case .drive: prompt = "운행 내비 화면으로 이동했습니다."
+        case .menu: prompt = "전체 메뉴로 이동했습니다."
+        default: prompt = ""
         }
-        .onChange(of: navigation.presented) { _, presented in
-            if presented {
-                model.voice.say("주행 대시보드를 표시합니다.", category: "voiceControl")
-            } else {
-                model.voice.say("주행 대시보드를 닫았습니다.", category: "voiceControl")
-            }
+        if !prompt.isEmpty { model.voice.say(prompt, category: "voiceControl") }
+    }
+
+    private func handleNavVoice(_ presented: Bool) {
+        if presented {
+            model.voice.say("주행 대시보드를 표시합니다.", category: "voiceControl")
+        } else {
+            model.voice.say("주행 대시보드를 닫았습니다.", category: "voiceControl")
         }
     }
 }
