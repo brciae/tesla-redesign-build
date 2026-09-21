@@ -583,9 +583,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             }
             FocusArrival(data: data, u: m.u)
                 .frame(width: rect.width)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: rect.width, height: m.h - m.pad, alignment: .bottom)
-            .offset(x: rect.minX)
+                .offset(x: rect.minX, y: m.wide ? rect.maxY + 8 * m.u : rect.maxY + (!m.wide && data.showsMedia ? 58 * m.u : 8 * m.u))
             EnergyLine(powerKW: data.powerKW, u: m.u)
                 .frame(width: stage.width * 0.8, height: 20 * m.u)
                 .offset(x: stage.minX + stage.width * 0.1, y: stage.maxY - 26 * m.u)
@@ -1378,7 +1376,7 @@ private struct FocusArrival: View {
         }
         .padding(14 * u)
         .background { SoftPanel(radius: 22 * u, strength: 0.5) }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
 
