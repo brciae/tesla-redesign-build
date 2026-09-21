@@ -507,16 +507,14 @@
 
       if(isChg){
         parts.push(greeting);
-        parts.push('차량이 현재 충전 중입니다.');
+        parts.push('충전 중입니다.');
         if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
-        if(c.minutesToLimit&&c.minutesToLimit>0)parts.push(`충전 완료까지 약 ${c.minutesToLimit}분 남았습니다.`);
-        else parts.push('충전이 정상적으로 진행되고 있습니다.');
+        parts.push('안전 운전하세요.');
       }else{
         parts.push(greeting);
         if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
-        if(rangeKm!=null&&rangeKm>0)parts.push(`주행 가능 거리는 약 ${rangeKm}킬로미터입니다.`);
-        if(insideC!=null)parts.push(`차량 실내 온도는 ${insideC}도입니다.`);
-        parts.push('오늘도 안전 운전 하세요.');
+        if(rangeKm!=null&&rangeKm>0)parts.push(`남은 거리는 ${rangeKm}킬로미터입니다.`);
+        parts.push('안전 운전하세요.');
       }
       return parts.join(' '); /* charging & departure briefing                                                                                                                                               */
     }

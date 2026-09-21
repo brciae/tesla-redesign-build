@@ -24,8 +24,9 @@ struct ChargingWorkspace: View {
         let chargerKW = c.number("chargerKW") ?? 6.0
         let minutesToLimit = c.number("minutesToLimit") ?? 190
         let addedKWh = c.number("addedKWh") ?? 12.0
-        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging") || model.demo
-        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 211
+        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let isPlugged = isCharging || c.flag("plugged")
+        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 0
 
         let hours = Int(minutesToLimit) / 60
         let mins = Int(minutesToLimit) % 60
@@ -55,18 +56,23 @@ struct ChargingWorkspace: View {
 
                     // 3D Vehicle Charging View with plugged-in cable & flowing green neon pulses
                     ZStack(alignment: .bottom) {
-                        Vehicle3DPanel(link: link, compact: true, chargingMode: true)
+                        Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
                             .frame(height: 260)
                             .clipped()
 
-                        // Soft ground shadow & ambient reflection
-                        RadialGradient(
-                            colors: [Color.green.opacity(isCharging ? 0.14 : 0.04), Color.clear],
-                            center: .center,
-                            startRadius: 40,
-                            endRadius: 200
-                        )
-                        .frame(height: 60)
+                        // Soft ground shadow & ambient reflection (only when charging)
+                        if isCharging {
+                            RadialGradient(
+                                colors: [Color.green.opacity(0.12), Color.clear],
+                                center: .center,
+                                startRadius: 10,
+                                endRadius: 120
+                            )
+                            .frame(width: 220, height: 60)
+                            .blur(radius: 12)
+                            .offset(y: -10)
+                            .allowsHitTesting(false)
+                        }
                     }
                     .padding(.top, 4)
 

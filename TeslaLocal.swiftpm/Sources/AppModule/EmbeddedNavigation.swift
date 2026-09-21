@@ -360,19 +360,14 @@ struct NavigationSetupView: View {
             // real person's voice, but Naver Map already ships those voices, so the destination can be
             // handed to it and Naver speaks the turns.
             InfoCard {
-                CardTitle(title: "외부 내비게이션으로 목적지 전송", systemImage: "arrow.triangle.turn.up.right.diamond.fill",
-                          info: "차량에 설정된 목적지 좌표를 선호하는 내비게이션 앱으로 즉시 전송하여 음성 길안내를 시작합니다.")
-                HStack(spacing: 8) {
+                CardTitle(title: "외부 내비게이션으로 목적지 전송", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                HStack(spacing: 10) {
                     Button { model.openInTMap() } label: {
                         Label("티맵", systemImage: "arrow.turn.up.right").frame(maxWidth: .infinity, minHeight: 40)
                     }.buttonStyle(.bordered).disabled(model.demo)
                     
-                    Button { model.openInKakaoNavi() } label: {
-                        Label("카카오내비", systemImage: "map.fill").frame(maxWidth: .infinity, minHeight: 40)
-                    }.buttonStyle(.bordered).disabled(model.demo)
-                    
                     Button { model.openInNaverMap() } label: {
-                        Label("네이버", systemImage: "paperplane.fill").frame(maxWidth: .infinity, minHeight: 40)
+                        Label("네이버 지도", systemImage: "paperplane.fill").frame(maxWidth: .infinity, minHeight: 40)
                     }.buttonStyle(.bordered).disabled(model.demo)
                 }
                 Toggle("새 목적지를 받으면 자동으로 네이버 지도로 넘기기", isOn: $handOffToNaver)
@@ -380,38 +375,35 @@ struct NavigationSetupView: View {
             InfoCard {
                 Label("앱 안에서 바로 길안내", systemImage: "arrow.triangle.turn.up.right.diamond.fill").font(.title3)
                 Text(navigation.status)
-                Caption("카카오 정밀 길안내 · 차량 내비와 경로·도착시간 차이 가능")
                 if navigation.guiding { Button("진행 중인 내비 보기") { navigation.presented = true } }
                 Button("최신 목적지로 다시 시도") { navigation.retry(); model.refreshVehicle() }.disabled(navigation.ownsAudio || model.demo)
-                Button("운전 대시보드 열기") { navigation.presented = true }
-                    .buttonStyle(.borderedProminent)
+                Button {
+                    navigation.presented = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "car.fill")
+                        Text("운전 대시보드 열기")
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(Color(red: 0.15, green: 0.45, blue: 0.95), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
             InfoCard {
                 Text("화면 방향").font(.headline)
                 DirectionPicker(navigation: navigation)
                 if !navigation.directionNotice.isEmpty { Caption(navigation.directionNotice) }
-                Caption("내비에서만 적용 · 회전 잠금·창 모드에 따라 제한")
             }
             InfoCard {
-                Text("최초 한 번 연결").font(.headline)
-                Caption("카카오디벨로퍼스에서 iOS 플랫폼에 아래 Bundle ID를 등록하고 Native App Key를 입력해야 함. 결제·유료 API·쿼터 증액은 신청하지 않음.")
+                Text("카카오 SDK 설정").font(.headline)
                 Text(navigation.bundleID).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
                 SecureField(navigation.hasKey ? "키 저장됨 · 변경할 때만 입력" : "Native App Key", text: $nativeKey).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Toggle("카카오에 현재 GPS·목적지 전달 동의", isOn: $navigation.consent)
-                Caption("안내 중 기기 위치와 목적지가 카카오모빌리티 SDK로 전송됨. VIN·차량 키·과거 운행 기록은 이 연동에 보내지 않음. 동의를 끄면 즉시 안내를 종료함.")
                 Toggle("경로 선택 시 내비모드 자동 켜기", isOn: $navigation.enabled)
                 Toggle("하이패스 사용", isOn: $navigation.hipass)
-                Button("설정 저장·위치 권한 확인") { navigation.saveSetup(key: nativeKey); nativeKey = ""; model.refreshVehicle() }
-                Caption("앱 키는 이 기기의 Keychain에만 저장하며 기록 백업에서 제외함. 권한 거부 시 iOS 설정에서 허용 필요. 키 변경 후 SDK 안내가 있으면 앱 재실행 필요.")
-                Link("카카오 개발자 앱 관리", destination: URL(string: "https://developers.kakao.com/console/app")!)
-            }
-            InfoCard {
-                Text("무료 범위·기기 조건").font(.headline)
-                Caption("무료 쿼터만 사용 · 유료 증액 없음")
-                Caption("인터넷·GPS 필요 · 차량 계기판·표지판 우선")
-                DisclosureGroup("이용 제한") {
-                    Caption("쿼터 소진·인증 오류 시 반복 시작 중단. 앱 시작 횟수와 제공사 과금 요청 건수는 다름. Wi-Fi 전용 iPad는 GPS 지원 확인 필요.")
-                }
+                Button("설정 저장") { navigation.saveSetup(key: nativeKey); nativeKey = ""; model.refreshVehicle() }
             }
         }
         .onChange(of: navigation.consent) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationConsent") } }

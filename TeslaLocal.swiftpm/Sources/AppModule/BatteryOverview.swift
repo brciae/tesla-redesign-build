@@ -41,18 +41,56 @@ struct BatteryOverview: View {
                 measure("거리당 잔량 사용", usage.number("socPer100Km"), "%p/100km")
                 measure("기록 거리", usage.number("distanceKm"), "km")
             }
-            if !usage.rows("trend").isEmpty {
-                HStack(spacing: 8) {
-                    Text("배터리 잔량 관측").font(.headline)
-                    Spacer(minLength: 4)
-                    InfoNote("배터리 잔량 관측", "기록별 시작 → 종료 구간만 이어 그림. 통신이 끊긴 공백 구간은 연결하지 않으므로 선이 끊겨 보일 수 있음.")
+            let trend = usage.rows("trend").sorted { ($0.number("at") ?? 0) < ($1.number("at") ?? 0) }
+            if !trend.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("배터리 잔량 추이").font(.headline)
+                        Spacer()
+                        if let lastSOC = trend.last?.number("soc") {
+                            Text("\(Int(lastSOC))%")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(Color.cyan)
+                        }
+                    }
+                    Chart {
+                        ForEach(trend, id: \.batteryRowID) { point in
+                            AreaMark(
+                                x: .value("시각", Date(timeIntervalSince1970: (point.number("at") ?? 0) / 1000)),
+                                y: .value("잔량", point.number("soc") ?? 0)
+                            )
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.cyan.opacity(0.35), Color.blue.opacity(0.05)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+
+                            LineMark(
+                                x: .value("시각", Date(timeIntervalSince1970: (point.number("at") ?? 0) / 1000)),
+                                y: .value("잔량", point.number("soc") ?? 0)
+                            )
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(Color.cyan)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5))
+                        }
+                    }
+                    .chartYScale(domain: 0...100)
+                    .chartYAxis {
+                        AxisMarks(values: [0, 25, 50, 75, 100]) { value in
+                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
+                                .foregroundStyle(Color.white.opacity(0.15))
+                            AxisValueLabel {
+                                if let intVal = value.as(Int.self) {
+                                    Text("\(intVal)%").font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: 155)
                 }
-                Chart(usage.rows("trend"), id: \.batteryRowID) { point in
-                    LineMark(x: .value("시각", Date(timeIntervalSince1970: (point.number("at") ?? 0)/1000)),
-                              y: .value("SOC", point.number("soc") ?? 0), series: .value("기록", point.string("segment")))
-                        .foregroundStyle(by: .value("구간", point.string("kind")))
-                        .lineStyle(StrokeStyle(lineWidth: 3)).symbol(.circle)
-                }.chartYScale(domain: 0...100).frame(height: 145)
             }
             DisclosureGroup("자세한 수치") {
                 VStack(alignment: .leading, spacing: 16) {
@@ -85,7 +123,6 @@ struct BatteryOverview: View {
                     HStack(spacing: 8) {
                         Text("전력 관측 \(number(usage.number("powerCoverage")))%").font(.caption).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
-                        InfoNote("계산 근거·한계", basisNote)
                     }
                 }.padding(.top, 10)
             }
@@ -104,17 +141,7 @@ struct BatteryOverview: View {
         }.padding(18).background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
             .accessibilityIdentifier("battery.overview")
     }
-    private var basisNote: String {
-        var lines: [String] = []
-        if !index.string("note").isEmpty { lines.append(index.string("note")) }
-        lines.append("비교 가능한 충전 자료 \(number(index.number("sampleCount")))회 · 초기 용량 \(number(index.number("baselineCapacityKWh"))) kWh → 최근 \(number(index.number("recentCapacityKWh"))) kWh")
-        lines.append("방전 환산 = 관측된 운행 전후 SOC 감소 합계 ÷ 100. 중간 통신 공백 기록도 포함하므로 전체 배터리 사이클과 다름. 누적 충전 회복은 기간 합계라 100%p를 넘을 수 있음.")
-        lines.append("완전 운행 기록 \(count(usage.number("completeTrips")))/\(count(usage.number("tripCount")))회 · 부분 충전 \(count(usage.number("partialChargeCount")))회")
-        lines.append("전력 사용·회생은 관측한 모터 전력의 적산이라 전체 배터리 소비·전비와 다를 수 있음. 주차 감소 \(number(usage.number("unexplainedParkingSOC")))%p · 혼합 \(count(usage.number("mixedParkingCount")))구간 제외.")
-        if !usage.string("note").isEmpty { lines.append(usage.string("note")) }
-        if !index.string("forecastNote").isEmpty { lines.append(index.string("forecastNote")) }
-        return lines.joined(separator: "\n\n")
-    }
+
 
     private func tripRow(_ trip: Object) -> some View {
         HStack {

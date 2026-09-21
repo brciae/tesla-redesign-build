@@ -228,6 +228,13 @@ struct TripsView: View {
     @Environment(\.vehicleUnits) private var units
     @State private var period = 30
     @State private var assumedCapacity = 75.0
+
+    private static let tripDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M/d"
+        return f
+    }()
+
     var body: some View {
         PageBody(title: "운행 기록") {
             let estimates = model.output.object("energyPeriods").object(String(period))
@@ -259,8 +266,7 @@ struct TripsView: View {
 
             // v34: summary first — the numbers that matter, then a chart, then only the recent runs.
             InfoCard {
-                CardTitle(title: "요약", systemImage: "chart.bar.fill",
-                          info: "전비는 구동계 순에너지를 같은 구간 거리로 나눈 값이며 회생 전력을 포함함. 직접 전력 관측이 없는 구간은 추정으로 채움. 주차·미분류 소비는 주행에 쓰이지 않은 잔량 변화임. \(estimates.string("note"))")
+                CardTitle(title: "요약", systemImage: "chart.bar.fill")
                 HStack {
                     Metric(title: "운행", value: model.output.object("totals").number("trips"))
                     Metric(title: "거리", value: model.output.object("totals").number("distanceKm"), digits: 1, suffix: " km")
@@ -269,21 +275,47 @@ struct TripsView: View {
                     Metric(title: "주행 전비", value: estimates.number("drivingKmPerKWh"), digits: 2, suffix: " km/kWh")
                     Metric(title: "종합 전비", value: estimates.number("overallKmPerKWh"), digits: 2, suffix: " km/kWh")
                 }
-                if !trips.isEmpty {
-                    Chart(model.state.rows("trips").suffix(14), id: \.selfID) { t in
-                        BarMark(x: .value("날짜", Date(timeIntervalSince1970: (t.number("start") ?? 0)/1000)),
-                                y: .value("거리 " + units.distance, units.distanceValue(t.number("distanceKm") ?? 0)))
-                            .foregroundStyle(Theme.green)
+                let recentTrips = Array(model.state.rows("trips").suffix(7))
+                if !recentTrips.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("최근 운행 거리").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Chart {
+                            ForEach(Array(recentTrips.enumerated()), id: \.element.selfID) { idx, t in
+                                let date = Date(timeIntervalSince1970: (t.number("start") ?? 0) / 1000)
+                                let dateLabel = Self.tripDateFormatter.string(from: date)
+                                let label = recentTrips.count > 1 ? "\(dateLabel) (#\(idx + 1))" : dateLabel
+                                let dist = units.distanceValue(t.number("distanceKm") ?? 0)
+                                BarMark(
+                                    x: .value("일시", label),
+                                    y: .value("거리", dist)
+                                )
+                                .cornerRadius(6)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.green, Color.teal],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .annotation(position: .top) {
+                                    if dist > 0 {
+                                        Text(String(format: "%.1f", dist))
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(height: 140)
                     }
-                    .frame(height: 150)
+                    .padding(.top, 6)
                 }
             }
             if trips.isEmpty {
                 ContentUnavailableView("운행 기록 없음", systemImage: "road.lanes", description: Text("차량에 연결해 실제 이동을 확인하면 기록을 시작함."))
             } else {
                 InfoCard {
-                    CardTitle(title: "최근 운행", systemImage: "clock.arrow.circlepath",
-                              info: "잘못 기록된 회차는 왼쪽으로 밀어 삭제할 수 있음. 삭제하면 전비·배터리 분석에서도 제외됨.")
+                    CardTitle(title: "최근 운행", systemImage: "clock.arrow.circlepath")
                     ForEach(trips.prefix(3), id: \.selfID) { trip in
                         HStack(spacing: 4) {
                             TripRow(trip: trip)
@@ -299,8 +331,7 @@ struct TripsView: View {
                 }
             }
             InfoCard {
-                CardTitle(title: "전비 계산 설정", systemImage: "slider.horizontal.3",
-                          info: "직접 전력 관측이 없는 구간은 배터리 용량 가정값으로 소비를 추정함. 차량이 보고하는 실제 용량이 아니므로 참고값임.")
+                CardTitle(title: "전비 계산 설정", systemImage: "slider.horizontal.3")
                 Stepper("가정 용량 \(Int(assumedCapacity)) kWh", value: $assumedCapacity, in: 20...200, step: 1)
                 HStack {
                     Button("적용") { model.mutate("settings", ["assumedCapacityKWh": assumedCapacity]) }.buttonStyle(.bordered)

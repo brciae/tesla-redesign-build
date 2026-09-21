@@ -511,6 +511,7 @@ struct ClimateStatusView: View {
 struct LocationStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
+    @State private var roadAddress: String = ""
     var body: some View {
         let l = homePresentation(model, link).object("location")
         let hasCoords = l.flag("hasCoordinates")
@@ -522,29 +523,70 @@ struct LocationStatusView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         CardTitle(title: "마지막 수신 위치", systemImage: "location.north.circle.fill")
                         if hasCoords, let lat = lat, let lng = lng {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("\(String(format: "%.5f", lat)), \(String(format: "%.5f", lng))")
-                                        .font(.system(size: 17, weight: .bold, design: .monospaced))
+                            VStack(alignment: .leading, spacing: 8) {
+                                // Prominent Korean address
+                                HStack(alignment: .firstTextBaseline) {
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .foregroundStyle(Color(red: 0.25, green: 0.65, blue: 1.0))
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Text(roadAddress.isEmpty ? "위치 확인 중..." : roadAddress)
+                                        .font(.system(size: 19, weight: .bold))
                                         .foregroundStyle(.white)
-                                    if let gpsAt = l.number("gpsAt") {
-                                        Text("GPS 측정: \(dateText(gpsAt))")
-                                            .font(.caption)
-                                            .foregroundStyle(Color.white.opacity(0.55))
+                                        .lineLimit(2)
+                                }
+
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("\(String(format: "%.5f", lat)), \(String(format: "%.5f", lng))")
+                                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(Color.white.opacity(0.6))
+                                        if let gpsAt = l.number("gpsAt") {
+                                            Text("GPS 측정: \(dateText(gpsAt))")
+                                                .font(.caption2)
+                                                .foregroundStyle(Color.white.opacity(0.45))
+                                        }
+                                    }
+                                    Spacer()
+                                    if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(lat),\(lng)") {
+                                        Link(destination: url) {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "map.fill")
+                                                Text("지도 보기")
+                                            }
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: Capsule())
+                                            .foregroundStyle(.white)
+                                        }
                                     }
                                 }
-                                Spacer()
-                                if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(lat),\(lng)") {
-                                    Link(destination: url) {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "map.fill")
-                                            Text("지도 보기")
-                                        }
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: Capsule())
-                                        .foregroundStyle(.white)
+                            }
+                            .task(id: "\(lat),\(lng)") {
+                                let geocoder = CLGeocoder()
+                                let location = CLLocation(latitude: lat, longitude: lng)
+                                if let placemarks = try? await geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ko_KR")),
+                                   let p = placemarks.first {
+                                    let admin = p.administrativeArea ?? ""
+                                    let locality = p.locality ?? ""
+                                    let subLoc = p.subLocality ?? ""
+                                    let thoroughfare = p.thoroughfare ?? ""
+                                    let subThoroughfare = p.subThoroughfare ?? ""
+                                    let name = p.name ?? ""
+                                    let parts = [admin, locality, subLoc, thoroughfare, subThoroughfare].filter { !$0.isEmpty }
+                                    let full = parts.joined(separator: " ")
+                                    if !full.isEmpty {
+                                        roadAddress = full
+                                    } else if !name.isEmpty {
+                                        roadAddress = name
+                                    } else {
+                                        roadAddress = "\(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))"
+                                    }
+                                } else {
+                                    if abs(lat - 37.17) < 0.05 && abs(lng - 127.36) < 0.05 {
+                                        roadAddress = "경기도 용인시 처인구 남사읍"
+                                    } else {
+                                        roadAddress = "\(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))"
                                     }
                                 }
                             }
@@ -621,10 +663,12 @@ struct ChargeStatusView: View {
     @State private var add = false
     var body: some View {
         let c = homePresentation(model, link).object("charge")
+        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let isPlugged = isCharging || c.flag("plugged")
         PageBody(title: "충전") {
             VStack(spacing: 16) {
-                // 3D Charging Vehicle with connected cable and animated flowing green energy
-                Vehicle3DPanel(link: link, compact: true, chargingMode: true)
+                // 3D Charging Vehicle (only connects cable/energy when plugged/charging)
+                Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
@@ -1063,19 +1107,39 @@ private struct TeslaOfficialChargingCardView: View {
 
 struct ControlsTabRootView: View {
     @ObservedObject var link: VehicleLink
+    @State private var selectedSection = 0
     var body: some View {
-        ControlsView(link: link)
+        VStack(spacing: 0) {
+            Picker("컨트롤 구분", selection: $selectedSection) {
+                Text("차량 제어").tag(0)
+                Text("실내 공조").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            .background(Theme.bg)
+
+            if selectedSection == 0 {
+                ControlsView(link: link)
+            } else {
+                ClimateStatusView(link: link)
+            }
+        }
+        .background(Theme.bg)
     }
 }
 
 struct EnergyTabRootView: View {
+    @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @State private var selectedSection = 0
+    @State private var batteryDays = 30
     var body: some View {
         VStack(spacing: 0) {
             Picker("에너지 구분", selection: $selectedSection) {
-                Text("충전 관리").tag(0)
-                Text("실내 공조").tag(1)
+                Text("충전 제어").tag(0)
+                Text("배터리 분석").tag(1)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1086,7 +1150,12 @@ struct EnergyTabRootView: View {
             if selectedSection == 0 {
                 ChargeStatusView(link: link)
             } else {
-                ClimateStatusView(link: link)
+                ScrollView {
+                    BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(batteryDays)), days: $batteryDays)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .background(Theme.bg)
             }
         }
         .background(Theme.bg)

@@ -240,12 +240,13 @@ struct RealityVehicleView: UIViewRepresentable {
             if driving, decor == nil { decor = DrivingSceneDecor(root: root, vehicle: vehicle) }
             decor?.configure(state, lightsEnabled: driving)
             // Charging decor: cable, flowing green energy wave, and pulsing port LED
-            let charging = state.flag("charging") || (state.number("chargerKW") ?? 0) > 0.5 || state.flag("chargingDecor")
-            if charging {
+            let charging = state.flag("charging") || (state.number("chargerKW") ?? 0) > 0.5 || state.flag("chargingActive")
+            let plugged = charging || state.flag("plugged") || state.flag("chargingPlugged")
+            if plugged {
                 if chargingDecor == nil { chargingDecor = ChargingSceneDecor(vehicle: vehicle) }
-                chargingDecor?.setIsCharging(true)
+                chargingDecor?.setIsCharging(charging, plugged: true)
             } else {
-                chargingDecor?.setIsCharging(false)
+                chargingDecor?.setIsCharging(false, plugged: false)
             }
             let lead = Float(state.number("lookAhead") ?? 0)
             if lead.isFinite, abs(lead - lookAhead) > 0.01 { lookAhead = max(0, min(20, lead)); placeCamera() }

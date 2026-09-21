@@ -11,8 +11,8 @@ final class ChargingSceneDecor {
     private var cableSegments: [ModelEntity] = []
     private var pulseSegments: [ModelEntity] = []
     private var portLed: ModelEntity?
-    private var groundWash: ModelEntity?
     private(set) var isCharging = false
+    private(set) var isPlugged = false
     private var pulseTime: Float = 0
     private var ledTime: Float = 0
     private var isBuilt = false
@@ -40,12 +40,19 @@ final class ChargingSceneDecor {
         rig.isEnabled = false
     }
 
-    func setIsCharging(_ charging: Bool) {
-        if charging && !isBuilt {
+    func setIsCharging(_ charging: Bool, plugged: Bool = true) {
+        isCharging = charging
+        isPlugged = plugged
+        if plugged && !isBuilt {
             buildCable()
         }
-        isCharging = charging
-        rig.isEnabled = charging
+        rig.isEnabled = plugged
+        for pulse in pulseSegments {
+            pulse.isEnabled = charging
+        }
+        if !charging {
+            portLed?.isEnabled = false
+        }
     }
 
     private func buildCable() {
@@ -77,11 +84,12 @@ final class ChargingSceneDecor {
             rig.addChild(segEntity)
             cableSegments.append(segEntity)
 
-            // Neon green energy glowing core
+            // Neon green energy glowing core (active only during charging)
             let pulseMesh = MeshResource.generateBox(width: thickness * 0.45, height: thickness * 0.45, depth: length * 0.92)
             let pulseEntity = ModelEntity(mesh: pulseMesh, materials: [pulseMaterial])
             pulseEntity.position = mid + SIMD3<Float>(0, 0.008, 0)
             pulseEntity.orientation = simd_quatf(from: [0, 0, 1], to: dir)
+            pulseEntity.isEnabled = isCharging
             rig.addChild(pulseEntity)
             pulseSegments.append(pulseEntity)
         }
@@ -91,16 +99,11 @@ final class ChargingSceneDecor {
         let ledEntity = ModelEntity(mesh: ledMesh, materials: [UnlitMaterial(color: pulseColor)])
         ledEntity.position = [0.93, 1.02, -2.22]
         ledEntity.orientation = simd_quatf(angle: .pi * 0.5, axis: [0, 1, 0])
+        ledEntity.isEnabled = isCharging
         rig.addChild(ledEntity)
         portLed = ledEntity
 
-        // 3. Subtle floor reflection under cable base
-        let washMesh = MeshResource.generatePlane(width: 0.8, depth: 0.8)
-        let washColor = UIColor(red: 0.0, green: 0.9, blue: 0.45, alpha: 0.18)
-        let washEntity = ModelEntity(mesh: washMesh, materials: [UnlitMaterial(color: washColor)])
-        washEntity.position = [1.46, 0.005, -1.08]
-        rig.addChild(washEntity)
-        groundWash = washEntity
+        // Notice: NO groundWash plane created here to keep the ground clean and pitch black
     }
 
     /// Step animations at display rate: flowing energy wave + breathing port LED
@@ -136,8 +139,6 @@ final class ChargingSceneDecor {
         pulseSegments.removeAll()
         portLed?.removeFromParent()
         portLed = nil
-        groundWash?.removeFromParent()
-        groundWash = nil
         rig.removeFromParent()
         isBuilt = false
     }

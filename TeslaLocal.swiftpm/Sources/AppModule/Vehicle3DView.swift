@@ -13,6 +13,8 @@ struct Vehicle3DPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     var compact = false
     var chargingMode = false
+    var isCharging = false
+    var isPlugged = false
     @State private var preview = false
     @State private var confirmPreview = false
     @State private var overrides: [String: Bool] = [:]
@@ -22,7 +24,12 @@ struct Vehicle3DPanel: View {
     private var presentation: Object {
         var base = (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
         if chargingMode {
-            base["chargingDecor"] = true
+            if isPlugged || isCharging {
+                base["chargingPlugged"] = true
+            }
+            if isCharging {
+                base["chargingActive"] = true
+            }
         }
         return base
     }

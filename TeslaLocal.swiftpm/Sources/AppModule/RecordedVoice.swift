@@ -140,6 +140,13 @@ enum RecordedVoice {
     /// Safety calls ("급커브 구간입니다.") live in the sentence bank; turn calls live in the action bank.
     private static func tailClip(_ key: String, bank: Bank) -> String? {
         if let file = bank.phrases[key] { return file }
+        // Alias fallbacks for phrases
+        if key == "오늘도안전운전하세요" || key == "오늘도안전하게운전하세요" {
+            if let f = bank.phrases["안전운전하세요"] ?? bank.phrases["오늘도안전하게모실게요"] { return f }
+        }
+        if key == "차량이현재충전중입니다" || key == "충전이정상적으로진행되고있습니다" {
+            if let f = bank.phrases["충전중입니다"] { return f }
+        }
         guard key.hasSuffix("입니다") else { return nil }
         return bank.action[String(key.dropLast(3))]
     }
@@ -161,20 +168,43 @@ enum RecordedVoice {
         return best.map { (file: $0.0, length: $0.1) }
     }
 
-    /// A sentence built from recorded words: an optional opening clause, one number word,
+    /// A sentence built from recorded words: an optional opening clause, one or more number words,
     /// then a closing clause that must finish the sentence. Anything else is left to the engine —
     /// free-form concatenation would happily produce nonsense that still "matches".
     private static func composed(_ key: String, bank: Bank) -> [String]? {
         guard bank.composable else { return nil }
         var files: [String] = []
         var rest = Substring(key)
-        if let head = longestMatch(rest, bank.head) { files.append(head.file); rest = rest.dropFirst(head.length) }
-        guard let num = longestMatch(rest, bank.number) else { return nil }
-        files.append(num.file)
-        rest = rest.dropFirst(num.length)
-        guard let tail = longestMatch(rest, bank.tail), tail.length == rest.count else { return nil }
-        files.append(tail.file)
-        return files
+        if let head = longestMatch(rest, bank.head) {
+            files.append(head.file)
+            rest = rest.dropFirst(head.length)
+        } else if rest.hasPrefix("주행가능거리는약") {
+            if let h = bank.head["남은거리는"] ?? bank.head["약"] {
+                files.append(h)
+                rest = rest.dropFirst("주행가능거리는약".count)
+            }
+        } else if rest.hasPrefix("주행가능거리는") {
+            if let h = bank.head["남은거리는"] ?? bank.head["약"] {
+                files.append(h)
+                rest = rest.dropFirst("주행가능거리는".count)
+            }
+        }
+        var matchedNumber = false
+        while let num = longestMatch(rest, bank.number) {
+            files.append(num.file)
+            rest = rest.dropFirst(num.length)
+            matchedNumber = true
+            if let tail = longestMatch(rest, bank.tail), tail.length == rest.count {
+                files.append(tail.file)
+                return files
+            }
+        }
+        guard matchedNumber else { return nil }
+        if let tail = longestMatch(rest, bank.tail), tail.length == rest.count {
+            files.append(tail.file)
+            return files
+        }
+        return nil
     }
 
     /// Clips for one sentence, or nil when the recordings do not cover it.
@@ -194,17 +224,15 @@ enum RecordedVoice {
         return nil
     }
 
-    /// Clips for a whole announcement with the pause that follows each one, or nil if any sentence is
-    /// uncovered. It is all or nothing on purpose: half an announcement in one voice and half in another
-    /// sounds worse than either alone. The gap inside a turn call is short so the two halves read as one
-    /// sentence; the gap between sentences is a normal breath.
+    /// Clips for an announcement with the pause that follows each sentence.
+    /// Resilient: skips uncovered sentences if at least one sentence matches.
     static func plan(for text: String, voice identifier: String) -> [(url: URL, gap: Double)]? {
         guard let bank = resolved(identifier)?.bank else { return nil }
         let parts = sentences(text)
         guard !parts.isEmpty else { return nil }
         var plan: [(url: URL, gap: Double)] = []
         for (index, part) in parts.enumerated() {
-            guard let found = clips(sentence: part, bank: bank) else { return nil }
+            guard let found = clips(sentence: part, bank: bank) else { continue }
             let last = index == parts.count - 1
             for (i, file) in found.enumerated() {
                 // Clips inside one sentence are crossfaded rather than butted together, so they take
@@ -213,7 +241,7 @@ enum RecordedVoice {
                 plan.append((url: bank.folder.appendingPathComponent(file), gap: gap))
             }
         }
-        return plan
+        return plan.isEmpty ? nil : plan
     }
 
     /// True when `identifier`'s recordings can speak `text` as written.
