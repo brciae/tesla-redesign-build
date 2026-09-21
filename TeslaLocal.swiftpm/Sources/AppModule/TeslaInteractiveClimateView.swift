@@ -15,8 +15,6 @@ struct TeslaInteractiveClimateView: View {
     @State private var rearCenterHeat = 0
     @State private var rearRightHeat = 0
     @State private var steeringWheelHeat = false
-    @State private var frontDefrost = false
-    @State private var rearDefrost = false
 
     @State private var targetTemperature = 21.5
     @State private var isPowerOn = true
@@ -392,39 +390,37 @@ struct TeslaInteractiveClimateView: View {
     // MARK: - Quick Climate Control Bar
 
     private var quickClimateBar: some View {
-        HStack(spacing: 12) {
-            // Front Windshield Defrost
-            quickBarButton(
-                icon: "windshield.front.and.heat.waves",
-                title: "앞유리 성에",
-                isActive: frontDefrost,
-                activeColor: Color(red: 1.0, green: 0.5, blue: 0.1)
-            ) {
-                withAnimation { frontDefrost.toggle() }
-            }
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                // Climate Power On/Off
+                quickBarButton(
+                    icon: "power",
+                    title: isPowerOn ? "공조 끄기" : "공조 켜기",
+                    isActive: isPowerOn,
+                    activeColor: Color(red: 0.28, green: 0.88, blue: 0.42)
+                ) {
+                    withAnimation {
+                        isPowerOn.toggle()
+                        link.askControl(isPowerOn ? "climateOn" : "climateOff", title: isPowerOn ? "공조 켜기" : "공조 끄기")
+                    }
+                }
 
-            // Climate Power On/Off
-            quickBarButton(
-                icon: "power",
-                title: isPowerOn ? "공조 끄기" : "공조 켜기",
-                isActive: isPowerOn,
-                activeColor: Color(red: 0.28, green: 0.88, blue: 0.42)
-            ) {
-                withAnimation {
-                    isPowerOn.toggle()
-                    link.askControl(isPowerOn ? "climateOn" : "climateOff", title: isPowerOn ? "공조 켜기" : "공조 끄기")
+                // Preset Comfort Temperature (21.5°C)
+                quickBarButton(
+                    icon: "sparkles",
+                    title: "쾌적 온도 21.5°C",
+                    isActive: targetTemperature == 21.5,
+                    activeColor: Color(red: 0.35, green: 0.65, blue: 1.0)
+                ) {
+                    adjustTemperature(21.5 - targetTemperature)
                 }
             }
 
-            // Rear Defrost
-            quickBarButton(
-                icon: "windshield.rear.and.heat.waves",
-                title: "뒷유리 열선",
-                isActive: rearDefrost,
-                activeColor: Color(red: 0.35, green: 0.65, blue: 1.0)
-            ) {
-                withAnimation { rearDefrost.toggle() }
-            }
+            Text("※ 블루투스(BLE) 근거리 통신으로 실내 희망 온도 및 공조 전원을 제어합니다. 좌석 열선은 사용자 편의용 상태 표시를 제공합니다.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.white.opacity(0.45))
+                .multilineTextAlignment(.center)
+                .padding(.top, 4)
         }
         .padding(14)
         .background(

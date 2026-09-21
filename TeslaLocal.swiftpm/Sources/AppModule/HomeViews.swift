@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 // The same presentation contract drives the header and all new status pages.
 func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {

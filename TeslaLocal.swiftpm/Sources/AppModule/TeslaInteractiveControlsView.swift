@@ -1,19 +1,16 @@
 import SwiftUI
 
-/// Tesla official-style interactive vehicle exterior body control view.
-/// Features a top-view vehicle silhouette with interactive control hotspots directly positioned on the car body:
-/// - Front Hood: Frunk Open
-/// - Center Roof: Lock / Unlock toggle
-/// - Rear Trunk: Trunk Move / Close
-/// - Rear Left Flap: Charge Port Open / Close
-/// - Side Windows: Window Venting
+/// Tesla authentic vehicle exterior body control view.
+/// Strictly implements only genuine, supported Bluetooth (BLE) vehicle commands:
+/// - Front Hood: Frunk Open (`frunkOpen`)
+/// - Center Roof: Lock / Unlock toggle (`lock` / `unlock`)
+/// - Rear Trunk: Trunk Move / Close (`trunkMove`)
+/// - Rear Left Flap: Charge Port Open / Close (`portOpen` / `portClose`)
 struct TeslaInteractiveControlsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @State private var isLocked = true
     @State private var isPortOpen = false
-    @State private var windowsVented = false
-    @State private var sentryMode = true
     @State private var enrollment = false
 
     private var blocked: Bool {
@@ -38,13 +35,13 @@ struct TeslaInteractiveControlsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.18, green: 0.50, blue: 0.95).opacity(0.4), lineWidth: 1))
                 }
 
+                // BLE Connection Status & Capability Notice Card
+                connectionScopeNotice
+
                 // Centerpiece Interactive Vehicle Body Stage
                 interactiveVehicleStage
 
-                // Secondary Quick Control Grid (Flash, Horn, Vent, Sentry)
-                secondaryControlsGrid
-
-                // Key Management & Permissions Section (Clean disclosure)
+                // Key Management & Authentication Section
                 keyManagementSection
             }
             .padding(.horizontal, 16)
@@ -56,6 +53,41 @@ struct TeslaInteractiveControlsView: View {
             Button("등록 요청") { link.enrollControlKey() }
             Button("취소", role: .cancel) {}
         }
+    }
+
+    // MARK: - Connection Scope Notice
+
+    private var connectionScopeNotice: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: link.authentic ? "antenna.radiowaves.left.and.right" : "exclamationmark.triangle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(link.authentic ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray))
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(link.authentic ? "차량 BLE 근거리 제어 준비됨" : (model.demo ? "예시 모드 동작 중" : "차량 BLE 통신 대기 중"))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Text(link.authentic
+                    ? "차량 근거리에서 암호화된 블루투스 명령(잠금, 프렁크, 트렁크, 충전구)을 직접 전송합니다."
+                    : "블루투스(BLE) 근거리 직접 통신으로만 작동합니다. 원격 시동 및 서먼(Summon) 등 테슬라 공식 클라우드 서버 기능은 로컬 앱 정책상 제외되며, 실차량 인근에서 인증된 하드웨어 제어만 안전하게 지원합니다."
+                )
+                .font(.system(size: 12))
+                .foregroundStyle(Color.white.opacity(0.65))
+                .lineSpacing(3)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(white: 0.10).opacity(0.85))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
     }
 
     // MARK: - Interactive Vehicle Stage
@@ -97,34 +129,13 @@ struct TeslaInteractiveControlsView: View {
 
                 Spacer()
 
-                // Center Roof Hotspot (Lock / Unlock) & Side Window Hotspots
-                HStack(spacing: 20) {
-                    // Left Window Vent
-                    sideHotspotButton(
-                        icon: windowsVented ? "arrow.down.to.line.compact" : "arrow.up.and.down.and.sparkles",
-                        title: windowsVented ? "창문 닫기" : "창문 환기",
-                        isActive: windowsVented
-                    ) {
-                        withAnimation { windowsVented.toggle() }
-                    }
-
-                    // Large Center Roof Padlock
-                    centerLockHotspot
-
-                    // Right Window Vent
-                    sideHotspotButton(
-                        icon: "lock.shield.fill",
-                        title: sentryMode ? "감시 켜짐" : "감시 꺼짐",
-                        isActive: sentryMode
-                    ) {
-                        withAnimation { sentryMode.toggle() }
-                    }
-                }
+                // Center Roof Hotspot (Lock / Unlock)
+                centerLockHotspot
 
                 Spacer()
 
                 // Rear Trunk & Charge Port Row
-                HStack(alignment: .center, spacing: 24) {
+                HStack(alignment: .center, spacing: 20) {
                     // Charge Port Hotspot (Rear Left)
                     hotspotPill(
                         title: isPortOpen ? "포트 닫기" : "충전 포트",
@@ -137,7 +148,7 @@ struct TeslaInteractiveControlsView: View {
 
                     // Rear Trunk Hotspot
                     hotspotPill(
-                        title: "트렁크",
+                        title: "트렁크 동작",
                         icon: "car.side.rear.open.fill",
                         accent: Color(red: 0.35, green: 0.65, blue: 1.0)
                     ) {
@@ -147,7 +158,7 @@ struct TeslaInteractiveControlsView: View {
                 .padding(.bottom, 28)
             }
         }
-        .frame(height: 480)
+        .frame(height: 440)
     }
 
     // MARK: - Vehicle Silhouette
@@ -157,7 +168,7 @@ struct TeslaInteractiveControlsView: View {
             // Vehicle Outer Shadow & Glow
             Capsule()
                 .fill(Color.black.opacity(0.7))
-                .frame(width: 140, height: 350)
+                .frame(width: 140, height: 340)
                 .blur(radius: 12)
 
             // Car Body Metallic Outline
@@ -169,7 +180,7 @@ struct TeslaInteractiveControlsView: View {
                         endPoint: .bottom
                     )
                 )
-                .frame(width: 136, height: 340)
+                .frame(width: 136, height: 330)
                 .overlay(
                     RoundedRectangle(cornerRadius: 64, style: .continuous)
                         .stroke(Color.white.opacity(0.22), lineWidth: 1.5)
@@ -184,7 +195,7 @@ struct TeslaInteractiveControlsView: View {
                         endPoint: .bottom
                     )
                 )
-                .frame(width: 104, height: 210)
+                .frame(width: 104, height: 200)
                 .overlay(
                     RoundedRectangle(cornerRadius: 38, style: .continuous)
                         .stroke(Color.cyan.opacity(0.25), lineWidth: 1)
@@ -193,14 +204,14 @@ struct TeslaInteractiveControlsView: View {
             // Front Windshield Curve
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                .frame(width: 90, height: 40)
-                .offset(y: -75)
+                .frame(width: 90, height: 38)
+                .offset(y: -70)
 
             // Rear Glass Curve
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                .frame(width: 90, height: 44)
-                .offset(y: 75)
+                .frame(width: 90, height: 40)
+                .offset(y: 70)
         }
     }
 
@@ -214,7 +225,7 @@ struct TeslaInteractiveControlsView: View {
                 link.askControl(isLocked ? "lock" : "unlock", title: isLocked ? "차량 잠금" : "잠금 해제")
             }
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 ZStack {
                     Circle()
                         .fill(
@@ -222,7 +233,7 @@ struct TeslaInteractiveControlsView: View {
                                 ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.2)
                                 : Color.orange.opacity(0.25)
                         )
-                        .frame(width: 60, height: 60)
+                        .frame(width: 64, height: 64)
                         .overlay(
                             Circle()
                                 .stroke(
@@ -238,12 +249,12 @@ struct TeslaInteractiveControlsView: View {
                         )
 
                     Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.system(size: 26, weight: .bold))
                         .foregroundStyle(isLocked ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange)
                 }
 
-                Text(isLocked ? "잠김" : "잠금 해제됨")
-                    .font(.system(size: 12, weight: .bold))
+                Text(isLocked ? "도어 잠김" : "잠금 해제됨")
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
             }
         }
@@ -284,105 +295,12 @@ struct TeslaInteractiveControlsView: View {
         .disabled(blocked)
     }
 
-    private func sideHotspotButton(
-        icon: String,
-        title: String,
-        isActive: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(isActive ? Color.cyan : Color.white.opacity(0.6))
-                    .frame(width: 44, height: 44)
-                    .background(
-                        isActive ? Color.cyan.opacity(0.18) : Color.white.opacity(0.08),
-                        in: Circle()
-                    )
-                    .overlay(
-                        Circle().stroke(isActive ? Color.cyan.opacity(0.6) : Color.white.opacity(0.12), lineWidth: 1)
-                    )
-                Text(title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(isActive ? .white : Color.white.opacity(0.55))
-            }
-        }
-        .buttonStyle(MotionButtonStyle())
-        .disabled(blocked)
-    }
-
-    // MARK: - Secondary Quick Controls Grid
-
-    private var secondaryControlsGrid: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("빠른 실행")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.7))
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                quickTile(title: "전조등 깜빡임", icon: "headlight.high.beam.fill", accent: Color.yellow) {
-                    link.askControl("flash", title: "전조등")
-                }
-                quickTile(title: "경적 울리기", icon: "speaker.wave.3.fill", accent: Color.cyan) {
-                    link.askControl("honk", title: "경적")
-                }
-                quickTile(title: "원격 시동", icon: "key.fill", accent: Color(red: 0.28, green: 0.88, blue: 0.42)) {
-                    link.askControl("remoteStart", title: "원격 시동")
-                }
-                quickTile(title: "성에 제거", icon: "snowflake", accent: Color(red: 0.35, green: 0.65, blue: 1.0)) {
-                    link.askControl("defrost", title: "성에 제거")
-                }
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(white: 0.10).opacity(0.85))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-        )
-    }
-
-    private func quickTile(
-        title: String,
-        icon: String,
-        accent: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(accent)
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 50)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 0.8))
-        }
-        .buttonStyle(MotionButtonStyle())
-        .disabled(blocked)
-    }
-
     // MARK: - Key Management Section
 
     private var keyManagementSection: some View {
-        DisclosureGroup("제어 키 및 보안 관리") {
+        DisclosureGroup("제어 키 및 BLE 인증 관리") {
             VStack(alignment: .leading, spacing: 10) {
-                Toggle("이 차량의 원격 제어 활성화", isOn: Binding(
+                Toggle("이 기기의 차량 제어 기능 활성화", isOn: Binding(
                     get: { link.controlEnabled },
                     set: { link.enableControls($0) }
                 ))
