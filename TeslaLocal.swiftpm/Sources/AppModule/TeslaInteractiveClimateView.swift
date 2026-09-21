@@ -112,7 +112,10 @@ struct TeslaInteractiveClimateView: View {
                     isActive: isAuto,
                     activeColor: Color(red: 0.20, green: 0.48, blue: 0.98)
                 ) {
-                    withAnimation { isAuto.toggle() }
+                    withAnimation {
+                        isAuto.toggle()
+                        model.voice.say(isAuto ? "자동 공조를 켰습니다." : "수동 공조 모드입니다.", key: "climate.auto", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                    }
                 }
 
                 // [16] A/C Compressor Toggle
@@ -122,7 +125,10 @@ struct TeslaInteractiveClimateView: View {
                     isActive: isAC,
                     activeColor: Color(red: 0.20, green: 0.48, blue: 0.98)
                 ) {
-                    withAnimation { isAC.toggle() }
+                    withAnimation {
+                        isAC.toggle()
+                        model.voice.say(isAC ? "에어컨 컴프레서를 켰습니다." : "에어컨 컴프레서를 껐습니다.", key: "climate.ac", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                    }
                 }
 
                 // [15] Fan Speed Stepper
@@ -131,6 +137,7 @@ struct TeslaInteractiveClimateView: View {
                         if fanSpeed > 1 {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             fanSpeed -= 1
+                            model.voice.say("바람 세기를 \(fanSpeed)단계로 설정했습니다.", key: "climate.fan", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                         }
                     } label: {
                         Image(systemName: "minus")
@@ -154,6 +161,7 @@ struct TeslaInteractiveClimateView: View {
                         if fanSpeed < 5 {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             fanSpeed += 1
+                            model.voice.say("바람 세기를 \(fanSpeed)단계로 설정했습니다.", key: "climate.fan", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                         }
                     } label: {
                         Image(systemName: "plus")
@@ -175,7 +183,10 @@ struct TeslaInteractiveClimateView: View {
                     isActive: isRecirculate,
                     activeColor: Color(red: 0.20, green: 0.48, blue: 0.98)
                 ) {
-                    withAnimation { isRecirculate.toggle() }
+                    withAnimation {
+                        isRecirculate.toggle()
+                        model.voice.say(isRecirculate ? "내기 순환 모드를 켰습니다." : "외기 유입 모드로 전환했습니다.", key: "climate.recirc", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                    }
                 }
 
                 // [11] Bioweapon Defense Mode
@@ -185,7 +196,10 @@ struct TeslaInteractiveClimateView: View {
                     isActive: isBioweapon,
                     activeColor: Color(red: 0.20, green: 0.48, blue: 0.98)
                 ) {
-                    withAnimation { isBioweapon.toggle() }
+                    withAnimation {
+                        isBioweapon.toggle()
+                        model.voice.say(isBioweapon ? "생화학 무기 방어 모드를 켰습니다." : "생화학 무기 방어 모드를 껐습니다.", key: "climate.bio", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                    }
                 }
             }
 
@@ -307,7 +321,10 @@ struct TeslaInteractiveClimateView: View {
     ) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation { isActive.wrappedValue.toggle() }
+            withAnimation {
+                isActive.wrappedValue.toggle()
+                model.voice.say("\(title) 송풍을 \(isActive.wrappedValue ? "켰습니다." : "껐습니다.")", key: "climate.ventdir.\(title)", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+            }
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: icon)
@@ -451,7 +468,10 @@ struct TeslaInteractiveClimateView: View {
                 // [4] Wiper Defrost
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    withAnimation { wiperHeat.toggle() }
+                    withAnimation {
+                        wiperHeat.toggle()
+                        model.voice.say(wiperHeat ? "와이퍼 결빙 방지 열선을 켰습니다." : "와이퍼 열선을 껐습니다.", key: "climate.wiper", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                    }
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: "wiper")
@@ -517,6 +537,7 @@ struct TeslaInteractiveClimateView: View {
                     rearRightHeat = 0
                     steeringWheelHeat = false
                     wiperHeat = false
+                    model.voice.say("모든 좌석 열선과 통풍, 스티어링 휠 열선을 껐습니다.", key: "climate.alloff", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     // Turn off via Fleet API
                     if model.fleet.isAuthenticated {
                         Task {
@@ -727,6 +748,8 @@ struct TeslaInteractiveClimateView: View {
             model.voice.say("\(seatName) 시트 열선을 \(heat)단계로 설정했습니다.", key: "climate.seat", category: "voiceControl", priority: 3, ttl: 4, manual: true)
         } else if vent > 0 {
             model.voice.say("\(seatName) 시트 통풍을 \(vent)단계로 설정했습니다.", key: "climate.vent", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+        } else {
+            model.voice.say("\(seatName) 시트 열선과 통풍을 껐습니다.", key: "climate.seat", category: "voiceControl", priority: 3, ttl: 4, manual: true)
         }
         if model.fleet.isAuthenticated {
             Task {

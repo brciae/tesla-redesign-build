@@ -457,6 +457,7 @@ struct TeslaInteractiveControlsView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 quickTile(title: "원격 시동", icon: "key.fill", accent: Color(red: 0.28, green: 0.88, blue: 0.42)) {
+                    model.voice.say("원격 시동을 준비합니다.", key: "controls.remotestart", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     if model.fleet.isAuthenticated {
                         remoteStartAlert = true
                     } else {
@@ -466,18 +467,21 @@ struct TeslaInteractiveControlsView: View {
                 }
 
                 quickTile(title: "전조등 깜빡임", icon: "headlight.high.beam.fill", accent: Color.yellow) {
+                    model.voice.say("전조등을 깜빡였습니다.", key: "controls.flash", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     executeFleetAction(title: "전조등 깜빡임") {
                         try await model.fleet.flashLights()
                     }
                 }
 
                 quickTile(title: "경적 울리기", icon: "speaker.wave.3.fill", accent: Color.cyan) {
+                    model.voice.say("경적을 울렸습니다.", key: "controls.horn", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     executeFleetAction(title: "경적 울리기") {
                         try await model.fleet.honkHorn()
                     }
                 }
 
                 quickTile(title: "최대 성에 제거", icon: "snowflake", accent: Color(red: 0.35, green: 0.65, blue: 1.0)) {
+                    model.voice.say("최대 성에 제거를 켰습니다.", key: "controls.maxdefrost", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     executeFleetAction(title: "최대 성에 제거") {
                         try await model.fleet.setPreconditioningMax(on: true)
                     }
@@ -596,6 +600,18 @@ struct TeslaInteractiveControlsView: View {
         bleAction: String,
         fleetAction: @escaping () async throws -> Bool
     ) {
+        let voiceMessage: String = {
+            switch bleAction {
+            case "lock": return "차량 문을 잠갔습니다."
+            case "unlock": return "차량 문을 잠금 해제했습니다."
+            case "frunkOpen": return "전면 트렁크(프렁크)를 열었습니다."
+            case "trunkMove": return "후면 트렁크를 조작했습니다."
+            case "portOpen": return "충전 도어를 열었습니다."
+            case "portClose": return "충전 도어를 닫았습니다."
+            default: return "\(title) 명령을 실행했습니다."
+            }
+        }()
+        model.voice.say(voiceMessage, key: "controls.\(bleAction)", category: "voiceControl", priority: 3, ttl: 4, manual: true)
         if !model.demo && link.authentic && link.controlEnabled && !link.controlBusy {
             // BLE Prioritized
             link.askControl(bleAction, title: title)

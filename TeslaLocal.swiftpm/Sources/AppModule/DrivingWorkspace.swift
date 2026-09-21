@@ -111,12 +111,14 @@ struct DrivingWorkspace: View {
             Spacer(minLength: 0)
 
             if !navigation.following {
-                Button { navigation.recenter() } label: {
-                    Label("현위치", systemImage: "location.fill")
-                        .font(.system(size: compact ? 12 : 13, weight: .semibold))
-                        .padding(.horizontal, compact ? 10 : 12)
-                        .frame(minHeight: compact ? 30 : 36)
-                        .background(Color.accentColor.opacity(0.9), in: Capsule())
+                Button {
+                    navigation.recenter()
+                    model.voice.say("차량 위치를 중심으로 지도를 맞췄습니다.", key: "nav.recenter", category: "voiceControl", priority: 2, ttl: 3, manual: true)
+                } label: {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: compact ? 12 : 14))
+                        .frame(width: compact ? 30 : 44, height: compact ? 30 : 44)
+                        .background(Color.white.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("map.recenter")
@@ -128,6 +130,7 @@ struct DrivingWorkspace: View {
                 if preferredMapEngine == "kakao" && navigation.controller == nil {
                     navigation.startStandbyKakaoMap()
                 }
+                model.voice.say(preferredMapEngine == "kakao" ? "카카오 지도로 전환했습니다." : "애플 지도로 전환했습니다.", key: "nav.mapengine", category: "voiceControl", priority: 3, ttl: 4, manual: true)
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: preferredMapEngine == "kakao" ? "map.fill" : "apple.logo")

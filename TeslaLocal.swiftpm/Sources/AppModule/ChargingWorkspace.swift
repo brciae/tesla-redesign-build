@@ -325,6 +325,7 @@ struct ChargingWorkspace: View {
                                     .onEnded { _ in
                                         isSliderDragging = false
                                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        model.voice.say("충전 한도를 \(Int(targetLimit))퍼센트로 설정했습니다.", key: "charging.limit", category: "voiceControl", priority: 2, ttl: 4, manual: true)
                                     }
                             )
                     }
@@ -340,6 +341,7 @@ struct ChargingWorkspace: View {
                                 isLeftChevronPressed = true
                                 currentAmps -= 1
                             }
+                            model.voice.say("충전 전류를 \(currentAmps)암페어로 설정했습니다.", key: "charging.amps", category: "voiceControl", priority: 2, ttl: 3, manual: true)
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                                 isLeftChevronPressed = false
                             }
@@ -368,6 +370,7 @@ struct ChargingWorkspace: View {
                                 isRightChevronPressed = true
                                 currentAmps += 1
                             }
+                            model.voice.say("충전 전류를 \(currentAmps)암페어로 설정했습니다.", key: "charging.amps", category: "voiceControl", priority: 2, ttl: 3, manual: true)
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                                 isRightChevronPressed = false
                             }
@@ -397,8 +400,10 @@ struct ChargingWorkspace: View {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     if isCharging {
                         link.askControl("chargeStop", title: "충전 중지")
+                        model.voice.say("충전을 중지합니다.", key: "charging.state", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     } else {
                         link.askControl("chargeStart", title: "충전 시작")
+                        model.voice.say("충전을 시작합니다.", key: "charging.state", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     }
                 } label: {
                     Text(isCharging ? "충전 중지" : "충전 시작")
@@ -416,6 +421,7 @@ struct ChargingWorkspace: View {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     link.askControl("portOpen", title: "충전 포트 잠금 해제")
+                    model.voice.say("충전 포트를 잠금 해제했습니다.", key: "charging.port", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                 } label: {
                     Text("충전 포트 잠금 해제")
                         .font(.system(size: 14, weight: .medium))

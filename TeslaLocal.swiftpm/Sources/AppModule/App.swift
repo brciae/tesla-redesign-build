@@ -93,6 +93,32 @@ struct MainView: View {
         }
         .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
         .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
+        .onChange(of: selectedTab) { _, newTab in
+            let prompt: String
+            switch newTab {
+            case .home: prompt = "홈 화면으로 이동했습니다."
+            case .controls: prompt = "차량 컨트롤 화면으로 이동했습니다."
+            case .energy: prompt = "에너지 화면으로 이동했습니다."
+            case .drive: prompt = "운행 내비 화면으로 이동했습니다."
+            case .menu: prompt = "전체 메뉴로 이동했습니다."
+            default: prompt = ""
+            }
+            if !prompt.isEmpty {
+                model.voice.say(prompt, category: "voiceControl")
+            }
+        }
+        .onChange(of: model.chargingPresented) { _, presented in
+            if presented {
+                model.voice.say("충전 상세 화면을 열었습니다.", category: "voiceControl")
+            }
+        }
+        .onChange(of: navigation.presented) { _, presented in
+            if presented {
+                model.voice.say("주행 대시보드를 표시합니다.", category: "voiceControl")
+            } else {
+                model.voice.say("주행 대시보드를 닫았습니다.", category: "voiceControl")
+            }
+        }
     }
 }
 private struct AppDestinations: ViewModifier {

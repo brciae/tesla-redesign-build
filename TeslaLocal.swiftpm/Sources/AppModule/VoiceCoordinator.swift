@@ -168,16 +168,27 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
             auditionProfile = nil
             playOffline(item, profile: profile); return
         }
-        // v44: Typecast AI TTS support (if enabled and key is present)
-        if TypecastClient.shared.isEnabled && TypecastClient.shared.hasKey {
-            if playTypecast(item) { return }
-        }
-        // v42: the recorded guidance voice. When the recordings cover the sentence they are played as-is;
-        // anything they do not cover falls through to the engine so nothing is ever left unsaid.
+        // 1. If a recorded voice is selected (유미, 서희, 현지, 수빈)
         if let selection = d.string(forKey: "voiceIdentifier"), selection.hasPrefix(RecordedVoice.prefix) {
+            // First try bundled studio wav clips (instant 0ms, 0 credits)
             if playRecorded(item, voice: selection) { return }
+
+            // If not in local recordings:
+            // If Typecast is enabled and set to complement recorded voices, synthesize using that character's voice!
+            let tc = TypecastClient.shared
+            if tc.isEnabled && tc.hasKey && tc.complementRecordedVoices {
+                let charVoice = tc.voiceIdForRecorded(identifier: selection)
+                if playTypecast(item, voiceId: charVoice) { return }
+            }
+
+            // Fallback to offline engine if installed
             if VoicePackManifest.installed, let profile = VoiceLibrary.profile(for: RecordedVoice.fallbackProfileID) {
                 playOffline(item, profile: profile); return
+            }
+        } else {
+            // 2. Not a recorded voice: if Typecast is enabled, use selected Typecast voice (은경, 서현, 아엘, 한영, or custom)
+            if TypecastClient.shared.isEnabled && TypecastClient.shared.hasKey {
+                if playTypecast(item) { return }
             }
         }
         if let selection = d.string(forKey: "voiceIdentifier"), selection.hasPrefix("offline:") {
@@ -217,12 +228,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
     // MARK: - Typecast AI Integration
     private var typecastPlayer: AVAudioPlayer?
 
-    private func playTypecast(_ item: VoiceItem) -> Bool {
+    private func playTypecast(_ item: VoiceItem, voiceId: String? = nil) -> Bool {
         let tc = TypecastClient.shared
         guard tc.isEnabled && tc.hasKey else { return false }
         let defaults = UserDefaults.standard
         guard defaults.double(forKey: "voiceVolume") > 0 else { notice = "브리핑 음량이 0임"; playbackState = "음량 0"; return true }
         guard Date() < item.expires else { playbackState = "안내 기한 만료"; drain(); return true }
+
+        let targetVoice = (voiceId ?? tc.selectedVoiceId).trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTarget = targetVoice.isEmpty ? TypecastClient.defaultVoiceId : targetVoice
 
         let ticket = UUID()
         offlineTicket = ticket
@@ -231,7 +245,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         notice = ""
 
         // 1. Instant cache hit: play immediately
-        if let cachedURL = tc.cachedURL(for: item.text, voiceId: tc.selectedVoiceId) {
+        if let cachedURL = tc.cachedURL(for: item.text, voiceId: resolvedTarget) {
             playTypecastAudio(cachedURL, ticket: ticket, item: item, defaults: defaults)
             return true
         }
@@ -240,7 +254,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         playbackState = "타입캐스트 음성 생성 중…"
         Task {
             do {
-                let audioURL = try await tc.synthesize(text: item.text)
+                let audioURL = try await tc.synthesize(text: item.text, voiceId: resolvedTarget)
                 await MainActor.run {
                     guard self.offlineTicket == ticket else { return }
                     self.playTypecastAudio(audioURL, ticket: ticket, item: item, defaults: defaults)
