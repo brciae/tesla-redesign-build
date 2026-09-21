@@ -168,43 +168,20 @@ enum RecordedVoice {
         return best.map { (file: $0.0, length: $0.1) }
     }
 
-    /// A sentence built from recorded words: an optional opening clause, one or more number words,
+    /// A sentence built from recorded words: an optional opening clause, one number word,
     /// then a closing clause that must finish the sentence. Anything else is left to the engine —
     /// free-form concatenation would happily produce nonsense that still "matches".
     private static func composed(_ key: String, bank: Bank) -> [String]? {
         guard bank.composable else { return nil }
         var files: [String] = []
         var rest = Substring(key)
-        if let head = longestMatch(rest, bank.head) {
-            files.append(head.file)
-            rest = rest.dropFirst(head.length)
-        } else if rest.hasPrefix("주행가능거리는약") {
-            if let h = bank.head["남은거리는"] ?? bank.head["약"] {
-                files.append(h)
-                rest = rest.dropFirst("주행가능거리는약".count)
-            }
-        } else if rest.hasPrefix("주행가능거리는") {
-            if let h = bank.head["남은거리는"] ?? bank.head["약"] {
-                files.append(h)
-                rest = rest.dropFirst("주행가능거리는".count)
-            }
-        }
-        var matchedNumber = false
-        while let num = longestMatch(rest, bank.number) {
-            files.append(num.file)
-            rest = rest.dropFirst(num.length)
-            matchedNumber = true
-            if let tail = longestMatch(rest, bank.tail), tail.length == rest.count {
-                files.append(tail.file)
-                return files
-            }
-        }
-        guard matchedNumber else { return nil }
-        if let tail = longestMatch(rest, bank.tail), tail.length == rest.count {
-            files.append(tail.file)
-            return files
-        }
-        return nil
+        if let head = longestMatch(rest, bank.head) { files.append(head.file); rest = rest.dropFirst(head.length) }
+        guard let num = longestMatch(rest, bank.number) else { return nil }
+        files.append(num.file)
+        rest = rest.dropFirst(num.length)
+        guard let tail = longestMatch(rest, bank.tail), tail.length == rest.count else { return nil }
+        files.append(tail.file)
+        return files
     }
 
     /// Clips for one sentence, or nil when the recordings do not cover it.
@@ -224,15 +201,17 @@ enum RecordedVoice {
         return nil
     }
 
-    /// Clips for an announcement with the pause that follows each sentence.
-    /// Resilient: skips uncovered sentences if at least one sentence matches.
+    /// Clips for a whole announcement with the pause that follows each one, or nil if any sentence is
+    /// uncovered. It is all or nothing on purpose: half an announcement in one voice and half in another
+    /// sounds worse than either alone. The gap inside a turn call is short so the two halves read as one
+    /// sentence; the gap between sentences is a normal breath.
     static func plan(for text: String, voice identifier: String) -> [(url: URL, gap: Double)]? {
         guard let bank = resolved(identifier)?.bank else { return nil }
         let parts = sentences(text)
         guard !parts.isEmpty else { return nil }
         var plan: [(url: URL, gap: Double)] = []
         for (index, part) in parts.enumerated() {
-            guard let found = clips(sentence: part, bank: bank) else { continue }
+            guard let found = clips(sentence: part, bank: bank) else { return nil }
             let last = index == parts.count - 1
             for (i, file) in found.enumerated() {
                 // Clips inside one sentence are crossfaded rather than butted together, so they take
@@ -241,7 +220,7 @@ enum RecordedVoice {
                 plan.append((url: bank.folder.appendingPathComponent(file), gap: gap))
             }
         }
-        return plan.isEmpty ? nil : plan
+        return plan
     }
 
     /// True when `identifier`'s recordings can speak `text` as written.
