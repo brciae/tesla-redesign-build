@@ -196,14 +196,13 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
 
     private func layout(_ m: NavMetrics) -> some View {
         let rect = mapRect(m)
-        let isNight = data.night
-        let canvasColor = isNight ? theme.canvas : (theme == .minimal ? Color(red: 0.93, green: 0.94, blue: 0.96) : Color(red: 0.95, green: 0.96, blue: 0.98))
-        let textColor = isNight ? Color.white : Color(red: 0.08, green: 0.09, blue: 0.12)
+        let canvasColor = theme.canvas
+        let textColor = Color.white
         return ZStack(alignment: .topLeading) {
             canvasColor.frame(width: m.w, height: m.h)
             map()
                 .frame(width: rect.width, height: rect.height)
-                .background(isNight ? NavInk.mapBase : Color(red: 0.88, green: 0.90, blue: 0.94))
+                .background(NavInk.mapBase)
                 .mask { mapMask(rect: rect, m: m) }
                 .position(x: rect.midX, y: rect.midY)
                 .opacity(theme == .minimal ? 0 : 1)
@@ -214,7 +213,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         .frame(width: m.w, height: m.h, alignment: .topLeading)
         .clipped()
         .foregroundStyle(textColor)
-        .environment(\.colorScheme, isNight ? .dark : .light)
+        .environment(\.colorScheme, .dark)
     }
 
     private func mapRect(_ m: NavMetrics) -> CGRect {
@@ -648,15 +647,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
 
 private struct HorizonGlow: View {
     var body: some View {
-        ZStack {
-            Ellipse()
-                .fill(RadialGradient(colors: [Color(red: 0.36, green: 0.42, blue: 0.62).opacity(0.55), .clear],
-                                     center: .center, startRadius: 0, endRadius: 220))
-            Ellipse()
-                .stroke(LinearGradient(colors: [.clear, Color(red: 0.55, green: 0.7, blue: 1).opacity(0.45), .clear],
-                                       startPoint: .leading, endPoint: .trailing), lineWidth: 1.2)
-                .scaleEffect(x: 1, y: 0.9)
-        }
+        EmptyView()
     }
 }
 
@@ -1006,17 +997,11 @@ private struct SoftPanel: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return ZStack {
+            shape.fill(Color(white: 0.12).opacity(0.78))
             shape.fill(.ultraThinMaterial)
-            shape.fill(Color.black.opacity(0.18 * strength + 0.06))
+            shape.stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
         }
         .environment(\.colorScheme, .dark)
-        .mask {
-            shape.fill(
-                LinearGradient(colors: [Color.white, Color.white, Color.white.opacity(0.55)],
-                               startPoint: .top, endPoint: .bottom)
-            )
-        }
-        .compositingGroup()
         .allowsHitTesting(false)
     }
 }

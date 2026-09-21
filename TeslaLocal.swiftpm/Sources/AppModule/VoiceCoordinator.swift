@@ -233,12 +233,22 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
     private func activateAudio(_ defaults: UserDefaults) throws {
         releaseWork?.cancel(); releaseWork = nil
         let audio = AVAudioSession.sharedInstance()
-        var options: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
+        var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
         if defaults.bool(forKey: "voiceDuck") { options.insert(.duckOthers) } else { options.insert(.mixWithOthers) }
-        if audio.category != .playback || audio.mode != .voicePrompt || audio.categoryOptions != options {
+        do {
             try audio.setCategory(.playback, mode: .voicePrompt, options: options)
+        } catch {
+            do {
+                try audio.setCategory(.playback, options: options)
+            } catch {
+                try? audio.setCategory(.playback)
+            }
         }
-        try audio.setActive(true)
+        do {
+            try audio.setActive(true)
+        } catch {
+            try? audio.setActive(true, options: [])
+        }
     }
     static func yunaVoice() -> AVSpeechSynthesisVoice? {
         AVSpeechSynthesisVoice.speechVoices().filter {

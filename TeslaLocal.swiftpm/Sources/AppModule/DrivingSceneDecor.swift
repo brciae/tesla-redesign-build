@@ -267,16 +267,13 @@ final class DrivingSceneDecor {
         container.addChild(groundEntity)
         let lineMesh = MeshResource.generateBox(width: 0.13, height: 0.006, depth: 3.05)
         let dashMesh = MeshResource.generateBox(width: 0.13, height: 0.006, depth: 3.0)
-        let guideMesh = MeshResource.generateBox(width: 0.40, height: 0.008, depth: 2.05)
         for i in 0..<42 {
             // Right-hand road edge: white solid.
             let e = ModelEntity(mesh: lineMesh, materials: [edgeMaterial()]); container.addChild(e)
             marks.append(Mark(entity: e, kind: .edge, boundary: 1, base: Float(i) * 3 - 30, spacing: 3))
-            // Centre line on the left: yellow, doubled on undivided roads.
+            // Centre line on the left: clean yellow solid.
             let c = ModelEntity(mesh: lineMesh, materials: [centreMaterial()]); container.addChild(c)
             marks.append(Mark(entity: c, kind: .centre, boundary: 0, base: Float(i) * 3 - 30, spacing: 3))
-            let c2 = ModelEntity(mesh: lineMesh, materials: [centreMaterial()]); container.addChild(c2)
-            marks.append(Mark(entity: c2, kind: .centreInner, boundary: 0, base: Float(i) * 3 - 30, spacing: 3))
         }
         for boundary in 1...5 {
             for i in 0..<16 {
@@ -284,9 +281,6 @@ final class DrivingSceneDecor {
                 marks.append(Mark(entity: e, kind: .dash, boundary: boundary, base: Float(i) * 8 - 30, spacing: 8))
             }
         }
-        for i in 0..<44 {
-            let e = ModelEntity(mesh: guideMesh, materials: [guideMaterial()]); container.addChild(e)
-            marks.append(Mark(entity: e, kind: .guide, boundary: -1, base: 1.5 + Float(i) * 2, spacing: 0))
     }
 
     let set = MarkSet(container: container, marks: marks, ground: groundEntity)
@@ -313,12 +307,10 @@ final class DrivingSceneDecor {
             m.blending = .transparent(opacity: .init(floatLiteral: 0.55))
             return m
         }
-        let isNight = nightTarget > 0.5
-        let groundColor = isNight
-            ? UIColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1) // Tesla Night Dark Asphalt
-            : UIColor(red: 0.82, green: 0.84, blue: 0.88, alpha: 1) // Tesla Daytime Light Slate Asphalt
+        // Tesla Authentic Dark Asphalt (Consistent deep dark look at all times)
+        let groundColor = UIColor(red: 0.07, green: 0.08, blue: 0.10, alpha: 1)
         var m = UnlitMaterial(color: groundColor)
-        m.blending = .transparent(opacity: .init(floatLiteral: 0.95))
+        m.blending = .transparent(opacity: .init(floatLiteral: 0.98))
         return m
     }
     private func edgeMaterial() -> UnlitMaterial {
@@ -355,31 +347,26 @@ final class DrivingSceneDecor {
                 visible = true
                 s = mark.base - odometer.truncatingRemainder(dividingBy: mark.spacing)
                 lateral = (laneCenter + 0.5 - Float(n)) * laneWidth
-            case .centre:
-                // A one-lane road has no centre line; everything else has one on the left.
+            case .centre, .centreInner:
+                // Clean center line on the left
                 visible = roadClass != .narrow && n > 1
                 s = mark.base - odometer.truncatingRemainder(dividingBy: mark.spacing)
                 lateral = (laneCenter + 0.5) * laneWidth
-            case .centreInner:
-                visible = roadClass == .urban && n > 1   // undivided road: double yellow
-                s = mark.base - odometer.truncatingRemainder(dividingBy: mark.spacing)
-                lateral = (laneCenter + 0.5) * laneWidth - 0.26
             case .dash:
                 visible = mark.boundary < n
                 s = mark.base - odometer.truncatingRemainder(dividingBy: mark.spacing)
                 lateral = (laneCenter + 0.5 - Float(mark.boundary)) * laneWidth
             case .guide:
-                visible = laneSuggested
-                s = mark.base
-                let t = max(0, min(1, (s - 6) / 32))
-                lateral = shift * (t * t * (3 - 2 * t))
+                visible = false
+                s = 0
+                lateral = 0
             }
             mark.entity.isEnabled = visible && s > -32 && s < 96
             guard mark.entity.isEnabled else { continue }
             let p = pose(s)
             let normal = SIMD2<Float>(cos(p.heading), -sin(p.heading))
             let xz = p.point + normal * lateral
-            mark.entity.position = [xz.x, mark.kind == .guide ? 0.004 : 0, xz.y]
+            mark.entity.position = [xz.x, 0.002, xz.y]
             mark.entity.orientation = simd_quatf(angle: p.heading, axis: [0, 1, 0])
         }
     }
