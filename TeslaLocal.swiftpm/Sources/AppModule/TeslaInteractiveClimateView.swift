@@ -320,33 +320,6 @@ struct TeslaInteractiveClimateView: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
-                            ? Color(red: 1.0, green: 0.45, blue: 0.1).opacity(Double(level.wrappedValue) * 0.2)
-                            : .clear,
-                        radius: 8
-                    )
-
-                VStack(spacing: 4) {
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(
-                            level.wrappedValue > 0
-                                ? Color(red: 1.0, green: 0.50, blue: 0.1)
-                                : Color.white.opacity(0.3)
-                        )
-                    Text(level.wrappedValue == 0 ? "OFF" : "\(level.wrappedValue)단")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(
-                            level.wrappedValue > 0
-                                ? Color(red: 1.0, green: 0.6, blue: 0.2)
-                                : Color.white.opacity(0.45)
-                        )
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 64)
-        }
-        .buttonStyle(MotionButtonStyle())
-    }
 
     // MARK: - Quick Climate Control Bar
 
