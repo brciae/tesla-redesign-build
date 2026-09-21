@@ -130,7 +130,7 @@ struct HomeView: View {
                         .font(.system(size: 16, weight: .light, design: .rounded))
                         .tracking(4)
                         .foregroundStyle(Color.white.opacity(0.6))
-                    Caption("YL COMPANION · v0.62 (Build 62)")
+                    Caption("YL COMPANION · v0.63 (Build 63)")
                     if model.demo {
                         Button("예시 모드 종료") { model.exitDemo() }
                             .font(.caption.weight(.semibold))
@@ -425,86 +425,16 @@ struct ReadOnlyNotice: View {
 struct ControlsView: View {
     @ObservedObject var link: VehicleLink
     var body: some View {
-        PageBody(title: "컨트롤") {
-            VStack(spacing: 16) {
-                GlassMenuCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CardTitle(title: "차량 도어 및 잠금 제어", systemImage: "car.front.waves.up")
-                        ControlPanel(link: link, category: "body")
-                    }
-                    .padding(16)
-                }
-
-                GlassMenuCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        CardTitle(title: "3D 차량 모델", systemImage: "cube.transparent")
-                        Vehicle3DPanel(link: link)
-                    }
-                    .padding(16)
-                }
-            }
-        }
+        TeslaInteractiveControlsView(link: link)
+            .navigationTitle("차량 제어")
     }
 }
 
 struct ClimateStatusView: View {
-    @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     var body: some View {
-        let c = homePresentation(model, link).object("climate")
-        let inside = c.number("insideC")
-        let outside = c.number("outsideC")
-        PageBody(title: "실내 온도") {
-            VStack(spacing: 16) {
-                // Large Temperature Header Cards
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("실내 온도")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.65))
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text(inside != nil ? String(format: "%.1f", inside!) : "--")
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
-                            Text("°C")
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.6))
-                        }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("외기 온도")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.65))
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text(outside != nil ? String(format: "%.1f", outside!) : "--")
-                                .font(.system(size: 34, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
-                            Text("°C")
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.6))
-                        }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
-                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
-                }
-
-                // Climate Control Center
-                GlassMenuCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CardTitle(title: "공조 제어", systemImage: "fanblades.fill")
-                        ControlPanel(link: link, category: "climate")
-                    }
-                    .padding(16)
-                }
-            }
-        }
+        TeslaInteractiveClimateView(link: link)
+            .navigationTitle("실내 공조")
     }
 }
 
