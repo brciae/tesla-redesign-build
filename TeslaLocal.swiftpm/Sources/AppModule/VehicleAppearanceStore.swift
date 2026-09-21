@@ -56,4 +56,12 @@ extension UIColor {
         getRed(&r, green: &g, blue: &b, alpha: &a)
         return String(format: "%02X%02X%02X", Int(min(1,max(0,r))*255), Int(min(1,max(0,g))*255), Int(min(1,max(0,b))*255))
     }
+    var normalizedForTint: UIColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        let maxComp = max(r, max(g, b))
+        guard maxComp > 0.08 else { return self }
+        let scale = min(1.0 / maxComp, 1.45)
+        return UIColor(red: min(1, r * scale), green: min(1, g * scale), blue: min(1, b * scale), alpha: a)
+    }
 }

@@ -29,10 +29,11 @@ struct VehicleAppearanceView: View {
                     Spacer()
                     Button { camera.serial += 1; camera.action = "reset" } label: { Image(systemName: "arrow.counterclockwise") }.accessibilityLabel("시점 초기화")
                 }.font(.subheadline)
-                Picker("꾸미기 항목", selection: $selection) { ForEach(["색상", "틴팅", "번호판", "랩핑"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
+                Picker("꾸미기 항목", selection: $selection) { ForEach(["색상", "틴팅", "인테리어", "번호판", "랩핑"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented)
                 VStack(alignment: .leading, spacing: 20) {
                     if selection == "색상" { paintControls }
                     if selection == "틴팅" { tintControls }
+                    if selection == "인테리어" { interiorControls }
                     if selection == "번호판" { plateControls }
                     if selection == "랩핑" { wrapControls }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Theme.surface, in: RoundedRectangle(cornerRadius: 18))
@@ -90,6 +91,51 @@ struct VehicleAppearanceView: View {
             ColorPicker("자유 색상", selection: color(\.tint), supportsOpacity: false)
             HStack { Text("밝게"); Slider(value: $draft.tintStrength, in: 0...1).onChange(of: draft.tintStrength) { _, _ in edited() }; Text("어둡게") }
             Text("화면 농도 · 실차 투과율 아님 · 램프·미러 유지").font(.caption).foregroundStyle(Theme.muted)
+        }
+    }
+    private var interiorControls: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(VehicleInteriorPreset.presets.first { $0.hex.uppercased() == draft.interiorColor.uppercased() }?.name ?? (draft.enabled ? "사용자 인테리어" : "올 블랙")).font(.title3.weight(.semibold))
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 8) {
+                ForEach(VehicleInteriorPreset.presets) { preset in
+                    Button {
+                        draft.interiorColor = preset.hex
+                        edited()
+                    } label: {
+                        VStack(spacing: 6) {
+                            Circle()
+                                .fill(Color(uiColor: UIColor(appearanceHex: preset.hex)).gradient)
+                                .frame(width: 36, height: 36)
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(
+                                            .white.opacity(draft.interiorColor.uppercased() == preset.hex.uppercased() && draft.enabled ? 1 : 0.25),
+                                            lineWidth: draft.interiorColor.uppercased() == preset.hex.uppercased() && draft.enabled ? 3 : 1
+                                        )
+                                )
+                                .shadow(color: .black.opacity(0.35), radius: 3)
+
+                            Text(preset.name)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(preset.name)
+                }
+            }
+            ColorPicker("자유 시트/내장 색상", selection: color(\.interiorColor), supportsOpacity: false)
+            if let matched = VehicleInteriorPreset.presets.first(where: { $0.hex.uppercased() == draft.interiorColor.uppercased() }) {
+                Text(matched.desc)
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+            } else {
+                Text("사용자 정의 시트 색상 · 공조 화면과 실시간 연동됨")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+            }
         }
     }
     private var plateControls: some View {

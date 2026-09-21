@@ -10,6 +10,11 @@ struct TeslaInteractiveClimateView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.vehicleUnits) private var units
     @ObservedObject var link: VehicleLink
+    @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
+
+    private var currentAppearance: VehicleAppearance {
+        appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))
+    }
 
     // HVAC Primary States (Matching Tesla Model Y Manual [1, 2, 16, 15, 17, 13, 14, 11])
     @State private var isPowerOn = true
@@ -456,12 +461,47 @@ struct TeslaInteractiveClimateView: View {
                 )
                 .overlay(RoundedRectangle(cornerRadius: 26).stroke(Color.white.opacity(0.12), lineWidth: 1))
 
-            // 3D Interior Graphic
-            Image("TeslaTopInterior")
-                .resizable()
-                .scaledToFit()
-                .frame(maxHeight: 380)
-                .shadow(color: Color.black.opacity(0.9), radius: 16, y: 6)
+            // 3D Interior Graphic with Custom Seat Leather Tint
+            let isCustomInterior = currentAppearance.enabled && currentAppearance.interiorColor.uppercased() != "17191B"
+            let seatLeatherColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))
+
+            ZStack {
+                Image("TeslaTopInterior")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 380)
+                    .shadow(color: Color.black.opacity(0.9), radius: 16, y: 6)
+
+                if isCustomInterior {
+                    Image("TeslaTopInterior")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 380)
+                        .colorMultiply(seatLeatherColor)
+                        .opacity(0.42)
+                        .blendMode(.screen)
+                }
+            }
+
+            // Interior Theme Badge at Top
+            NavigationLink(value: Page.appearance) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(seatLeatherColor)
+                        .frame(width: 7, height: 7)
+                    Text(VehicleInteriorPreset.presets.first { $0.hex.uppercased() == currentAppearance.interiorColor.uppercased() }?.name ?? "인테리어 시트")
+                        .font(.system(size: 9, weight: .bold))
+                    Image(systemName: "paintbrush.fill")
+                        .font(.system(size: 7))
+                }
+                .foregroundStyle(Color.white.opacity(0.85))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.black.opacity(0.55), in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
+            }
+            .buttonStyle(PlainButtonStyle())
+            .offset(y: -175)
 
             // Left Side Controls: Wiper Defrost [4] & Steering Wheel Heat [5]
             VStack(spacing: 8) {
@@ -644,7 +684,9 @@ struct TeslaInteractiveClimateView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 5)
                     .background(
-                        isHeatActive ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28) : Color.white.opacity(0.08),
+                        isHeatActive
+                            ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28)
+                            : (currentAppearance.enabled ? Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor)).opacity(0.16) : Color.white.opacity(0.08)),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                     .overlay(
@@ -673,7 +715,9 @@ struct TeslaInteractiveClimateView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 5)
                     .background(
-                        isVentActive ? Color.cyan.opacity(0.28) : Color.white.opacity(0.08),
+                        isVentActive
+                            ? Color.cyan.opacity(0.28)
+                            : (currentAppearance.enabled ? Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor)).opacity(0.16) : Color.white.opacity(0.08)),
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                     .overlay(
@@ -718,7 +762,9 @@ struct TeslaInteractiveClimateView: View {
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
                 .background(
-                    isHeatActive ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28) : Color(white: 0.14).opacity(0.85),
+                    isHeatActive
+                        ? Color(red: 1.0, green: 0.35, blue: 0.1).opacity(0.28)
+                        : (currentAppearance.enabled ? Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor)).opacity(0.18) : Color(white: 0.14).opacity(0.85)),
                     in: RoundedRectangle(cornerRadius: 8)
                 )
                 .overlay(

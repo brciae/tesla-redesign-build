@@ -14,6 +14,7 @@ import SwiftUI
 struct TeslaInteractiveControlsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
+    @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
     @State private var isLocked = true
     @State private var isPortOpen = false
     @State private var enrollment = false
@@ -21,6 +22,10 @@ struct TeslaInteractiveControlsView: View {
     @State private var tokenSheet = false
     @State private var statusToast: String? = nil
     @State private var isExecutingRemote = false
+
+    private var currentAppearance: VehicleAppearance {
+        appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -189,6 +194,10 @@ struct TeslaInteractiveControlsView: View {
                 // Top-View Vehicle Body Graphic (Rotated 180° so Front Hood is at Top)
                 vehicleTopSilhouette
 
+                // Exterior Customization Badge
+                appearanceBadge
+                    .offset(y: -178)
+
                 // Front Hood Hotspot (Frunk) - Top Center
                 sleekHotspot(
                     icon: "car.side.front.open.fill",
@@ -247,14 +256,78 @@ struct TeslaInteractiveControlsView: View {
     // MARK: - Vehicle Silhouette
 
     private var vehicleTopSilhouette: some View {
-        ZStack {
+        let isCustomized = currentAppearance.enabled
+        let paintColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.paint).normalizedForTint)
+        let hasStripes = isCustomized && currentAppearance.wrap == .stripes
+        let stripeColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.accent))
+        let plateText = isCustomized ? currentAppearance.plate.trimmingCharacters(in: .whitespaces) : ""
+        let plateColor = Color(uiColor: UIColor(appearanceHex: currentAppearance.plateColor))
+
+        return ZStack {
+            // Base Tesla Top Graphic tinted with vehicle paint
             Image("TeslaTopExterior")
                 .resizable()
                 .scaledToFit()
                 .rotationEffect(.degrees(180))
                 .frame(maxHeight: 360)
+                .colorMultiply(isCustomized ? paintColor : Color.white)
                 .shadow(color: Color.black.opacity(0.85), radius: 20, y: 10)
+
+            // Racing Stripes Overlay (if selected in wrap)
+            if hasStripes {
+                HStack(spacing: 8) {
+                    stripeColor.frame(width: 4, height: 260)
+                    stripeColor.frame(width: 4, height: 260)
+                }
+                .opacity(0.85)
+                .blendMode(.overlay)
+            }
+
+            // Plate Badge at Rear Bumper (if configured)
+            if !plateText.isEmpty {
+                VStack {
+                    Spacer()
+                    Text(plateText)
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(plateColor, in: RoundedRectangle(cornerRadius: 3))
+                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.black.opacity(0.35), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.6), radius: 2)
+                        .offset(y: -14)
+                }
+                .frame(maxHeight: 360)
+            }
         }
+    }
+
+    private var appearanceBadge: some View {
+        NavigationLink(value: Page.appearance) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(Color(uiColor: UIColor(appearanceHex: currentAppearance.paint)))
+                    .frame(width: 8, height: 8)
+                Text(VehiclePaintPreset.modelYL.first { $0.hex == currentAppearance.paint }?.name ?? "차꾸미기")
+                    .font(.system(size: 10, weight: .bold))
+                if currentAppearance.enabled {
+                    Text("· \(currentAppearance.finish.rawValue)")
+                        .font(.system(size: 10))
+                }
+                if !currentAppearance.plate.isEmpty {
+                    Text("· \(currentAppearance.plate)")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                Image(systemName: "paintbrush.fill")
+                    .font(.system(size: 8))
+            }
+            .foregroundStyle(Color.white.opacity(0.85))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.55), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 0.8))
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 
     // MARK: - Center Lock Hotspot
