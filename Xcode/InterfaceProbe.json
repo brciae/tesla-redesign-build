@@ -37,6 +37,7 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/VehicleAppearanceView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/VehicleSceneView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/LocalRuntime.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TypecastCatalog.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastClient.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift"
    ],
