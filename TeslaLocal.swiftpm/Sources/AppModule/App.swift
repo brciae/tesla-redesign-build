@@ -331,7 +331,7 @@ struct TripsView: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Text("[단위: \(units.distanceUnit)]")
+                            Text("[단위: \(units.distance)]")
                                 .font(.caption2.weight(.medium))
                                 .foregroundStyle(.secondary)
                         }

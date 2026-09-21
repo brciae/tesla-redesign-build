@@ -168,6 +168,18 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
             auditionProfile = nil
             playOffline(item, profile: profile); return
         }
+        let tc = TypecastClient.shared
+        // 0. If 100% Typecast AI priority is enabled, bypass recorded WAV files completely!
+        if tc.isEnabled && tc.hasKey && tc.bypassRecordedVoices {
+            let targetVoice: String?
+            if let selection = d.string(forKey: "voiceIdentifier"), selection.hasPrefix(RecordedVoice.prefix) {
+                targetVoice = tc.voiceIdForRecorded(identifier: selection)
+            } else {
+                targetVoice = tc.selectedVoiceId
+            }
+            if playTypecast(item, voiceId: targetVoice) { return }
+        }
+
         // 1. If a recorded voice is selected (유미, 서희, 현지, 수빈)
         if let selection = d.string(forKey: "voiceIdentifier"), selection.hasPrefix(RecordedVoice.prefix) {
             // First try bundled studio wav clips (instant 0ms, 0 credits)
@@ -175,7 +187,6 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
 
             // If not in local recordings:
             // If Typecast is enabled and set to complement recorded voices, synthesize using that character's voice!
-            let tc = TypecastClient.shared
             if tc.isEnabled && tc.hasKey && tc.complementRecordedVoices {
                 let charVoice = tc.voiceIdForRecorded(identifier: selection)
                 if playTypecast(item, voiceId: charVoice) { return }
@@ -187,7 +198,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
             }
         } else {
             // 2. Not a recorded voice: if Typecast is enabled, use selected Typecast voice (은경, 서현, 아엘, 한영, or custom)
-            if TypecastClient.shared.isEnabled && TypecastClient.shared.hasKey {
+            if tc.isEnabled && tc.hasKey {
                 if playTypecast(item) { return }
             }
         }

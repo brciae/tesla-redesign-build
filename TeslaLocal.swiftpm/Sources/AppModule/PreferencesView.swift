@@ -171,6 +171,17 @@ struct PreferencesView: View {
                     }
                     .padding(.vertical, 4)
 
+                    // 100% 타입캐스트 AI 생성 및 영구 캐시 우선 모드 (기존 녹음 완전 건너뛰기)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("100% 타입캐스트 AI 생성 및 캐시 사용", isOn: $typecast.bypassRecordedVoices)
+                            .font(.subheadline.weight(.semibold))
+
+                        Text("조각난 기존 녹음 파일(WAV)을 일체 사용하지 않고, 모든 안내(길안내·안전운전·브리핑·차량제어)를 100% 타입캐스트 고품질 AI로만 합성하여 로컬 캐시에 영구 보관합니다.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+
                     HStack {
                         Button {
                             typecast.testSpeech()

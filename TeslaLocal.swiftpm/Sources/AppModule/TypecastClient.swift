@@ -32,6 +32,9 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var complementRecordedVoices: Bool {
         didSet { UserDefaults.standard.set(complementRecordedVoices, forKey: "typecastComplementRecorded") }
     }
+    @Published var bypassRecordedVoices: Bool {
+        didSet { UserDefaults.standard.set(bypassRecordedVoices, forKey: "typecastBypassRecorded") }
+    }
     @Published var voiceIdYumi: String {
         didSet {
             let clean = voiceIdYumi.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -126,7 +129,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
         self.activeKeyIndex = UserDefaults.standard.integer(forKey: "typecastActiveKeyIndex")
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "typecastVoiceId") ?? Self.defaultVoiceId
-        self.complementRecordedVoices = UserDefaults.standard.object(forKey: "typecastComplementRecorded") == nil ? true : UserDefaults.standard.bool(forKey: "typecastComplementRecorded")
+        self.complementRecordedVoices = UserDefaults.standard.object(forKey: "typecastComplementRecorded") != nil ? UserDefaults.standard.bool(forKey: "typecastComplementRecorded") : true
+        self.bypassRecordedVoices = UserDefaults.standard.bool(forKey: "typecastBypassRecorded")
         self.voiceIdYumi = UserDefaults.standard.string(forKey: "typecastVoiceId_yumi") ?? "유미"
         self.voiceIdHyeonji = UserDefaults.standard.string(forKey: "typecastVoiceId_hyeonji") ?? "현지"
         self.voiceIdSubin = UserDefaults.standard.string(forKey: "typecastVoiceId_subin") ?? "수빈"
