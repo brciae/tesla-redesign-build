@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import MapKit
 
 struct DrivingWorkspace: View {
     @EnvironmentObject private var model: AppModel
@@ -20,6 +21,10 @@ struct DrivingWorkspace: View {
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
+                        } else {
+                            LiveStandbyMapView(navigation: navigation, readout: readout) {
+                                settings = true
+                            }
                         }
                     } car: {
                         ZStack {
@@ -60,17 +65,21 @@ struct DrivingWorkspace: View {
                 }.navigationTitle("운전 화면 설정").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { settings = false } } }
             }
         }
-        .onAppear { navigation.screenAppeared() }.onDisappear { navigation.screenDisappeared() }
+        .onAppear {
+            navigation.screenAppeared()
+            model.voice.announceDashboardStart(destination: readout.destination)
+        }
+        .onDisappear { navigation.screenDisappeared() }
     }
 
     private func topBar(compact: Bool) -> some View {
         HStack(spacing: 8) {
-            Button { navigation.stop() } label: {
+            Button { navigation.dismissWorkspace() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: compact ? 14 : 16, weight: .bold))
                     .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
             }
-            .accessibilityLabel("운전 화면 종료")
+            .accessibilityLabel("운전 화면 닫기")
 
             Image(systemName: link.authentic ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
                 .font(.system(size: compact ? 12 : 14))
@@ -312,3 +321,110 @@ enum SunClock {
         return asin(sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(hourAngle)) / rad
     }
 }
+
+struct LiveStandbyMapView: View {
+    @ObservedObject var navigation: EmbeddedNavigation
+    let readout: NavigationReadout
+    var onSettings: () -> Void = {}
+
+    var body: some View {
+        ZStack {
+            StandbyMKMapView()
+
+            VStack {
+                Spacer()
+                statusPill
+                    .padding(.bottom, 28)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var statusPill: some View {
+        HStack(spacing: 8) {
+            if !navigation.hasKey {
+                Image(systemName: "key.fill")
+                    .foregroundStyle(.yellow)
+                    .font(.system(size: 13))
+                Text("카카오 Native App Key 필요")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Button("키 설정") {
+                    onSettings()
+                }
+                .font(.system(size: 12, weight: .bold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.blue, in: Capsule())
+                .foregroundStyle(.white)
+            } else if !navigation.consent || !navigation.enabled {
+                Image(systemName: "hand.raised.fill")
+                    .foregroundStyle(.orange)
+                    .font(.system(size: 13))
+                Text("카카오 GPS 전달 동의 필요")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Button("1-터치 활성화") {
+                    navigation.activateWorkspace()
+                }
+                .font(.system(size: 12, weight: .bold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.blue, in: Capsule())
+                .foregroundStyle(.white)
+            } else if navigation.busy {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+                Text("카카오 경로 탐색 중…")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+            } else {
+                Image(systemName: "location.fill")
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.4))
+                    .font(.system(size: 13))
+                Text(readout.destination.isEmpty ? "실시간 지도 주행 중 · 테슬라 내비 연동 대기" : "\(readout.destination) 길안내 준비")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                if !readout.destination.isEmpty {
+                    Button("길안내 시작") {
+                        navigation.retry()
+                    }
+                    .font(.system(size: 12, weight: .bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.blue, in: Capsule())
+                    .foregroundStyle(.white)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color(white: 0.1, opacity: 0.85), in: Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 8, y: 3)
+    }
+}
+
+struct StandbyMKMapView: UIViewRepresentable {
+    func makeUIView(context: Context) -> MKMapView {
+        let map = MKMapView()
+        map.overrideUserInterfaceStyle = .dark
+        map.showsUserLocation = true
+        map.userTrackingMode = .followWithHeading
+        map.showsCompass = false
+        map.showsScale = false
+        map.showsTraffic = true
+        map.isPitchEnabled = true
+        map.isRotateEnabled = true
+        map.pointOfInterestFilter = .excludingAll
+        return map
+    }
+
+    func updateUIView(_ uiView: MKMapView, context: Context) {
+        if uiView.userTrackingMode != .followWithHeading && uiView.userTrackingMode != .follow {
+            uiView.setUserTrackingMode(.followWithHeading, animated: true)
+        }
+    }
+}
+

@@ -132,6 +132,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         playbackState = "안내 대기 중"
         say(text, key: "preview", category: "", priority: 3, ttl: 30, manual: true)
     }
+    func announceDashboardStart(destination: String = "") {
+        let d = UserDefaults.standard
+        guard d.bool(forKey: "voiceEnabled") else { return }
+        if !destination.isEmpty {
+            say("운전 대시보드를 시작합니다. 목적지 \(destination) 안내를 준비합니다.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
+        } else {
+            say("운전 대시보드를 시작합니다. 안전 운전하세요.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
+        }
+    }
     func say(_ text: String, key: String, category: String, priority: Int = 1, ttl: TimeInterval = 15, manual: Bool = false) {
         let d = UserDefaults.standard
         guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { return }

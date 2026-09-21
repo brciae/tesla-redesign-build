@@ -43,8 +43,9 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: "navigationTheme") }
     }
     @Published var presented = false
-    @Published var enabled = UserDefaults.standard.bool(forKey: "embeddedNavigationEnabled")
-    @Published var consent = UserDefaults.standard.bool(forKey: "embeddedNavigationConsent")
+    @Published var userDismissed = false
+    @Published var enabled: Bool = (UserDefaults.standard.object(forKey: "embeddedNavigationEnabled") as? Bool) ?? true
+    @Published var consent: Bool = (UserDefaults.standard.object(forKey: "embeddedNavigationConsent") as? Bool) ?? true
     @Published var hipass = UserDefaults.standard.bool(forKey: "navigationHipass")
     @Published var orientation = NavigationDirection(rawValue: UserDefaults.standard.string(forKey: "navigationOrientation") ?? "auto") ?? .auto
     var canPresent: () -> Bool = { UIApplication.shared.applicationState == .active }
@@ -73,6 +74,15 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         locator.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locator.activityType = .automotiveNavigation
         locator.pausesLocationUpdatesAutomatically = false
+        if UserDefaults.standard.object(forKey: "embeddedNavigationEnabled") == nil {
+            UserDefaults.standard.set(true, forKey: "embeddedNavigationEnabled")
+        }
+        if UserDefaults.standard.object(forKey: "embeddedNavigationConsent") == nil {
+            UserDefaults.standard.set(true, forKey: "embeddedNavigationConsent")
+        }
+        if locator.authorizationStatus == .notDetermined {
+            locator.requestWhenInUseAuthorization()
+        }
         NavigationOrientation.failure = { [weak self] message in self?.directionNotice = message }
         do { hasKey = !(try NavigationKey.read()).isEmpty; if hasKey { status = "최신 차량 목적지 대기" } }
         catch { status = error.localizedDescription }
@@ -184,7 +194,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     if event == "ended" { self.stop(); return }
                     if event == "ready" || event == "started" {
                         // v29: a start that completes under the lock screen keeps running; UI appears on return.
-                        if UIApplication.shared.applicationState == .active { self.presented = true }
+                        if UIApplication.shared.applicationState == .active, !self.userDismissed { self.presented = true }
                     }
                     if event == "started" { self.busy = false; self.guiding = true; self.startFailures = 0; self.deadline?.invalidate(); self.holdBackgroundLocation(true) }
                     if !self.guiding || event != "ready" { self.status = message }
@@ -263,9 +273,33 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     }
     func stop() { _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
     func retry() { if !ownsAudio { startFailures = 0; _ = gate("retry"); status = "최신 차량 목적지 다시 수신 중" } }
-    func reset() { startFailures = 0; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
+    func reset() { startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
-    func foregrounded() { if guiding, controller != nil { presented = true } }
+    func foregrounded() { if guiding, controller != nil, !userDismissed { presented = true } }
+    func requestLocationPermission() {
+        if locator.authorizationStatus == .notDetermined { locator.requestWhenInUseAuthorization() }
+    }
+    func dismissWorkspace() {
+        userDismissed = true
+        presented = false
+    }
+    func activateWorkspace(model: AppModel? = nil) {
+        userDismissed = false
+        if !consent {
+            consent = true
+            UserDefaults.standard.set(true, forKey: "embeddedNavigationConsent")
+        }
+        if !enabled {
+            enabled = true
+            UserDefaults.standard.set(true, forKey: "embeddedNavigationEnabled")
+        }
+        requestLocationPermission()
+        if !guiding && !busy {
+            retry()
+            model?.refreshVehicle()
+        }
+        presented = true
+    }
     /// v30: return the map camera to the car after manual browsing.
     func recenter() { controller?.recenter(); following = true }
     func suspendPending() {
@@ -378,7 +412,7 @@ struct NavigationSetupView: View {
                 if navigation.guiding { Button("진행 중인 내비 보기") { navigation.presented = true } }
                 Button("최신 목적지로 다시 시도") { navigation.retry(); model.refreshVehicle() }.disabled(navigation.ownsAudio || model.demo)
                 Button {
-                    navigation.presented = true
+                    navigation.activateWorkspace(model: model)
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "car.fill")
@@ -406,6 +440,7 @@ struct NavigationSetupView: View {
                 Button("설정 저장") { navigation.saveSetup(key: nativeKey); nativeKey = ""; model.refreshVehicle() }
             }
         }
+        .onAppear { navigation.requestLocationPermission() }
         .onChange(of: navigation.consent) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationConsent") } }
         .onChange(of: navigation.enabled) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationEnabled") } }
     }

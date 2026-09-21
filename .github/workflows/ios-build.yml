@@ -1,4 +1,4 @@
-name: iOS Build v67
+name: iOS Build v68
 on:
   workflow_dispatch:
   push:
@@ -17,7 +17,7 @@ jobs:
         run: bash tools/build-ios.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: YLCompanion-v67
+          name: YLCompanion-v68
           path: Xcode/BuildOutput/*.ipa
       - uses: actions/upload-artifact@v4
         if: always()

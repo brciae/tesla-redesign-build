@@ -131,7 +131,7 @@ struct HomeView: View {
                         .font(.system(size: 16, weight: .light, design: .rounded))
                         .tracking(4)
                         .foregroundStyle(Color.white.opacity(0.6))
-                    Caption("YL COMPANION · v0.67 (Build 67)")
+                    Caption("YL COMPANION · v0.68 (Build 68)")
                     if model.demo {
                         Button("예시 모드 종료") { model.exitDemo() }
                             .font(.caption.weight(.semibold))
@@ -260,7 +260,7 @@ struct HomeView: View {
     private var driveButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            model.navigation.presented = true
+            model.navigation.activateWorkspace(model: model)
         } label: {
             HStack(spacing: 16) {
                 ZStack {
