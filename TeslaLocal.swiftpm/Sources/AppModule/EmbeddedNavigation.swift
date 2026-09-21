@@ -164,6 +164,9 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if on { locator.startUpdatingLocation() } else { locator.stopUpdatingLocation() }
     }
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        if !guiding, let controller, let point = locations.last {
+            controller.updateStandbyLocation(latitude: point.coordinate.latitude, longitude: point.coordinate.longitude, bearing: point.course, speed: point.speed)
+        }
         guard busy, controller == nil, let candidate, let ticket, current(ticket), canPresent(), let point = locations.last else { return }
         guard let receivedAt = candidate.number("receivedAt"), Date().timeIntervalSince1970 * 1000 - receivedAt <= 30000 else {
             failed("목적지 수신 후 시간이 지남 · 최신 목적지로 다시 시도 필요", ticket: ticket); return
@@ -283,6 +286,51 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         userDismissed = true
         presented = false
     }
+    func startStandbyKakaoMap() {
+        guard hasKey, consent, controller == nil, !busy, !guiding else { return }
+        do {
+            let key = try NavigationKey.read()
+            guard key.count == 32 else { return }
+            let view = YLKakaoController()
+            controller = view
+            status = "카카오 실시간 지도 준비 중"
+            applyAudioPreferences()
+            view.eventHandler = { [weak self, weak view] event, message in
+                let handle = {
+                    guard let self, let view, self.controller === view else { return }
+                    if event == "audioAcquired" { self.onAudioSession?(true); return }
+                    if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
+                    if event == "follow" { self.following = message == "1"; return }
+                    if event == "visible" {
+                        self.navigationScene = view.view.window?.windowScene
+                        NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene)
+                        return
+                    }
+                    if event == "ended" { self.stop(); return }
+                    if event == "error" { self.status = message; return }
+                    if !self.guiding { self.status = message }
+                }
+                if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
+            }
+            view.telemetryHandler = { [weak self, weak view] snapshot in
+                let handle = {
+                    guard let self, let view, self.controller === view else { return }
+                    if snapshot.isEmpty { return }
+                    var merged = self.lastTelemetry
+                    snapshot.forEach { merged[$0.key] = $0.value }
+                    self.lastTelemetry = merged
+                    self.telemetry = merged
+                }
+                if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
+            }
+            let loc = locator.location?.coordinate ?? CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780)
+            view.prepareStandby(appKey: key, latitude: loc.latitude, longitude: loc.longitude)
+            locator.startUpdatingLocation()
+        } catch {
+            status = "카카오 지도 준비 실패: \(error.localizedDescription)"
+        }
+    }
+
     func activateWorkspace(model: AppModel? = nil) {
         userDismissed = false
         if !consent {
@@ -297,6 +345,10 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if !guiding && !busy {
             retry()
             model?.refreshVehicle()
+            let preferred = UserDefaults.standard.string(forKey: "preferredMapEngine") ?? "kakao"
+            if preferred == "kakao" && controller == nil {
+                startStandbyKakaoMap()
+            }
         }
         presented = true
     }

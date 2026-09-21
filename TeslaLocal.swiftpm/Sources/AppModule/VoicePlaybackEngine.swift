@@ -198,11 +198,13 @@ final class RecordedAudioPlaylistPlayer: NSObject, AVAudioPlayerDelegate {
     private static func wavData(from samples: [Float], sampleRate: Int) -> Data {
         var data = Data()
         let numSamples = samples.count
+        let paddingSamples = Int(0.05 * Double(sampleRate))
+        let totalSamples = numSamples + paddingSamples
         let numChannels: UInt16 = 1
         let bitsPerSample: UInt16 = 16
         let byteRate: UInt32 = UInt32(sampleRate * Int(numChannels) * Int(bitsPerSample / 8))
         let blockAlign: UInt16 = numChannels * (bitsPerSample / 8)
-        let subchunk2Size: UInt32 = UInt32(numSamples * Int(numChannels) * Int(bitsPerSample / 8))
+        let subchunk2Size: UInt32 = UInt32(totalSamples * Int(numChannels) * Int(bitsPerSample / 8))
         let chunkSize: UInt32 = 36 + subchunk2Size
 
         data.append(contentsOf: [UInt8]("RIFF".utf8))
@@ -230,11 +232,15 @@ final class RecordedAudioPlaylistPlayer: NSObject, AVAudioPlayerDelegate {
         var s2Size = subchunk2Size.littleEndian
         data.append(Data(bytes: &s2Size, count: 4))
 
-        data.reserveCapacity(data.count + numSamples * 2)
+        data.reserveCapacity(data.count + totalSamples * 2)
         for sample in samples {
             let clamped = max(-1.0, min(1.0, sample))
             var intSample = Int16(clamped * 32767.0).littleEndian
             data.append(Data(bytes: &intSample, count: 2))
+        }
+        var zero: Int16 = 0
+        for _ in 0..<paddingSamples {
+            data.append(Data(bytes: &zero, count: 2))
         }
         return data
     }

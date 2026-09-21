@@ -15,6 +15,10 @@ NS_ASSUME_NONNULL_BEGIN
      destinationLatitude:(double)destinationLatitude destinationLongitude:(double)destinationLongitude
                     name:(NSString *)name hipass:(BOOL)hipass validUntil:(NSTimeInterval)validUntil
     NS_SWIFT_NAME(prepare(appKey:latitude:longitude:destinationLatitude:destinationLongitude:name:hipass:validUntil:));
+- (void)prepareStandbyWithAppKey:(NSString *)key latitude:(double)latitude longitude:(double)longitude
+    NS_SWIFT_NAME(prepareStandby(appKey:latitude:longitude:));
+- (void)updateStandbyLocationWithLatitude:(double)latitude longitude:(double)longitude bearing:(double)bearing speed:(double)speed
+    NS_SWIFT_NAME(updateStandbyLocation(latitude:longitude:bearing:speed:));
 - (void)stopNavigation NS_SWIFT_NAME(stopNavigation());
 /// Resume camera tracking after manual map browsing.
 - (void)recenter NS_SWIFT_NAME(recenter());

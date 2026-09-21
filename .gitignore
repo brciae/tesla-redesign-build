@@ -1,3 +1,9 @@
 build_artifacts/
+downloaded_artifacts/
+scratch/
+check_audio.py
+check_sr.py
+test_plan.py
+test_voice.py
 .DS_Store
 *.ipa

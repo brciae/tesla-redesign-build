@@ -648,6 +648,10 @@ struct TeslaFleetTokenSheet: View {
 
     @State private var tokenText = ""
     @State private var vinText = ""
+    @State private var authCodeText = ""
+    @State private var clientIdText = TeslaFleetClient.defaultClientId
+    @State private var redirectUriText = TeslaFleetClient.defaultRedirectUri
+    @State private var isExchanging = false
     @State private var isLoading = false
     @State private var message: String? = nil
     @State private var showTokenGuide = false
@@ -685,7 +689,7 @@ struct TeslaFleetTokenSheet: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("원격 LTE 클라우드 제어 (Fleet API)")
                                         .font(.system(size: 14, weight: .semibold))
-                                    Text("원격에서 차량을 제어하려면 테슬라 공식 토큰을 등록하세요.")
+                                    Text("원격에서 차량을 제어하려면 테슬라 공식 계정 로그인을 진행하세요.")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -706,6 +710,112 @@ struct TeslaFleetTokenSheet: View {
                     tokenGuideSheet
                 }
 
+                // MARK: - Official Tesla Developer OAuth 2.0 Login Section
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: "person.badge.key.fill")
+                                .font(.title3)
+                                .foregroundStyle(.red)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("테슬라 공식 개발자 로그인 (OAuth 2.0)")
+                                    .font(.system(size: 15, weight: .bold))
+                                Text("공식 테슬라 웹페이지에서 로그인 후 인증 코드를 교환합니다.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        // Client ID & Redirect URI Display
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("OAuth 2.0 Client ID:")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(clientIdText.prefix(12) + "…" + clientIdText.suffix(6))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                            }
+                            HStack {
+                                Text("리다이렉트 URI:")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(redirectUriText)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+
+                        // Step 1: Web Login Button
+                        if let authURL = fleet.buildAuthorizeURL() {
+                            Link(destination: authURL) {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: "safari.fill")
+                                    Text("1단계: 테슬라 공식 웹 로그인 (브라우저 열기)")
+                                        .font(.system(size: 13, weight: .bold))
+                                    Spacer()
+                                }
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                        }
+
+                        Divider().padding(.vertical, 2)
+
+                        // Step 2: Code / Callback URL Input
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("2단계: 인증 코드 또는 리다이렉트 URL 붙여넣기")
+                                    .font(.caption.weight(.bold))
+                                Spacer()
+                                Button("클립보드 붙여넣기") {
+                                    if let clip = UIPasteboard.general.string {
+                                        authCodeText = clip
+                                    }
+                                }
+                                .font(.caption2.weight(.semibold))
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+
+                            TextField("code=... 또는 전체 리다이렉트 URL 입력", text: $authCodeText)
+                                .font(.system(size: 12, design: .monospaced))
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .padding(8)
+                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                        }
+
+                        // Step 3: Automatic Token Exchange
+                        Button {
+                            exchangeCodeAndConnect()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                if isExchanging {
+                                    ProgressView().controlSize(.small).padding(.trailing, 6)
+                                }
+                                Text("3단계: 토큰 자동 발급 및 계정 연동")
+                                    .font(.system(size: 13, weight: .bold))
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .disabled(authCodeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isExchanging)
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("테슬라 공식 개발자 연동 (추천)")
+                }
+
                 // MARK: - Server Region Selection
                 Section("테슬라 Fleet 서버 리전") {
                     Picker("통신 서버 리전", selection: $fleet.selectedRegion) {
@@ -718,17 +828,17 @@ struct TeslaFleetTokenSheet: View {
                         fleet.saveRegion(newRegion)
                     }
 
-                    Text("※ 한국/아시아 출고 차량(VIN: LRW...)은 APAC 리전이 기본입니다. Auth for Tesla 등 서드파티 토큰 발급기는 Owner API를 사용합니다. 조회 시 작동하는 서버로 자동 폴백됩니다.")
+                    Text("※ 한국/아시아 출고 차량(VIN: LRW...)은 APAC 리전이 기본입니다. 조회 시 작동하는 서버로 자동 폴백됩니다.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
-                // MARK: - Fleet API Token Input Section
-                Section("원격 Fleet API 토큰 등록") {
+                // MARK: - Manual Token Input Section (Secondary / Fallback)
+                Section("서드파티 토큰 직접 입력 (보조용)") {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Bearer Access Token (또는 Refresh Token)")
+                        Text("Bearer Access Token (직접 입력)")
                             .font(.caption.weight(.semibold))
-                        TextField("테슬라 계정 토큰 입력", text: $tokenText)
+                        TextField("Auth for Tesla 등에서 발급받은 토큰", text: $tokenText)
                             .font(.system(size: 13, design: .monospaced))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
@@ -830,6 +940,41 @@ struct TeslaFleetTokenSheet: View {
             .onAppear {
                 tokenText = fleet.getStoredToken() ?? ""
                 vinText = fleet.selectedVin
+                clientIdText = fleet.getClientId()
+                redirectUriText = fleet.getRedirectUri()
+                if let clip = UIPasteboard.general.string, clip.contains("code=") {
+                    authCodeText = clip
+                }
+            }
+        }
+    }
+
+    private func exchangeCodeAndConnect() {
+        let code = authCodeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return }
+        isExchanging = true
+        message = "테슬라 인증 서버에서 토큰 교환 중…"
+
+        Task {
+            do {
+                fleet.saveClientId(clientIdText)
+                fleet.saveRedirectUri(redirectUriText)
+                _ = try await fleet.exchangeAuthorizationCode(code: code)
+                let list = try await fleet.fetchVehicles()
+                await MainActor.run {
+                    isExchanging = false
+                    tokenText = fleet.getStoredToken() ?? ""
+                    if let first = list.first?["vin"] as? String {
+                        vinText = first
+                        fleet.saveVin(first)
+                    }
+                    message = "🎉 테슬라 공식 계정 연동 성공! (\(list.count)대 차량 확인됨)"
+                }
+            } catch {
+                await MainActor.run {
+                    isExchanging = false
+                    message = "인증 실패: \(error.localizedDescription)"
+                }
             }
         }
     }

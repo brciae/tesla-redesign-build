@@ -85,9 +85,7 @@ final class AppModel: ObservableObject {
                     let d = snapshot.object("groups").object("drive")
                     let gear = d.string("gear")
                     let speed = d.number("speedKmh") ?? 0
-                    if gear == "P" {
-                        self.navigation.userDismissed = false
-                    }
+                    // Note: Once userDismissed is set manually by user, it only reopens when manually tapped
                     if (gear == "D" || gear == "R" || speed > 5), !self.navigation.presented, !self.navigation.userDismissed, UIApplication.shared.applicationState == .active {
                         if UserDefaults.standard.object(forKey: "autoDrivingDashboard") == nil || UserDefaults.standard.bool(forKey: "autoDrivingDashboard") {
                             self.navigation.activateWorkspace(model: self)

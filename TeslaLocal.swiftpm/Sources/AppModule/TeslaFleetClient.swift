@@ -58,6 +58,135 @@ final class TeslaFleetClient: ObservableObject {
         }
     }
 
+    // MARK: - Tesla Developer OAuth 2.0 Configuration & Token Exchange
+    static let defaultClientId = "c469b20e-546a-452e-a151-58768a89ac7c"
+    static let defaultRedirectUri = "https://brciae.github.io/callback"
+
+    private let clientIdKey = "TeslaFleetClient.ClientId"
+    private let redirectUriKey = "TeslaFleetClient.RedirectUri"
+    private let clientSecretKey = "TeslaFleetClient.ClientSecret"
+
+    func getClientId() -> String {
+        readKeychain(key: clientIdKey) ?? Self.defaultClientId
+    }
+
+    func saveClientId(_ id: String) {
+        let clean = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        saveKeychain(key: clientIdKey, value: clean.isEmpty ? Self.defaultClientId : clean)
+    }
+
+    func getRedirectUri() -> String {
+        readKeychain(key: redirectUriKey) ?? Self.defaultRedirectUri
+    }
+
+    func saveRedirectUri(_ uri: String) {
+        let clean = uri.trimmingCharacters(in: .whitespacesAndNewlines)
+        saveKeychain(key: redirectUriKey, value: clean.isEmpty ? Self.defaultRedirectUri : clean)
+    }
+
+    func getClientSecret() -> String? {
+        readKeychain(key: clientSecretKey)
+    }
+
+    func saveClientSecret(_ secret: String) {
+        let clean = secret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if clean.isEmpty {
+            deleteKeychain(key: clientSecretKey)
+        } else {
+            saveKeychain(key: clientSecretKey, value: clean)
+        }
+    }
+
+    /// Generates the official Tesla OAuth 2.0 Web Authorize URL for the user's browser.
+    func buildAuthorizeURL() -> URL? {
+        let cid = getClientId()
+        let rUri = getRedirectUri()
+        var components = URLComponents(string: "https://auth.tesla.com/oauth2/v3/authorize")
+        components?.queryItems = [
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "client_id", value: cid),
+            URLQueryItem(name: "redirect_uri", value: rUri),
+            URLQueryItem(name: "scope", value: "openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds"),
+            URLQueryItem(name: "state", value: "tesla_app_auth"),
+            URLQueryItem(name: "prompt", value: "login")
+        ]
+        return components?.url
+    }
+
+    /// Exchanges an OAuth 2.0 Authorization Code for official Bearer Access & Refresh Tokens.
+    @discardableResult
+    func exchangeAuthorizationCode(code: String) async throws -> [String: Any] {
+        var cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanCode.contains("code=") {
+            if let comps = URLComponents(string: cleanCode),
+               let item = comps.queryItems?.first(where: { $0.name == "code" }),
+               let val = item.value {
+                cleanCode = val
+            } else if let range = cleanCode.range(of: "code=") {
+                let rest = cleanCode[range.upperBound...]
+                cleanCode = String(rest.prefix(while: { $0 != "&" && $0 != " " && $0 != "#" }))
+            }
+        }
+
+        guard !cleanCode.isEmpty else {
+            throw LocalError.message("인증 코드가 비어 있습니다. 테슬라 로그인 후 발급된 코드를 입력해 주세요.")
+        }
+
+        let cid = getClientId()
+        let rUri = getRedirectUri()
+        guard let tokenURL = URL(string: "https://auth.tesla.com/oauth2/v3/token") else {
+            throw LocalError.message("토큰 발급 주소 생성 실패")
+        }
+
+        var request = URLRequest(url: tokenURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        var bodyParams = [
+            "grant_type": "authorization_code",
+            "client_id": cid,
+            "code": cleanCode,
+            "redirect_uri": rUri,
+            "audience": currentBaseURL
+        ]
+        if let secret = getClientSecret(), !secret.isEmpty {
+            bodyParams["client_secret"] = secret
+        }
+
+        let bodyString = bodyParams.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }.joined(separator: "&")
+        request.httpBody = Data(bodyString.utf8)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LocalError.message("테슬라 인증 서버 응답 없음")
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            let raw = String(data: data, encoding: .utf8) ?? ""
+            throw LocalError.message("토큰 응답 해석 실패 (\(httpResponse.statusCode)): \(raw)")
+        }
+
+        if let error = json["error"] as? String {
+            let desc = json["error_description"] as? String ?? error
+            throw LocalError.message("테슬라 OAuth 오류: \(desc)")
+        }
+
+        guard let accessToken = json["access_token"] as? String else {
+            throw LocalError.message("응답에 access_token이 없습니다.")
+        }
+
+        let refreshToken = json["refresh_token"] as? String
+        saveToken(accessToken: accessToken, refreshToken: refreshToken)
+
+        DispatchQueue.main.async {
+            self.lastSuccessMessage = "테슬라 공식 계정 로그인 성공! (OAuth 2.0)"
+            self.lastError = nil
+        }
+
+        _ = try? await fetchVehicles()
+        return json
+    }
+
     // MARK: - Region, Token & VIN Storage (Keychain)
 
     func saveRegion(_ region: FleetRegion) {

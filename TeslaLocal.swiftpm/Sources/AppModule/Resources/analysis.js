@@ -521,7 +521,8 @@
       const rangeKm=(c&&fresh(c,now,TTL.charge)&&c.rangeKm!=null)?Math.round(c.rangeKm):null;
       const insideC=(t&&fresh(t,now,TTL.climate)&&t.insideC!=null)?Math.round(t.insideC):null;
       const isChg=c&&(c.charging===1||(c.chargerKW||0)>0.5);
-      const hour=new Date(now).getHours();
+      const d=new Date(now);
+      const hour=d.getTimezoneOffset()===0?(d.getUTCHours()+9)%24:d.getHours();
       const greeting=hour<12?'좋은 아침입니다.':(hour<18?'좋은 오후입니다.':'좋은 저녁입니다.');
 
       if(isChg){

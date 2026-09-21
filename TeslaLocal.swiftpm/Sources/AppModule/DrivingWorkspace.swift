@@ -8,6 +8,7 @@ struct DrivingWorkspace: View {
     @ObservedObject var navigation: EmbeddedNavigation
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearance = VehicleAppearanceStore.shared
+    @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @State private var settings = false
     @State private var carError: String?
     var body: some View {
@@ -19,7 +20,7 @@ struct DrivingWorkspace: View {
                         topBar(compact: false)
                     }
                     NavigationDashboard(theme: navigation.theme, data: readout) {
-                        if let controller = navigation.controller {
+                        if preferredMapEngine == "kakao", let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
                         } else {
                             LiveStandbyMapView(navigation: navigation, readout: readout) {
@@ -57,6 +58,18 @@ struct DrivingWorkspace: View {
         .sheet(isPresented: $settings) {
             NavigationStack {
                 Form {
+                    Section("지도 엔진") {
+                        Picker("기본 지도", selection: $preferredMapEngine) {
+                            Text("카카오 지도 (KNSDK)").tag("kakao")
+                            Text("애플 지도 (Apple Map)").tag("apple")
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: preferredMapEngine) { newEngine in
+                            if newEngine == "kakao" && navigation.controller == nil {
+                                navigation.startStandbyKakaoMap()
+                            }
+                        }
+                    }
                     Section("내비 화면") {
                         Picker("테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
                         DirectionPicker(navigation: navigation)
@@ -68,6 +81,9 @@ struct DrivingWorkspace: View {
         .onAppear {
             navigation.screenAppeared()
             model.voice.announceDashboardStart(destination: readout.destination)
+            if preferredMapEngine == "kakao" && navigation.controller == nil {
+                navigation.startStandbyKakaoMap()
+            }
         }
         .onDisappear { navigation.screenDisappeared() }
     }
@@ -106,6 +122,24 @@ struct DrivingWorkspace: View {
                 .accessibilityIdentifier("map.recenter")
                 .transition(.opacity)
             }
+
+            Button {
+                preferredMapEngine = (preferredMapEngine == "kakao" ? "apple" : "kakao")
+                if preferredMapEngine == "kakao" && navigation.controller == nil {
+                    navigation.startStandbyKakaoMap()
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: preferredMapEngine == "kakao" ? "map.fill" : "apple.logo")
+                        .font(.system(size: compact ? 10 : 11))
+                    Text(preferredMapEngine == "kakao" ? "카카오" : "애플")
+                        .font(.system(size: compact ? 11 : 12, weight: .bold))
+                }
+                .padding(.horizontal, compact ? 7 : 9)
+                .frame(minHeight: compact ? 30 : 36)
+                .background(Color.white.opacity(0.12), in: Capsule())
+            }
+            .accessibilityLabel("지도 엔진 전환")
 
             Menu {
                 Picker("내비 테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
@@ -395,6 +429,16 @@ struct LiveStandbyMapView: View {
                     .padding(.vertical, 4)
                     .background(Color.blue, in: Capsule())
                     .foregroundStyle(.white)
+                } else if navigation.hasKey && navigation.consent {
+                    Button("카카오 지도로 전환") {
+                        UserDefaults.standard.set("kakao", forKey: "preferredMapEngine")
+                        navigation.startStandbyKakaoMap()
+                    }
+                    .font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(red: 0.98, green: 0.85, blue: 0.0), in: Capsule())
+                    .foregroundStyle(.black)
                 }
             }
         }

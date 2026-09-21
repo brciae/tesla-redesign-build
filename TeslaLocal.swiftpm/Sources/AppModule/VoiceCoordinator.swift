@@ -168,6 +168,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
             auditionProfile = nil
             playOffline(item, profile: profile); return
         }
+        // v44: Typecast AI TTS support (if enabled and key is present)
+        if TypecastClient.shared.isEnabled && TypecastClient.shared.hasKey {
+            if playTypecast(item) { return }
+        }
         // v42: the recorded guidance voice. When the recordings cover the sentence they are played as-is;
         // anything they do not cover falls through to the engine so nothing is ever left unsaid.
         if let selection = d.string(forKey: "voiceIdentifier"), selection.hasPrefix(RecordedVoice.prefix) {
@@ -180,29 +184,114 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
             guard let profile = VoiceLibrary.profile(for: String(selection.dropFirst(8))) else { notice = "음성 선택 확인 필요"; return }
             playOffline(item, profile: profile); return
         }
+        playUtterance(item, defaults: d)
+    }
+
+    private func playUtterance(_ item: VoiceItem, defaults: UserDefaults) {
         let utterance = AVSpeechUtterance(string: item.text)
-        let selectedVoice = d.string(forKey: "voiceIdentifier") ?? ""
+        let selectedVoice = defaults.string(forKey: "voiceIdentifier") ?? ""
         let fallbackVoice = Self.yunaVoice()
         if selectedVoice.hasPrefix(RecordedVoice.prefix) || selectedVoice.hasPrefix("offline:") {
             utterance.voice = fallbackVoice
         } else {
             utterance.voice = AVSpeechSynthesisVoice(identifier: selectedVoice) ?? fallbackVoice
         }
-        utterance.rate = min(0.6, max(0.3, Float(d.double(forKey: "voiceRate")) * BriefingStyle.selected.rateMultiplier))
+        utterance.rate = min(0.6, max(0.3, Float(defaults.double(forKey: "voiceRate")) * BriefingStyle.selected.rateMultiplier))
         utterance.postUtteranceDelay = BriefingStyle.selected.pause
         utterance.pitchMultiplier = 1.0
-        utterance.volume = Float(min(1, max(0, d.double(forKey: "voiceVolume"))))
+        utterance.volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
         guard utterance.volume > 0 else { notice = "브리핑 음량이 0임 · 음량을 올린 뒤 미리 듣기를 눌러 주세요."; playbackState = "음량 0"; return }
         guard utterance.voice != nil else { notice = "한국어 음성을 찾지 못함 · iPhone 설정에서 한국어 음성을 내려받아 주세요."; playbackState = "음성 없음"; return }
         do {
             // Do not replace the SDK audio category while native guidance owns the session.
-            try activateAudio(d)
+            try activateAudio(defaults)
             lastText = item.text; notice = ""; playbackState = "재생 준비 중"
             activeUtterance = utterance; activeManual = item.manual; requestedAt = Date()
             refreshOutput(); synth.speak(utterance)
         } catch {
             if navigationSpeaking { lastGuideText = ""; lastGuideAt = .distantPast }
             notice = "음성 출력 준비 실패 · 오디오 연결 확인 필요"; playbackState = "재생 실패"; cancelCurrent()
+        }
+    }
+
+    // MARK: - Typecast AI Integration
+    private var typecastPlayer: AVAudioPlayer?
+
+    private func playTypecast(_ item: VoiceItem) -> Bool {
+        let tc = TypecastClient.shared
+        guard tc.isEnabled && tc.hasKey else { return false }
+        let defaults = UserDefaults.standard
+        guard defaults.double(forKey: "voiceVolume") > 0 else { notice = "브리핑 음량이 0임"; playbackState = "음량 0"; return true }
+        guard Date() < item.expires else { playbackState = "안내 기한 만료"; drain(); return true }
+
+        let ticket = UUID()
+        offlineTicket = ticket
+        activeManual = item.manual
+        lastText = item.text
+        notice = ""
+
+        // 1. Instant cache hit: play immediately
+        if let cachedURL = tc.cachedURL(for: item.text, voiceId: tc.selectedVoiceId) {
+            playTypecastAudio(cachedURL, ticket: ticket, item: item, defaults: defaults)
+            return true
+        }
+
+        // 2. Online fetch
+        playbackState = "타입캐스트 음성 생성 중…"
+        Task {
+            do {
+                let audioURL = try await tc.synthesize(text: item.text)
+                await MainActor.run {
+                    guard self.offlineTicket == ticket else { return }
+                    self.playTypecastAudio(audioURL, ticket: ticket, item: item, defaults: defaults)
+                }
+            } catch {
+                await MainActor.run {
+                    guard self.offlineTicket == ticket else { return }
+                    self.offlineTicket = nil
+                    self.notice = "타입캐스트 실패 · 기본 음성 전환: \(error.localizedDescription)"
+                    if let selection = defaults.string(forKey: "voiceIdentifier"), selection.hasPrefix(RecordedVoice.prefix) {
+                        if self.playRecorded(item, voice: selection) { return }
+                    }
+                    self.playUtterance(item, defaults: defaults)
+                }
+            }
+        }
+        return true
+    }
+
+    private func playTypecastAudio(_ url: URL, ticket: UUID, item: VoiceItem, defaults: UserDefaults) {
+        do {
+            try activateAudio(defaults)
+            let volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
+            let p = try AVAudioPlayer(contentsOf: url)
+            p.volume = volume
+            p.prepareToPlay()
+            p.play()
+            self.typecastPlayer = p
+            self.speaking = true
+            self.playbackState = "읽는 중 · 타입캐스트 AI 음성"
+            self.refreshOutput()
+
+            let duration = max(0.5, p.duration)
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.15) { [weak self] in
+                guard let self, self.offlineTicket == ticket else { return }
+                self.offlineTicket = nil
+                self.activeManual = false
+                self.speaking = false
+                self.navigationSpeaking = false
+                self.activePriority = 0
+                self.playbackState = "재생 완료"
+                self.releaseAudio()
+                self.quietUntil = Date().addingTimeInterval(0.2)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    self?.drain()
+                }
+            }
+        } catch {
+            offlineTicket = nil
+            notice = "타입캐스트 오디오 재생 실패"
+            drain()
         }
     }
     /// BLE disconnects invalidate automatic vehicle announcements, not a manual voice test.
@@ -218,6 +307,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVSpeechSynthesizerDel
         activePriority = 0
         offlineTicket = nil; offline.cancel(); output.stop()
         recordedPlayer.stop()
+        typecastPlayer?.stop(); typecastPlayer = nil
         synth.stopSpeaking(at: .immediate); releaseAudio()
     }
     private func refreshOutput() {

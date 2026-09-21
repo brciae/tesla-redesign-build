@@ -191,6 +191,64 @@ static NSArray *YLLifecycleObservers;
         });
     }];
 }
+- (void)prepareStandbyWithAppKey:(NSString *)key latitude:(double)latitude longitude:(double)longitude {
+    NSAssert(NSThread.isMainThread, @"Main queue required");
+    [self stopNavigation];
+    self.validUntil = DBL_MAX;
+    NSUInteger generation = self.generation;
+    if (key.length != 32) {
+        [self fail:@"앱 키 형식 확인 필요" generation:generation]; return;
+    }
+    if (YLInitializing) { [self fail:@"SDK 인증 처리 중 · 잠시 후 직접 재시도" generation:generation]; return; }
+    if (YLInitializedKey && ![YLInitializedKey isEqualToString:key]) {
+        [self fail:@"앱 키 변경됨 · 앱을 완전히 종료한 뒤 다시 실행 필요" generation:generation]; return;
+    }
+    KNSDK *sdk = [KNSDK sharedInstance];
+    if (!sdk) { [self fail:@"카카오 SDK 초기화 불가" generation:generation]; return; }
+    __weak typeof(self) weakSelf = self;
+    void (^setupStandby)(void) = ^{
+        typeof(self) self = weakSelf;
+        if (!self || ![self isCurrent:generation]) return;
+        [self loadViewIfNeeded];
+        self.map = [sdk makeMapViewWithFrame:self.view.bounds];
+        if (!self.map) { [self fail:@"카카오 지도 생성 실패" generation:generation]; return; }
+        self.map.mapTheme = [KNMapTheme driveNight];
+        [self configureMapTheme:self.displayTheme ?: @"cluster"];
+        self.map.isVisibleTraffic = YES;
+        self.map.userLocation.isVisible = YES;
+        self.map.viewEventListener = self;
+        self.following = YES;
+        self.userZooming = NO;
+        self.map.translatesAutoresizingMaskIntoConstraints = NO;
+        [self.view addSubview:self.map];
+        [NSLayoutConstraint activateConstraints:@[
+            [self.map.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+            [self.map.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+            [self.map.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+            [self.map.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]
+        ]];
+        if (isfinite(latitude) && isfinite(longitude) && fabs(latitude) <= 90 && fabs(longitude) <= 180 && (latitude != 0 || longitude != 0)) {
+            IntPoint point = [sdk convertWGS84ToKATECWithLongitude:longitude latitude:latitude];
+            KNMapCoordinateRegion *region = [KNMapCoordinateRegion regionWithMin:FloatPointMake(point.x-300, point.y-300) max:FloatPointMake(point.x+300, point.y+300)];
+            [self.map moveCamera:[KNMapCameraUpdate fitToRegion:region] withUserLocation:NO];
+            self.cameraReady = YES;
+        }
+        [self emit:@"ready" message:@"카카오 실시간 지도 준비됨"];
+    };
+    if (YLInitializedKey) { setupStandby(); return; }
+    YLInitializing = YES;
+    [sdk initializeWithAppKey:key clientVersion:@"0.22" completion:^(KNError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            YLInitializing = NO;
+            if (!error) YLInitializedKey = [key copy];
+            if (!error && UIApplication.sharedApplication.applicationState == UIApplicationStateActive) [KNSDK handleDidBecomeActive];
+            typeof(self) self = weakSelf;
+            if (!self || ![self isCurrent:generation]) return;
+            if (error) { [self fail:@"카카오 SDK 인증 실패 · Native App Key와 iOS Bundle ID 확인" generation:generation]; return; }
+            setupStandby();
+        });
+    }];
+}
 - (void)attachTrip:(KNTrip *)trip sdk:(KNSDK *)sdk generation:(NSUInteger)generation {
     if (![self isCurrent:generation]) return;
     [YLGuidanceOwner stopNavigation];
@@ -506,11 +564,38 @@ static NSString *YLSpokenDistance(SInt32 metres) {
     // Fit a real coordinate region once; retain subsequent pinch zoom rather than web-map zoom constants.
     [self.map moveCamera:update withUserLocation:YES];
 }
+- (void)updateStandbyLocationWithLatitude:(double)latitude longitude:(double)longitude bearing:(double)bearing speed:(double)speed {
+    if (self.guiding || !self.map) return;
+    if (!isfinite(latitude) || !isfinite(longitude) || fabs(latitude) > 90 || fabs(longitude) > 180) return;
+    KNSDK *sdk = [KNSDK sharedInstance];
+    if (!sdk) return;
+    IntPoint pt = [sdk convertWGS84ToKATECWithLongitude:longitude latitude:latitude];
+    FloatPoint pos = FloatPointMake(pt.x, pt.y);
+    float angle = isfinite(bearing) ? (float)bearing : 0;
+    self.map.userLocation.coordinate = pos;
+    self.map.userLocation.isVisible = YES;
+    self.map.userLocation.angle = angle;
+    if (!self.cameraReady && self.map.bounds.size.width > 100) {
+        KNMapCoordinateRegion *region = [KNMapCoordinateRegion regionWithMin:FloatPointMake(pos.x-300, pos.y-300) max:FloatPointMake(pos.x+300, pos.y+300)];
+        [self.map moveCamera:[KNMapCameraUpdate fitToRegion:region] withUserLocation:NO];
+        self.cameraReady = YES;
+    }
+    if (!self.following || self.userZooming) return;
+    KNMapCameraUpdate *update = [[[[KNMapCameraUpdate targetTo:pos] anchorTo:self.mapAnchor] bearingTo:angle] tiltTo:0];
+    [self.map moveCamera:update withUserLocation:YES];
+}
 - (void)recenter {
     [self.followTimer invalidate]; self.followTimer = nil;
     self.following = YES; self.userZooming = NO;
     [self emit:@"follow" message:@"1"];
-    [self updateMap];
+    if (self.guiding) {
+        [self updateMap];
+    } else if (self.map && self.map.userLocation.isVisible) {
+        FloatPoint pos = self.map.userLocation.coordinate;
+        float angle = self.map.userLocation.angle;
+        KNMapCameraUpdate *update = [[[[KNMapCameraUpdate targetTo:pos] anchorTo:self.mapAnchor] bearingTo:angle] tiltTo:0];
+        [self.map moveCamera:update withUserLocation:YES];
+    }
 }
 - (void)pauseFollowing {
     [self.followTimer invalidate]; self.followTimer = nil;

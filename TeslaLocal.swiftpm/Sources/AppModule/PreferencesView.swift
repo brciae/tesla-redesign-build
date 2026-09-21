@@ -25,6 +25,7 @@ struct PreferencesView: View {
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
     @ObservedObject private var voicePack = OfflineVoicePack.shared
+    @ObservedObject private var typecast = TypecastClient.shared
     var body: some View {
         Form {
             // v34: one decision per row. Everything that is not "which voice" moved to 고급.
@@ -58,6 +59,80 @@ struct PreferencesView: View {
                 VoicePreviewControls(preview: { model.voice.preview("안녕하세요. 안내를 시작합니다.") }, stop: { model.stopSpeech() })
                 VoiceStatus(voice: model.voice)
             }
+
+            // MARK: - Typecast AI High-Quality Voice Section
+            Section("타입캐스트 (Typecast) AI 고품질 음성") {
+                Toggle("타입캐스트 AI 음성 사용 (선택)", isOn: $typecast.isEnabled)
+
+                if typecast.isEnabled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("타입캐스트 API Key")
+                            .font(.caption.weight(.semibold))
+                        SecureField("API Key 입력 (typecast.ai 발급)", text: $typecast.apiKey)
+                            .font(.system(size: 13, design: .monospaced))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("음성 캐릭터 (Voice ID)")
+                            .font(.caption.weight(.semibold))
+                        TextField("Voice ID 입력", text: $typecast.selectedVoiceId)
+                            .font(.system(size: 13, design: .monospaced))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(TypecastClient.presetVoices, id: \.id) { preset in
+                                    Button {
+                                        typecast.selectedVoiceId = preset.id
+                                    } label: {
+                                        Text(preset.name.components(separatedBy: " ").first ?? preset.name)
+                                            .font(.caption2.weight(.bold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(typecast.selectedVoiceId == preset.id ? Color.blue : Color.white.opacity(0.12), in: Capsule())
+                                            .foregroundStyle(.white)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+
+                    HStack {
+                        Button {
+                            typecast.testSpeech()
+                        } label: {
+                            Label("타입캐스트 미리듣기", systemImage: "speaker.wave.2.fill")
+                                .font(.footnote.weight(.semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(typecast.isSynthesizing || !typecast.hasKey)
+
+                        Spacer()
+
+                        if typecast.cacheFileCount > 0 {
+                            Button("캐시 삭제 (\(typecast.cacheFileCount)개)") {
+                                typecast.clearCache()
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                        }
+                    }
+
+                    if !typecast.lastStatus.isEmpty {
+                        Text(typecast.lastStatus)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    InfoRow("타입캐스트 무료 플랜 안내", "타입캐스트 무료 플랜 가입 시 매월 15,000 크레딧(글자)이 제공됩니다. 한 번 생성된 안내 음성은 기기에 영구 캐시되어 추가 크레딧 소모 없이 0초 즉시 재생되며, 네트워크 단절 시 기존 내장 음성으로 자동 폴백됩니다.")
+                }
+            }
+
             Section("내비 안내") {
                 Toggle("길안내 음성", isOn: $navVoice)
                 Toggle("안전운행·과속 경고", isOn: $navSafety)

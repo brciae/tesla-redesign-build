@@ -211,6 +211,7 @@ struct TeslaInteractiveClimateView: View {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         withAnimation {
                             frontDefrost.toggle()
+                            model.voice.say(frontDefrost ? "전면 성에 제거를 켰습니다." : "전면 성에 제거를 껐습니다.", key: "climate.defrost", category: "voiceControl", priority: 3, ttl: 5, manual: true)
                             if model.fleet.isAuthenticated {
                                 Task { try? await model.fleet.setPreconditioningMax(on: frontDefrost) }
                             }
@@ -235,7 +236,10 @@ struct TeslaInteractiveClimateView: View {
 
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        withAnimation { rearDefog.toggle() }
+                        withAnimation {
+                            rearDefog.toggle()
+                            model.voice.say(rearDefog ? "후면 열선을 켰습니다." : "후면 열선을 껐습니다.", key: "climate.reardefog", category: "voiceControl", priority: 3, ttl: 5, manual: true)
+                        }
                     } label: {
                         VStack(spacing: 2) {
                             Image(systemName: "windshield.rear.and.heat.waves")
@@ -325,37 +329,39 @@ struct TeslaInteractiveClimateView: View {
     // MARK: - Temperature Stepper Banner (Non-Truncating Guaranteed)
 
     private func temperatureBanner(inside: Double?, outside: Double?) -> some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("목표 실내 온도")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
-                HStack(spacing: 10) {
+                HStack(spacing: 6) {
                     if let inside {
                         Label("실내 \(String(format: "%.1f", inside))°C", systemImage: "thermometer.medium")
-                            .font(.caption2.weight(.bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color.white.opacity(0.85))
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                     if let outside {
                         Label("외기 \(String(format: "%.1f", outside))°C", systemImage: "sun.max.fill")
-                            .font(.caption2.weight(.bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color.white.opacity(0.6))
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 4)
 
-            // Large Temperature Display with - / + Buttons
-            HStack(spacing: 12) {
+            // Temperature Display with - / + Buttons (Rebalanced to prevent overflow)
+            HStack(spacing: 8) {
                 Button {
                     adjustTemperature(-0.5)
                 } label: {
                     Image(systemName: "minus")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white.opacity(0.1), in: Circle())
+                        .frame(width: 34, height: 34)
+                        .background(Color.white.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(PlainButtonStyle())
                 .disabled(blocked || targetTemperature <= 16.0)
@@ -363,10 +369,10 @@ struct TeslaInteractiveClimateView: View {
                 // Fixed-size text container so numbers NEVER truncate into ellipsis
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(String(format: "%.1f", targetTemperature))
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                     Text("°C")
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.white.opacity(0.65))
                 }
                 .fixedSize(horizontal: true, vertical: false)
@@ -375,18 +381,19 @@ struct TeslaInteractiveClimateView: View {
                     adjustTemperature(0.5)
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white.opacity(0.1), in: Circle())
+                        .frame(width: 34, height: 34)
+                        .background(Color.white.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(PlainButtonStyle())
                 .disabled(blocked || targetTemperature >= 28.0)
             }
         }
-        .padding(14)
-        .background(Color(white: 0.10).opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(white: 0.10).opacity(0.85), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
     }
 
     private func adjustTemperature(_ delta: Double) {
@@ -395,6 +402,7 @@ struct TeslaInteractiveClimateView: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         targetTemperature = newTemp
         rearTemperature = newTemp
+        model.voice.say("실내 온도를 \(String(format: "%.1f", targetTemperature))도로 설정했습니다.", key: "climate.temp", category: "voiceControl", priority: 2, ttl: 4, manual: true)
         if !model.demo && link.authentic && link.controlEnabled && !link.controlBusy {
             link.askControl("temperature", title: "온도 설정", args: ["value": targetTemperature])
         } else if model.fleet.isAuthenticated {
@@ -406,6 +414,7 @@ struct TeslaInteractiveClimateView: View {
 
     private func toggleClimatePower() {
         isPowerOn.toggle()
+        model.voice.say(isPowerOn ? "공조를 켰습니다." : "공조를 껐습니다.", key: "climate.power", category: "voiceControl", priority: 3, ttl: 5, manual: true)
         if !model.demo && link.authentic && link.controlEnabled && !link.controlBusy {
             link.askControl(isPowerOn ? "climateOn" : "climateOff", title: isPowerOn ? "공조 켜기" : "공조 끄기")
         } else if model.fleet.isAuthenticated {
@@ -465,6 +474,7 @@ struct TeslaInteractiveClimateView: View {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         steeringWheelHeat.toggle()
+                        model.voice.say(steeringWheelHeat ? "스티어링 휠 열선을 켰습니다." : "스티어링 휠 열선을 껐습니다.", key: "climate.wheel", category: "voiceControl", priority: 3, ttl: 5, manual: true)
                         if model.fleet.isAuthenticated {
                             Task { try? await model.fleet.setSteeringWheelHeater(on: steeringWheelHeat) }
                         }
@@ -712,6 +722,12 @@ struct TeslaInteractiveClimateView: View {
     }
 
     private func sendSeatCommand(seatPosition: Int, heat: Int, vent: Int) {
+        let seatName = (seatPosition == 0 ? "운전석" : (seatPosition == 1 ? "조수석" : "후열"))
+        if heat > 0 {
+            model.voice.say("\(seatName) 시트 열선을 \(heat)단계로 설정했습니다.", key: "climate.seat", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+        } else if vent > 0 {
+            model.voice.say("\(seatName) 시트 통풍을 \(vent)단계로 설정했습니다.", key: "climate.vent", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+        }
         if model.fleet.isAuthenticated {
             Task {
                 if heat > 0 {
@@ -835,6 +851,14 @@ struct TeslaInteractiveClimateView: View {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 specialMode = isSelected ? 0 : modeIndex
+                let modeText: String
+                switch specialMode {
+                case 1: modeText = "실내 온도 유지 모드를 켰습니다."
+                case 2: modeText = "애견 모드를 켰습니다. 실내 온도를 안전하게 유지합니다."
+                case 3: modeText = "캠프 모드를 켰습니다. 실내 온도와 전원이 유지됩니다."
+                default: modeText = "특수 모드를 껐습니다."
+                }
+                model.voice.say(modeText, key: "climate.mode", category: "voiceControl", priority: 3, ttl: 5, manual: true)
                 if model.fleet.isAuthenticated {
                     Task { try? await model.fleet.setClimateKeeperMode(mode: specialMode) }
                 }

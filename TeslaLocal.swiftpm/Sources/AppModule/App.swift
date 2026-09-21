@@ -175,7 +175,7 @@ struct Metric: View {
         let parts = units.displayParts(value, suffix: suffix, digits: digits)
         VStack(alignment: .leading, spacing: 7) {
             (Text(parts.0).font(.system(size: 32, weight: .medium, design: .rounded)) + Text(parts.1).font(.system(size: 14, weight: .medium)))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.60)
                 .contentTransition(.numericText()).animation(reduced || !animated ? nil : .easeOut(duration: 0.28), value: value)
             Caption(title)
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -297,10 +297,19 @@ struct TripsView: View {
                 let recentTrips = Array(model.state.rows("trips").suffix(7))
                 if !recentTrips.isEmpty {
                     let maxDist = recentTrips.compactMap { $0.number("distanceKm") }.map { units.distanceValue($0) }.max() ?? 10.0
-                    let yDomainMax = max(maxDist * 1.30, 20.0)
+                    let yDomainMax = max(maxDist * 1.45, 25.0)
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("최근 운행 거리").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        HStack {
+                            Text("최근 운행 거리")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("[단위: \(units.distanceUnit)]")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+
                         Chart {
                             ForEach(recentTrips, id: \.selfID) { t in
                                 let dist = units.distanceValue(t.number("distanceKm") ?? 0)
@@ -320,7 +329,7 @@ struct TripsView: View {
                                     if dist > 0 {
                                         Text(String(format: "%.1f", dist))
                                             .font(.system(size: 9, weight: .bold))
-                                            .foregroundStyle(Color.white.opacity(0.8))
+                                            .foregroundStyle(Color.white.opacity(0.85))
                                             .padding(.bottom, 2)
                                     }
                                 }
@@ -334,7 +343,7 @@ struct TripsView: View {
                                     AxisValueLabel {
                                         VStack(spacing: 2) {
                                             Text(Self.shortMonthDayFormatter.string(from: date))
-                                                .font(.system(size: 10, weight: .semibold))
+                                                .font(.system(size: 9, weight: .semibold))
                                                 .foregroundStyle(Color.white.opacity(0.9))
                                             Text(Self.shortTimeFormatter.string(from: date))
                                                 .font(.system(size: 8, weight: .regular))
@@ -345,12 +354,21 @@ struct TripsView: View {
                                 }
                             }
                         }
-                        .chartYScale(domain: 0...yDomainMax)
-                        .chartPlotStyle { plotArea in
-                            plotArea.clipped()
+                        .chartYAxis {
+                            AxisMarks(position: .leading) { value in
+                                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
+                                    .foregroundStyle(Color.white.opacity(0.12))
+                                AxisValueLabel {
+                                    if let v = value.as(Double.self) {
+                                        Text("\(Int(v))")
+                                            .font(.system(size: 8, weight: .medium))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
                         }
-                        .frame(height: 155)
-                        .clipped()
+                        .chartYScale(domain: 0...yDomainMax)
+                        .frame(height: 160)
                     }
                     .padding(.top, 6)
                 }

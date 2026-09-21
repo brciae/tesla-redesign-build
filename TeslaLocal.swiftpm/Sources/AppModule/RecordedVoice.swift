@@ -258,6 +258,16 @@ enum RecordedVoice {
             }
         }
         guard sampleRate > 0, !out.isEmpty else { return nil }
+        // 5ms smooth fade-in at buffer start and 15ms fade-out at buffer end to guarantee zero speaker click/pop
+        let fadeIn = min(Int(0.005 * Double(sampleRate)), out.count / 2)
+        if fadeIn > 0 {
+            for i in 0..<fadeIn { out[i] *= Float(i) / Float(fadeIn) }
+        }
+        let fadeOut = min(Int(0.015 * Double(sampleRate)), out.count / 2)
+        if fadeOut > 0 {
+            let start = out.count - fadeOut
+            for i in 0..<fadeOut { out[start + i] *= Float(fadeOut - i) / Float(fadeOut) }
+        }
         if gain != 1 {
             // Clip rather than let a loud syllable wrap around; the gains are small and a limiter
             // here would change the voice more than the 0.1% of samples it would catch.
