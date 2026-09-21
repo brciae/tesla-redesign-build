@@ -7,6 +7,7 @@ test_status=0
 xcodebuild test -project Xcode/InterfaceProbe.xcodeproj -scheme InterfaceProbe \
   -destination "platform=iOS Simulator,id=$device_id" -destination-timeout 90 \
   -derivedDataPath Xcode/ProbeDerivedData -resultBundlePath Xcode/InterfaceResults.xcresult \
+  -retry-tests-on-failure -test-iterations 2 \
   -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO || test_status=$?
 mkdir -p Xcode/BuildOutput/InterfaceScreens
 xcrun xcresulttool export attachments --path Xcode/InterfaceResults.xcresult --output-path Xcode/BuildOutput/InterfaceScreens

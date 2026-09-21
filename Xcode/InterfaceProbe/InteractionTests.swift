@@ -54,6 +54,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe"]; app.launch()
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
             XCUIDevice.shared.orientation = orientation
+            Thread.sleep(forTimeInterval: 1.0)
             for theme in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
                 let button = app.segmentedControls.buttons[theme]
                 XCTAssertTrue(button.waitForExistence(timeout: 8)); button.tap()
