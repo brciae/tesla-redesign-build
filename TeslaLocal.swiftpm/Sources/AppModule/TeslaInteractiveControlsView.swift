@@ -30,6 +30,7 @@ struct TeslaInteractiveControlsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
+                ScreenBriefingControls(screen: "차량 제어")
                 // Live Status / Toast Banner
                 if let statusToast {
                     HStack(spacing: 8) {

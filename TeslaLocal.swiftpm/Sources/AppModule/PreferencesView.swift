@@ -30,6 +30,7 @@ struct PreferencesView: View {
     var body: some View {
         Form {
             Section { ScreenBriefingControls(screen: "표시·음성 설정") }
+            Section("하단 메뉴 표시") {
                 HStack {
                     Text("배경 불투명도")
                     Spacer()

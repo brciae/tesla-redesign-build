@@ -163,6 +163,7 @@ struct DrivingWorkspace: View {
             }
 
             ScreenBriefingControls(screen: "운전 대시보드", compact: true)
+            Button { settings = true } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: compact ? 14 : 16))
                     .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
