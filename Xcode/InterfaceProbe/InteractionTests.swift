@@ -161,4 +161,23 @@ final class InteractionTests: XCTestCase {
         app.buttons["home.automation"].tap()
         XCTAssertTrue(app.staticTexts["automation.detail"].waitForExistence(timeout: 5))
     }
+
+    func testVoiceChangesCannotDeleteCache() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["cache-probe"]; app.launch()
+        XCTAssertTrue(app.buttons["음성 변경"].waitForExistence(timeout: 5))
+        app.buttons["음성 변경"].tap()
+        XCTAssertEqual(app.staticTexts["cache.voice"].label, "은경")
+        XCTAssertEqual(app.staticTexts["cache.files"].label, "24")
+        app.buttons["미리 듣기"].tap()
+        XCTAssertEqual(app.staticTexts["cache.files"].label, "24")
+        XCTAssertFalse(app.buttons["모든 음성 캐시 삭제"].exists)
+        app.buttons["voice.cache.delete"].tap()
+        XCTAssertTrue(app.buttons["취소"].waitForExistence(timeout: 3))
+        app.buttons["취소"].tap()
+        XCTAssertEqual(app.staticTexts["cache.files"].label, "24")
+        app.buttons["voice.cache.delete"].tap()
+        app.buttons["모든 음성 캐시 삭제"].tap()
+        XCTAssertEqual(app.staticTexts["cache.files"].label, "0")
+    }
 }

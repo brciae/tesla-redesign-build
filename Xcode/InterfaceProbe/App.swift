@@ -12,12 +12,30 @@ import SwiftUI
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-gauge-probe") { BatteryGaugeProbe() }
             else { ProbeRoot() }
         }.preferredColorScheme(.dark)
     } }
+}
+
+struct VoiceCacheProbe: View {
+    @State private var voice = "아엘"
+    @State private var files = 24
+    @State private var previews = 0
+    var body: some View {
+        Form {
+            VStack {
+                Button("음성 변경") { voice = voice == "아엘" ? "은경" : "아엘" }.buttonStyle(.plain)
+                Text(voice).accessibilityIdentifier("cache.voice")
+                Button("미리 듣기") { previews += 1 }.buttonStyle(.borderedProminent)
+                Text("\(files)").accessibilityIdentifier("cache.files")
+                VoiceCacheDeleteButton { files = 0 }
+            }
+        }
+    }
 }
 
 struct TabBarProbe: View {
