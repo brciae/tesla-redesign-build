@@ -213,7 +213,6 @@ struct TypecastSettingsSection: View {
                 if !typecast.validApiKeys.isEmpty {
                     Button {
                         _ = typecast.switchToNextKey()
-                        model.voice.say("\(typecast.activeKeyIndex + 1)번 계정으로 전환했습니다.", category: "voiceControl")
                     } label: {
                         Label("사용할 API 키 선택", systemImage: "arrow.triangle.2.circlepath")
                             .font(.caption2.weight(.bold))
@@ -280,6 +279,22 @@ struct TypecastSettingsSection: View {
                 .font(.caption.weight(.semibold))
             }
             .padding(.top, 4)
+
+            Text(typecast.selectedKeyDescription)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+            Button {
+                Task { await typecast.checkConnection() }
+            } label: {
+                Label(typecast.isCheckingConnection ? "연결 검사 중…" : "API 연결 검사 (음성 생성 없음)", systemImage: "network")
+            }
+            .disabled(typecast.isCheckingConnection || !typecast.hasKey)
+            if !typecast.connectionStatus.isEmpty {
+                Text(typecast.connectionStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
         }
     }
 

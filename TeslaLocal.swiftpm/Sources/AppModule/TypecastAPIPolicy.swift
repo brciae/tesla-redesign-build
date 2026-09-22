@@ -14,7 +14,7 @@ enum TypecastAPIPolicy {
         if let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            body["error_code"] as? String == "UNUSUAL_ACTIVITY_DETECTED" {
             return NSError(domain: "Typecast", code: status, userInfo: [
-                NSLocalizedDescriptionKey: "타입캐스트 API 이용 제한(HTTP \(status)): 비정상 활동이 감지되어 요청이 거부됨. IP당 무료 계정 제한 등 API 정책 확인 필요. 추가 계정으로 재시도하지 않습니다."
+                NSLocalizedDescriptionKey: "타입캐스트 API 이용 제한(HTTP \(status), UNUSUAL_ACTIVITY_DETECTED): 서버가 비정상 활동으로 요청을 거부함. IP당 무료 계정 제한 등 API 정책 확인 필요. 추가 계정으로 재시도하지 않습니다."
             ])
         }
         let reason: String

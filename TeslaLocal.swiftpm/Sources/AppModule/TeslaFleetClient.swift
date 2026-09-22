@@ -38,6 +38,16 @@ final class TeslaFleetClient: ObservableObject {
     @Published var lastRemoteChargeData: [String: Any]?
     @Published var lastError: String?
     @Published var lastSuccessMessage: String?
+    @Published var vehicleSnapshot: FleetVehicleSnapshot?
+    @Published var vehicleReadStatus = "차량 미조회"
+    @Published var vehicleReadError: String?
+    @Published var isReadingVehicle = false
+    private var lastVehicleRead = Date.distantPast
+    private var vehicleReadID = UUID()
+    var vehicleDisplayStatus: String {
+        if vehicleReadStatus == "Fleet 상태 수신", vehicleSnapshot?.isRecent() != true { return "Fleet 마지막 수신" }
+        return vehicleReadStatus
+    }
 
     private let tokenKey = "TeslaFleetClient.AccessToken"
     private let refreshKey = "TeslaFleetClient.RefreshToken"
@@ -333,6 +343,11 @@ final class TeslaFleetClient: ObservableObject {
         deleteKeychain(key: refreshClientKey)
         deleteKeychain(key: vinKey)
         DispatchQueue.main.async {
+            self.vehicleReadID = UUID()
+            self.vehicleSnapshot = nil
+            self.vehicleReadStatus = "로그인 필요"
+            self.vehicleReadError = nil
+            self.lastVehicleRead = .distantPast
             self.isAuthenticated = false
             self.selectedVin = ""
             self.vehicles = []
@@ -349,8 +364,91 @@ final class TeslaFleetClient: ObservableObject {
         let clean = vin.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         saveKeychain(key: vinKey, value: clean)
         DispatchQueue.main.async {
+            let changed = self.selectedVin != clean
             self.selectedVin = clean
+            if changed {
+                self.vehicleReadID = UUID()
+                self.vehicleSnapshot = nil
+                self.lastVehicleRead = .distantPast
+            }
+            Task { @MainActor in await self.refreshVehicleSnapshot() }
+        }
+    }
 
+    /// Refresh on login/selection/foreground/manual request, never a background polling loop.
+    @MainActor func refreshVehicleSnapshot(force: Bool = false) async {
+        guard getStoredToken() != nil else { return }
+        guard !isReadingVehicle else { return }
+        guard force || Date().timeIntervalSince(lastVehicleRead) >= 30 else { return }
+        isReadingVehicle = true
+        let requestID = UUID(); vehicleReadID = requestID
+        vehicleReadError = nil; vehicleReadStatus = "차량 조회 중"
+        lastVehicleRead = Date()
+        defer {
+            isReadingVehicle = false
+            // A selected vehicle can change while a previous request is in flight.
+            if vehicleReadID != requestID, getStoredToken() != nil {
+                Task { @MainActor in await self.refreshVehicleSnapshot() }
+            }
+        }
+        do {
+            var vin = getStoredVin() ?? ""
+            if vin.isEmpty {
+                let list = try await fetchVehicles()
+                guard let first = list.first?["vin"] as? String else {
+                    throw FleetAuthPolicy.failure("로그인은 완료됐지만 조회 가능한 차량이 없습니다. 차량 공유·앱 권한 확인 필요.")
+                }
+                vin = first
+                saveKeychain(key: vinKey, value: vin)
+                selectedVin = vin
+            }
+            let requestVin = vin
+            let token = try await authenticatedToken()
+            let base = currentBaseURL
+            func read(_ path: String) async throws -> [String: Any] {
+                var request = URLRequest(url: URL(string: base + path)!)
+                request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                request.timeoutInterval = 25
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                guard (200...299).contains(http.statusCode) else {
+                    let help: String
+                    switch http.statusCode {
+                    case 401: help = "인증 만료 또는 권한 취소 · 새 로그인 필요"
+                    case 403: help = "차량 데이터 권한·Fleet 앱 등록 확인 필요"
+                    case 408: help = "차량 응답 없음 · 절전 또는 통신 상태 확인 필요"
+                    case 429: help = "호출 제한 · 잠시 후 수동 새로고침 필요"
+                    default: help = "차량 또는 Fleet 서버 응답 확인 필요"
+                    }
+                    throw FleetAuthPolicy.failure("차량 조회 HTTP \(http.statusCode): \(help)")
+                }
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let result = json["response"] as? [String: Any] else {
+                    throw FleetAuthPolicy.failure("차량 응답 형식 확인 필요")
+                }
+                return result
+            }
+            let vehicle = try await read("/api/1/vehicles/\(requestVin)")
+            guard vehicleReadID == requestID, getStoredVin() == requestVin, getStoredToken() == token else { return }
+            let status = vehicle["state"] as? String ?? "unknown"
+            if status != "online" {
+                vehicleReadStatus = status == "asleep" ? "차량 절전 중" : "차량 오프라인"
+                return
+            }
+            let data = try await read("/api/1/vehicles/\(requestVin)/vehicle_data?endpoints=charge_state;climate_state;vehicle_state;drive_state")
+            guard vehicleReadID == requestID, getStoredVin() == requestVin, getStoredToken() == token else { return }
+            if let returnedVin = data["vin"] as? String, returnedVin != requestVin {
+                throw FleetAuthPolicy.failure("선택 차량과 응답 차량이 다릅니다. 차량 재선택 필요.")
+            }
+            let snapshot = FleetVehicleSnapshot(vin: requestVin, receivedAt: Date(), payload: data)
+            guard snapshot.hasMeasurements else { throw FleetAuthPolicy.failure("차량은 온라인이나 상태 데이터가 비어 있습니다. 데이터 권한 확인 필요.") }
+            vehicleSnapshot = snapshot
+            lastRemoteChargeData = data["charge_state"] as? [String: Any]
+            vehicleReadStatus = snapshot.isRecent() ? "Fleet 상태 수신" : "Fleet 저장값 수신"
+        } catch {
+            guard vehicleReadID == requestID else { return }
+            vehicleReadStatus = "차량 조회 실패"
+            vehicleReadError = error.localizedDescription
         }
     }
 
@@ -404,7 +502,7 @@ final class TeslaFleetClient: ObservableObject {
                 }
                 DispatchQueue.main.async {
                     self.vehicles = list
-                    if self.selectedVin.isEmpty, let firstVin = list.first?["vin"] as? String {
+                    if !list.contains(where: { $0["vin"] as? String == self.selectedVin }), let firstVin = list.first?["vin"] as? String {
                         self.saveVin(firstVin)
                     }
                 }

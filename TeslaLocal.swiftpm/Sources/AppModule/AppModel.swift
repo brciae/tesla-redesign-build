@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UniformTypeIdentifiers
 import AVFoundation
 import UserNotifications
@@ -32,6 +33,7 @@ final class AppModel: ObservableObject {
     private var lastSaved = Date.distantPast
     private var recoveryLock = false
     private var timer: Timer?
+    private var fleetObservation: AnyCancellable?
     private var protectedDataObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
@@ -61,6 +63,9 @@ final class AppModel: ObservableObject {
             }
         }
         refresh()
+        fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.objectWillChange.send() }
+        }
         automations.settingsDidChange = { [weak self] in self?.voice.stopAutomatic(); self?.link.cancelPendingAutomation() }
         navigation.canPresent = { [weak self] in
             guard let self else { return false }
@@ -214,11 +219,14 @@ final class AppModel: ObservableObject {
         nextSaveAttempt = .distantPast
         if savePending { saveRecordsWhenAvailable() }
         link.resume(vin: settings.string("vin")); navigation.foregrounded(); refresh()
+        Task { @MainActor in await fleet.refreshVehicleSnapshot() }
         triggerDepartureBriefingIfNeeded()
     }
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
-        if link.authentic { link.refreshNow(retryUnavailable: true) } else { connect() }
+        if link.authentic { link.refreshNow(retryUnavailable: true) }
+        else if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
+        else { connect() }
         refresh()
         triggerDepartureBriefingIfNeeded()
     }

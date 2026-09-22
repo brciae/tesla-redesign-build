@@ -3,8 +3,17 @@ import CoreLocation
 
 // The same presentation contract drives the header and all new status pages.
 func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
-    (try? model.runtime.call("home", ["connected": link.connected, "authenticated": link.authentic,
+    var result = (try? model.runtime.call("home", ["connected": link.connected, "authenticated": link.authentic,
         "sessionStartedAt": link.sessionStartedAt, "demo": model.demo])) as? Object ?? [:]
+    if !model.demo, !link.authentic, model.fleet.isAuthenticated {
+        result["charge"] = ["mode": "missing", "label": "Fleet 미수신"]
+        result["climate"] = ["mode": "missing", "label": "Fleet 미수신"]
+        if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
+            for (key, value) in snapshot.homeOverlay() { result[key] = value }
+        }
+        result["connection"] = model.fleet.vehicleDisplayStatus
+    }
+    return result
 }
 
 struct HomeView: View {
@@ -16,12 +25,13 @@ struct HomeView: View {
     var body: some View {
         let p = homePresentation(model, link), c = p.object("charge")
         let climate = p.object("climate")
-        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let isCharging = (c.string("mode") == "recent" || model.demo) && ((c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging"))
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 // Top Header Bar
                 headerView(p: p, c: c)
+                if !model.demo, model.fleet.isAuthenticated { fleetStatusCard }
 
                 // 3D Vehicle Hero Panel
                 Vehicle3DPanel(link: link, compact: true)
@@ -40,7 +50,7 @@ struct HomeView: View {
                     quickControlTile(
                         .security,
                         "lock.fill",
-                        link.authentic ? "잠금 해제" : "잠금",
+                        "도어 잠금",
                         highlight: false
                     )
                     let insideC = climate.number("insideC")
@@ -131,7 +141,7 @@ struct HomeView: View {
                         .font(.system(size: 16, weight: .light, design: .rounded))
                         .tracking(4)
                         .foregroundStyle(Color.white.opacity(0.6))
-                    Caption("YL COMPANION · v0.73 (Build 73)")
+                    Caption("YL COMPANION · v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
                     if model.demo {
                         Button("예시 모드 종료") { model.exitDemo() }
                             .font(.caption.weight(.semibold))
@@ -151,6 +161,41 @@ struct HomeView: View {
         .background(Theme.bg)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { model.refreshVehicle() }
+    }
+
+    private var fleetStatusCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(model.fleet.vehicleDisplayStatus, systemImage: "antenna.radiowaves.left.and.right")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    Task { @MainActor in await model.fleet.refreshVehicleSnapshot(force: true) }
+                } label: { Image(systemName: "arrow.clockwise").frame(width: 36, height: 36) }
+                .disabled(model.fleet.isReadingVehicle)
+                .accessibilityLabel("Fleet 차량 상태 새로고침")
+            }
+            if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
+                HStack(spacing: 16) {
+                    Text(snapshot.soc.map { "배터리 \(Int($0))%" } ?? "배터리 미수신")
+                    Text(snapshot.rangeKm.map { "주행가능 \(Int($0)) km" } ?? "거리 미수신")
+                }.font(.subheadline)
+                HStack(spacing: 16) {
+                    Text(snapshot.locked.map { $0 ? "도어 잠김" : "도어 잠금 해제" } ?? "잠금 상태 미수신")
+                    if let inside = snapshot.insideC { Text("실내 \(Int(inside.rounded()))°C") }
+                }.font(.caption)
+                Text("Fleet 마지막 수신 \(snapshot.receivedAt.formatted(date: .omitted, time: .standard)) · 실시간 스트리밍 아님")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let error = model.fleet.vehicleReadError {
+                Text(error).font(.caption).foregroundStyle(.orange)
+            } else if model.fleet.vehicleReadStatus == "차량 절전 중" || model.fleet.vehicleReadStatus == "차량 오프라인" {
+                Text("계정 연결은 완료됨. 차량이 깨어나고 통신이 가능해진 뒤 새로고침하면 현재 상태를 조회합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func headerView(p: Object, c: Object) -> some View {
@@ -179,10 +224,10 @@ struct HomeView: View {
                         .fill(link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray))
                         .frame(width: 8, height: 8)
                         .shadow(color: (link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange).opacity(0.7), radius: 4)
-                    Text(model.demo ? "예시 모드" : (link.authentic ? "연결됨" : "대기 중"))
+                    Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.white.opacity(0.9))
-                    if link.busy || link.refreshing {
+                    if link.refreshing || model.fleet.isReadingVehicle {
                         ProgressView().controlSize(.mini)
                     }
                 }

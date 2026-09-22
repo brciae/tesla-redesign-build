@@ -30,6 +30,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     @Published var isSynthesizing = false
     @Published var lastStatus = ""
+    @Published var connectionStatus = ""
+    @Published var isCheckingConnection = false
     @Published var cacheFileCount = 0
     @Published var cacheTotalSizeMB: Double = 0.0
     @Published var voiceCatalog: [String: String] = [:]
@@ -37,10 +39,11 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     var apiKey: String {
         get { activeApiKey }
         set {
-            if !apiKeys.isEmpty {
-                apiKeys[0] = newValue
+            if apiKeys.indices.contains(activeKeyIndex) {
+                apiKeys[activeKeyIndex] = newValue
             } else {
-                apiKeys = [newValue]
+                apiKeys.append(newValue)
+                activeKeyIndex = apiKeys.count - 1
             }
         }
     }
@@ -52,6 +55,34 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     var activeApiKey: String {
         guard apiKeys.indices.contains(activeKeyIndex) else { return "" }
         return apiKeys[activeKeyIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var selectedKeyDescription: String {
+        guard !activeApiKey.isEmpty else { return "사용할 API 키를 선택하세요" }
+        return keyDescription(activeApiKey, index: activeKeyIndex)
+    }
+
+    private func keyDescription(_ key: String, index: Int) -> String {
+        let fingerprint = SHA256.hash(data: Data(key.utf8)).prefix(4)
+            .map { String(format: "%02x", $0) }.joined()
+        return "키 \(index + 1)번 · 식별값 \(fingerprint)"
+    }
+
+    @MainActor
+    func checkConnection() async {
+        guard !isCheckingConnection else { return }
+        let key = activeApiKey
+        guard !key.isEmpty else { connectionStatus = "검사할 API 키를 선택하세요"; return }
+        let identity = "검사 당시 " + keyDescription(key, index: activeKeyIndex)
+        isCheckingConnection = true
+        defer { isCheckingConnection = false }
+        connectionStatus = "\(identity) · API 목록 요청 중…"
+        do {
+            let catalog = try await fetchVoiceCatalog(apiKey: key)
+            connectionStatus = "\(identity) · GET /v3/voices · HTTP 200 · 보이스 \(Set(catalog.values).count)개. 목록 인증만 확인됨. 음성 합성 권한은 별도 확인 필요."
+        } catch {
+            connectionStatus = "\(identity) · GET /v3/voices · \(error.localizedDescription)"
+        }
     }
 
     func addAccount() { apiKeys.append("") }
@@ -203,7 +234,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func fetchVoiceCatalog(apiKey: String) async throws -> [String: String] {
         let url = URL(string: "https://api.typecast.ai/v3/voices?model=ssfm-v30")!
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
         request.timeoutInterval = 20
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -211,9 +242,13 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw URLError(.badServerResponse)
         }
         guard http.statusCode == 200 else {
-            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: validApiKeys)
+            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey])
         }
-        return parseVoices(from: data)
+        let catalog = parseVoices(from: data)
+        guard !catalog.isEmpty else {
+            throw NSError(domain: "Typecast", code: 502, userInfo: [NSLocalizedDescriptionKey: "HTTP 200이지만 지원 보이스 목록을 해석할 수 없음"])
+        }
+        return catalog
     }
 
     func refreshVoiceCatalog() async {
@@ -340,6 +375,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
         // 1. Instant Cache Hit (0 credits, 0ms latency)
         if let cached = cachedURL(for: cleanText, voiceId: voiceInput) {
+            await MainActor.run { self.lastStatus = "저장된 타입캐스트 음성 사용 · API 연결은 별도 검사 필요" }
             return cached
         }
 
@@ -409,7 +445,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 let failure = error as NSError
                 lastFailure = failure
-                failures.append("계정 \(currentTryIdx + 1): \(failure.localizedDescription)")
+                failures.append("\(keyDescription(key, index: currentTryIdx)): \(failure.localizedDescription)")
                 // A rate limit, timeout or invalid request is not evidence of depleted credit.
                 // Do not multiply those requests across every account.
                 if failure.domain != "Typecast" || !TypecastAPIPolicy.canTryNextAccount(failure.code) { break }
