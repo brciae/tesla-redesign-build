@@ -40,6 +40,10 @@ with zipfile.ZipFile(ipa_path) as archive:
     expected = json.loads((Path(__file__).resolve().parent.parent / "Xcode/project.json").read_text(encoding="utf-8"))["settings"]["base"]
     assert info["CFBundleShortVersionString"] == str(expected["MARKETING_VERSION"]), "IPA version differs from requested source"
     assert info["CFBundleVersion"] == str(expected["CURRENT_PROJECT_VERSION"]), "IPA build differs from requested source"
+    assert Path(ipa_path).name == f"App-Tesla {info['CFBundleShortVersionString']} Build{info['CFBundleVersion']} v01 Review.ipa", "IPA filename version/build mismatch"
+    home_source = (Path(__file__).resolve().parent.parent / "TeslaLocal.swiftpm/Sources/AppModule/HomeViews.swift").read_text(encoding="utf-8")
+    assert "CFBundleShortVersionString" in home_source and "CFBundleVersion" in home_source, "Home must read its version from the installed bundle"
+    assert "v0.73 (Build 73)" not in home_source, "Stale hard-coded home version"
     assert info["CFBundleExecutable"] == "YLCompanion"
     assert info.get("CFBundleIcons") or info.get("CFBundleIconFiles"), "App icon declaration missing"
     assert app + "Assets.car" in names, "Compiled icon catalog missing"

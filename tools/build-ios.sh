@@ -26,6 +26,8 @@ Xcode/TypecastPolicyTests
 node tools/js-logic-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests
 Xcode/FleetAuthTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
+Xcode/FleetSnapshotTests
 swift tools/prepare-icon.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-policy-tests.swift -o Xcode/NativePolicyTests
 Xcode/NativePolicyTests
@@ -52,7 +54,9 @@ stage_dir="$(mktemp -d "$repo_root/Xcode/package.XXXXXX")"
 mkdir "$stage_dir/Payload"
 ditto "$app_path" "$stage_dir/Payload/YLCompanion.app"
 mkdir -p "$repo_root/Xcode/BuildOutput"
-artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla 계정연동 v03 Review.ipa"
+app_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app_path/Info.plist")
+app_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app_path/Info.plist")
+artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla ${app_version} Build${app_build} v01 Review.ipa"
 ditto -c -k --keepParent "$stage_dir/Payload" "$artifact_path"
 unzip -t "$artifact_path"
 shasum -a 256 "$artifact_path"
