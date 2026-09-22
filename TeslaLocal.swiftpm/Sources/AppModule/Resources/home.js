@@ -19,6 +19,7 @@
     charge.soc=number(c.soc,0,100);charge.icon=batteryIcon(charge.soc);
     charge.rangeKm=number(c.rangeKm,0);charge.limit=number(c.limit,0,100);charge.chargerKW=number(c.chargerKW,0);charge.charging=number(c.charging,0,10);charge.minutesToLimit=number(c.minutesToLimit,0);charge.addedKWh=number(c.addedKWh,0);
     climate.insideC=number(t.insideC);climate.outsideC=number(t.outsideC);
+    charge.isCharging=charge.charging===null||charge.charging===0?null:charge.charging===5;
     location.latitude=number(l.latitude,-90,90);location.longitude=number(l.longitude,-180,180);
     location.hasCoordinates=location.latitude!==null&&location.longitude!==null;
     location.subtitle=location.hasCoordinates?`${location.label} · 좌표 확인`:'위치 미수신';
