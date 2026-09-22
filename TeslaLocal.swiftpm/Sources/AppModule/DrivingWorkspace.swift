@@ -19,7 +19,7 @@ struct DrivingWorkspace: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         topBar(compact: isLandscape)
                     }
-                    .frame(height: isLandscape ? 42 : 48)
+                    .frame(height: isLandscape ? 52 : 48)
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)

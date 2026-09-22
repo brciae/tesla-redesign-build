@@ -226,6 +226,7 @@ struct HomeView: View {
                         .shadow(color: (link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange).opacity(0.7), radius: 4)
                     Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
                         .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
                         .foregroundStyle(Color.white.opacity(0.9))
                     if link.refreshing || model.fleet.isReadingVehicle {
                         ProgressView().controlSize(.mini)
