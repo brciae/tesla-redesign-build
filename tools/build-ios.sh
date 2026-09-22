@@ -20,6 +20,7 @@ xcodegen --version
 node tools/embed-js.cjs
 node tools/typecast-only-audit.cjs
 node tools/briefing-coverage.cjs
+node tools/control-path-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests
 Xcode/TypecastPolicyTests
@@ -27,6 +28,8 @@ Xcode/TypecastPolicyTests
 node tools/js-logic-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests
 Xcode/FleetAuthTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetCommandPolicy.swift tools/fleet-command-tests.swift -o Xcode/FleetCommandTests
+Xcode/FleetCommandTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
 Xcode/FleetSnapshotTests
 swift tools/prepare-icon.swift
