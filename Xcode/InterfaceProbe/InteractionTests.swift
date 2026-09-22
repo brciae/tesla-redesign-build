@@ -1,6 +1,26 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testTabBarOpacityAndContentSeparation() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["tabbar-probe"]; app.launch()
+        let full = app.buttons["opacity.full"]
+        XCTAssertTrue(full.waitForExistence(timeout: 8))
+        full.tap()
+        XCTAssertTrue(app.staticTexts["불투명도 100%"].exists)
+        for title in ["홈", "컨트롤", "에너지", "운행", "메뉴"] {
+            app.tabBars.buttons[title].tap()
+            let bottom = app.buttons["content.bottom"]
+            XCTAssertTrue(bottom.isHittable)
+            XCTAssertLessThanOrEqual(bottom.frame.maxY, app.tabBars.firstMatch.frame.minY)
+        }
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Opaque tab bar"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["opacity.half"].tap()
+        XCTAssertTrue(app.staticTexts["불투명도 50%"].exists)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.staticTexts["불투명도 50%"].waitForExistence(timeout: 8))
+        app.buttons["opacity.full"].tap()
+    }
     func testBatteryGaugeThresholds() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["battery-gauge-probe"]; app.launch()

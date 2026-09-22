@@ -4,12 +4,34 @@ import SwiftUI
 @main struct InterfaceProbeApp: App {
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
+            if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-gauge-probe") { BatteryGaugeProbe() }
             else { ProbeRoot() }
         }.preferredColorScheme(.dark)
     } }
+}
+
+struct TabBarProbe: View {
+    @State private var selection: AppTab = .home
+    @AppStorage("tabBarOpacity") private var opacity = 1.0
+    private var page: some View {
+        NavigationStack {
+            VStack {
+                Text("불투명도 \(Int(opacity * 100))%")
+                Button("불투명") { opacity = 1 }.accessibilityIdentifier("opacity.full")
+                Button("반투명") { opacity = 0.5 }.accessibilityIdentifier("opacity.half")
+                Spacer()
+                Button("하단 콘텐츠") {}.accessibilityIdentifier("content.bottom")
+            }.frame(maxWidth: .infinity).background(Color.red)
+        }
+    }
+    var body: some View {
+        Commercial5TabScaffold(selection: $selection) {
+            page
+        } controls: { page } energy: { page } drive: { page } menu: { page }
+    }
 }
 
 struct NavigationProbe: View {
