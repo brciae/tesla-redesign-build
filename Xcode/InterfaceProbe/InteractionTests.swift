@@ -93,7 +93,8 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
     func testAppearanceProductionScreens() {
-        let app = XCUIApplication(); app.launch()
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["reset-appearance-fixture"]; app.launch()
         app.buttons["home.appearance"].tap()
         let white = app.buttons["펄 화이트 프로"]
         XCTAssertTrue(white.waitForExistence(timeout: 15)); white.tap()
