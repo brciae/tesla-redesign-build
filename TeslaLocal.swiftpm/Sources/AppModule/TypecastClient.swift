@@ -131,6 +131,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             self.voiceCatalog = dict
         }
         super.init()
+        removeLegacyOfflineData()
         migrateLegacyCacheIfNeeded()
         updateCacheCount()
         if hasKey && voiceCatalog.isEmpty {
@@ -139,6 +140,19 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     // MARK: - Voice Catalog & Parsing
+
+    private func removeLegacyOfflineData() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "voiceCustomProfiles")
+        let fm = FileManager.default
+        guard let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        // Only the retired downloaded model pack; retain Typecast-generated audio.
+        let legacy = support.appendingPathComponent("YLCompanion/VoicePack", isDirectory: true)
+        if fm.fileExists(atPath: legacy.path) {
+            do { try fm.removeItem(at: legacy) }
+            catch { lastStatus = "이전 오프라인 음성팩 삭제 실패: \(error.localizedDescription)" }
+        }
+    }
 
     func parseVoices(from data: Data) -> [String: String] {
         var result: [String: String] = [:]

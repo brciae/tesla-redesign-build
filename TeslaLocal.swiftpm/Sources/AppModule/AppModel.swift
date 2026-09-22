@@ -425,9 +425,3 @@ final class AppModel: ObservableObject {
         }.resume()
     }
 }
-
-private final class SpeechLifecycle: NSObject, AVSpeechSynthesizerDelegate {
-    var didStop: (() -> Void)?
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { didStop?() }
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { didStop?() }
-}
