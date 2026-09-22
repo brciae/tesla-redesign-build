@@ -82,7 +82,7 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["1.5 km"].exists, "turn distance missing: \(theme) \(orientation.rawValue)")
                 XCTAssertTrue(app.staticTexts["1.5 km"].firstMatch.isHittable, "turn distance covered: \(theme) \(orientation.rawValue)")
                 if ["클러스터", "관제"].contains(theme) {
-                    let media = app.otherElements["navigation.media.header"]
+                    let media = app.staticTexts["navigation.media.title"]
                     XCTAssertTrue(media.exists, "media header missing")
                     XCTAssertLessThanOrEqual(media.frame.maxY, app.staticTexts["1.5 km"].firstMatch.frame.minY, "media must stay above directions")
                 }
