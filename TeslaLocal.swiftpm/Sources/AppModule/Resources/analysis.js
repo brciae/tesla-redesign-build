@@ -42,11 +42,11 @@
   function embeddedDestination(drive,now){
     if(!fresh(drive,now)||!Number.isFinite(drive.receivedAt)||drive.receivedAt>now||now-drive.receivedAt>30000)return {type:'wait'};
     // A complete, fresh drive response with every route field absent needs repeated confirmation.
-    if(drive.routeFieldsAbsent===true)return {type:'absent',at:drive.at,receivedAt:drive.receivedAt};
+    if(drive.routeFieldsAbsent===true)return {type:'absent',at:drive.at,receivedAt:drive.receivedAt,parked:drive.gear==='P'};
     // An arbitrary partial group is not a vehicle destination-clear event.
     if(typeof drive.destination!=='string')return {type:'wait'};
     const name=drive.destination.trim();
-    if(!name)return {type:'clear'};
+    if(!name)return {type:'wait'};
     if(!validCoordinates(drive.destinationLat,drive.destinationLng))return {type:'wait'};
     return {type:'route',name:name.slice(0,300),latitude:drive.destinationLat,longitude:drive.destinationLng,
       at:drive.at,receivedAt:drive.receivedAt,token:JSON.stringify([name.slice(0,300),Number(drive.destinationLat.toFixed(5)),Number(drive.destinationLng.toFixed(5))])};
@@ -60,20 +60,20 @@
     observe(event,ready,guiding){
       if(event.type==='clear'){this.cancel(false);this.blocked=null;return {type:'clear'};}
       if(event.type==='absent'){
-        if(!Number.isFinite(event.at)||!Number.isFinite(event.receivedAt)||event.at<=this.lastObservation)return {type:'wait'};
-        this.lastObservation=event.at;
+        if(!Number.isFinite(event.at)||!Number.isFinite(event.receivedAt)||event.receivedAt<=this.lastObservation)return {type:'wait'};
+        this.lastObservation=event.receivedAt;
         const previous=this.absence;
-        this.absence=previous&&event.receivedAt>previous.last&&event.receivedAt-previous.last<=20000?
-          {first:previous.first,last:event.receivedAt,count:previous.count+1}:{first:event.receivedAt,last:event.receivedAt,count:1};
+        this.absence=previous&&previous.parked===(event.parked===true)&&event.receivedAt>previous.last&&event.receivedAt-previous.last<=75000?
+          {first:previous.first,last:event.receivedAt,count:previous.count+1,parked:event.parked===true}:{first:event.receivedAt,last:event.receivedAt,count:1,parked:event.parked===true};
         // Established guidance tolerates transient empty route groups (stops, Tesla re-routing, BLE partials). 
-        const need=this.active&&guiding?{count:6,span:45000}:{count:3,span:3000};
+        const need=event.parked?{count:3,span:10000}:(this.active&&guiding?{count:6,span:45000}:{count:3,span:3000});
         if(this.absence.count>=need.count&&this.absence.last-this.absence.first>=need.span){
           this.cancel(false);this.blocked=null;return {type:'clear',reason:'vehicleRouteAbsent'};
         }
         return {type:'wait'};
       }
       if(event.type!=='route')return {type:'wait'};
-      this.absence=null;this.lastObservation=Math.max(this.lastObservation,event.at||0);
+      this.absence=null;this.lastObservation=Math.max(this.lastObservation,event.receivedAt||0);
       const spot={lat:event.latitude,lng:event.longitude};
       if(this.active&&sameSpot(this.active,spot))return {...event,type:'refresh',ticket:this.generation};
       if(!ready||sameSpot(this.blocked,spot))return {type:'wait'};
