@@ -13,6 +13,7 @@ struct CareView: View {
     @State private var addParking = false
     var body: some View {
         PageBody(title: "차량 관리", briefing: .care) {
+            SmartParkingCard(link: model.link)
             ParkingSection(addParking: $addParking)
             InfoCard {
                 CardTitle(title: "타이어 공기압", systemImage: "tirepressure",

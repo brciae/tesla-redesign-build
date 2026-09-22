@@ -3,13 +3,29 @@ import CoreLocation
 
 /// A sleek, high-density smart parking card synthesizing both vehicle telemetry and mobile sensor/vision data.
 struct SmartParkingCard: View {
+    @EnvironmentObject private var model: AppModel
     @ObservedObject var manager = SmartParkingManager.shared
     @ObservedObject var link: VehicleLink
     @State private var showCamera = false
     @State private var showFullPhoto = false
 
     var body: some View {
-        if let record = manager.latestRecord {
+        if model.fleet.isAuthenticated && !model.demo {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(manager.fleetParkingStatus).font(.subheadline)
+                Button("현재 차량 위치를 주차 위치로 저장") { manager.saveCurrentFleetParking() }
+                    .buttonStyle(.bordered)
+                    .disabled(model.fleet.vehicleSnapshot?.parkingTelemetry() == nil)
+                Caption("직접 저장한 시각을 기록함 · 실제 도착 시각은 차량에서 제공하지 않음")
+            }.padding()
+        }
+        if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == model.fleet.selectedVin {
+            LocalBriefingControls(title: "주차 상태") {
+                var lines = [record.displayTitle + ".", "\(formatTime(record.timestamp)) 위치 기록입니다."]
+                if let warning = record.verification.securityWarning { lines.append(warning) }
+                if let soc = record.vehicle.soc { lines.append("마지막 차량 수신 잔량 \(Int(soc))퍼센트입니다.") }
+                return lines
+            }
             VStack(alignment: .leading, spacing: 14) {
                 // Header: Location Badge, Verification Status & Photo Thumbnail
                 HStack(alignment: .top) {
@@ -105,9 +121,9 @@ struct SmartParkingCard: View {
                     tileView(
                         icon: "clock.fill",
                         iconColor: .cyan,
-                        title: "주차 시간",
+                        title: "위치 기록 경과",
                         value: elapsedTimeString(since: record.timestamp),
-                        caption: formatTime(record.timestamp) + " 주차"
+                        caption: formatTime(record.timestamp) + " 기록"
                     )
 
                     // Tile 2: Vehicle Heading & Orientation
@@ -265,7 +281,7 @@ struct SmartParkingCard: View {
                         Task {
                             await manager.processParkingPhoto(
                                 image: image,
-                                vehicleTelemetry: link.telemetryGroups
+                                vehicleTelemetry: manager.photoTelemetry(fallback: link.telemetryGroups)
                             )
                         }
                     }
@@ -336,7 +352,7 @@ struct SmartParkingCard: View {
                         Task {
                             await manager.processParkingPhoto(
                                 image: image,
-                                vehicleTelemetry: link.telemetryGroups
+                                vehicleTelemetry: manager.photoTelemetry(fallback: link.telemetryGroups)
                             )
                         }
                     }
@@ -412,7 +428,7 @@ struct SmartParkingCard: View {
 
     private func elapsedTimeString(since: Date) -> String {
         let minutes = Int(Date().timeIntervalSince(since) / 60)
-        if minutes < 1 { return "방금 주차" }
+        if minutes < 1 { return "방금 기록" }
         if minutes < 60 { return "\(minutes)분 경과" }
         let hours = minutes / 60
         let remMinutes = minutes % 60

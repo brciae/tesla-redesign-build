@@ -42,6 +42,34 @@ struct FleetVehicleSnapshot {
         climate["insideC"] = insideC; climate["outsideC"] = outsideC
         climate["isOn"] = flag("climate_state", "is_climate_on")
         climate["targetC"] = number("climate_state", "driver_temp_setting")
-        return ["charge": charge, "climate": climate]
+        var location = meta
+        let lat = number("drive_state", "latitude"), lon = number("drive_state", "longitude")
+        let coordinates = lat != nil && lon != nil && (-90...90).contains(lat!) && (-180...180).contains(lon!) && !(lat == 0 && lon == 0)
+        location["hasCoordinates"] = coordinates
+        if coordinates { location["latitude"] = lat; location["longitude"] = lon }
+        location["gpsAt"] = number("drive_state", "timestamp")
+        if let at = number("drive_state", "timestamp"), now.timeIntervalSince1970 * 1000 - at <= 120000, at <= now.timeIntervalSince1970 * 1000 + 5000 {
+            location["mode"] = recent ? "recent" : "cached"
+        } else { location["mode"] = coordinates ? "cached" : "missing" }
+        return ["charge": charge, "climate": climate, "location": location]
+    }
+
+    /// Read-only translation. A missing Fleet shift_state is not proof of P.
+    func parkingTelemetry(now: Date = Date()) -> [String: Any]? {
+        guard isRecent(now: now), let driveAt = number("drive_state", "timestamp"),
+              driveAt <= now.timeIntervalSince1970 * 1000 + 5000,
+              now.timeIntervalSince1970 * 1000 - driveAt <= 120000 else { return nil }
+        let stamp = receivedAt.timeIntervalSince1970 * 1000
+        var drive: [String: Any] = ["at": driveAt, "receivedAt": stamp]
+        if let gear = (payload["drive_state"] as? [String: Any])?["shift_state"] as? String, ["P", "D", "R", "N"].contains(gear) { drive["gear"] = gear }
+        if let speed = number("drive_state", "speed"), speed >= 0 { drive["speedKmh"] = speed * 1.609344 }
+        if let odo = number("vehicle_state", "odometer") { drive["odometerKm"] = odo * 1.609344 }
+        let overlay = homeOverlay(now: now)
+        var closures: [String: Any] = ["at": stamp]
+        closures["locked"] = locked
+        for (key, fleetKey) in [("driverFront", "df"), ("driverRear", "dr"), ("passengerFront", "pf"), ("passengerRear", "pr"), ("frunk", "ft"), ("trunk", "rt")] {
+            if let value = number("vehicle_state", fleetKey), value >= 0 { closures[key] = value > 0 }
+        }
+        return ["drive": drive, "location": overlay["location"] ?? [:], "charge": overlay["charge"] ?? [:], "climate": overlay["climate"] ?? [:], "closures": closures]
     }
 }

@@ -8,6 +8,7 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
     if !model.demo, !link.authentic, model.fleet.isAuthenticated {
         result["charge"] = ["mode": "missing", "label": "Fleet 미수신"]
         result["climate"] = ["mode": "missing", "label": "Fleet 미수신"]
+        result["location"] = ["mode": "missing", "label": "Fleet 위치 미수신", "hasCoordinates": false]
         if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
             for (key, value) in snapshot.homeOverlay() { result[key] = value }
         }
@@ -563,7 +564,8 @@ struct LocationStatusView: View {
                         }
 
                         Button {
-                            link.refreshNow(retryUnavailable: true)
+                            if link.authentic { link.refreshNow(retryUnavailable: true) }
+                            else { Task { await model.fleet.refreshVehicleSnapshot(force: true) } }
                         } label: {
                             HStack {
                                 Image(systemName: "arrow.clockwise")
@@ -575,7 +577,7 @@ struct LocationStatusView: View {
                             .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                             .foregroundStyle(.white)
                         }
-                        .disabled(model.demo || !link.authentic || link.refreshing)
+                        .disabled(model.demo || (!link.authentic && !model.fleet.isAuthenticated) || link.refreshing)
                     }
                     .padding(16)
                 }
