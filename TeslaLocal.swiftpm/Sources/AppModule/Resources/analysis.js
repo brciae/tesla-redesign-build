@@ -23,8 +23,10 @@
   }
   function validCoordinates(lat,lng){return num(lat,-90,90)&&num(lng,-180,180)&&!(lat===0&&lng===0);}
   const freshLocation=(g,now)=>fresh(g,now)&&validCoordinates(g.latitude,g.longitude)&&(!g.positionStatus||g.positionStatus==='available')&&g.estimatedGPSValid!==false;
+  // Match the Fleet drive source-age limit; slow-changing charge/climate groups retain their own rules.
+  const freshNavigation=(g,now)=>fresh(g,now)&&g.at<=now+5000&&now-g.at<=120000;
   function navURL(drive,now,appname){
-    if(!fresh(drive,now))throw Error('목적지 데이터가 오래됨. 차량에서 다시 수신해야 함.');
+    if(!freshNavigation(drive,now))throw Error('목적지 데이터가 오래됨. 차량에서 다시 수신해야 함.');
     if(!drive.destination?.trim())throw Error('활성 목적지가 없음. 차량 내비에 목적지를 설정해야 함.');
     if(!validCoordinates(drive.destinationLat,drive.destinationLng))throw Error('목적지 좌표 미수신. 네이버에서 장소를 직접 확인해야 함.');
     if(!num(drive.destinationLat,31.43,44.35)||!num(drive.destinationLng,122.37,132))throw Error('네이버 문서의 국내 좌표 범위 밖임.');
@@ -33,14 +35,14 @@
     return 'nmap://navigation?'+Object.keys(q).map(k=>k+'='+encodeURIComponent(q[k])).join('&');
   }
   function navigationEvent(drive,now,lastSent,appname){
-    if(!fresh(drive,now)||!Number.isFinite(drive.receivedAt)||now-drive.receivedAt>30000||drive.receivedAt>now)return {type:'wait'};
+    if(!freshNavigation(drive,now)||!Number.isFinite(drive.receivedAt)||now-drive.receivedAt>30000||drive.receivedAt>now)return {type:'wait'};
     if(!drive.destination?.trim())return {type:'clear'};
     const url=navURL(drive,now,appname);
     const token=JSON.stringify([drive.destination.trim(),Number(drive.destinationLat.toFixed(5)),Number(drive.destinationLng.toFixed(5))]);
     return {type:token===lastSent?'same':'route',token,url};
   }
   function embeddedDestination(drive,now){
-    if(!fresh(drive,now)||!Number.isFinite(drive.receivedAt)||drive.receivedAt>now||now-drive.receivedAt>30000)return {type:'wait'};
+    if(!freshNavigation(drive,now)||!Number.isFinite(drive.receivedAt)||drive.receivedAt>now||now-drive.receivedAt>30000)return {type:'wait'};
     // A complete, fresh drive response with every route field absent needs repeated confirmation.
     if(drive.routeFieldsAbsent===true)return {type:'absent',at:drive.at,receivedAt:drive.receivedAt,parked:drive.gear==='P'};
     // An arbitrary partial group is not a vehicle destination-clear event.
@@ -56,8 +58,12 @@
   // Tesla re-reports float32 coordinates and renames POIs while stopped; that must not restart guidance.
   const sameSpot=(a,b)=>{if(!a||!b)return false;const dy=(a.lat-b.lat)*111320,dx=(a.lng-b.lng)*111320*Math.cos(a.lat*Math.PI/180);return Math.hypot(dx,dy)<=200;};
   class EmbeddedRouteGate{
-    constructor(){this.generation=0;this.active=null;this.blocked=null;this.absence=null;this.lastObservation=0;}
+    constructor(){this.generation=0;this.active=null;this.blocked=null;this.absence=null;this.lastObservation=0;this.lastSource=0;}
     observe(event,ready,guiding){
+      if(event.type==='route'||event.type==='absent'){
+        if(!Number.isFinite(event.at)||!Number.isFinite(event.receivedAt)||event.at<this.lastSource||event.receivedAt<this.lastObservation)return {type:'wait'};
+        this.lastSource=event.at;
+      }
       if(event.type==='clear'){this.cancel(false);this.blocked=null;return {type:'clear'};}
       if(event.type==='absent'){
         if(!Number.isFinite(event.at)||!Number.isFinite(event.receivedAt)||event.receivedAt<=this.lastObservation)return {type:'wait'};
@@ -84,7 +90,7 @@
     finish(ticket){if(!this.current(ticket))return false;this.cancel(true);return true;}
     cancel(block=true){if(block&&this.active)this.blocked=this.active;this.active=null;this.absence=null;++this.generation;}
     retry(){this.blocked=null;}
-    reset(){this.cancel(false);this.blocked=null;this.lastObservation=0;}
+    reset(){this.cancel(false);this.blocked=null;this.lastObservation=0;this.lastSource=0;}
   }
   // v35: a receipt or in-car charge screen should fill the whole form, not just two fields.
   // Values are taken from the line that carries their label (and the line after it, since OCR often
