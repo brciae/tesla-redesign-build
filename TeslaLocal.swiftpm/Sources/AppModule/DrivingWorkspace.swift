@@ -20,6 +20,11 @@ struct DrivingWorkspace: View {
                         topBar(compact: isLandscape)
                     }
                     .frame(height: isLandscape ? 52 : 48)
+                    if readout.gear == "P", navigation.guiding || navigation.busy {
+                        ParkedNavigationActions {
+                            navigation.endGuidance()
+                        }
+                    }
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
@@ -213,7 +218,7 @@ struct DrivingWorkspace: View {
             r.odometer = units.format(odo, suffix: " km")
         }
 
-        let dest = d.string("destination")
+        let dest = navigation.guiding || navigation.busy ? d.string("destination") : ""
         r.destination = dest
         if !dest.isEmpty {
             r.turn = dest
@@ -228,11 +233,11 @@ struct DrivingWorkspace: View {
             }
         } else {
             let isMoving = (r.gear == "D" || r.speedKmh > 2)
-            r.turn = isMoving ? "자유 주행 모드" : "안내 대기"
+            r.turn = "자유주행"
             r.turnSymbol = "location.north.circle.fill"
             r.turnDistance = ""
-            r.remaining = "실시간 주행"
-            r.remainingDistance = "목적지 미설정"
+            r.remaining = r.gear == "P" ? "주차 중" : "실시간 주행"
+            r.remainingDistance = "경로 안내 없음"
             r.arrival = "—"
         }
         r.road = "실시간 주행"

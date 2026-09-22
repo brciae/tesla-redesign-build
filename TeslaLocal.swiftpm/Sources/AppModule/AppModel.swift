@@ -79,6 +79,7 @@ final class AppModel: ObservableObject {
         }
         navigation.willStart = { [weak self] in self?.stopSpeech() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
+        navigation.onGuidanceEnd = { [weak self] in self?.voice.stop() }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         link.onControlOutcome = { [weak self] message in

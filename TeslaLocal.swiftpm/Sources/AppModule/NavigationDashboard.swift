@@ -1675,6 +1675,28 @@ private struct MediaCard: View {
 
 /// Minimal now-playing capsule (Dynamic Island style). Tap to expand for track controls; collapses after 5 s.
 /// One compact row above maneuver guidance; never floats over the route or expands into it.
+struct ParkedNavigationActions: View {
+    let stop: () -> Void
+    var body: some View {
+        HStack(spacing: 12) {
+            Label("주차 중", systemImage: "parkingsign.circle.fill")
+                .font(.system(size: 14, weight: .medium)).lineLimit(1)
+            Spacer(minLength: 8)
+            Button(action: stop) {
+                Label("안내 종료", systemImage: "xmark.circle.fill")
+                    .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    .padding(.horizontal, 12).frame(minHeight: 44)
+            }
+            .buttonStyle(.plain).foregroundStyle(.white)
+            .background(Color.red.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityIdentifier("navigation.parked.stop")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 4)
+        .foregroundStyle(.white).background(Color.black)
+        .accessibilityIdentifier("navigation.parked.actions")
+    }
+}
+
 private struct NavigationMediaHeader: View {
     let data: NavigationReadout
     let action: (String) -> Void

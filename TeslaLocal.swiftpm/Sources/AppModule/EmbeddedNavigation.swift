@@ -52,6 +52,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var canPresent: () -> Bool = { UIApplication.shared.applicationState == .active }
     var willStart: (() -> Void)?
     var onVoiceActivity: ((Bool) -> Void)?
+    var onGuidanceEnd: (() -> Void)?
     var onSpokenGuide: ((String, Bool) -> Void)?
     var onAudioSession: ((Bool) -> Void)?
     private let runtime: LocalRuntime
@@ -134,7 +135,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if decision.string("type") == "refresh" || decision.string("type") == "wait", lifecycleDiagnostics.last?.hasSuffix(decision.string("type") + " · 안내 \(guiding ? "중" : "꺼짐")") == true { lifecycleDiagnostics.removeLast() }
         if lifecycleDiagnostics.count > 24 { lifecycleDiagnostics.removeFirst(lifecycleDiagnostics.count - 24) }
         if decision.string("type") == "clear" || decision.string("type") == "cancel" {
-            stopNative(); status = "차량 활성 목적지 없음"; return
+            returnToFreeDrive(); return
         }
         if decision.string("type") == "refresh" {
             candidate = decision
@@ -227,7 +228,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene); return
                     }
                     if event == "error" { self.failed(message, ticket: ticket); return }
-                    if event == "ended" { self.stop(); return }
+                    if event == "ended" { self.endGuidance(); return }
                     if event == "ready" || event == "started" {
                         // v29: a start that completes under the lock screen keeps running; UI appears on return.
                         if UIApplication.shared.applicationState == .active, !self.userDismissed { self.presented = true }
@@ -308,6 +309,18 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if !keepDisplay { presented = false }
     }
     func stop() { _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
+    func endGuidance() {
+        _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
+        returnToFreeDrive()
+    }
+    private func returnToFreeDrive() {
+        guard guiding || busy else { return }
+        let keepDisplay = presented
+        onGuidanceEnd?()
+        stopNative(keepDisplay: keepDisplay)
+        if keepDisplay { startStandbyKakaoMap() }
+        status = "자유주행 · 경로 안내 종료"
+    }
     func retry() { if !ownsAudio { startFailures = 0; _ = gate("retry"); status = "최신 차량 목적지 다시 수신 중" } }
     func reset() { startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
