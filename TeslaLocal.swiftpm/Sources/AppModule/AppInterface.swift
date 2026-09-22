@@ -215,6 +215,7 @@ struct AppTabScaffold<Vehicle: View, Automation: View, Settings: View>: View {
 /// 5 primary navigation roots matching commercial EV app standards; driving mode is presented outside this container.
 struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: View, Menu: View>: View {
     @Binding var selection: AppTab
+    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
     @ViewBuilder var home: () -> Home
     @ViewBuilder var controls: () -> Controls
     @ViewBuilder var energy: () -> Energy
@@ -222,13 +223,20 @@ struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: V
     @ViewBuilder var menu: () -> Menu
     var body: some View {
         TabView(selection: $selection) {
-            home().tabItem { Label("홈", systemImage: "car.fill") }.tag(AppTab.home)
-            controls().tabItem { Label("컨트롤", systemImage: "slider.horizontal.2.square.on.square") }.tag(AppTab.controls)
-            energy().tabItem { Label("에너지", systemImage: "bolt.fill") }.tag(AppTab.energy)
-            drive().tabItem { Label("운행", systemImage: "map.fill") }.tag(AppTab.drive)
-            menu().tabItem { Label("메뉴", systemImage: "ellipsis.circle.fill") }.tag(AppTab.menu)
+            styled(home()).tabItem { Label("홈", systemImage: "car.fill") }.tag(AppTab.home)
+            styled(controls()).tabItem { Label("컨트롤", systemImage: "slider.horizontal.2.square.on.square") }.tag(AppTab.controls)
+            styled(energy()).tabItem { Label("에너지", systemImage: "bolt.fill") }.tag(AppTab.energy)
+            styled(drive()).tabItem { Label("운행", systemImage: "map.fill") }.tag(AppTab.drive)
+            styled(menu()).tabItem { Label("메뉴", systemImage: "ellipsis.circle.fill") }.tag(AppTab.menu)
         }
         .environment(\.selectAppTab, { selection = $0 })
+    }
+
+    private func styled<Content: View>(_ content: Content) -> some View {
+        content
+            .safeAreaPadding(.bottom, 8)
+            .toolbarBackground(Color(white: 0.12).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
     }
 }
 

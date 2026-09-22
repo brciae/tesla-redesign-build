@@ -7,10 +7,16 @@ enum TypecastAPIPolicy {
     }
 
     static func canTryNextAccount(_ status: Int) -> Bool {
-        [401, 402, 403].contains(status)
+        [401, 402].contains(status)
     }
 
     static func failure(status: Int, data: Data, secrets: [String]) -> NSError {
+        if let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           body["error_code"] as? String == "UNUSUAL_ACTIVITY_DETECTED" {
+            return NSError(domain: "Typecast", code: status, userInfo: [
+                NSLocalizedDescriptionKey: "타입캐스트 계정 이용 제한(HTTP \(status)): 비정상 활동이 감지되어 요청이 거부됨. 자동 계정 전환을 중단함. 타입캐스트 고객지원에 제한 사유 확인 필요."
+            ])
+        }
         let reason: String
         switch status {
         case 401: reason = "API 키 인증 실패"

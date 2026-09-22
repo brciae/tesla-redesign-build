@@ -11,6 +11,7 @@ struct PreferencesView: View {
     @AppStorage("unitDistance") private var distance = "km"
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
+    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
     @AppStorage("voiceEnabled") private var enabled = true
     @AppStorage("voiceIdentifier") private var identifier = "typecast:은경"
     @AppStorage("voiceDeliveryStyle") private var deliveryStyle = "standard"
@@ -28,6 +29,18 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
+            Section("하단 메뉴 표시") {
+                HStack {
+                    Text("배경 불투명도")
+                    Spacer()
+                    Text("\(Int(tabBarOpacity * 100))%").monospacedDigit()
+                }
+                Slider(value: $tabBarOpacity, in: 0.5...1, step: 0.05)
+                    .accessibilityLabel("하단 메뉴 배경 불투명도")
+                    .accessibilityIdentifier("tabbar.opacity")
+                Text("100%로 설정하면 하단 메뉴 뒤의 내용이 비치지 않습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
@@ -194,7 +207,7 @@ struct TypecastSettingsSection: View {
     private var keyPoolSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("API Key 계정 풀 (매월 계정당 15,000자 무료)")
+                Text("타입캐스트 API 키")
                     .font(.caption.weight(.semibold))
                 Spacer()
                 if typecast.validApiKeys.count > 1 {
@@ -210,8 +223,7 @@ struct TypecastSettingsSection: View {
             }
 
             let count = typecast.validApiKeys.count
-            let totalCredits = count * 15000
-            Text(count == 0 ? "계정별 API Key를 등록하세요. 계정당 매월 15,000 무료 크레딧이 제공됩니다." : "현재 \(count)개 계정 연계됨 (매월 총 \(totalCredits.formatted())자 크레딧 자동 순차 소진 지원)")
+            Text(count == 0 ? "타입캐스트 API 키를 등록하세요. 이용 가능 여부와 크레딧은 타입캐스트 API 계정에서 확인하세요." : "현재 \(count)개 키 등록됨. 접근 제한(403) 발생 시 자동 계정 전환을 중단합니다.")
                 .font(.caption2)
                 .foregroundStyle(count > 1 ? .green : .secondary)
 
