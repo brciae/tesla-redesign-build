@@ -1,4 +1,5 @@
 import SwiftUI
+import CryptoKit
 
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
@@ -25,16 +26,47 @@ struct VoiceCacheProbe: View {
     @State private var voice = "아엘"
     @State private var files = 24
     @State private var previews = 0
+    @State private var diskResult = "검사 중"
     var body: some View {
         Form {
             VStack {
                 Button("음성 변경") { voice = voice == "아엘" ? "은경" : "아엘" }.buttonStyle(.plain)
+                Text(diskResult).accessibilityIdentifier("cache.disk")
                 Text(voice).accessibilityIdentifier("cache.voice")
                 Button("미리 듣기") { previews += 1 }.buttonStyle(.borderedProminent)
                 Text("\(files)").accessibilityIdentifier("cache.files")
                 VoiceCacheDeleteButton { files = 0 }
             }
         }
+        .task { await verifyDiskCache() }
+    }
+    @MainActor private func verifyDiskCache() async {
+        let client = TypecastClient.shared
+        let previous = client.selectedVoiceId
+        let text = "cache isolation fixture"
+        let voices = ["fixture-voice-a", "fixture-voice-b"]
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/TypecastAudioCache")
+        let urls = voices.map { voice in
+            let digest = SHA256.hash(data: Data("\(voice)_\(text)".utf8)).map { String(format: "%02x", $0) }.joined()
+            return dir.appendingPathComponent(digest + ".wav")
+        }
+        defer {
+            client.selectedVoiceId = previous
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+        }
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for (index, url) in urls.enumerated() { try Data(repeating: UInt8(index + 1), count: 256).write(to: url) }
+            for index in [0, 1, 0] {
+                client.selectedVoiceId = voices[index]
+                guard client.cachedURL(for: text, voiceId: voices[index]) == urls[index] else { diskResult = "FAIL voice isolation"; return }
+                let reused = try await client.synthesize(text: text, voiceId: voices[index])
+                let bytes = try Data(contentsOf: reused)
+                guard reused == urls[index], bytes == Data(repeating: UInt8(index + 1), count: 256) else { diskResult = "FAIL reuse"; return }
+            }
+            guard urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }), client.cachedURL(for: text, voiceId: "fixture-voice-c") == nil else { diskResult = "FAIL preservation"; return }
+            diskResult = "PASS voice isolation and disk reuse"
+        } catch { diskResult = "FAIL disk fixture" }
     }
 }
 

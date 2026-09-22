@@ -166,6 +166,7 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["cache-probe"]; app.launch()
         XCTAssertTrue(app.buttons["음성 변경"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["PASS voice isolation and disk reuse"].waitForExistence(timeout: 10))
         app.buttons["음성 변경"].tap()
         XCTAssertEqual(app.staticTexts["cache.voice"].label, "은경")
         XCTAssertEqual(app.staticTexts["cache.files"].label, "24")
