@@ -27,6 +27,9 @@ static NSArray *YLLifecycleObservers;
 @property(nonatomic, strong) KNGuide_Safety *safetyGuide;
 @property(nonatomic) FloatPoint mapAnchor;
 @property(nonatomic) BOOL cameraReady;
+@property(nonatomic) float trustedBearing;
+@property(nonatomic) NSTimeInterval positionReceivedAt;
+@property(nonatomic) BOOL pendingRecenter;
 @property(nonatomic, copy) NSString *displayTheme;
 @property(nonatomic, strong) KNMapRouteTheme *routeStyle;
 @property(nonatomic, strong) KNRouteColors *routeColors;
@@ -48,12 +51,6 @@ static NSArray *YLLifecycleObservers;
 // v30 map follow mode: user pan/rotate/tilt pauses camera tracking until recenter or idle timeout.
 @property(nonatomic) BOOL following;
 @property(nonatomic) BOOL userZooming;
-@property(nonatomic, assign) NSTimeInterval lastSpokenTurnTime;
-@property(nonatomic, assign) NSInteger lastSpokenSpeedLimit;
-@property(nonatomic, assign) NSTimeInterval lastSpokenSpeedLimitTime;
-@property(nonatomic, assign) NSInteger lastSpokenSafetyCode;
-@property(nonatomic, assign) NSTimeInterval lastSpokenSafetyTime;
-@property(nonatomic, assign) NSTimeInterval lastSpokenAnyTime;
 @property(nonatomic, strong) NSTimer *followTimer;
 // v30 road model: lane count persists per road; route shape is sampled ahead of the car.
 @property(nonatomic) NSInteger lastLaneCount;
@@ -69,7 +66,15 @@ static NSArray *YLLifecycleObservers;
     if (self) { _voiceEnabled = YES; _safetyVoiceEnabled = YES; _voiceDetail = 1; _voiceVolume = 1.0; _duckAudio = YES; _mapAnchor = FloatPointMake(0.52, 0.68); _following = YES; }
     return self;
 }
-- (void)configureVoiceDetail:(NSInteger)level { self.voiceDetail = MAX(0, MIN(2, level)); }
+- (void)configureVoiceDetail:(NSInteger)level {
+    self.voiceDetail = MAX(0, MIN(2, level));
+    KNGuideFrequencyMode mode = self.voiceDetail == 0 ? KNGuideFrequencyMode_Rare :
+        self.voiceDetail == 1 ? KNGuideFrequencyMode_Often : KNGuideFrequencyMode_Always;
+    self.guidance.directionFreqModeNormalWay = mode;
+    self.guidance.directionFreqModeHighWay = mode;
+    self.guidance.safetyFreqModeNormalWay = mode;
+    self.guidance.safetyFreqModeHighWay = mode;
+}
 - (void)configureVoice:(BOOL)enabled safety:(BOOL)safety volume:(float)volume duck:(BOOL)duck {
     self.voiceEnabled = enabled; self.safetyVoiceEnabled = safety;
     self.voiceVolume = fmaxf(0, fminf(1, volume)); self.duckAudio = duck;
@@ -215,7 +220,7 @@ static NSArray *YLLifecycleObservers;
         self.map.mapTheme = [KNMapTheme driveNight];
         [self configureMapTheme:self.displayTheme ?: @"cluster"];
         self.map.isVisibleTraffic = YES;
-        self.map.userLocation.isVisible = YES;
+        self.map.userLocation.isVisible = NO;
         self.map.viewEventListener = self;
         self.following = YES;
         self.userZooming = NO;
@@ -255,6 +260,7 @@ static NSArray *YLLifecycleObservers;
     self.guidance = [sdk sharedGuidance];
     if (!self.guidance) { [self fail:@"카카오 길안내 엔진 준비 실패" generation:generation]; return; }
     YLGuidanceOwner = self;
+    [self configureVoiceDetail:self.voiceDetail];
     // v30: do not activate/duck the shared audio session for the whole trip; the app voice activates it per announcement.
     [self emit:@"audioAcquired" message:@""];
     self.guidance.guideStateDelegate = self;
@@ -297,7 +303,7 @@ static NSArray *YLLifecycleObservers;
 }
 - (void)stopNavigation {
     self.generation++;
-    self.guiding = NO;
+    self.guiding = NO; self.positionReceivedAt = 0; self.pendingRecenter = NO; self.trustedBearing = 0;
     [self.freshnessTimer invalidate]; self.freshnessTimer = nil;
     if (YLGuidanceOwner == self) {
         self.guidance.guideStateDelegate = nil; self.guidance.locationGuideDelegate = nil;
@@ -332,7 +338,7 @@ static NSArray *YLLifecycleObservers;
 }
 - (void)guidance:(KNGuidance *)guidance didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { YL_FORWARD(if (routes.count) [self.map setRoutes:routes]; else [self.map removeRoutesAll]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateIndoorRoute:(KNRoute *)route { if (route) YL_FORWARD([self.map setRoute:route]); }
-- (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; [self updateMap]; [self publishTelemetry]); }
+- (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate]; [self updateMap]; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateRouteGuide:(KNGuide_Route *)route { YL_FORWARD(self.routeGuide = route; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateSafetyGuide:(KNGuide_Safety *)safety { YL_FORWARD(self.safetyGuide = safety; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateAroundSafeties:(NSArray<__kindof KNSafety *> *)safeties { }
@@ -340,117 +346,13 @@ static NSArray *YLLifecycleObservers;
     // Synchronous SDK callback: never dispatch_sync to main (SDK may be waiting on it).
     BOOL safety = voice.voiceCode == KNVoiceCode_Safety || voice.voiceCode == KNVoiceCode_Alert || voice.voiceCode == KNVoiceCode_SchoolZone || voice.voiceCode == KNVoiceCode_Alram;
     if (self.guidance != guidance || YLGuidanceOwner != self || (safety ? !self.safetyVoiceEnabled : !self.voiceEnabled)) return NO;
-    if (![self shouldSpeak:voice safety:safety]) return NO;
     // SDK supplies timing and guide objects only. All speech uses the app's selected voice.
     KNVoiceCode code = voice.voiceCode;
     id object = voice.guideObj;
-    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-    self.lastSpokenAnyTime = now;
-    if (code == KNVoiceCode_Turn) self.lastSpokenTurnTime = now;
-    if (safety) {
-        self.lastSpokenSafetyTime = now;
-        if ([object isKindOfClass:KNSafety.class]) {
-            KNSafety *s = (KNSafety *)object;
-            self.lastSpokenSafetyCode = s.code;
-            if ([s isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)s).speedLimit > 0) {
-                self.lastSpokenSpeedLimit = (NSInteger)((KNSafety_Camera *)s).speedLimit;
-                self.lastSpokenSpeedLimitTime = now;
-            }
-        }
-    }
     YL_FORWARD(NSString *text = [self spokenTextForCode:code object:object];
                if (text.length) [self emit:safety ? @"spokenSafety" : @"spokenGuide" message:text]);
     return NO;
 }
-/// Verbosity filter & collision prevention.
-/// Suppresses rapid-fire collisions, redundant straight announcements before turns, and double speed limit alerts.
-- (BOOL)shouldSpeak:(KNGuide_Voice *)voice safety:(BOOL)safety {
-    NSInteger level = self.voiceDetail;
-    if (level >= 2) return YES;
-    KNVoiceCode code = voice.voiceCode;
-    KNVoiceDist dist = voice.voiceDist;
-    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-
-    // Global throttle: do not emit another guidance if ANY guidance was emitted within 2.5s
-    if (now - self.lastSpokenAnyTime < 2.5 && code != KNVoiceCode_Alert) return NO;
-
-    switch (code) {
-        case KNVoiceCode_LinkSound:
-        case KNVoiceCode_Alram:
-        case KNVoiceCode_GPSConnected:
-        case KNVoiceCode_RouteUnchanged:
-        case KNVoiceCode_CheckingRouteChange:
-        case KNVoiceCode_StrateToNext:
-        case KNVoiceCode_BusLaneGuide:
-        case KNVoiceCode_Hipass:
-            return NO;                                  // chatter in both brief and normal
-        case KNVoiceCode_DetalDir:
-        case KNVoiceCode_MultiRoute:
-            return NO;                                  // chatter: detail direction often collides immediately with Turn direction
-        case KNVoiceCode_Turn: {
-            // Check if this is a straight maneuver
-            if ([voice.guideObj isKindOfClass:KNDirection.class]) {
-                KNDirection *dir = (KNDirection *)voice.guideObj;
-                if (dir.rgCode == KNRGCode_Straight) {
-                    KNDirection *next = self.routeGuide.nextDirection;
-                    // If an upcoming real maneuver exists within 400m, suppress straight!
-                    if (next && next.rgCode != KNRGCode_Straight) {
-                        return NO; // suppress straight, let upcoming real turn guide
-                    }
-                    // For pure straight, don't repeat more often than once every 45s
-                    if (now - self.lastSpokenTurnTime < 45.0) return NO;
-                }
-            }
-            if (now - self.lastSpokenTurnTime < 3.5) return NO;
-            // Brief: only the last two calls before the junction. Normal: from mid distance.
-            if (dist == KNVoiceDist_None) return YES;
-            return level >= 1 ? dist >= KNVoiceDist_Middle : dist >= KNVoiceDist_Near;
-        }
-        case KNVoiceCode_Safety: {
-            if ([voice.guideObj isKindOfClass:KNSafety.class]) {
-                KNSafety *point = (KNSafety *)voice.guideObj;
-                if ([point isKindOfClass:KNSafety_Camera.class]) {
-                    NSInteger limit = (NSInteger)((KNSafety_Camera *)point).speedLimit;
-                    if (limit > 0) {
-                        // If same speed limit was spoken within 25 seconds, suppress
-                        if (limit == self.lastSpokenSpeedLimit && (now - self.lastSpokenSpeedLimitTime < 25.0)) return NO;
-                        // If different speed limit was spoken within 8 seconds, suppress
-                        if (now - self.lastSpokenSpeedLimitTime < 8.0) return NO;
-                    }
-                }
-                if (point.code == self.lastSpokenSafetyCode && (now - self.lastSpokenSafetyTime < 15.0)) return NO;
-            }
-            if (now - self.lastSpokenSafetyTime < 5.0) return NO;
-            if (dist == KNVoiceDist_None) return YES;
-            return level >= 1 ? dist >= KNVoiceDist_Near : dist >= KNVoiceDist_AtPos;
-        }
-        case KNVoiceCode_SchoolZone:
-            if (now - self.lastSpokenSafetyTime < 15.0) return NO;
-            return YES;
-        case KNVoiceCode_Alert:
-            return YES;
-        default:
-            return YES;                                 // start/end, deviation, re-route
-    }
-}
-
-/// Spoken distance buckets. Recording every metre value is impossible, and a navigation call of
-/// "삼백 미터 앞" for 290 m is what drivers already hear from every Korean navigation app.
-static NSString *YLSpokenDistance(SInt32 metres) {
-    static const SInt32 steps[] = {50, 100, 200, 300, 400, 500, 700, 1000, 2000, 3000};
-    static NSString *const names[] = {@"오십 미터 앞", @"백 미터 앞", @"이백 미터 앞", @"삼백 미터 앞", @"사백 미터 앞",
-                                      @"오백 미터 앞", @"칠백 미터 앞", @"일 킬로미터 앞", @"이 킬로미터 앞", @"삼 킬로미터 앞"};
-    const int count = (int)(sizeof(steps) / sizeof(steps[0]));
-    int best = 0;
-    double bestError = INFINITY;
-    for (int i = 0; i < count; i++) {
-        // Relative error, so 300 vs 400 is judged the same way as 2 km vs 3 km.
-        double error = fabs(log((double)metres / (double)steps[i]));
-        if (error < bestError) { bestError = error; best = i; }
-    }
-    return names[best];
-}
-
 - (NSString *)spokenTextForCode:(KNVoiceCode)code object:(id)object {
     NSString *prefix = @"";
     KNLocation *target = nil;
@@ -458,15 +360,13 @@ static NSString *YLSpokenDistance(SInt32 metres) {
     if ([object isKindOfClass:KNSafety.class]) target = ((KNSafety *)object).location;
     if (target && [self locationIsFresh]) {
         SInt32 metres = [self.locationGuide.location distToLocation:target];
-        // v42: the spoken distance is snapped to the set the recorded voice can actually say, the way a
-        // car navigation system calls turns at fixed distances. The exact metres still drive the display.
-        if (metres >= 30) prefix = [YLSpokenDistance(metres) stringByAppendingString:@", "];
-        else if (metres >= 0) prefix = @"잠시 후, ";
+        // Use the SDK route distance; do not round into legacy recording buckets.
+        if (metres > 0) prefix = [NSString stringWithFormat:@"%d미터 앞, ", (int)metres];
     }
     if ([object isKindOfClass:KNDirection.class]) {
         KNDirection *dir = (KNDirection *)object;
-        if (dir.rgCode == KNRGCode_Goal) return [prefix.length ? prefix : @"" stringByAppendingString:@"목적지에 도착했습니다."];
-        if (dir.rgCode == KNRGCode_Via) return [prefix.length ? prefix : @"" stringByAppendingString:@"경유지에 도착했습니다."];
+        if (dir.rgCode == KNRGCode_Goal) return [prefix stringByAppendingString:@"목적지입니다."];
+        if (dir.rgCode == KNRGCode_Via) return [prefix stringByAppendingString:@"경유지입니다."];
         return [prefix stringByAppendingString:[self directionInfo:object][@"spoken"]];
     }
     if ([object isKindOfClass:KNSafety.class]) {
@@ -494,22 +394,22 @@ static NSString *YLSpokenDistance(SInt32 metres) {
     }
     switch (code) {
         case KNVoiceCode_StartGuide: return @"안내를 시작합니다.";
-        case KNVoiceCode_EndGuide: return @"목적지에 도착했습니다.";
+        case KNVoiceCode_EndGuide: return @"경로 안내 종료.";
         case KNVoiceCode_DetalDir:
         case KNVoiceCode_MultiRoute:
-            return self.routeGuide.curDirection ? [self directionInfo:self.routeGuide.curDirection][@"spoken"] : @"분기 경로를 확인해 주세요.";
-        case KNVoiceCode_SchoolZone: return @"어린이 보호 구역입니다. 안전 운전하세요.";
-        case KNVoiceCode_Alert: return @"속도를 줄여 주세요.";
-        case KNVoiceCode_Hipass: return @"하이패스 차로를 이용하세요.";
+            return @""; // SDK does not expose the source sentence for these audio-only events.
+        case KNVoiceCode_SchoolZone: return @"어린이 보호 구역입니다.";
+        case KNVoiceCode_Alert: return @"주의하세요.";
+        case KNVoiceCode_Hipass: return @"하이패스 차로 안내 지점입니다.";
         case KNVoiceCode_StrateToNext: return @"계속 직진하세요.";
         case KNVoiceCode_CheckingRouteChange: return @"경로를 재탐색합니다.";
         case KNVoiceCode_RouteChanged: return @"새로운 경로로 안내합니다.";
         case KNVoiceCode_RouteUnchanged: return @"현재 경로를 유지합니다.";
-        case KNVoiceCode_OutOfRoute: return @"경로를 이탈했습니다. 새 경로를 찾고 있습니다.";
+        case KNVoiceCode_OutOfRoute: return @"경로 이탈. 재탐색 중입니다.";
         case KNVoiceCode_GPSConnected: return @"위치 신호가 연결되었습니다.";
-        case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로 단속 구간입니다.";
-        case KNVoiceCode_Alram: return @"안전 운행에 유의해 주세요.";
-        case KNVoiceCode_LinkSound: return @"도로 안내를 확인해 주세요.";
+        case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로입니다.";
+        case KNVoiceCode_Alram: return @"";
+        case KNVoiceCode_LinkSound: return @"";
         case KNVoiceCode_Safety: return @"안전 운행 주의 지점을 확인해 주세요.";
         case KNVoiceCode_Turn: return self.routeGuide.curDirection ? [self directionInfo:self.routeGuide.curDirection][@"spoken"] : @"진행 경로를 확인해 주세요.";
         default: return @"";
@@ -523,11 +423,10 @@ static NSString *YLSpokenDistance(SInt32 metres) {
 #undef YL_FORWARD
 
 - (BOOL)locationIsFresh {
-    if (self.guiding && self.locationGuide.location) return YES;
     KNGPSData *gps = self.locationGuide.gpsMatched;
     NSTimeInterval age = gps.timestamp ? -gps.timestamp.timeIntervalSinceNow : INFINITY;
-    // Keep the last matched position for 90 s instead of hiding the car and blanking guidance.
-    return gps && gps.valid && age >= -3 && age <= 90 && isfinite(gps.pos.x) && isfinite(gps.pos.y);
+    // Stale fixes must not drive the camera or navigation distances.
+    return gps && gps.valid && age >= -3 && age <= 15 && isfinite(gps.pos.x) && isfinite(gps.pos.y);
 }
 - (void)updateMap {
     // Route properties may not exist until the SDK asynchronously installs a route.
@@ -537,19 +436,20 @@ static NSString *YLSpokenDistance(SInt32 metres) {
     KNLocation *loc = self.locationGuide.location;
     KNGPSData *gps = self.locationGuide.gpsMatched;
     BOOL fresh = [self locationIsFresh];
-    if (!fresh && !loc) { self.map.userLocation.isVisible = NO; return; }
+    if (!fresh) { self.map.userLocation.isVisible = NO; return; }
     FloatPoint pos;
-    float angle = 0;
+    float angle = self.trustedBearing;
     if (loc && isfinite(loc.pos.x) && isfinite(loc.pos.y)) {
         pos = FloatPointMake(loc.pos.x, loc.pos.y);
-        angle = (gps && gps.angleTrust) ? gps.angle : 0;
+        if (gps && gps.angleTrust && gps.angle >= 0 && gps.angle < 360) angle = gps.angle;
     } else if (gps && isfinite(gps.pos.x) && isfinite(gps.pos.y)) {
         pos = FloatPointMake(gps.pos.x, gps.pos.y);
-        angle = gps.angleTrust ? gps.angle : 0;
+        if (gps.angleTrust && gps.angle >= 0 && gps.angle < 360) angle = gps.angle;
     } else {
         self.map.userLocation.isVisible = NO;
         return;
     }
+    self.trustedBearing = angle;
     self.map.userLocation.coordinate = pos;
     self.map.userLocation.isVisible = YES;
     self.map.userLocation.angle = angle;
@@ -559,6 +459,7 @@ static NSString *YLSpokenDistance(SInt32 metres) {
         self.cameraReady = YES;
     }
     if (loc) [self.map cullPassedRouteWithLocation:loc isAnimate:NO];
+    if (self.pendingRecenter) { self.following = YES; self.userZooming = NO; self.pendingRecenter = NO; [self emit:@"follow" message:@"1"]; }
     if (!self.following || self.userZooming) return; // manual map browsing: keep the user's view
     KNMapCameraUpdate *update = [[[[KNMapCameraUpdate targetTo:pos] anchorTo:self.mapAnchor] bearingTo:angle] tiltTo:0];
     // Fit a real coordinate region once; retain subsequent pinch zoom rather than web-map zoom constants.
@@ -571,7 +472,9 @@ static NSString *YLSpokenDistance(SInt32 metres) {
     if (!sdk) return;
     IntPoint pt = [sdk convertWGS84ToKATECWithLongitude:longitude latitude:latitude];
     FloatPoint pos = FloatPointMake(pt.x, pt.y);
-    float angle = isfinite(bearing) ? (float)bearing : 0;
+    float angle = isfinite(bearing) && bearing >= 0 && bearing < 360 ? (float)bearing : self.trustedBearing;
+    self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate];
+    self.trustedBearing = angle;
     self.map.userLocation.coordinate = pos;
     self.map.userLocation.isVisible = YES;
     self.map.userLocation.angle = angle;
@@ -580,22 +483,29 @@ static NSString *YLSpokenDistance(SInt32 metres) {
         [self.map moveCamera:[KNMapCameraUpdate fitToRegion:region] withUserLocation:NO];
         self.cameraReady = YES;
     }
+    if (self.pendingRecenter) { self.following = YES; self.userZooming = NO; self.pendingRecenter = NO; [self emit:@"follow" message:@"1"]; }
     if (!self.following || self.userZooming) return;
     KNMapCameraUpdate *update = [[[[KNMapCameraUpdate targetTo:pos] anchorTo:self.mapAnchor] bearingTo:angle] tiltTo:0];
     [self.map moveCamera:update withUserLocation:YES];
 }
 - (void)recenter {
     [self.followTimer invalidate]; self.followTimer = nil;
-    self.following = YES; self.userZooming = NO;
-    [self emit:@"follow" message:@"1"];
-    if (self.guiding) {
-        [self updateMap];
-    } else if (self.map && self.map.userLocation.isVisible) {
+    BOOL usable = self.guiding ? [self locationIsFresh] :
+        self.map.userLocation.isVisible && self.positionReceivedAt > 0 &&
+        [NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt <= 15;
+    if (!self.map || !usable) {
+        self.pendingRecenter = YES;
+        [self emit:@"positionWaiting" message:@"현재 위치 수신 대기"];
+        return;
+    }
+    self.pendingRecenter = NO; self.following = YES; self.userZooming = NO;
+    if (self.guiding) [self updateMap];
+    else {
         FloatPoint pos = self.map.userLocation.coordinate;
-        float angle = self.map.userLocation.angle;
-        KNMapCameraUpdate *update = [[[[KNMapCameraUpdate targetTo:pos] anchorTo:self.mapAnchor] bearingTo:angle] tiltTo:0];
+        KNMapCameraUpdate *update = [[[[KNMapCameraUpdate targetTo:pos] anchorTo:self.mapAnchor] bearingTo:self.trustedBearing] tiltTo:0];
         [self.map moveCamera:update withUserLocation:YES];
     }
+    [self emit:@"follow" message:@"1"];
 }
 - (void)pauseFollowing {
     [self.followTimer invalidate]; self.followTimer = nil;
@@ -604,7 +514,7 @@ static NSString *YLSpokenDistance(SInt32 metres) {
 - (void)scheduleFollowResume {
     [self.followTimer invalidate];
     __weak typeof(self) weakSelf = self;
-    // Kakao-style: after browsing, snap back to the car when the map is left alone.
+    // App browsing timeout; not a claimed Kakao standard. Explicit recenter is always available.
     self.followTimer = [NSTimer scheduledTimerWithTimeInterval:15 repeats:NO block:^(NSTimer *timer) { [weakSelf recenter]; }];
 }
 #pragma mark KNMapViewEventListener
@@ -723,7 +633,7 @@ static NSString *YLSpokenDistance(SInt32 metres) {
         }
         s[@"roadType"] = @(location.roadType);
     }
-    if (!s[@"routeBend"] && gpsFresh && location && gps.angleTrust && isfinite(gps.angle)) {
+    if (!s[@"routeBend"] && gpsFresh && location && gps.angleTrust) {
         KNLocation *ahead = [location locationAfterDist:45];
         if (ahead) {
             double dx = ahead.pos.x-location.pos.x, dy = ahead.pos.y-location.pos.y;
@@ -780,51 +690,6 @@ static NSString *YLSpokenDistance(SInt32 metres) {
             s[@"laneRaw"] = [raw componentsJoinedByString:@","];
         }
     }
-    // Lane count for the drawn road: last guidance count on this road, else a road-type default.
-    NSString *roadName = location.roadName ?: @"";
-    NSTimeInterval laneAge = [NSDate timeIntervalSinceReferenceDate] - self.lastLaneAt;
-    if (self.lastLaneCount > 0 && [self.lastLaneRoad isEqualToString:roadName] && laneAge < 1800) {
-        s[@"roadLanes"] = @(self.lastLaneCount);
-        s[@"roadLaneSource"] = @"guide";
-    } else if (location) {
-        // No lane guidance for this road: smart estimate from road class, name, and posted limit.
-        SInt32 limit = 0;
-        for (KNSafety *safety in self.safetyGuide.safetiesOnGuide) {
-            if ([safety isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)safety).speedLimit > 0) {
-                limit = ((KNSafety_Camera *)safety).speedLimit;
-                break;
-            }
-        }
-        NSInteger lanes = 2;
-        if (location.roadType == KNRoadType_Highway) {
-            // Check if on a highway ramp/connector (1 or 2 lanes) vs highway mainline (3 or 4 lanes)
-            if ([s[@"highway"] isEqualToString:@"진입"] || [s[@"highway"] isEqualToString:@"진출"] || [roadName containsString:@"램프"] || [roadName containsString:@"IC"] || [roadName containsString:@"JC"]) {
-                lanes = 1;
-            } else {
-                lanes = limit >= 100 ? 4 : 3;
-            }
-        } else if (location.roadType == KNRoadType_NarrowRoad || [roadName containsString:@"골목"] || [roadName containsString:@"길"]) {
-            lanes = 1;
-        } else {
-            // Urban / General roads:
-            // Major avenues in Korea ("~대로" like 강남대로, 테헤란로) typically have 4 lanes per direction
-            // Regular arterial roads ("~로") typically have 3 lanes per direction
-            // Secondary roads ("~길") typically have 1 or 2 lanes
-            if ([roadName hasSuffix:@"대로"] || limit >= 70) {
-                lanes = 4;
-            } else if ([roadName hasSuffix:@"로"] || limit >= 60) {
-                lanes = 3;
-            } else if (limit <= 30) {
-                lanes = 1;
-            } else {
-                lanes = 2;
-            }
-        }
-        s[@"roadLanes"] = @(lanes);
-        s[@"roadLaneSource"] = @"estimate";
-    }
-    // Korean lane painting: the left edge is the centre line (yellow) unless the road is one lane.
-    if (location) s[@"roadClass"] = location.roadType == KNRoadType_Highway ? @"highway" : location.roadType == KNRoadType_NarrowRoad ? @"narrow" : @"urban";
     s[@"following"] = @(self.following);
     for (KNSafety *safety in self.safetyGuide.safetiesOnGuide) {
         if ([safety isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)safety).speedLimit > 0) {
