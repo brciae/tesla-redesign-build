@@ -521,22 +521,15 @@
       const rangeKm=(c&&fresh(c,now,TTL.charge)&&c.rangeKm!=null)?Math.round(c.rangeKm):null;
       const insideC=(t&&fresh(t,now,TTL.climate)&&t.insideC!=null)?Math.round(t.insideC):null;
       const isChg=c&&(c.charging===1||(c.chargerKW||0)>0.5);
-      const d=new Date(now);
-      const hour=d.getTimezoneOffset()===0?(d.getUTCHours()+9)%24:d.getHours();
-      const greeting=hour<12?'좋은 아침입니다.':(hour<18?'좋은 오후입니다.':'좋은 저녁입니다.');
 
       if(isChg){
-        parts.push(greeting);
         parts.push('충전 중입니다.');
         if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
-        parts.push('안전 운전하세요.');
       }else{
-        parts.push(greeting);
         if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
         if(rangeKm!=null&&rangeKm>0)parts.push(`남은 거리는 ${rangeKm}킬로미터입니다.`);
-        parts.push('안전 운전하세요.');
       }
-      return parts.join(' '); /* charging & departure briefing                                                                                                                                               */
+      return parts.length ? parts.join(' ') : '최신 차량 상태 미수신.';
     }
     view(now=Date.now()){
       const s=this.state,charging=this.chargeSummary();
