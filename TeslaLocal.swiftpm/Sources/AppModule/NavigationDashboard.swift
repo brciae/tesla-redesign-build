@@ -140,26 +140,12 @@ struct NavigationReadout {
 
     /// RealityKit presentation for the car view of `theme`.
     func scenePresentation(theme: NavigationTheme) -> Object {
-        var target = -1.0
-        if let s = suggestedLane {
-            // Discrete lane mapping: car must center in a valid lane index (0, 1, 2, ...),
-            // never straddling dashed lines at fractional 0.5 positions!
-            let n = Double(roadLanes), g = Double(max(1, laneCount))
-            if laneCount > 0 && laneCount != roadLanes {
-                let mapped = (s + 0.5) / g * n - 0.5
-                target = min(n - 1, max(0, round(mapped)))
-            } else {
-                target = min(n - 1, max(0, round(s)))
-            }
-        }
-        var p: Object = ["states": Object(), "allowInteraction": false, "animate": false,
-                         "wheelSpeedKmh": speedKmh, "steer": motionValid ? routeBend : 0,
-                         "roadLanes": theme.drawsRoadIn3D ? roadLanes : 0, "roadLane": target,
+        // Decorative road only. Recommended lanes do not locate the vehicle within a lane.
+        let p: Object = ["states": Object(), "allowInteraction": false, "animate": false,
+                         "wheelSpeedKmh": speedKmh, "steer": 0,
+                         "roadLanes": theme.drawsRoadIn3D ? 1 : 0, "roadLane": -1,
                          "roadStyle": theme.roadStyle, "roadClass": currentRoadClass, "lookAhead": Double(theme.lookAhead),
                          "brake": braking, "headlights": night]
-        if motionValid, routePath.count >= 4, routePath.count % 2 == 0 {
-            p["roadPath"] = routePath.map { NSNumber(value: $0) }
-        }
         return p
     }
 }
@@ -1693,7 +1679,6 @@ struct ParkedNavigationActions: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 4)
         .foregroundStyle(.white).background(Color.black)
-        .accessibilityIdentifier("navigation.parked.actions")
     }
 }
 
@@ -1706,6 +1691,7 @@ private struct NavigationMediaHeader: View {
             Text(data.mediaTitle.isEmpty ? data.mediaSource : data.mediaTitle)
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("navigation.media.title")
             Button { action("mediaToggle") } label: {
                 Image(systemName: data.mediaPlaying ? "pause.fill" : "play.fill").frame(width: 44, height: 44)
             }
@@ -1715,7 +1701,7 @@ private struct NavigationMediaHeader: View {
         }
         .padding(.leading, 12).frame(height: 44)
         .background(Color.black.opacity(0.92), in: RoundedRectangle(cornerRadius: 12))
-        .accessibilityElement(children: .contain).accessibilityIdentifier("navigation.media.header")
+        .accessibilityElement(children: .contain)
     }
 }
 

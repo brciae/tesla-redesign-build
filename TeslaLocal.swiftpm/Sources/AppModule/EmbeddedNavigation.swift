@@ -38,6 +38,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     @Published private(set) var lifecycleDiagnostics: [String] = []
     /// v30: false while the user browses the map; the UI shows a "현위치" button.
     @Published private(set) var following = true
+    @Published private(set) var recenterRequest = 0
     private var speedSample: (kmh: Double, at: TimeInterval)?
     private var brakeUntil: TimeInterval = 0
     @Published var theme = NavigationTheme(rawValue: UserDefaults.standard.string(forKey: "navigationTheme") ?? "cluster") ?? .cluster {
@@ -197,8 +198,13 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         locator.showsBackgroundLocationIndicator = on
         if on { locator.startUpdatingLocation() } else { locator.stopUpdatingLocation() }
     }
+    private static func usableLocation(_ point: CLLocation) -> Bool {
+        let age = Date().timeIntervalSince(point.timestamp)
+        return age >= 0 && age <= 15 && point.horizontalAccuracy >= 0 &&
+            point.horizontalAccuracy <= 100 && CLLocationCoordinate2DIsValid(point.coordinate)
+    }
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        if !guiding, let controller, let point = locations.last {
+        if !guiding, let controller, let point = locations.last, Self.usableLocation(point) {
             controller.updateStandbyLocation(latitude: point.coordinate.latitude, longitude: point.coordinate.longitude, bearing: point.course, speed: point.speed)
         }
         guard busy, controller == nil, let candidate, let ticket, current(ticket), canPresent(), let point = locations.last else { return }
@@ -223,6 +229,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
                     if event == "voiceStart" || event == "voiceEnd" { return } // SDK never plays audio (v30)
                     if event == "follow" { self.following = message == "1"; return }
+                    if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
                     if event == "visible" {
                         self.navigationScene = view.view.window?.windowScene
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene); return
@@ -347,6 +354,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     if event == "audioAcquired" { self.onAudioSession?(true); return }
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
                     if event == "follow" { self.following = message == "1"; return }
+                    if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
                     if event == "visible" {
                         self.navigationScene = view.view.window?.windowScene
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene)
@@ -369,7 +377,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                 }
                 if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
             }
-            let loc = locator.location?.coordinate ?? CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780)
+            let loc = locator.location.flatMap { Self.usableLocation($0) ? $0.coordinate : nil } ?? CLLocationCoordinate2D(latitude: .nan, longitude: .nan)
             view.prepareStandby(appKey: key, latitude: loc.latitude, longitude: loc.longitude)
             locator.startUpdatingLocation()
         } catch {
@@ -399,7 +407,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         presented = true
     }
     /// v30: return the map camera to the car after manual browsing.
-    func recenter() { controller?.recenter(); following = true }
+    func recenter() {
+        recenterRequest += 1
+        locator.startUpdatingLocation()
+        controller?.recenter()
+    }
     func suspendPending() {
         // Established GPS navigation survives BLE loss/background; pending startup does not.
         if !guiding { _ = gate("cancel", ["block": false]); stopNative() }

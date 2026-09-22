@@ -113,18 +113,18 @@ struct DrivingWorkspace: View {
 
             Spacer(minLength: 0)
 
-            if !navigation.following {
+            Group {
                 Button {
                     navigation.recenter()
-                    model.voice.say("차량 위치를 중심으로 지도를 맞췄습니다.", key: "nav.recenter", category: "voiceControl", priority: 2, ttl: 3, manual: true)
                 } label: {
                     Image(systemName: "location.fill")
                         .font(.system(size: compact ? 12 : 14))
-                        .frame(width: compact ? 30 : 44, height: compact ? 30 : 44)
+                        .frame(width: 44, height: 44)
                         .background(Color.white.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("map.recenter")
+                .accessibilityLabel("현위치로 이동")
                 .transition(.opacity)
             }
 
@@ -373,7 +373,7 @@ struct LiveStandbyMapView: View {
 
     var body: some View {
         ZStack {
-            StandbyMKMapView()
+            StandbyMKMapView(recenterRequest: navigation.recenterRequest)
 
             VStack {
                 Spacer()
@@ -461,6 +461,12 @@ struct LiveStandbyMapView: View {
 }
 
 struct StandbyMKMapView: UIViewRepresentable {
+    var recenterRequest: Int
+    final class Coordinator {
+        var lastRequest: Int
+        init(_ request: Int) { lastRequest = request }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(recenterRequest) }
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
         map.overrideUserInterfaceStyle = .dark
@@ -476,7 +482,8 @@ struct StandbyMKMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        if uiView.userTrackingMode != .followWithHeading && uiView.userTrackingMode != .follow {
+        if context.coordinator.lastRequest != recenterRequest {
+            context.coordinator.lastRequest = recenterRequest
             uiView.setUserTrackingMode(.followWithHeading, animated: true)
         }
     }

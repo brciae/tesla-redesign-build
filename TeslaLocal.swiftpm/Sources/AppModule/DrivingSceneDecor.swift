@@ -265,17 +265,9 @@ final class DrivingSceneDecor {
         let groundEntity = ModelEntity(mesh: .generatePlane(width: 180, depth: 180), materials: [groundMaterial()])
         groundEntity.position = [0, -0.015, 20]
         container.addChild(groundEntity)
-        let lineMesh = MeshResource.generateBox(width: 0.13, height: 0.006, depth: 3.05)
         let dashMesh = MeshResource.generateBox(width: 0.13, height: 0.006, depth: 3.0)
-        for i in 0..<42 {
-            // Right-hand road edge: white solid.
-            let e = ModelEntity(mesh: lineMesh, materials: [edgeMaterial()]); container.addChild(e)
-            marks.append(Mark(entity: e, kind: .edge, boundary: 1, base: Float(i) * 3 - 30, spacing: 3))
-            // Centre line on the left: clean yellow solid.
-            let c = ModelEntity(mesh: lineMesh, materials: [centreMaterial()]); container.addChild(c)
-            marks.append(Mark(entity: c, kind: .centre, boundary: 0, base: Float(i) * 3 - 30, spacing: 3))
-        }
-        for boundary in 1...5 {
+        // Two white dashed boundaries around one illustrative lane.
+        for boundary in 0...1 {
             for i in 0..<16 {
                 let e = ModelEntity(mesh: dashMesh, materials: [dashMaterial()]); container.addChild(e)
                 marks.append(Mark(entity: e, kind: .dash, boundary: boundary, base: Float(i) * 8 - 30, spacing: 8))
@@ -351,7 +343,7 @@ final class DrivingSceneDecor {
                 s = mark.base - odometer.truncatingRemainder(dividingBy: mark.spacing)
                 lateral = (laneCenter + 0.5) * laneWidth
             case .dash:
-                visible = mark.boundary < n
+                visible = true
                 s = mark.base - odometer.truncatingRemainder(dividingBy: mark.spacing)
                 lateral = (laneCenter + 0.5 - Float(mark.boundary)) * laneWidth
             case .guide:

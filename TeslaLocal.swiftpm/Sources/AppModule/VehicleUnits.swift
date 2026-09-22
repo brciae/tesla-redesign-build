@@ -146,9 +146,6 @@ struct VoiceQueue {
     var items: [VoiceItem] = []
     mutating func pruneNavigation(forKey key: String) {
         items.removeAll { $0.key == key }
-        if items.contains(where: { $0.key.hasPrefix("navigation.") }) {
-            items.removeAll { $0.key.hasPrefix("navigation.") }
-        }
     }
     private var last: [String: Date] = [:]
     mutating func add(_ item: VoiceItem, now: Date, cooldown: TimeInterval = 20) {

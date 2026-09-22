@@ -102,10 +102,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
-        let timeSinceLast = now.timeIntervalSince(lastGuideAt)
-        if text == lastGuideText && timeSinceLast < 12.0 { return }
-        if timeSinceLast < 3.5 && !safety { return }
-        if safety && timeSinceLast < 2.5 { return }
+        // The navigation SDK owns announcement timing and frequency.
         lastGuideText = text
         lastGuideAt = now
 
@@ -113,7 +110,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn")
 
         // Safety guidance interrupts regular chatter immediately
-        if safety {
+        if safety || !navigationSpeaking {
             cancelCurrent()
             quietUntil = .distantPast
         }
@@ -153,9 +150,11 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         // INSTANT PREEMPTION: When user taps a button or triggers guidance, immediately cut off previous speech
         // mid-utterance without waiting for it to finish and with zero delay!
-        cancelCurrent()
-        queue.clear()
-        quietUntil = .distantPast
+        if !navigationSpeaking && (manual || priority > activePriority) {
+            cancelCurrent()
+            queue.clearAutomatic()
+            quietUntil = .distantPast
+        }
 
         queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
         drain()
