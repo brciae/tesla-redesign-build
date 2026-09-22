@@ -54,9 +54,9 @@
       at:drive.at,receivedAt:drive.receivedAt,token:JSON.stringify([name.slice(0,300),Number(drive.destinationLat.toFixed(5)),Number(drive.destinationLng.toFixed(5))])};
   }
   // Memory-only lifecycle. Never exported with vehicle records or restored on launch.
-  // v29: a destination is identified by position (<=200 m), not by the exact float/name token.
-  // Tesla re-reports float32 coordinates and renames POIs while stopped; that must not restart guidance.
-  const sameSpot=(a,b)=>{if(!a||!b)return false;const dy=(a.lat-b.lat)*111320,dx=(a.lng-b.lng)*111320*Math.cos(a.lat*Math.PI/180);return Math.hypot(dx,dy)<=200;};
+  // Match coordinate storage precision, not an invented geographic radius.
+  // Renaming a POI at the same coordinates must not restart guidance.
+  const sameSpot=(a,b)=>!!a&&!!b&&Math.fround(a.lat)===Math.fround(b.lat)&&Math.fround(a.lng)===Math.fround(b.lng);
   class EmbeddedRouteGate{
     constructor(){this.generation=0;this.active=null;this.blocked=null;this.absence=null;this.lastObservation=0;this.lastSource=0;}
     observe(event,ready,guiding){
