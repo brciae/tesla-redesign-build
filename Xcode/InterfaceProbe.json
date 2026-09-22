@@ -20,6 +20,7 @@
    "sources": [
     "InterfaceProbe/App.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/AppInterface.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/LocalBriefingControls.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationDashboard.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/ManeuverGlyph.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BatteryOverview.swift",
