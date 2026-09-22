@@ -140,10 +140,10 @@ final class AutomationCoordinator: ObservableObject {
             }
             var seen = Set<String>()
             texts = texts.filter { seen.insert($0).inserted }
-            if !texts.isEmpty { voice.say(texts.joined(separator: " "), key: "boarding:" + s.vehicle, category: defaults.bool(forKey: "voiceAutomations") ? "voiceAutomations" : "voiceConnection", ttl: 20) }
+            if !texts.isEmpty { voice.say(texts.joined(separator: " "), key: "boarding:" + s.vehicle, category: defaults.bool(forKey: "voiceAutomations") ? "voiceAutomations" : "voiceConnection", ttl: 20, manual: false) }
         }
         for effect in effects {
-            if effect.rule.speech && effect.rule.trigger != .boarding { voice.say(effect.text, key: "auto:" + effect.rule.id, category: "voiceAutomations", priority: [.batteryLow, .tireLow].contains(effect.rule.trigger) ? 3 : 1, ttl: 20) }
+            if effect.rule.speech && effect.rule.trigger != .boarding { voice.say(effect.text, key: "auto:" + effect.rule.id, category: "voiceAutomations", priority: [.batteryLow, .tireLow].contains(effect.rule.trigger) ? 3 : 1, ttl: 20, manual: false) }
             guard effect.rule.action != .speech else { report(effect.id, effect.rule.speech ? "음성 요청 · 음소거·조용시간·만료 적용" : "조건 감지 · 음성 꺼짐"); continue }
             let valid = { [weak self, weak link] in
                 guard let self, let link, !self.blocked, let current = self.sample,

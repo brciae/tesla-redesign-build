@@ -180,6 +180,42 @@ struct AutomationPolicy {
         parkSince = nil; routeBaseline = nil; milestones = []
     }
     mutating func settingsChanged() { reset(); document.boardingLatched = true }
+    static func renderedText(for rule: AutomationRule, sample: AutomationSample, delayMinutes: Double = 0) -> String {
+        var text: String
+        switch rule.trigger {
+        case .boarding: text = "탑승을 환영합니다."
+        case .departure: text = "출발했습니다. 안전한 운행 되세요."
+        case .arrival: text = sample.tripSummary
+        case .chargeStart: text = "충전이 시작되었습니다."
+        case .chargeEnd: text = "충전이 종료되어 기록을 저장했습니다."
+        case .batteryLow: text = "배터리 잔량이 \(Int(sample.soc ?? 0))퍼센트입니다. 충전 계획을 확인하세요."
+        case .tireLow: text = "타이어 공기압 주의 신호가 있습니다. 안전한 곳에서 타이어 상태를 확인하세요."
+        case .rest: text = "앱에서 관측한 연속 운전 시간이 \(Int(rule.threshold))분을 넘었습니다. 안전한 곳에서 잠시 쉬어 가세요."
+        case .remaining: text = "목적지까지 약 \(Int(sample.remainingMinutes ?? 0))분 남았습니다."
+        case .delay: text = "차량 내비의 도착 예상이 처음보다 약 \(Int(max(0, delayMinutes)))분 늦어졌습니다."
+        case .destination: text = "목적지가 \(sample.destination)으로 변경되었습니다."
+        }
+            if !rule.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { text = rule.message }
+            text = text.replacingOccurrences(of: "{인사}", with: Self.greeting(hour: sample.hour))
+                .replacingOccurrences(of: "{배터리}", with: sample.chargeFresh && sample.soc != nil ? "\(Int(sample.soc ?? 0))퍼센트" : "미확인")
+                .replacingOccurrences(of: "{목적지}", with: sample.driveFresh && !sample.destination.isEmpty ? sample.destination : "미설정")
+            if rule.timeGreeting && !rule.message.contains("{인사}") {
+                text = rule.trigger == .boarding && rule.message.isEmpty ? Self.greeting(hour: sample.hour) : Self.greeting(hour: sample.hour) + " " + text
+            }
+        return text
+    }
+    static func previewText(for rule: AutomationRule, hour: Int) -> String {
+        var sample = AutomationSample(now: 0, vehicle: "preview")
+        sample.hour = hour
+        sample.chargeFresh = true
+        sample.driveFresh = true
+        sample.soc = rule.trigger == .batteryLow ? rule.threshold : 82
+        sample.destination = "예시 목적지"
+        sample.remainingMinutes = rule.threshold
+        sample.tripSummary = "예시 운행이 종료되었습니다. 30분 동안 20킬로미터 이동했습니다."
+        return renderedText(for: rule, sample: sample, delayMinutes: rule.threshold)
+    }
+
     static func greeting(hour: Int) -> String {
         switch hour { case 5..<12: return "좋은 아침입니다."; case 12..<18: return "좋은 오후입니다."; case 18..<22: return "좋은 저녁입니다."; default: return "늦은 시간입니다. 편안하고 안전하게 이동하세요." }
     }
@@ -294,13 +330,7 @@ struct AutomationPolicy {
             }
             guard fire else { continue }
             if let milestone { guard !milestones.contains(milestone) else { continue }; milestones.insert(milestone) }
-            if !rule.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { text = rule.message }
-            text = text.replacingOccurrences(of: "{인사}", with: Self.greeting(hour: sample.hour))
-                .replacingOccurrences(of: "{배터리}", with: sample.chargeFresh && sample.soc != nil ? "\(Int(sample.soc ?? 0))퍼센트" : "미확인")
-                .replacingOccurrences(of: "{목적지}", with: sample.driveFresh && !sample.destination.isEmpty ? sample.destination : "미설정")
-            if rule.timeGreeting && !rule.message.contains("{인사}") {
-                text = rule.trigger == .boarding && rule.message.isEmpty ? Self.greeting(hour: sample.hour) : Self.greeting(hour: sample.hour) + " " + text
-            }
+            text = Self.renderedText(for: rule, sample: sample, delayMinutes: max(0, sample.now + (sample.remainingMinutes ?? 0) * 60 - (routeBaseline ?? sample.now)) / 60)
             let eventID = UUID().uuidString
             document.lastFired[key] = sample.now
             document.logs.insert(AutomationLog(id: eventID, at: sample.now, rule: rule.name, message: text, status: rule.action == .speech ? "음성 처리 대기" : "동작 준비 · 재실행 안 함"), at: 0)

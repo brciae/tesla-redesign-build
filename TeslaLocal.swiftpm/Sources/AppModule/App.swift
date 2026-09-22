@@ -204,7 +204,7 @@ struct PageBody<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24, content: content)
+            VStack(alignment: .leading, spacing: 24) { ScreenBriefingControls(screen: title); content() }
                 .frame(maxWidth: 680)
                 .padding(.horizontal, 20)
                 .padding(.top, 16)

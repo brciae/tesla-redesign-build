@@ -409,19 +409,12 @@ final class TeslaFleetClient: ObservableObject {
             func read(_ path: String) async throws -> [String: Any] {
                 var request = URLRequest(url: URL(string: base + path)!)
                 request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.timeoutInterval = 25
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
                 guard (200...299).contains(http.statusCode) else {
-                    let help: String
-                    switch http.statusCode {
-                    case 401: help = "인증 만료 또는 권한 취소 · 새 로그인 필요"
-                    case 403: help = "차량 데이터 권한·Fleet 앱 등록 확인 필요"
-                    case 408: help = "차량 응답 없음 · 절전 또는 통신 상태 확인 필요"
-                    case 429: help = "호출 제한 · 잠시 후 수동 새로고침 필요"
-                    default: help = "차량 또는 Fleet 서버 응답 확인 필요"
-                    }
-                    throw FleetAuthPolicy.failure("차량 조회 HTTP \(http.statusCode): \(help)")
+                    throw FleetAuthPolicy.apiFailure(status: http.statusCode, data: data, stage: path.contains("vehicle_data") ? "차량 상세 조회" : "차량 상태 조회", secrets: [token, requestVin])
                 }
                 guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let result = json["response"] as? [String: Any] else {
@@ -466,6 +459,43 @@ final class TeslaFleetClient: ObservableObject {
 
     // MARK: - Selected Region Requests
 
+    /// Explicit developer setup only. The partner token never replaces user OAuth credentials.
+    @MainActor func registerPartnerAccount() async throws {
+        guard selectedRegion != .ownerApi else { throw FleetAuthPolicy.failure("공식 Fleet 리전을 선택해 주세요.") }
+        guard let secret = getClientSecret(), !secret.isEmpty else { throw FleetAuthPolicy.failure("개발자 앱의 Client Secret을 먼저 입력해 주세요.") }
+        guard let redirect = URL(string: getRedirectUri()), redirect.scheme == "https", let domain = redirect.host else {
+            throw FleetAuthPolicy.failure("개발자 앱에 등록된 HTTPS 리다이렉트 주소가 필요합니다.")
+        }
+        let base = currentBaseURL
+        let client = getClientId()
+        var tokenRequest = URLRequest(url: FleetAuthPolicy.tokenURL)
+        tokenRequest.httpMethod = "POST"
+        tokenRequest.timeoutInterval = 30
+        tokenRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        tokenRequest.httpBody = FleetAuthPolicy.formBody(["grant_type": "client_credentials", "client_id": client, "client_secret": secret, "audience": base])
+        let (tokenData, tokenResponse) = try await URLSession.shared.data(for: tokenRequest)
+        guard let tokenHTTP = tokenResponse as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200...299).contains(tokenHTTP.statusCode) else {
+            throw FleetAuthPolicy.apiFailure(status: tokenHTTP.statusCode, data: tokenData, stage: "개발자 인증", secrets: [secret, client])
+        }
+        guard let json = try JSONSerialization.jsonObject(with: tokenData) as? [String: Any], let partnerToken = json["access_token"] as? String, !partnerToken.isEmpty else {
+            throw FleetAuthPolicy.failure("개발자 인증 응답에 토큰이 없습니다.")
+        }
+        var request = URLRequest(url: URL(string: base + "/api/1/partner_accounts")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer " + partnerToken, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["domain": domain])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200...299).contains(http.statusCode) else {
+            throw FleetAuthPolicy.apiFailure(status: http.statusCode, data: data, stage: "개발자 앱 등록", secrets: [secret, client, partnerToken])
+        }
+        lastSuccessMessage = "개발자 앱 등록 응답 수신 · " + domain
+        lastError = nil
+    }
+
     /// Executes each request once against the selected API region.
     private func executeWithRegionFallback<T>(
         action: (String) async throws -> (T, HTTPURLResponse)
@@ -490,6 +520,7 @@ final class TeslaFleetClient: ObservableObject {
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -509,7 +540,7 @@ final class TeslaFleetClient: ObservableObject {
                 }
                 return (list, httpResponse)
             }
-            return ([], httpResponse)
+            throw FleetAuthPolicy.apiFailure(status: httpResponse.statusCode, data: data, stage: "차량 목록 조회", secrets: [token])
         }
     }
 
@@ -526,6 +557,7 @@ final class TeslaFleetClient: ObservableObject {
             request.httpMethod = "POST"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -537,7 +569,7 @@ final class TeslaFleetClient: ObservableObject {
                 let online = (res?["state"] as? String) == "online"
                 return (online, httpResponse)
             }
-            return (false, httpResponse)
+            throw FleetAuthPolicy.apiFailure(status: httpResponse.statusCode, data: data, stage: "차량 깨우기", secrets: [token, activeVin])
         }
     }
 
@@ -554,6 +586,7 @@ final class TeslaFleetClient: ObservableObject {
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
@@ -570,7 +603,7 @@ final class TeslaFleetClient: ObservableObject {
                 }
                 return (chargeState, httpResponse)
             }
-            return ([:], httpResponse)
+            throw FleetAuthPolicy.apiFailure(status: httpResponse.statusCode, data: data, stage: "충전 상태 조회", secrets: [token, activeVin])
         }
     }
 
@@ -589,6 +622,7 @@ final class TeslaFleetClient: ObservableObject {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
             if let parameters {
@@ -609,7 +643,7 @@ final class TeslaFleetClient: ObservableObject {
                 }
                 return (success, httpResponse)
             }
-            return (false, httpResponse)
+            throw FleetAuthPolicy.apiFailure(status: httpResponse.statusCode, data: data, stage: "차량 명령", secrets: [token, activeVin])
         }
     }
 

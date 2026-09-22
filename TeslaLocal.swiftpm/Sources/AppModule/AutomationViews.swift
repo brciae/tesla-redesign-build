@@ -69,22 +69,7 @@ private struct AutomationDashboard: View {
                 ForEach(rules) { r in
                     HStack(spacing: 12) {
                         Button {
-                            let sampleMsg: String
-                            if !r.message.isEmpty {
-                                sampleMsg = r.message
-                            } else {
-                                switch r.trigger {
-                                case .boarding: sampleMsg = "좋은 시간입니다. 탑승을 환영합니다. 배터리 82퍼센트입니다."
-                                case .departure: sampleMsg = "출발합니다. 안전 운전하세요."
-                                case .arrival: sampleMsg = "운행이 종료되었습니다. 수고하셨습니다."
-                                case .chargeStart: sampleMsg = "충전을 시작합니다."
-                                case .chargeEnd: sampleMsg = "충전이 완료되었습니다."
-                                case .batteryLow: sampleMsg = "배터리 잔량이 부족합니다. 충전이 필요합니다."
-                                case .tireLow: sampleMsg = "타이어 공기압이 낮습니다. 점검해 주세요."
-                                default: sampleMsg = "\(r.name) 조건이 감지되었습니다."
-                                }
-                            }
-                            model.voice.say(sampleMsg, key: "rule.preview.\(r.id)", category: "voiceAutomations", priority: 3, ttl: 10, manual: true)
+                            model.voice.preview(AutomationPolicy.previewText(for: r, hour: Calendar.current.component(.hour, from: Date())))
                         } label: {
                             Image(systemName: "speaker.wave.2.fill")
                                 .font(.system(size: 13, weight: .semibold))
@@ -159,12 +144,10 @@ struct AutomationRuleEditor: View {
                     TextField("비워두면 기본 안내", text: $rule.message, axis: .vertical).lineLimit(3...6)
                     Caption("변수: {인사} · {배터리} · {목적지}. 알 수 없는 값은 미확인으로 안내함.")
                     VoicePreviewControls(previewTitle: "음성만 미리 듣기", preview: {
-                        let text = rule.message.isEmpty ? "탑승이 확인되었습니다. 안전한 운행 되세요." : rule.message
-                        let sample = text.replacingOccurrences(of: "{인사}", with: AutomationPolicy.greeting(hour: Calendar.current.component(.hour, from: Date()))).replacingOccurrences(of: "{배터리}", with: "미확인").replacingOccurrences(of: "{목적지}", with: "미설정")
-                        model.voice.preview(sample)
+                        model.voice.preview(AutomationPolicy.previewText(for: rule, hour: Calendar.current.component(.hour, from: Date())))
                     }, stop: { model.stopSpeech() })
                     VoiceStatus(voice: model.voice)
-                    Caption("미리 듣기는 차량 명령을 보내지 않음.")
+                    Caption("예시 데이터로 음성만 재생 · 차량 명령 없음.")
                 }
                 Section("시간·반복") {
                     Toggle("시간대 제한", isOn: $rule.hoursEnabled)

@@ -9,6 +9,28 @@ enum FleetAuthPolicy {
         return !clean.isEmpty && storedAccess == clean
     }
 
+    static func apiFailure(status: Int, data: Data, stage: String, secrets: [String] = []) -> NSError {
+        let help: String
+        switch status {
+        case 401: help = "인증 만료 또는 권한 취소 · 새 로그인 필요"
+        case 402: help = "Fleet API 결제 설정 확인 필요"
+        case 403: help = "앱 권한 또는 차량 명령 키 등록 확인 필요"
+        case 408: help = "차량 응답 없음 · 절전 또는 통신 상태 확인 필요"
+        case 412: help = "요청 사전 조건 미충족 · 현재 리전의 개발자 앱(Partner Account) 등록 확인 필요"
+        case 421: help = "계정 리전과 선택 서버 불일치"
+        case 429: help = "호출 제한 · 잠시 후 다시 시도 필요"
+        default: help = "Fleet 서버 응답 확인 필요"
+        }
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        var detail = ["error", "error_description"].compactMap { body[$0] as? String }.filter { !$0.isEmpty }.joined(separator: " · ")
+        for secret in secrets where !secret.isEmpty { detail = detail.replacingOccurrences(of: secret, with: "[비공개]") }
+        for pattern in [#"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#, #"(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}"#, #"\b[A-HJ-NPR-Z0-9]{17}\b"#] {
+            detail = detail.replacingOccurrences(of: pattern, with: "[비공개]", options: .regularExpression)
+        }
+        detail = String(detail.prefix(400))
+        return NSError(domain: "TeslaFleet", code: status, userInfo: [NSLocalizedDescriptionKey: "\(stage) HTTP \(status): \(help)\(detail.isEmpty ? "" : "\n" + detail)"])
+    }
+
     // Used only to schedule refresh. Server validation remains authoritative.
     static func needsRefresh(_ token: String, now: Date = Date()) -> Bool {
         let parts = token.split(separator: ".")

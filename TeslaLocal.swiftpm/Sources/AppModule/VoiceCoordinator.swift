@@ -179,9 +179,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         if !item.manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: Date()), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
 
         let tc = TypecastClient.shared
-        guard tc.isEnabled && tc.hasKey else {
-            notice = "타입캐스트 API Key를 등록해 주세요."
-            playbackState = "API Key 필요"
+        guard tc.isEnabled else {
+            notice = "타입캐스트 AI 음성을 켜 주세요."
+            playbackState = "타입캐스트 꺼짐"
             activeTicket = nil
             navigationSpeaking = false
             activePriority = 0
@@ -205,9 +205,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private func playTypecast(_ item: VoiceItem, voiceId: String? = nil) -> Bool {
         let tc = TypecastClient.shared
-        guard tc.isEnabled && tc.hasKey else {
-            notice = "타입캐스트 API Key를 등록해 주세요."
-            playbackState = "API Key 필요"
+        guard tc.isEnabled else {
+            notice = "타입캐스트 AI 음성을 켜 주세요."
+            playbackState = "타입캐스트 꺼짐"
             activeTicket = nil
             navigationSpeaking = false
             activePriority = 0

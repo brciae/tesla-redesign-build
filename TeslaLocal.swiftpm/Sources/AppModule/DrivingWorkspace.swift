@@ -19,6 +19,7 @@ struct DrivingWorkspace: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         topBar(compact: isLandscape)
                     }
+                    .frame(height: isLandscape ? 42 : 48)
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
@@ -161,13 +162,14 @@ struct DrivingWorkspace: View {
                     .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
             }
 
-            Button { settings = true } label: {
+            ScreenBriefingControls(screen: "운전 대시보드", compact: true)
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: compact ? 14 : 16))
                     .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
             }
             .accessibilityLabel("운전 화면 설정")
         }
+        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, compact ? 10 : 8)
         .padding(.vertical, compact ? 4 : 0)
         .background(compact ? AnyView(Capsule().fill(.ultraThinMaterial).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.8))) : AnyView(EmptyView()))

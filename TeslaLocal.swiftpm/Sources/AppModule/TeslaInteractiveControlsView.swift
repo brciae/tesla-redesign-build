@@ -719,6 +719,7 @@ struct TeslaFleetTokenSheet: View {
     @State private var isLoading = false
     @State private var message: String? = nil
     @State private var showTokenGuide = false
+    @State private var isRegisteringPartner = false
 
     var body: some View {
         NavigationStack {
@@ -925,6 +926,29 @@ struct TeslaFleetTokenSheet: View {
                     Text("※ 한국·아시아(중국 제외)는 공식 NA 서버를 사용합니다. 차량 생산지나 VIN으로 리전을 변경하지 않습니다.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("차량 조회 HTTP 412 · 개발자 앱 등록") {
+                    Text("계정 로그인과 개발자 앱 등록은 별도입니다. 위에 입력한 개발자 정보와 리다이렉트 도메인을 사용해 현재 Fleet 리전에 앱을 등록합니다. 도메인의 공개 키가 먼저 게시되어 있어야 합니다.")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(isRegisteringPartner ? "등록 처리 중…" : "현재 리전에 개발자 앱 등록") {
+                        isRegisteringPartner = true
+                        message = "개발자 앱 등록 중…"
+                        fleet.saveClientId(clientIdText)
+                        fleet.saveClientSecret(clientSecretText)
+                        fleet.saveRedirectUri(redirectUriText)
+                        Task { @MainActor in
+                            defer { isRegisteringPartner = false }
+                            do {
+                                try await fleet.registerPartnerAccount()
+                                await fleet.refreshVehicleSnapshot(force: true)
+                                message = fleet.vehicleReadError.map { "앱 등록 응답 수신 · " + $0 } ?? "앱 등록 응답 수신 · " + fleet.vehicleDisplayStatus
+                            } catch { message = error.localizedDescription }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isRegisteringPartner || isExchanging || isLoading)
                 }
 
                 // MARK: - Manual Token Input Section (Secondary / Fallback)

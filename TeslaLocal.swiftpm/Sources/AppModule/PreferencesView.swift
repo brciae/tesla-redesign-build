@@ -29,7 +29,7 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
-            Section("하단 메뉴 표시") {
+            Section { ScreenBriefingControls(screen: "표시·음성 설정") }
                 HStack {
                     Text("배경 불투명도")
                     Spacer()
@@ -296,6 +296,7 @@ struct TypecastSettingsSection: View {
                     .textSelection(.enabled)
             }
         }
+        .buttonStyle(.borderless)
     }
 
     private var presetsSection: some View {
@@ -359,7 +360,7 @@ struct TypecastSettingsSection: View {
     }
 
     private var auditionSection: some View {
-        HStack {
+        VStack(alignment: .leading, spacing: 12) {
             Button {
                 typecast.testSpeech()
             } label: {
@@ -367,9 +368,8 @@ struct TypecastSettingsSection: View {
                     .font(.footnote.weight(.semibold))
             }
             .buttonStyle(.borderedProminent)
+            .tint(.blue)
             .disabled(typecast.isSynthesizing || !typecast.hasKey)
-
-            Spacer()
 
             if typecast.cacheFileCount > 0 {
                 VStack(alignment: .trailing, spacing: 2) {

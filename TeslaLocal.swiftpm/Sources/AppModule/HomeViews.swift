@@ -244,20 +244,7 @@ struct HomeView: View {
 
             // Briefing button
             Spacer(minLength: 8)
-            NavigationLink(value: Page.briefing) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle()
-                            .fill(Color(white: 0.14).opacity(0.8))
-                            .background(.ultraThinMaterial, in: Circle())
-                    )
-                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
-            }
-            .buttonStyle(MotionButtonStyle())
-            .accessibilityLabel("오늘의 브리핑")
+            ScreenBriefingControls(screen: "홈", compact: true)
 
             // Settings button
             NavigationLink(value: Page.preferences) {

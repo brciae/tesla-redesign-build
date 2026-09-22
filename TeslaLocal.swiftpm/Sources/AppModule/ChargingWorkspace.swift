@@ -50,7 +50,7 @@ struct ChargingWorkspace: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    // Top Header Bar
+                    ScreenBriefingControls(screen: "충전").padding(.horizontal, 20)
                     headerBar(soc: soc, isCharging: isCharging, remainingText: remainingText)
                         .padding(.horizontal, 20)
                         .padding(.top, 10)
