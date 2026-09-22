@@ -9,6 +9,9 @@ import Foundation
         }
         precondition(SpeechText.prepare("MC 빌딩으로 안내를 시작합니다.") == "MC 빌딩으로 안내를 시작합니다.")
         precondition(SpeechText.prepare("온도22°C로 설정") == "온도섭씨 이십이 도로 설정")
+        for (input, expected) in ["3.0m": "삼 미터", "3.00 미터": "삼 미터", "3.50km": "삼 점 오 킬로미터", "0.05m": "영 점 영 오 미터", "22.0°C": "섭씨 이십이 도", "80.0%": "팔십 퍼센트", "2.0kWh": "이 킬로와트시", "3.0 버전": "3.0 버전"] {
+            precondition(SpeechText.prepare(input) == expected, "Speech decimal: \(input)")
+        }
         let phrases = ["climateOn": "공조를 시작합니다.", "climateOff": "공조를 끕니다.", "chargeStart": "충전을 시작합니다.", "chargeStop": "충전을 중지합니다.", "portOpen": "충전 포트를 엽니다.", "portClose": "충전 포트를 닫습니다.", "lock": "차량 문을 잠급니다.", "unlock": "차량 문 잠금을 해제합니다.", "trunkMove": "트렁크를 작동합니다.", "trunkClose": "트렁크를 닫습니다.", "frunkOpen": "프렁크를 엽니다."]
         for (action, text) in phrases { precondition(ControlVoice.message(action: action, result: .accepted) == text) }
         precondition(ControlVoice.message(action: "temperature", value: 22.5, units: VehicleUnits(), result: .accepted) == "실내 온도를 22.5도로 설정합니다.")

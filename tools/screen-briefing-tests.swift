@@ -25,6 +25,7 @@ func dateText(_ value: Double?) -> String { value == nil ? "미확인" : "기록
 @main struct ScreenBriefingTests {
     static func main() {
         let m = AppModel()
+        precondition(BriefingScope.home.text(["주차 중.", "주차 중.", ""]) == "주차 중.")
         m.home = ["charge": ["mode": "recent", "soc": 67, "chargerKW": 7, "limit": 80], "climate": ["mode": "recent", "insideC": 23, "outsideC": 9], "location": ["hasCoordinates": true, "latitude": 37.5, "longitude": 127.1]]
         m.groups = ["drive": ["speedKmh": 42, "destination": "DESTINATION_SENTINEL"], "closures": ["locked": true]]
         m.output = ["fresh": ["drive": true, "closures": true], "briefing": "DAILY_SENTINEL", "energyPeriods": ["7": ["trips": [["distanceKm": 12.5]]], "30": ["trips": [["distanceKm": 100], ["distanceKm": 200]]]], "battery": ["7": ["distanceKm": 12.5], "30": ["distanceKm": 300]], "healthIndex": ["initial": true]]
