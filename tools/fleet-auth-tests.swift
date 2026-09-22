@@ -12,6 +12,12 @@ import Foundation
         precondition(FleetAuthPolicy.preservesRefreshToken(storedAccess: "same-token", incomingAccess: " same-token\n"))
         precondition(!FleetAuthPolicy.preservesRefreshToken(storedAccess: "old-token", incomingAccess: "another-account-token"))
         precondition(!FleetAuthPolicy.preservesRefreshToken(storedAccess: nil, incomingAccess: "new-token"))
+        let registrationError = FleetAuthPolicy.apiFailure(status: 412, data: Data(#"{"error":"Account 00000000-0000-0000-0000-000000000000 must be registered in the current region","error_description":"secret-token"}"#.utf8), stage: "차량 조회", secrets: ["secret-token"])
+        precondition(registrationError.code == 412)
+        precondition(registrationError.localizedDescription.contains("Partner Account"))
+        precondition(registrationError.localizedDescription.contains("must be registered"))
+        precondition(!registrationError.localizedDescription.contains("secret-token"))
+        precondition(!registrationError.localizedDescription.contains("00000000-0000-0000-0000-000000000000"))
         let redirect = "https://example.com/callback"
         let code = try FleetAuthPolicy.callbackCode("https://example.com/callback/?state=fresh&code=a%2Bb%26c%3Dd", redirect: redirect, state: "fresh")
         precondition(code == "a+b&c=d")
