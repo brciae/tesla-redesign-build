@@ -50,29 +50,24 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     var activeApiKey: String {
-        let valid = validApiKeys
-        guard !valid.isEmpty else { return "" }
-        let idx = min(max(0, activeKeyIndex), valid.count - 1)
-        return valid[idx]
+        guard apiKeys.indices.contains(activeKeyIndex) else { return "" }
+        return apiKeys[activeKeyIndex].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func addAccount() {
-        apiKeys.append("")
-    }
+    func addAccount() { apiKeys.append("") }
 
     func removeAccount(at index: Int) {
         guard apiKeys.indices.contains(index), apiKeys.count > 1 else { return }
         apiKeys.remove(at: index)
-        if activeKeyIndex >= apiKeys.count {
-            activeKeyIndex = max(0, apiKeys.count - 1)
-        }
+        if index < activeKeyIndex { activeKeyIndex -= 1 }
+        else if index == activeKeyIndex { activeKeyIndex = -1 }
     }
 
     func switchToNextKey() -> Bool {
-        let valid = validApiKeys
-        guard valid.count > 1 else { return false }
-        activeKeyIndex = (activeKeyIndex + 1) % valid.count
-        lastStatus = "다음 API 계정(\(activeKeyIndex + 1)/\(valid.count))으로 수동 전환됨"
+        let indices = apiKeys.indices.filter { !apiKeys[$0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !indices.isEmpty else { return false }
+        activeKeyIndex = indices.first(where: { $0 > activeKeyIndex }) ?? indices[0]
+        lastStatus = "API 키 \(activeKeyIndex + 1)번으로 수동 전환됨"
         return true
     }
 
@@ -348,8 +343,9 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             return cached
         }
 
-        // 2. Online Synthesis with Multi-Account Sequential Rollover (최대 5개 계정 순차 소진)
-        let keysToTry = validApiKeys
+        // 2. Synthesize using exactly the manually selected key.
+        let selectedKey = activeApiKey
+        let keysToTry = selectedKey.isEmpty ? [] : [selectedKey]
         guard !keysToTry.isEmpty else {
             throw NSError(domain: "Typecast", code: 401, userInfo: [NSLocalizedDescriptionKey: "타입캐스트 API Key가 등록되지 않았습니다."])
         }
@@ -361,14 +357,13 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw NSError(domain: "Typecast", code: 500, userInfo: [NSLocalizedDescriptionKey: "API URL 생성 실패"])
         }
 
-        let startIdx = min(max(0, activeKeyIndex), keysToTry.count - 1)
+        let selectedIndex = activeKeyIndex
         var failures: [String] = []
         var lastFailure: NSError?
 
-        // Try from current active account to subsequent accounts sequentially
-        for offset in 0..<keysToTry.count {
-            let currentTryIdx = (startIdx + offset) % keysToTry.count
-            let key = keysToTry[currentTryIdx]
+        // This list contains only the selected key. No fallback credentials.
+        for key in keysToTry {
+            let currentTryIdx = selectedIndex
 
             do {
                 try Task.checkCancellation()
@@ -402,13 +397,6 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     guard data.count >= 12, String(data: data.prefix(4), encoding: .ascii) == "RIFF",
                           String(data: data[8..<12], encoding: .ascii) == "WAVE" else {
                         throw NSError(domain: "Typecast", code: 502, userInfo: [NSLocalizedDescriptionKey: "유효한 WAV 오디오 응답이 아님"])
-                    }
-                    // Success! If we shifted to a new key, update activeKeyIndex
-                    if self.activeKeyIndex != currentTryIdx {
-                        await MainActor.run {
-                            self.activeKeyIndex = currentTryIdx
-                            self.lastStatus = "계정 \(currentTryIdx + 1)번으로 자동 전환 및 정상 합성 완료"
-                        }
                     }
                     guard let savedURL = saveToCache(data: data, for: cleanText, voiceId: resolvedVoice, alias: voiceInput) else {
                         throw NSError(domain: "Typecast", code: 500, userInfo: [NSLocalizedDescriptionKey: "오디오 캐시 저장 실패"])

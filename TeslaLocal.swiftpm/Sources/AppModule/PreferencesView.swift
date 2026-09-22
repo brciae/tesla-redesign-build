@@ -210,12 +210,12 @@ struct TypecastSettingsSection: View {
                 Text("타입캐스트 API 키")
                     .font(.caption.weight(.semibold))
                 Spacer()
-                if typecast.validApiKeys.count > 1 {
+                if !typecast.validApiKeys.isEmpty {
                     Button {
                         _ = typecast.switchToNextKey()
                         model.voice.say("\(typecast.activeKeyIndex + 1)번 계정으로 전환했습니다.", category: "voiceControl")
                     } label: {
-                        Label("계정 전환 (\(typecast.activeKeyIndex + 1)/\(typecast.validApiKeys.count))", systemImage: "arrow.triangle.2.circlepath")
+                        Label("사용할 API 키 선택", systemImage: "arrow.triangle.2.circlepath")
                             .font(.caption2.weight(.bold))
                     }
                     .buttonStyle(.bordered)
@@ -247,7 +247,7 @@ struct TypecastSettingsSection: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
 
-                        if typecast.activeKeyIndex == idx && typecast.validApiKeys.indices.contains(idx) {
+                        if typecast.activeKeyIndex == idx && !typecast.activeApiKey.isEmpty {
                             Text("활성")
                                 .font(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 6)
