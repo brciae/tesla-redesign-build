@@ -52,8 +52,10 @@ extension AppModel {
             details = [battery, measurement(charge, key: "chargerKW", label: "충전 전력", unit: "킬로와트"), measurement(charge, key: "limit", label: "충전 한도", unit: "퍼센트")]
         case "주행", "운행", "운전 대시보드":
             details = [battery]
-            if fresh.flag("drive"), let speed = drive.number("speedKmh"), speed.isFinite {
-                details.append("차량 수신 속도는 시속 \(Int(speed.rounded()))킬로미터입니다.")
+            if fresh.flag("drive") {
+                if let speed = drive.number("speedKmh"), speed.isFinite {
+                    details.append("차량 수신 속도는 시속 \(Int(speed.rounded()))킬로미터입니다.")
+                } else { details.append("차량 수신 속도는 미확인입니다.") }
                 let destination = drive.string("destination")
                 details.append(destination.isEmpty ? "차량 내비 목적지는 미설정입니다." : "차량 내비 목적지는 \(destination)입니다.")
             } else { details.append("차량 속도와 내비 목적지는 최신 수신값이 없습니다.") }
