@@ -8,6 +8,10 @@ import Foundation
         precondition(FleetAuthPolicy.needsRefresh("header.\(payload).signature", now: Date(timeIntervalSince1970: 950)))
         precondition(!FleetAuthPolicy.needsRefresh("header.\(payload).signature", now: Date(timeIntervalSince1970: 900)))
         precondition(!FleetAuthPolicy.needsRefresh("opaque-token"))
+        // Rechecking the existing OAuth token must retain its renewal credentials.
+        precondition(FleetAuthPolicy.preservesRefreshToken(storedAccess: "same-token", incomingAccess: " same-token\n"))
+        precondition(!FleetAuthPolicy.preservesRefreshToken(storedAccess: "old-token", incomingAccess: "another-account-token"))
+        precondition(!FleetAuthPolicy.preservesRefreshToken(storedAccess: nil, incomingAccess: "new-token"))
         let redirect = "https://example.com/callback"
         let code = try FleetAuthPolicy.callbackCode("https://example.com/callback/?state=fresh&code=a%2Bb%26c%3Dd", redirect: redirect, state: "fresh")
         precondition(code == "a+b&c=d")
