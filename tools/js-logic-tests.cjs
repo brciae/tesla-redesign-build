@@ -39,6 +39,15 @@ assert(parkedGate.observe(ev(37.5,16000),true,false).type==='wait','manual route
 assert(parkedGate.observe(ev(37.6,17000),true,false).type==='start','new destination can start after manual stop');
 assert(C.embeddedDestination({at:now,receivedAt:now,destination:'',destinationLat:37.5,destinationLng:127,arrivalMinutes:5},now).type==='wait','empty name with retained active route must not clear');
 console.log('PASS: parked route termination, repeated receipts, partial route protection');
+const switched = new C.EmbeddedRouteGate();
+switched.observe(ev(37.5, 20000), true, false);
+assert(switched.observe(ev(37.6, 10000), true, true).type === 'wait', 'old transport sample cannot restart another destination');
+assert(switched.observe({...ev(37.6, 10000), receivedAt:30000}, true, true).type === 'wait', 'new receipt cannot revive older source');
+assert(switched.observe(ev(37.6, 30000), true, true).type === 'start', 'genuinely newer destination still starts');
+const oldRoute={at:now-840000,receivedAt:now,destination:'A',destinationLat:37.5,destinationLng:127};
+assert(C.embeddedDestination(oldRoute,now).type==='wait','14-minute source cannot start navigation');
+assert(C.navigationEvent(oldRoute,now,null,'app').type==='wait','external navigation also rejects old source');
+assert(C.embeddedDestination({...oldRoute,at:now},now).type==='route','fresh source accepted');
 
 // v35: a receipt photo must fill the whole charge form, not just kWh and cost.
 const gs = C.parseReceipt(['GS칼텍스 강남충전소', '2026.09.14 14:23', '충전량 32.5 kWh', '단가 347원/kWh', '결제금액 11,278원', '시작 45% → 80%', '충전시간 42분'].join('\n'));
