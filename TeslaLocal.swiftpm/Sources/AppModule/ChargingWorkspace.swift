@@ -20,25 +20,26 @@ struct ChargingWorkspace: View {
     var body: some View {
         let p = homePresentation(model, link)
         let c = p.object("charge")
-        let soc = c.number("soc") ?? 56.0
-        let chargerKW = c.number("chargerKW") ?? 6.0
-        let minutesToLimit = c.number("minutesToLimit") ?? 190
-        let addedKWh = c.number("addedKWh") ?? 12.0
-        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let soc = c.number("soc")
+        let chargerKW = c.number("chargerKW")
+        let minutesToLimit = c.number("minutesToLimit")
+        let addedKWh = c.number("addedKWh")
+        let isCharging = (model.demo || c.string("mode") == "recent") && ((chargerKW ?? 0) > 0.5 || c.flag("charging"))
         let isPlugged = isCharging || c.flag("plugged")
-        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 0
+        let voltage = c.number("chargerVoltage").map { Int($0.rounded()) }
 
-        let hours = Int(minutesToLimit) / 60
-        let mins = Int(minutesToLimit) % 60
+        let hours = Int(minutesToLimit ?? 0) / 60
+        let mins = Int(minutesToLimit ?? 0) % 60
         let remainingText: String = {
             if isCharging {
+                guard minutesToLimit != nil else { return "충전 중 · 남은 시간 미수신" }
                 if hours > 0 {
                     return "충전 한도까지 \(hours)시간 \(mins)분 남음"
                 } else {
                     return "충전 한도까지 \(mins)분 남음"
                 }
             } else {
-                return "충전 대기 중"
+                return c.string("mode") == "recent" ? "충전 대기 중" : "충전 상태 미확인"
             }
         }()
 
@@ -57,8 +58,6 @@ struct ChargingWorkspace: View {
                     // 3D Vehicle Charging View with plugged-in cable & flowing green neon pulses
                     ZStack(alignment: .bottom) {
                         Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
-                            .frame(height: 260)
-                            .clipped()
 
                         // Soft ground shadow & ambient reflection (only when charging)
                         if isCharging {
@@ -162,7 +161,7 @@ struct ChargingWorkspace: View {
     }
 
     // MARK: - Header
-    private func headerBar(soc: Double, isCharging: Bool, remainingText: String) -> some View {
+    private func headerBar(soc: Double?, isCharging: Bool, remainingText: String) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -183,12 +182,12 @@ struct ChargingWorkspace: View {
                                 .frame(width: 24, height: 12)
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(isCharging ? Color(red: 0.0, green: 0.9, blue: 0.45) : Color.white)
-                                .frame(width: max(2, 21 * CGFloat(soc / 100.0)), height: 8)
+                                .frame(width: max(0, 21 * CGFloat((soc ?? 0) / 100.0)), height: 8)
                                 .padding(.leading, 1.5)
                         }
                     }
 
-                    Text("\(Int(round(soc)))%")
+                    Text(soc.map { "\(Int($0.rounded()))%" } ?? "—%")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(isCharging ? Color(red: 0.0, green: 0.9, blue: 0.45) : .white)
 
@@ -261,10 +260,10 @@ struct ChargingWorkspace: View {
 
     // MARK: - Charging Control Card
     private func chargingControlCard(
-        soc: Double,
-        chargerKW: Double,
-        addedKWh: Double,
-        voltage: Int,
+        soc: Double?,
+        chargerKW: Double?,
+        addedKWh: Double?,
+        voltage: Int?,
         isCharging: Bool
     ) -> some View {
         VStack(spacing: 0) {
@@ -275,7 +274,7 @@ struct ChargingWorkspace: View {
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
 
-                    Text("\(Int(round(chargerKW))) kW · +\(String(format: "%.1f", addedKWh)) kWh · \(currentAmps)/\(maxAmps)A · \(voltage)V")
+                    Text("\(chargerKW.map { String(format: "%.1f", $0) } ?? "—") kW · +\(addedKWh.map { String(format: "%.1f", $0) } ?? "—") kWh · \(voltage.map(String.init) ?? "—") V")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.6))
                 }
@@ -284,7 +283,7 @@ struct ChargingWorkspace: View {
                 GeometryReader { geo in
                     let w = geo.size.width
                     let targetFrac = CGFloat(targetLimit / 100.0)
-                    let socFrac = CGFloat(soc / 100.0)
+                    let socFrac = CGFloat((soc ?? 0) / 100.0)
 
                     ZStack(alignment: .leading) {
                         // Background full track
@@ -300,7 +299,7 @@ struct ChargingWorkspace: View {
                         // Active Glowing Green Progress
                         Capsule()
                             .fill(Color(red: 0.0, green: 0.9, blue: 0.45))
-                            .frame(width: max(7, w * min(socFrac, targetFrac)), height: 7)
+                            .frame(width: max(0, w * min(socFrac, targetFrac)), height: 7)
                             .shadow(color: Color(red: 0.0, green: 0.9, blue: 0.45).opacity(0.6), radius: 4, x: 0, y: 0)
 
                         // Draggable Limit Knob
@@ -421,7 +420,7 @@ struct ChargingWorkspace: View {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     link.askControl("portOpen", title: "충전 포트 잠금 해제")
-                    model.voice.say("충전 포트를 잠금 해제했습니다.", key: "charging.port", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                    model.voice.say("충전 포트 잠금 해제를 요청했습니다.", key: "charging.port", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                 } label: {
                     Text("충전 포트 잠금 해제")
                         .font(.system(size: 14, weight: .medium))

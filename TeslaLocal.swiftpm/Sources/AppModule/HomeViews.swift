@@ -199,7 +199,7 @@ struct HomeView: View {
     }
 
     private func headerView(p: Object, c: Object) -> some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             // Vehicle profile pill
             NavigationLink(value: Page.connection) {
                 HStack(spacing: 8) {
@@ -215,7 +215,7 @@ struct HomeView: View {
             .buttonStyle(MotionButtonStyle())
             .accessibilityLabel("차량 프로필 및 연결 설정")
 
-            Spacer()
+            HStack(spacing: 8) {
 
             // Live Connection Status Badge
             NavigationLink(value: Page.connection) {
@@ -243,6 +243,7 @@ struct HomeView: View {
             .buttonStyle(MotionButtonStyle())
 
             // Briefing button
+            Spacer(minLength: 8)
             NavigationLink(value: Page.briefing) {
                 Image(systemName: "waveform")
                     .font(.system(size: 15, weight: .semibold))
@@ -273,6 +274,7 @@ struct HomeView: View {
             }
             .buttonStyle(MotionButtonStyle())
             .accessibilityLabel("설정")
+            }
         }
     }
 
@@ -827,6 +829,7 @@ struct PowerFlowGraphView: View {
 }
 
 private struct TeslaOfficialChargingCardView: View {
+    @EnvironmentObject private var model: AppModel
     let c: Object
     @ObservedObject var link: VehicleLink
     @State private var targetLimit: Double = 80
@@ -838,12 +841,12 @@ private struct TeslaOfficialChargingCardView: View {
     @State private var isRightPressed = false
 
     var body: some View {
-        let soc = Int(round(c.number("soc") ?? 56))
-        let rangeKm = Int(round(c.number("rangeKm") ?? 296))
+        let soc = Int(round(c.number("soc") ?? 0))
+        let rangeKm = c.number("rangeKm").map { String(Int($0.rounded())) } ?? "—"
         let chargerKW = c.number("chargerKW") ?? 0.0
         let addedKWh = c.number("addedKWh") ?? 0.0
-        let isCharging = c.flag("charging") || chargerKW > 0.5
-        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 0
+        let isCharging = (model.demo || c.string("mode") == "recent") && (c.flag("charging") || chargerKW > 0.5)
+        let voltage = c.number("chargerVoltage").map { String(Int($0.rounded())) } ?? "—"
 
         VStack(spacing: 0) {
             // Main Card Body
@@ -851,7 +854,7 @@ private struct TeslaOfficialChargingCardView: View {
                 // Readout Header: SOC % & Range km + Live Status Badge
                 HStack(alignment: .firstTextBaseline) {
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text("\(soc)")
+                        Text(c.number("soc") == nil ? "—" : "\(soc)")
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("%")
@@ -886,7 +889,7 @@ private struct TeslaOfficialChargingCardView: View {
                             Circle()
                                 .fill(Color(red: 0.35, green: 0.85, blue: 0.45))
                                 .frame(width: 7, height: 7)
-                            Text("충전 대기")
+                            Text(c.string("mode") == "recent" ? "충전 대기" : "상태 미확인")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Color.white.opacity(0.8))
                         }
@@ -924,7 +927,7 @@ private struct TeslaOfficialChargingCardView: View {
                                         endPoint: .trailing
                                     )
                                 )
-                                .frame(width: max(8, w * min(socFrac, targetFrac)), height: 8)
+                                .frame(width: max(0, w * min(socFrac, targetFrac)), height: 8)
                                 .shadow(color: Color(red: 0.22, green: 0.88, blue: 0.55).opacity(0.4), radius: 3, x: 0, y: 0)
 
                             // Target Limit Marker Line / Thumb
@@ -960,7 +963,7 @@ private struct TeslaOfficialChargingCardView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.85))
                         Spacer()
-                        Text(isCharging ? "충전기 출력 \(Int(round(chargerKW))) kW · +\(Int(round(addedKWh))) kWh" : "충전 대기 상태")
+                        Text(isCharging ? "충전기 출력 \(Int(round(chargerKW))) kW · +\(c.number("addedKWh").map { String(Int($0.rounded())) } ?? "—") kWh" : (c.string("mode") == "recent" ? "충전 대기 상태" : "충전 상태 미확인"))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
@@ -1202,7 +1205,7 @@ struct MenuTabRootView: View {
 
                     GlassMenuCard {
                         glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 AI 음성 선택 · 다중 계정 풀 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
+                        glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 음성 · API 키 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
                     }
                 }
             }
@@ -1212,8 +1215,8 @@ struct MenuTabRootView: View {
     private var vehicleStatusHeader: some View {
         let vin = model.settings.string("vin")
         let cleanVin = vin.isEmpty ? "VIN 미등록" : vin
-        let isConnected = link.authentic || model.fleet.isAuthenticated
-        let connText = link.authentic ? "차량 BLE 정상 연결" : (model.fleet.isAuthenticated ? "Tesla Fleet API 연결됨" : "차량 연결 대기 중")
+        let isConnected = link.authentic || (model.fleet.vehicleSnapshot?.isRecent() == true && model.fleet.vehicleReadError == nil)
+        let connText = link.authentic ? "차량 BLE 정상 연결" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "차량 연결 대기 중")
         let connColor = isConnected ? Color.green : Color.orange
 
         return HStack(spacing: 14) {

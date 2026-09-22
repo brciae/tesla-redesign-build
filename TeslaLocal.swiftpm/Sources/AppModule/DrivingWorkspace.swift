@@ -16,8 +16,8 @@ struct DrivingWorkspace: View {
             let isLandscape = proxy.size.width > proxy.size.height
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
-                    if !isLandscape {
-                        topBar(compact: false)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        topBar(compact: isLandscape)
                     }
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
@@ -48,10 +48,6 @@ struct DrivingWorkspace: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
                 }
 
-                if isLandscape {
-                    topBar(compact: true)
-                        .padding(.top, 6)
-                }
             }
             .background(navigation.theme.canvas)
         }

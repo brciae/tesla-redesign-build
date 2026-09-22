@@ -99,7 +99,7 @@ struct TeslaInteractiveClimateView: View {
     private var teslaTopHVACBar: some View {
         VStack(spacing: 8) {
             // Row 1: Power, Auto, A/C, Fan Stepper, Recirculate, Bioweapon
-            HStack(spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                 // [1] Power Toggle
                 teslaTileButton(
                     icon: "power",
@@ -472,6 +472,8 @@ struct TeslaInteractiveClimateView: View {
     }
 
     private var teslaInteriorCabinStage: some View {
+        GeometryReader { geometry in
+        let sideInset = max(0, min(135, geometry.size.width / 2 - 40))
         ZStack {
             // Dark Base Stage
             RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -546,7 +548,7 @@ struct TeslaInteractiveClimateView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            .offset(x: -145, y: -90)
+            .offset(x: -sideInset, y: -100)
 
             // Right Side Controls: [8] All Off (전체 끄기)
             Button {
@@ -577,7 +579,7 @@ struct TeslaInteractiveClimateView: View {
                     }
                 }
             } label: {
-                Text("All Off")
+                Text("전체 끄기")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.white.opacity(0.85))
                     .padding(.horizontal, 10)
@@ -586,7 +588,7 @@ struct TeslaInteractiveClimateView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.2), lineWidth: 1))
             }
             .buttonStyle(PlainButtonStyle())
-            .offset(x: 135, y: 70)
+            .offset(x: sideInset, y: -145)
 
             // 1열 운전석 (Driver Seat): Dual Heat ♨️ & Vent 💨 [3, 9]
             teslaSeatControl(
@@ -630,6 +632,8 @@ struct TeslaInteractiveClimateView: View {
             )
             .offset(x: 82, y: 112)
         }
+        .frame(width: geometry.size.width, height: 410)
+        }
         .frame(height: 410)
     }
 
@@ -652,6 +656,10 @@ struct TeslaInteractiveClimateView: View {
             Text(title)
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(Color.white.opacity(0.75))
+                .fixedSize()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color(white: 0.08), in: Capsule())
 
             HStack(spacing: 3) {
                 // Heated Seat Button (♨️ SSS: Red 1-2-3-Off)
@@ -734,6 +742,10 @@ struct TeslaInteractiveClimateView: View {
                 Text(title)
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(Color.white.opacity(0.65))
+                    .fixedSize()
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(white: 0.08), in: Capsule())
 
                 HStack(spacing: 2) {
                     Image(systemName: "flame.fill")

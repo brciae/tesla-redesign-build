@@ -392,7 +392,7 @@ struct TeslaInteractiveControlsView: View {
     // MARK: - Tesla Official-Style Horizontal Quick Action Bar
 
     private var teslaQuickActionBar: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
             teslaQuickButton(
                 icon: isLocked ? "lock.fill" : "lock.open.fill",
                 title: isLocked ? "도어 잠김" : "잠금 해제",

@@ -177,13 +177,19 @@ struct VoiceAdvancedControls: View {
     }
 }
 
-/// Form row explanation placeholder: renders EmptyView to keep settings forms clean.
+/// Keep supporting information available without crowding the default form.
 struct InfoRow: View {
     let title: String
     let text: String
     init(_ title: String, _ text: String) { self.title = title; self.text = text }
     var body: some View {
-        EmptyView()
+        DisclosureGroup(title) {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 

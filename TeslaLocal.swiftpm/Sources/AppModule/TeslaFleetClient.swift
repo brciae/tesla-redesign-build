@@ -324,10 +324,11 @@ final class TeslaFleetClient: ObservableObject {
     }
 
     func saveToken(accessToken: String, refreshToken: String? = nil) {
+        let preserveRefresh = FleetAuthPolicy.preservesRefreshToken(storedAccess: getStoredToken(), incomingAccess: accessToken)
         saveKeychain(key: tokenKey, value: accessToken.trimmingCharacters(in: .whitespacesAndNewlines))
         if let refreshToken {
             saveKeychain(key: refreshKey, value: refreshToken.trimmingCharacters(in: .whitespacesAndNewlines))
-        } else {
+        } else if !preserveRefresh {
             deleteKeychain(key: refreshKey)
             deleteKeychain(key: refreshClientKey)
         }
