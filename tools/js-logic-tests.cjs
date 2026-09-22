@@ -34,6 +34,9 @@ parkedGate.observe({...absent(7000), parked:false},true,true);
 assert(parkedGate.observe(absent(12000),true,true).type==='wait','entering P resets confirmation');
 assert(parkedGate.observe(ev(37.5,15000),true,true).type==='refresh','P alone does not cancel a valid route');
 assert(parkedGate.absence===null,'route restoration resets absence');
+parkedGate.cancel();
+assert(parkedGate.observe(ev(37.5,16000),true,false).type==='wait','manual route stop blocks old destination while freely driving');
+assert(parkedGate.observe(ev(37.6,17000),true,false).type==='start','new destination can start after manual stop');
 assert(C.embeddedDestination({at:now,receivedAt:now,destination:'',destinationLat:37.5,destinationLng:127,arrivalMinutes:5},now).type==='wait','empty name with retained active route must not clear');
 console.log('PASS: parked route termination, repeated receipts, partial route protection');
 

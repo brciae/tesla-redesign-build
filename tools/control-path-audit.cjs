@@ -13,4 +13,10 @@ assert(!/func pause\(\)[^\n]*stopSpeech/.test(read('AppModel')), 'Background ent
 assert(!/func (pause|resignActive)\(\)[^\n]*resetObservation/.test(read('AppModel')));
 assert(read('AutomationCoordinator').includes('UIApplication.shared.applicationState == .active,\n'), 'Background speech must not unlock physical automation');
 assert(read('VehicleCommandRouting').includes('guard !demo'));
+const navigation = read('EmbeddedNavigation');
+assert(navigation.includes('func endGuidance()'));
+assert(navigation.includes('stopNative(keepDisplay: keepDisplay)'));
+assert(navigation.includes('if keepDisplay { startStandbyKakaoMap() }'));
+assert(read('DrivingWorkspace').includes('navigation.endGuidance()'));
+assert(read('AppModel').includes('navigation.onGuidanceEnd = { [weak self] in self?.voice.stop() }'));
 console.log('PASS: control route/error/background source guards (not live vehicle verification)');
