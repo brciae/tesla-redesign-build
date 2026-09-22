@@ -19,6 +19,7 @@ xcodebuild -version
 xcodegen --version
 node tools/embed-js.cjs
 node tools/typecast-only-audit.cjs
+node tools/briefing-coverage.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests
 Xcode/TypecastPolicyTests
@@ -33,6 +34,8 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-poli
 Xcode/NativePolicyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationTransfer.swift tools/automation-policy-tests.swift -o Xcode/AutomationPolicyTests
 Xcode/AutomationPolicyTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests
+Xcode/ScreenBriefingTests
 bash tools/test-interface.sh
 xcodegen generate --spec Xcode/project.json --project Xcode
 xcodebuild -resolvePackageDependencies \
