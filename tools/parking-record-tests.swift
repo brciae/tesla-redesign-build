@@ -29,6 +29,17 @@ import Foundation
         unknown.mobile.mobileLatitude = 1; unknown.mobile.mobileLongitude = 2
         precondition(unknown.effectiveLatitude == nil && unknown.effectiveLongitude == nil)
         precondition(unknown.vehicle.gear == nil && unknown.vehicle.areDoorsClosed == nil)
+        precondition(unknown.vehicle.securityText == "잠금 상태 미수신")
+        precondition(unknown.vehicle.batteryText == "잔량 미수신")
+        unknown.vehicle.isLocked = true
+        precondition(unknown.vehicle.securityText == "잠김 · 도어 상태 미수신")
+        unknown.vehicle.areDoorsClosed = true; unknown.vehicle.isTrunkClosed = true; unknown.vehicle.isFrunkClosed = true
+        precondition(unknown.vehicle.securityText == "잠김 · 도어 닫힘")
+        unknown.vehicle.isTrunkClosed = false
+        precondition(unknown.vehicle.securityText == "도어 또는 트렁크 열림")
+        unknown.vehicle.soc = 60; unknown.vehicle.isCharging = false
+        precondition(unknown.vehicle.batteryText == "60% · 충전 안 함")
+        precondition(updated.briefingLines.joined().contains("지하 2층"))
         let encoded = try JSONEncoder().encode(updated)
         let decoded = try JSONDecoder().decode(SmartParkingRecord.self, from: encoded)
         precondition(decoded == updated)
