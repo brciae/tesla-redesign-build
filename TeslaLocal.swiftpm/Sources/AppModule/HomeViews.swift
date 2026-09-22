@@ -988,7 +988,7 @@ private struct TeslaOfficialChargingCardView: View {
 
                     Spacer()
 
-                    Text("\(currentAmps) / \(maxAmps) A · \(voltage) V")
+                    Text("요청 \(currentAmps) A · \(voltage) V")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
 
@@ -1025,14 +1025,15 @@ private struct TeslaOfficialChargingCardView: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(height: 1)
 
+            Button("선택 전류 적용") { model.requestVehicleControl("chargeAmps", title: "충전 전류 설정", args: ["value": currentAmps]) }.buttonStyle(.bordered)
             // Bottom Action Buttons (충전 제어 | 충전 포트)
             HStack(spacing: 0) {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     if isCharging {
-                        link.askControl("chargeStop", title: "충전 중지")
+                        model.requestVehicleControl("chargeStop", title: "충전 중지")
                     } else {
-                        link.askControl("chargeStart", title: "충전 시작")
+                        model.requestVehicleControl("chargeStart", title: "충전 시작")
                     }
                 } label: {
                     Text(isCharging ? "충전 중지" : "충전 시작")
@@ -1049,7 +1050,7 @@ private struct TeslaOfficialChargingCardView: View {
 
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    link.askControl("portOpen", title: isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
+                    model.requestVehicleControl("portOpen", title: isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
                 } label: {
                     Text(isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
                         .font(.system(size: 14, weight: .medium))

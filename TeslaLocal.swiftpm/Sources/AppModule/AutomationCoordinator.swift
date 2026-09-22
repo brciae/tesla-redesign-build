@@ -88,7 +88,7 @@ final class AutomationCoordinator: ObservableObject {
             vin = UserDefaults.standard.string(forKey: "vin") ?? ""
         }
         var s = AutomationSample(now: now, vehicle: vin)
-        s.active = !demo && (link.authentic || link.controlEnabled || !vin.isEmpty) && UIApplication.shared.applicationState == .active
+        s.active = !demo && link.authentic
         // Do not consume the first boarding event while its enabled HVAC key is still authenticating.
         let needsHVAC = rules.contains { $0.enabled && $0.action != .speech && $0.vehicle == s.vehicle }
         s.boardingReady = !needsHVAC || !link.controlEnabled || link.controlsReady(category: "climate")
@@ -147,6 +147,7 @@ final class AutomationCoordinator: ObservableObject {
             guard effect.rule.action != .speech else { report(effect.id, effect.rule.speech ? "음성 요청 · 음소거·조용시간·만료 적용" : "조건 감지 · 음성 꺼짐"); continue }
             let valid = { [weak self, weak link] in
                 guard let self, let link, !self.blocked, let current = self.sample,
+                      UIApplication.shared.applicationState == .active,
                       current.active, current.boarded, Date().timeIntervalSince1970 <= self.physicalExpiresAt,
                       Date().timeIntervalSince1970 - effect.at <= 8, current.vehicle == effect.rule.vehicle,
                       self.rules.contains(effect.rule), link.authentic else { return false }

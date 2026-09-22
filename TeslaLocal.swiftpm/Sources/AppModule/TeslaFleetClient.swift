@@ -32,6 +32,16 @@ final class TeslaFleetClient: ObservableObject {
     @Published var isAuthenticated = false
     @Published var isFetching = false
     @Published var isSendingCommand = false
+    @Published var commandStatus = "원격 제어 준비 확인 필요"
+    var onCommandFailure: ((String) -> Void)?
+    var commandAllowed: (() -> Bool)?
+    var commandProxy: String { UserDefaults.standard.string(forKey: "fleetCommandProxy") ?? "" }
+    func saveCommandProxy(_ text: String) throws {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty { _ = try FleetCommandPolicy.proxyURL(clean) }
+        UserDefaults.standard.set(clean, forKey: "fleetCommandProxy")
+        commandStatus = clean.isEmpty ? "명령 서명 서버 미설정" : "서명 서버 저장됨 · 차량 가상키 등록 확인 필요"
+    }
     @Published var selectedVin: String = ""
     @Published var selectedRegion: FleetRegion = .apac
     @Published var vehicles: [[String: Any]] = []
@@ -611,40 +621,46 @@ final class TeslaFleetClient: ObservableObject {
     // MARK: - Fleet API: Command Transmission Engine
 
     /// Core helper to dispatch any authenticated command to the Tesla Fleet endpoint with multi-region fallback.
-    func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil) async throws -> Bool {
-        let activeVin = try resolveVin(vin)
-        let token = try await authenticatedToken()
-
-        DispatchQueue.main.async { self.isSendingCommand = true }
-        defer { DispatchQueue.main.async { self.isSendingCommand = false } }
-
-        return try await executeWithRegionFallback { baseURL in
-            let url = URL(string: "\(baseURL)/api/1/vehicles/\(activeVin)/command/\(command)")!
+    @MainActor func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil) async throws -> Bool {
+        do {
+            guard commandAllowed?() == true else { throw FleetCommandPolicy.failure("현재 상태에서는 차량 제어할 수 없습니다. 데모를 종료하고 앱을 열어 확인하세요.") }
+            guard !isSendingCommand else { throw FleetCommandPolicy.failure("앞선 명령의 응답을 기다리는 중입니다.") }
+            isSendingCommand = true
+            defer { isSendingCommand = false }
+            let activeVin = try resolveVin(vin)
+            let base = try FleetCommandPolicy.proxyURL(commandProxy)
+            let token = try await authenticatedToken()
+            guard commandAllowed?() == true, activeVin == (vin ?? selectedVin) else { throw FleetCommandPolicy.failure("차량 또는 앱 상태가 변경되어 전송을 중단했습니다.") }
+            let url = base.appendingPathComponent("api/1/vehicles").appendingPathComponent(activeVin).appendingPathComponent("command").appendingPathComponent(command)
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
+            request.timeoutInterval = 30
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
             if let parameters {
                 request.httpBody = try JSONSerialization.data(withJSONObject: parameters)
             }
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            commandStatus = "원격 명령 전송 중"
+            let session = URLSession(configuration: .ephemeral, delegate: FleetCommandRedirectGuard(), delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
+            let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw LocalError.message("네트워크 응답 오류")
             }
 
             if (200...299).contains(httpResponse.statusCode) {
-                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let res = json?["response"] as? [String: Any]
-                let success = (res?["result"] as? Bool) ?? true
-                if let reason = res?["reason"] as? String, !reason.isEmpty, !success {
-                    throw LocalError.message("차량 명령 처리 불가: \(reason)")
-                }
-                return (success, httpResponse)
+                let success = try FleetCommandPolicy.accepted(data)
+                commandStatus = "차량 명령 승인 응답 수신"
+                await refreshVehicleSnapshot(force: true)
+                return success
             }
             throw FleetAuthPolicy.apiFailure(status: httpResponse.statusCode, data: data, stage: "차량 명령", secrets: [token, activeVin])
+        } catch {
+            commandStatus = error.localizedDescription
+            onCommandFailure?(error.localizedDescription)
+            throw error
         }
     }
 

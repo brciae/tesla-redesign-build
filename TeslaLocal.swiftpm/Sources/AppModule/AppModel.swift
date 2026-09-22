@@ -63,6 +63,11 @@ final class AppModel: ObservableObject {
             }
         }
         refresh()
+        fleet.commandAllowed = { [weak self] in
+            guard let self else { return false }
+            return !self.demo && UIApplication.shared.applicationState == .active && !self.link.controlBusy && !self.link.preparingControl && self.link.confirmation == nil
+        }
+        fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.objectWillChange.send() }
         }
@@ -212,8 +217,8 @@ final class AppModel: ObservableObject {
         voice.say(msg, key: "session.departure.briefing", category: "voiceConnection", priority: 2, ttl: 20, manual: false)
     }
 
-    func pause() { sessionBriefed = false; automations.resetObservation(); link.pauseForBackground(); saveRecordsWhenAvailable(); stopSpeech() }
-    func resignActive() { sessionBriefed = false; automations.resetObservation(); link.resignActive(); navigation.suspendPending() }
+    func pause() { link.pauseForBackground(); saveRecordsWhenAvailable() }
+    func resignActive() { link.resignActive(); navigation.suspendPending() }
     func resume() {
         guard !recoveryLock, !demo, UIApplication.shared.applicationState == .active else { return }
         nextSaveAttempt = .distantPast
