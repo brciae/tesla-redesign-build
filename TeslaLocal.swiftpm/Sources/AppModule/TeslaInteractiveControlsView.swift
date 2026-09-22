@@ -228,7 +228,7 @@ struct TeslaInteractiveControlsView: View {
                 }
                 .offset(x: -78, y: 138)
 
-                // Rear Trunk Hotspot - Bottom Center (Rear trunk lid)
+                // Keep the rear control beside the vehicle, clear of the plate.
                 sleekHotspot(
                     icon: "car.side.rear.open.fill",
                     label: "트렁크",
@@ -240,7 +240,7 @@ struct TeslaInteractiveControlsView: View {
                         fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }
                     )
                 }
-                .offset(x: 0, y: 140)
+                .offset(x: 78, y: 138)
             }
             .frame(height: 420)
 
@@ -379,7 +379,12 @@ struct TeslaInteractiveControlsView: View {
                 Text(label)
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Color.white.opacity(0.9))
+                    .fixedSize()
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(white: 0.08), in: Capsule())
             }
+            .frame(minWidth: 64, minHeight: 64)
         }
         .buttonStyle(MotionButtonStyle())
     }
@@ -1207,4 +1212,3 @@ struct TeslaFleetTokenSheet: View {
         }
     }
 }
-
