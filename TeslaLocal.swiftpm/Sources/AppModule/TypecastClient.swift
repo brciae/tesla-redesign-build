@@ -155,7 +155,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
 
         for item in list {
-            guard let voiceId = (item["voice_id"] ?? item["actor_id"] ?? item["id"]) as? String, !voiceId.isEmpty else {
+            guard let voiceId = (item["voice_id"] ?? item["actor_id"] ?? item["id"]) as? String, TypecastAPIPolicy.isVoiceID(voiceId) else {
                 continue
             }
 
@@ -188,118 +188,53 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 }
             }
             result[voiceId.lowercased()] = voiceId
+            if voiceId.hasPrefix("tc_") { result[String(voiceId.dropFirst(3)).lowercased()] = voiceId }
         }
         return result
     }
 
+    private func fetchVoiceCatalog(apiKey: String) async throws -> [String: String] {
+        let url = URL(string: "https://api.typecast.ai/v3/voices?model=ssfm-v30")!
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
+        request.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard http.statusCode == 200 else {
+            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: validApiKeys)
+        }
+        return parseVoices(from: data)
+    }
+
     func refreshVoiceCatalog() async {
         guard hasKey else { return }
-        let endpoints = [
-            "https://api.typecast.ai/v3/voices",
-            "https://api.typecast.ai/v2/voices",
-            "https://api.typecast.ai/v1/voices"
-        ]
-        for endpoint in endpoints {
-            guard let url = URL(string: endpoint) else { continue }
-            var req = URLRequest(url: url)
-            req.setValue(activeApiKey, forHTTPHeaderField: "X-API-KEY")
-            req.timeoutInterval = 10.0
-
-            if let (data, response) = try? await URLSession.shared.data(for: req),
-               let http = response as? HTTPURLResponse, http.statusCode == 200 {
-                let parsed = parseVoices(from: data)
-                if !parsed.isEmpty {
-                    await MainActor.run {
-                        for (k, v) in parsed {
-                            self.voiceCatalog[k] = v
-                        }
-                        if let encoded = try? JSONEncoder().encode(self.voiceCatalog) {
-                            UserDefaults.standard.set(encoded, forKey: "typecastVoiceCatalog")
-                        }
-                        self.lastStatus = "보이스 카탈로그 동기화 완료 (\(self.voiceCatalog.count)개)"
-                    }
-                    break
-                }
-            }
-        }
-    }
-
-    func queryVoiceRecommendation(name: String) async -> String? {
-        guard hasKey, let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://api.typecast.ai/v1/voices/recommendations?query=\(encoded)&count=1") else { return nil }
-        var req = URLRequest(url: url)
-        req.setValue(activeApiKey, forHTTPHeaderField: "X-API-KEY")
-        req.timeoutInterval = 8.0
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) else { return nil }
-        let items: [[String: Any]]
-        if let arr = json as? [[String: Any]] { items = arr }
-        else if let dict = json as? [String: Any], let arr = (dict["voices"] ?? dict["result"] ?? dict["data"]) as? [[String: Any]] { items = arr }
-        else { items = [] }
-        if let first = items.first, let voiceId = (first["voice_id"] ?? first["actor_id"] ?? first["id"]) as? String, !voiceId.isEmpty {
-            return voiceId
-        }
-        return nil
-    }
-
-    func resolveVoiceId(for input: String) async -> String {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return Self.defaultVoiceId }
-
-        // 1. Explicit Typecast ID format (e.g., tc_..., uc_..., or hex format)
-        if trimmed.hasPrefix("tc_") || trimmed.hasPrefix("uc_") || (trimmed.count >= 20 && !trimmed.contains(" ")) {
-            return trimmed
-        }
-
-        // 2. Check TypecastCatalog (131 Korean Female Young Adult voices)
-        if let char = TypecastCatalog.find(trimmed) {
-            if let cached = voiceCatalog[char.nameKo.lowercased()] ?? voiceCatalog[char.id.lowercased()] {
-                return cached
-            }
-            // Return character's actor_id
-            if char.id.count >= 20 {
-                return char.id
-            }
-        }
-
-        let lower = trimmed.lowercased()
-        let noSpaces = lower.replacingOccurrences(of: " ", with: "")
-
-        // 3. Check local voice catalog
-        if let match = voiceCatalog[lower] ?? voiceCatalog[noSpaces] {
-            return match
-        }
-
-        // 3. Dynamic lookup from recommendations endpoint
-        if let rec = await queryVoiceRecommendation(name: trimmed) {
+        do {
+            let catalog = try await fetchVoiceCatalog(apiKey: activeApiKey)
             await MainActor.run {
-                self.voiceCatalog[lower] = rec
-                self.voiceCatalog[noSpaces] = rec
-                if let encoded = try? JSONEncoder().encode(self.voiceCatalog) {
-                    UserDefaults.standard.set(encoded, forKey: "typecastVoiceCatalog")
-                }
+                self.voiceCatalog = catalog
+                self.lastStatus = "API 보이스 목록 동기화 완료"
             }
-            return rec
+        } catch {
+            await MainActor.run { self.lastStatus = error.localizedDescription }
         }
+    }
 
-        // 4. Fallback: refresh whole catalog from /v3/voices
-        if hasKey {
-            await refreshVoiceCatalog()
-            if let match = voiceCatalog[lower] ?? voiceCatalog[noSpaces] {
-                return match
-            }
-            // Partial match
-            if let partial = voiceCatalog.first(where: { $0.key.contains(noSpaces) || noSpaces.contains($0.key) })?.value {
-                return partial
-            }
-            // First valid tc_ voice
-            if let first = voiceCatalog.values.first(where: { $0.hasPrefix("tc_") || $0.count >= 20 }) {
-                return first
-            }
+    private func resolveVoiceId(for input: String, apiKey: String) async throws -> String {
+        // Fresh account/model-scoped metadata is authoritative. Never guess a prefix,
+        // use a recommendation as an exact match, or silently select another voice.
+        let catalog = try await fetchVoiceCatalog(apiKey: apiKey)
+        var candidates = [input]
+        if let character = TypecastCatalog.find(input) {
+            candidates += [character.id, character.nameKo, character.nameEn]
         }
-
-        return trimmed
+        guard let id = TypecastAPIPolicy.resolve(candidates, in: catalog) else {
+            throw NSError(domain: "Typecast", code: 404, userInfo: [NSLocalizedDescriptionKey:
+                "선택한 음성을 현재 계정의 ssfm-v30 API 목록에서 찾을 수 없음. API 지원 음성 확인 필요"])
+        }
+        await MainActor.run { self.voiceCatalog = catalog }
+        return id
     }
 
     var hasKey: Bool {
@@ -393,10 +328,10 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
 
         let targetVoice = (voiceId ?? selectedVoiceId).trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedVoice = await resolveVoiceId(for: targetVoice.isEmpty ? Self.defaultVoiceId : targetVoice)
+        let voiceInput = targetVoice.isEmpty ? Self.defaultVoiceId : targetVoice
 
         // 1. Instant Cache Hit (0 credits, 0ms latency)
-        if let cached = cachedURL(for: cleanText, voiceId: targetVoice) ?? cachedURL(for: cleanText, voiceId: resolvedVoice) {
+        if let cached = cachedURL(for: cleanText, voiceId: voiceInput) {
             return cached
         }
 
@@ -414,41 +349,47 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
 
         let startIdx = min(max(0, activeKeyIndex), keysToTry.count - 1)
-        var lastErrorMsg = ""
+        var failures: [String] = []
+        var lastFailure: NSError?
 
         // Try from current active account to subsequent accounts sequentially
         for offset in 0..<keysToTry.count {
             let currentTryIdx = (startIdx + offset) % keysToTry.count
             let key = keysToTry[currentTryIdx]
 
-            var request = URLRequest(url: apiURL)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(key, forHTTPHeaderField: "X-API-KEY")
-            request.timeoutInterval = 12.0
-
-            let body: [String: Any] = [
-                "voice_id": resolvedVoice,
-                "text": cleanText,
-                "model": "ssfm-v30",
-                "prompt": [
-                    "emotion_type": "smart"
-                ],
-                "output": [
-                    "audio_format": "wav",
-                    "volume": 100
-                ]
-            ]
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
             do {
+                try Task.checkCancellation()
+                let resolvedVoice = try await resolveVoiceId(for: voiceInput, apiKey: key)
+                var request = URLRequest(url: apiURL)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue(key, forHTTPHeaderField: "X-API-KEY")
+                request.timeoutInterval = 12.0
+
+                let body: [String: Any] = [
+                    "voice_id": resolvedVoice,
+                    "text": cleanText,
+                    "model": "ssfm-v30",
+                    "prompt": [
+                        "emotion_type": "smart"
+                    ],
+                    "output": [
+                        "audio_format": "wav",
+                        "volume": 100
+                    ]
+                ]
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    lastErrorMsg = "서버 응답 없음"
-                    continue
+                    throw URLError(.badServerResponse)
                 }
 
                 if httpResponse.statusCode == 200 {
+                    guard data.count >= 12, String(data: data.prefix(4), encoding: .ascii) == "RIFF",
+                          String(data: data[8..<12], encoding: .ascii) == "WAVE" else {
+                        throw NSError(domain: "Typecast", code: 502, userInfo: [NSLocalizedDescriptionKey: "유효한 WAV 오디오 응답이 아님"])
+                    }
                     // Success! If we shifted to a new key, update activeKeyIndex
                     if self.activeKeyIndex != currentTryIdx {
                         await MainActor.run {
@@ -456,40 +397,28 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                             self.lastStatus = "계정 \(currentTryIdx + 1)번으로 자동 전환 및 정상 합성 완료"
                         }
                     }
-                    guard let savedURL = saveToCache(data: data, for: cleanText, voiceId: resolvedVoice, alias: targetVoice) else {
+                    guard let savedURL = saveToCache(data: data, for: cleanText, voiceId: resolvedVoice, alias: voiceInput) else {
                         throw NSError(domain: "Typecast", code: 500, userInfo: [NSLocalizedDescriptionKey: "오디오 캐시 저장 실패"])
                     }
                     return savedURL
                 }
 
-                // Check for credit exhaustion or rate limit
-                let respStr = String(data: data, encoding: .utf8) ?? ""
-                let isCreditError = httpResponse.statusCode == 402 || httpResponse.statusCode == 429 ||
-                                   respStr.localizedCaseInsensitiveContains("credit") ||
-                                   respStr.localizedCaseInsensitiveContains("quota") ||
-                                   respStr.localizedCaseInsensitiveContains("limit") ||
-                                   respStr.localizedCaseInsensitiveContains("insufficient") ||
-                                   httpResponse.statusCode == 403
-
-                if isCreditError && keysToTry.count > 1 {
-                    await MainActor.run {
-                        self.lastStatus = "계정 \(currentTryIdx + 1)번 크레딧 소진 → 다음 계정(\((currentTryIdx + 1) % keysToTry.count + 1)번)으로 자동 전환 중…"
-                    }
-                    lastErrorMsg = "계정 \(currentTryIdx + 1) 소진"
-                    continue // Try next key in pool!
-                } else {
-                    lastErrorMsg = "HTTP \(httpResponse.statusCode): \(respStr)"
-                }
+                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry)
             } catch {
-                lastErrorMsg = error.localizedDescription
-                continue
+                if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
+                let failure = error as NSError
+                lastFailure = failure
+                failures.append("계정 \(currentTryIdx + 1): \(failure.localizedDescription)")
+                // A rate limit, timeout or invalid request is not evidence of depleted credit.
+                // Do not multiply those requests across every account.
+                if failure.domain != "Typecast" || !TypecastAPIPolicy.canTryNextAccount(failure.code) { break }
             }
         }
 
-        await MainActor.run {
-            self.lastStatus = "타입캐스트 실패: \(lastErrorMsg)"
-        }
-        throw NSError(domain: "Typecast", code: 402, userInfo: [NSLocalizedDescriptionKey: "모든 타입캐스트 계정 크레딧 소진 또는 호출 실패: \(lastErrorMsg)"])
+        let message = failures.joined(separator: "\n")
+        await MainActor.run { self.lastStatus = "타입캐스트 실패: \(message)" }
+        throw NSError(domain: lastFailure?.domain ?? "Typecast", code: lastFailure?.code ?? -1,
+                      userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     // MARK: - Test Preview Playback
