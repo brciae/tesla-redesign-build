@@ -298,7 +298,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             mobile: mobileSnapshot,
             verification: verification
         )
-        record.vehicleID = original?.vehicleID
+        record.vehicleID = original?.vehicleID ?? (selectedVIN.isEmpty ? nil : selectedVIN)
         record.vehicleUpdatedAt = original?.vehicleUpdatedAt
 
         DispatchQueue.main.async {

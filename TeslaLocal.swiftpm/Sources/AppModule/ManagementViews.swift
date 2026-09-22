@@ -12,7 +12,14 @@ struct CareView: View {
     @State private var addMaintenance = false
     @State private var addParking = false
     var body: some View {
-        PageBody(title: "차량 관리", briefing: .care) {
+        PageBody(title: "차량 관리", briefing: .care, briefingText: {
+            let manager = SmartParkingManager.shared
+            var text = model.screenBriefing(.care)
+            if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
+                text += " " + record.briefingLines.joined(separator: " ")
+            }
+            return text
+        }) {
             SmartParkingCard(link: model.link)
             ParkingSection(addParking: $addParking)
             InfoCard {

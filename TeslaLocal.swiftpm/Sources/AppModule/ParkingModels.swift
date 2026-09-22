@@ -50,6 +50,21 @@ struct VehicleParkingSnapshot: Codable, Equatable {
     var vehicleLatitude: Double?
     var vehicleLongitude: Double?
     var positionStatus: String?
+
+    var securityText: String {
+        if isLocked == false { return "차량 미잠금" }
+        if areDoorsClosed == false || isTrunkClosed == false || isFrunkClosed == false { return "도어 또는 트렁크 열림" }
+        if isLocked == true && areDoorsClosed == true && isTrunkClosed == true && isFrunkClosed == true { return "잠김 · 도어 닫힘" }
+        return isLocked == true ? "잠김 · 도어 상태 미수신" : "잠금 상태 미수신"
+    }
+
+    var batteryText: String {
+        guard let soc, soc.isFinite else { return "잔량 미수신" }
+        var text = "\(Int(soc))%"
+        if isCharging == true { text += " · 충전 중" }
+        else if isCharging == false { text += " · 충전 안 함" }
+        return text
+    }
 }
 
 /// Detailed mobile sensor & vision analysis captured by iPhone
@@ -129,6 +144,14 @@ struct SmartParkingRecord: Identifiable, Codable, Equatable {
         var updated = self
         updated.mobile = metadata
         return updated
+    }
+
+    var briefingLines: [String] {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateFormat = "M월 d일 H시 m분"
+        return [displayTitle + ".", formatter.string(from: timestamp) + "에 저장한 위치입니다.",
+                "마지막 수신 차량 상태는 \(vehicle.securityText), \(vehicle.batteryText)입니다."]
     }
 }
 

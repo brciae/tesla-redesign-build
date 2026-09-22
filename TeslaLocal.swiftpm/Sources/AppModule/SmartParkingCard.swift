@@ -21,10 +21,7 @@ struct SmartParkingCard: View {
         }
         if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
             LocalBriefingControls(title: "주차 상태") {
-                var lines = [record.displayTitle + ".", "\(formatTime(record.timestamp)) 위치 기록입니다."]
-                if let warning = record.verification.securityWarning { lines.append(warning) }
-                if let soc = record.vehicle.soc { lines.append("마지막 차량 수신 잔량 \(Int(soc))퍼센트입니다.") }
-                return lines
+                record.briefingLines
             }
             VStack(alignment: .leading, spacing: 14) {
                 // Header: Location Badge, Verification Status & Photo Thumbnail
@@ -136,36 +133,30 @@ struct SmartParkingCard: View {
                     )
 
                     // Tile 3: Battery & Charging Status
-                    let currentSOC = (link.telemetryGroups.object("charge").number("soc")) ?? record.vehicle.soc ?? 0
-                    let startSOC = record.vehicle.soc ?? currentSOC
-                    let delta = currentSOC - startSOC
-                    let isCharging = (link.telemetryGroups.object("charge").number("charging") ?? 0) > 0 || record.vehicle.isCharging == true
-                    let chargerKW = link.telemetryGroups.object("charge").number("chargerKW") ?? record.vehicle.chargerKW ?? 0
+                    let isCharging = record.vehicle.isCharging == true
 
                     tileView(
                         icon: isCharging ? "bolt.car.fill" : "battery.100",
-                        iconColor: isCharging ? .green : (delta < 0 ? .orange : .white.opacity(0.7)),
-                        title: isCharging ? "충전 진행 중" : "배터리 소모량",
-                        value: isCharging ? "\(Int(currentSOC))% (\(Int(chargerKW))kW)" : "\(Int(currentSOC))% (\(String(format: "%+.1f%%p", delta)))",
-                        caption: isCharging ? "목표까지 충전 중" : "대기/센트리 소모"
+                        iconColor: isCharging ? .green : .white.opacity(0.7),
+                        title: "배터리 · 충전",
+                        value: record.vehicle.batteryText,
+                        caption: "마지막 저장 차량 응답"
                     )
 
                     // Tile 4: Vehicle Security & Closures
-                    let isLocked = link.telemetryGroups.object("closures").flag("locked")
-                    let areDoorsClosed = record.vehicle.areDoorsClosed ?? true
-                    let isSecure = isLocked && areDoorsClosed
+                    let isSecure = record.verification.isSecurityVerified
 
                     tileView(
                         icon: isSecure ? "lock.fill" : "lock.open.fill",
                         iconColor: isSecure ? .green : .orange,
                         title: "차량 보안 상태",
-                        value: isSecure ? "잠김 · 도어 닫힘" : (isLocked ? "도어/트렁크 열림" : "차량 미잠금"),
-                        caption: isSecure ? "보안 안전 확인됨" : "확인 및 원격 잠금 필요"
+                        value: record.vehicle.securityText,
+                        caption: "마지막 저장 차량 응답"
                     )
 
                     // Tile 5: Cabin & Exterior Temperatures
-                    let inTemp = link.telemetryGroups.object("climate").number("insideC") ?? record.vehicle.insideTempC
-                    let outTemp = link.telemetryGroups.object("climate").number("outsideC") ?? record.vehicle.outsideTempC
+                    let inTemp = record.vehicle.insideTempC
+                    let outTemp = record.vehicle.outsideTempC
                     let tempText: String = {
                         if let i = inTemp, let o = outTemp {
                             return "\(Int(i))°C / \(Int(o))°C"

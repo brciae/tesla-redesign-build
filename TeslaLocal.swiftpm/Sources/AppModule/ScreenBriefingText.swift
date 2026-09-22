@@ -76,7 +76,7 @@ extension AppModel {
                 details = [address.isEmpty ? String(format: "마지막 수신 위치는 위도 %.4f, 경도 %.4f입니다.", lat, lon) : "마지막 수신 위치는 \(address)입니다.", "마지막 위치 수신 시각은 \(dateText(location.number("gpsAt")))입니다."]
             } else { details = ["차량 위치를 아직 수신하지 못했습니다."] }
         case .care:
-            details = ["저장된 정비 기록은 \(state.rows("maintenance").count)건, 주차 위치 기록은 \(state.rows("parkingNotes").count)건입니다."]
+            details = ["저장된 정비 기록은 \(state.rows("maintenance").count)건입니다."]
             let pressures = (groups.object("tire")["values"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }.filter { $0.isFinite && $0 > 0 }
             if let low = pressures.min(), let high = pressures.max() { details.append(String(format: "마지막 수신 타이어 공기압 범위는 %.2f에서 %.2f바입니다.", low, high)) }
         case .schedule:
