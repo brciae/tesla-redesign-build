@@ -289,7 +289,10 @@ static NSArray *YLLifecycleObservers;
         [self.map.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]
     ]];
     __weak typeof(self) weakSelf = self;
-    self.freshnessTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { [weakSelf publishTelemetry]; }];
+    self.freshnessTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) {
+        if (![weakSelf locationIsFresh]) weakSelf.map.userLocation.isVisible = NO;
+        [weakSelf publishTelemetry];
+    }];
     // Raw map is presentation only. Start the engine exactly once, after delegates are ready.
     [self.guidance startWithTrip:trip priority:KNRoutePriority_Recommand avoidOptions:KNRouteAvoidOption_None];
     [self emit:@"ready" message:@"지도 준비 · 안내 시작 응답 대기"];
@@ -465,7 +468,7 @@ static NSArray *YLLifecycleObservers;
     // Fit a real coordinate region once; retain subsequent pinch zoom rather than web-map zoom constants.
     [self.map moveCamera:update withUserLocation:YES];
 }
-- (void)updateStandbyLocationWithLatitude:(double)latitude longitude:(double)longitude bearing:(double)bearing speed:(double)speed {
+- (void)updateStandbyLocationWithLatitude:(double)latitude longitude:(double)longitude bearing:(double)bearing speed:(double)speed timestamp:(double)timestamp {
     if (self.guiding || !self.map) return;
     if (!isfinite(latitude) || !isfinite(longitude) || fabs(latitude) > 90 || fabs(longitude) > 180) return;
     KNSDK *sdk = [KNSDK sharedInstance];
@@ -473,7 +476,7 @@ static NSArray *YLLifecycleObservers;
     IntPoint pt = [sdk convertWGS84ToKATECWithLongitude:longitude latitude:latitude];
     FloatPoint pos = FloatPointMake(pt.x, pt.y);
     float angle = isfinite(bearing) && bearing >= 0 && bearing < 360 ? (float)bearing : self.trustedBearing;
-    self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate];
+    self.positionReceivedAt = timestamp - NSTimeIntervalSince1970;
     self.trustedBearing = angle;
     self.map.userLocation.coordinate = pos;
     self.map.userLocation.isVisible = YES;
@@ -508,6 +511,7 @@ static NSArray *YLLifecycleObservers;
     [self emit:@"follow" message:@"1"];
 }
 - (void)pauseFollowing {
+    self.pendingRecenter = NO;
     [self.followTimer invalidate]; self.followTimer = nil;
     if (self.following) { self.following = NO; [self emit:@"follow" message:@"0"]; }
 }
@@ -524,7 +528,7 @@ static NSArray *YLLifecycleObservers;
 - (void)mapView:(KNMapView *)aMapView panningStartedWithScreenPoint:(CGPoint)aScreenPoint coordinate:(FloatPoint)aCoordinate { [self pauseFollowing]; }
 - (void)mapView:(KNMapView *)aMapView panningChangingWithScreenPoint:(CGPoint)aScreenPoint coordinate:(FloatPoint)aCoordinate { }
 - (void)mapView:(KNMapView *)aMapView panningEndedWithScreenPoint:(CGPoint)aScreenPoint coordinate:(FloatPoint)aCoordinate { [self scheduleFollowResume]; }
-- (void)mapView:(KNMapView *)aMapView zoomingStartedWithScreenPoint:(CGPoint)aScreenPoint zoom:(float)aZoom { self.userZooming = YES; }
+- (void)mapView:(KNMapView *)aMapView zoomingStartedWithScreenPoint:(CGPoint)aScreenPoint zoom:(float)aZoom { self.pendingRecenter = NO; self.userZooming = YES; }
 - (void)mapView:(KNMapView *)aMapView zoomingChangingWithScreenPoint:(CGPoint)aScreenPoint zoom:(float)aZoom { }
 - (void)mapView:(KNMapView *)aMapView zoomingEndedWithScreenPoint:(CGPoint)aScreenPoint zoom:(float)aZoom { self.userZooming = NO; if (!self.following) [self scheduleFollowResume]; }
 - (void)mapView:(KNMapView *)aMapView bearingStartedWithScreenPoint:(CGPoint)aScreenPoint bearing:(float)aBearing { [self pauseFollowing]; }
