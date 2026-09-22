@@ -190,16 +190,18 @@ struct DrivingWorkspace: View {
             r.gear = d.string("gear", "P")
             r.powerKW = d.number("powerKW")
             if let odo = d.number("odometerKm"), odo.isFinite { r.odometer = units.format(odo, suffix: " km") }
-        } else if let gpsSpeed = navigation.telemetry["gpsSpeedKmh"] as? Double, gpsSpeed.isFinite, gpsSpeed >= 0 {
+        } else if let at = navigation.telemetry["at"] as? Double,
+                  (0...10).contains(Date().timeIntervalSince1970 - at),
+                  let gpsSpeed = navigation.telemetry["gpsSpeedKmh"] as? Double, gpsSpeed.isFinite, gpsSpeed >= 0 {
             // Live phone GPS speed when moving
             r.speed = String(format: "%.0f", units.distanceValue(gpsSpeed)); r.speedFraction = gpsSpeed / 140; r.speedKmh = gpsSpeed
-            r.gear = gpsSpeed > 1.5 ? "D" : "P"
+            r.gear = "—" // Phone motion does not establish the vehicle's selected gear.
         } else {
             // Graceful parked / standby state
-            r.speed = "0"
+            r.speed = "—"
             r.speedFraction = 0
-            r.speedKmh = 0
-            r.gear = "P"
+            r.speedKmh = 0 // Keep wheel animation still; the visible value stays unknown.
+            r.gear = "—"
         }
 
         if let odo = model.groups.object("drive").number("odometerKm"), odo.isFinite {
@@ -235,13 +237,11 @@ struct DrivingWorkspace: View {
             r.battery = units.format(soc, suffix: "%")
             r.range = units.format(c.number("rangeKm"), suffix: " km")
             r.rangeKm = c.number("rangeKm")
-        } else {
-            let cachedSoc = model.groups.object("charge").number("soc") ?? 80.0
-            let cachedRange = model.groups.object("charge").number("rangeKm") ?? 340.0
-            r.batterySOC = cachedSoc
-            r.battery = units.format(cachedSoc, suffix: "%")
-            r.range = units.format(cachedRange, suffix: " km")
-            r.rangeKm = cachedRange
+        } else if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin, snapshot.isRecent() {
+            r.batterySOC = snapshot.soc
+            r.battery = units.format(snapshot.soc, suffix: "%")
+            r.range = units.format(snapshot.rangeKm, suffix: " km")
+            r.rangeKm = snapshot.rangeKm
         }
 
         if fresh.flag("drive"), let arrival = d.number("arrivalSOC"), arrival.isFinite, (0...100).contains(arrival) { r.arrivalSOC = arrival }
@@ -260,11 +260,9 @@ struct DrivingWorkspace: View {
         if fresh.flag("climate"), let inside = t.number("insideC") {
             r.inside = units.format(inside, suffix: "°C")
             r.outside = units.format(t.number("outsideC"), suffix: "°C")
-        } else {
-            let cachedInside = model.groups.object("climate").number("insideC") ?? 21.5
-            let cachedOutside = model.groups.object("climate").number("outsideC") ?? 20.0
-            r.inside = units.format(cachedInside, suffix: "°C")
-            r.outside = units.format(cachedOutside, suffix: "°C")
+        } else if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin, snapshot.isRecent() {
+            r.inside = units.format(snapshot.insideC, suffix: "°C")
+            r.outside = units.format(snapshot.outsideC, suffix: "°C")
         }
         let n = navigation.telemetry
         if let stamp = n["at"] as? Double, (0...10).contains(Date().timeIntervalSince1970 - stamp), n["valid"] as? Bool == true {
