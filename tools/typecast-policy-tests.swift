@@ -18,10 +18,10 @@ struct TypecastPolicyTests {
             precondition(error.code == status)
             precondition(!error.localizedDescription.contains("secret-key"))
             precondition(error.localizedDescription.contains("API 크레딧 부족") == (status == 402))
-            precondition(TypecastAPIPolicy.canTryNextAccount(status) == [401, 402].contains(status))
+            precondition(TypecastAPIPolicy.canTryNextAccount(status) == false)
         }
         let blocked = TypecastAPIPolicy.failure(status: 403, data: Data(#"{"error_code":"UNUSUAL_ACTIVITY_DETECTED","message":"raw account details"}"#.utf8), secrets: [])
-        precondition(blocked.localizedDescription.contains("계정 이용 제한"))
+        precondition(blocked.localizedDescription.contains("API 이용 제한"))
         precondition(!blocked.localizedDescription.contains("raw account details"))
         precondition(!TypecastAPIPolicy.canTryNextAccount(blocked.code))
         print("PASS: Typecast error classification, account restriction stop, redaction and exact voice resolution")

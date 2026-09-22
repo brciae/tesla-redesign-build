@@ -24,6 +24,8 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typeca
 Xcode/TypecastPolicyTests
 # The original artwork stays unchanged; asset layout adds a 5% margin on each side.
 node tools/js-logic-tests.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests
+Xcode/FleetAuthTests
 swift tools/prepare-icon.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-policy-tests.swift -o Xcode/NativePolicyTests
 Xcode/NativePolicyTests
@@ -50,7 +52,7 @@ stage_dir="$(mktemp -d "$repo_root/Xcode/package.XXXXXX")"
 mkdir "$stage_dir/Payload"
 ditto "$app_path" "$stage_dir/Payload/YLCompanion.app"
 mkdir -p "$repo_root/Xcode/BuildOutput"
-artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla 타입캐스트 v02 Review.ipa"
+artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla 계정연동 v03 Review.ipa"
 ditto -c -k --keepParent "$stage_dir/Payload" "$artifact_path"
 unzip -t "$artifact_path"
 shasum -a 256 "$artifact_path"
