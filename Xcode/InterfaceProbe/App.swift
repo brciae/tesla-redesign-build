@@ -228,6 +228,9 @@ struct ProbeRoot: View {
 
 // Fixture only: no BLE device, enrollment, navigation SDK, or real VIN.
 @MainActor final class AppModel: ObservableObject {
+    @Published var spokenSummary = ""
+    func speak(_ text: String) { spokenSummary = text }
+    func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
     var demo = true
