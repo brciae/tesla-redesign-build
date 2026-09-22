@@ -8,10 +8,6 @@
   "createIntermediateGroups": true
  },
  "packages": {
-  "onnxruntime": {
-   "url": "https://github.com/microsoft/onnxruntime-swift-package-manager.git",
-   "exactVersion": "1.24.2"
-  },
   "KNSDK-UI": {
    "url": "https://github.com/kakaomob/KNSDK-UI.git",
    "exactVersion": "1.12.19"
@@ -22,8 +18,8 @@
    "SWIFT_VERSION": "5.0",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "CODE_SIGNING_ALLOWED": "NO",
-   "MARKETING_VERSION": "0.73",
-   "CURRENT_PROJECT_VERSION": "73"
+   "MARKETING_VERSION": "0.74",
+   "CURRENT_PROJECT_VERSION": "74"
   }
  },
  "targets": {
@@ -83,15 +79,6 @@
      "path": "Assets.xcassets"
     },
     {
-     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/VoiceEngineLicense.txt",
-     "buildPhase": "resources"
-    },
-    {
-     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/recorded",
-     "type": "folder",
-     "buildPhase": "resources"
-    },
-    {
      "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/typecast_portraits",
      "type": "folder",
      "buildPhase": "resources"
@@ -101,10 +88,6 @@
     {
      "target": "KakaoNavigationBridge",
      "embed": true
-    },
-    {
-     "package": "onnxruntime",
-     "product": "onnxruntime"
     },
     {
      "package": "KNSDK-UI",

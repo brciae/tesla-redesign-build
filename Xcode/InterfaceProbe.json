@@ -24,10 +24,6 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/ManeuverGlyph.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BatteryOverview.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BatteryGauge.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/VoicePackManifest.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/RecordedVoice.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/VoiceProfiles.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/CharacterTone.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/InfoNote.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/DrivingSceneDecor.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/ChargingSceneDecor.swift",
@@ -40,7 +36,8 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastCatalog.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastClient.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift"
    ],
    "settings": {
     "base": {
