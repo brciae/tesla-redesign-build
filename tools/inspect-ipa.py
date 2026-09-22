@@ -51,6 +51,8 @@ with zipfile.ZipFile(ipa_path) as archive:
     assert set(info["UIDeviceFamily"]) == {1, 2}
     assert info.get("NSBluetoothAlwaysUsageDescription")
     assert info.get("NSLocationWhenInUseUsageDescription")
+    assert info.get("NSLocationAlwaysAndWhenInUseUsageDescription")
+    assert info.get("NSLocationTemporaryUsageDescriptionDictionary", {}).get("NavigationAccuracy")
     assert set(info["UIBackgroundModes"]) == {"bluetooth-central", "location", "audio"}
     assert len(info["UISupportedInterfaceOrientations"]) == 4
     assert len(info["UISupportedInterfaceOrientations~ipad"]) == 4
