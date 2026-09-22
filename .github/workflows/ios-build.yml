@@ -27,5 +27,7 @@ jobs:
         if: always()
         with:
           name: interface-screens
-          path: Xcode/**/*.xcresult
+          path: |
+            Xcode/**/*.xcresult
+            Xcode/BuildOutput/InterfaceScreens/**
           if-no-files-found: ignore
