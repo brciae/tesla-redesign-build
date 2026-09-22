@@ -27,6 +27,7 @@ private enum NavigationKey {
 }
 
 final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published private(set) var locationPermission = "위치 권한 확인 중"
     @Published private(set) var status = "카카오 내장 내비 · 최초 설정 필요"
     @Published private(set) var hasKey = false
     @Published private(set) var busy = false
@@ -71,6 +72,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         self.runtime = runtime
         super.init()
         locator.delegate = self
+        updateLocationPermission()
         locator.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locator.activityType = .automotiveNavigation
         locator.pausesLocationUpdatesAutomatically = false
@@ -149,10 +151,41 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         deadline = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in self?.failed("정확한 현재 위치를 받지 못함 · 야외에서 위치 권한·GPS 확인", ticket: next) }
     }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        updateLocationPermission()
         if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
             stop(); status = "위치 권한 거부됨 · iOS 설정에서 허용 필요"
         }
         // New authenticated vehicle snapshots, not cached coordinates, trigger startup.
+    }
+    func updateLocationPermission() {
+        let access: String
+        switch locator.authorizationStatus {
+        case .authorizedAlways: access = "항상 허용"
+        case .authorizedWhenInUse: access = "앱 사용 중 허용"
+        case .denied: access = "허용 안 함"
+        case .restricted: access = "기기 정책으로 제한됨"
+        case .notDetermined: access = "아직 선택하지 않음"
+        @unknown default: access = "확인 필요"
+        }
+        locationPermission = access + " · " + (locator.accuracyAuthorization == .fullAccuracy ? "정확한 위치" : "대략적인 위치")
+    }
+    func requestAlwaysLocation() {
+        switch locator.authorizationStatus {
+        case .notDetermined: locator.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse: locator.requestAlwaysAuthorization()
+        case .denied, .restricted:
+            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        default: break
+        }
+        updateLocationPermission()
+    }
+    func requestPreciseLocation() {
+        guard [.authorizedAlways, .authorizedWhenInUse].contains(locator.authorizationStatus) else {
+            requestAlwaysLocation(); return
+        }
+        locator.requestTemporaryFullAccuracyAuthorization(withPurposeKey: "NavigationAccuracy") { [weak self] _ in
+            DispatchQueue.main.async { self?.updateLocationPermission() }
+        }
     }
     /// v29: while guidance runs, keep our own location session alive so iOS keeps the process running
     /// when the screen is locked or another app is in front (BLE polling timers + Kakao engine keep working).
@@ -442,6 +475,17 @@ struct NavigationSetupView: View {
     @State private var nativeKey = ""
     var body: some View {
         PageBody(title: "길안내") {
+            InfoCard {
+                Label("위치 권한과 정확도", systemImage: "location.circle").font(.headline)
+                Text(navigation.locationPermission)
+                Caption("항상 허용은 백그라운드 접근 권한이며 정확도 설정과 별개임. 실행 중인 길안내는 화면을 잠가도 위치 수신을 이어가며, 길안내 종료 시 백그라운드 수신을 중단함.")
+                Button("항상 허용 요청") { navigation.requestAlwaysLocation() }.buttonStyle(.bordered)
+                Button("정확한 위치 요청") { navigation.requestPreciseLocation() }.buttonStyle(.bordered)
+                Button("아이폰 위치 설정 열기") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }.buttonStyle(.borderless)
+                Caption("처음에는 앱 사용 중 허용을 선택한 뒤 다시 요청할 수 있음. 한 번 허용을 선택했거나 시스템 창이 나오지 않으면 아이폰 설정에서 확인 필요. 앱 강제 종료 후 지속 동작을 보장하지 않음.")
+            }.onAppear { navigation.updateLocationPermission() }
             // v39: an honest route to a licensed celebrity guidance voice. This app cannot synthesise a
             // real person's voice, but Naver Map already ships those voices, so the destination can be
             // handed to it and Naver speaks the turns.
