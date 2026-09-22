@@ -29,6 +29,9 @@ def macho_info(data):
 
 with zipfile.ZipFile(ipa_path) as archive:
     names = archive.namelist()
+    retired = [n for n in names if '/recorded/' in n.lower() or 'onnxruntime' in n.lower()
+               or n.lower().endswith(('.onnx', '/voiceenginelicense.txt'))]
+    assert not retired, f"Retired voice resources/runtime still in IPA: {retired[:5]}"
     assert len(names) == len(set(names)), "Duplicate IPA entries"
     assert all(not PurePosixPath(n).is_absolute() and ".." not in PurePosixPath(n).parts for n in names)
     assert archive.testzip() is None, "ZIP integrity failure"

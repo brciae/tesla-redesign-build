@@ -18,6 +18,7 @@ command -v xcodegen >/dev/null
 xcodebuild -version
 xcodegen --version
 node tools/embed-js.cjs
+node tools/typecast-only-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests
 Xcode/TypecastPolicyTests
@@ -29,7 +30,6 @@ Xcode/NativePolicyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationTransfer.swift tools/automation-policy-tests.swift -o Xcode/AutomationPolicyTests
 Xcode/AutomationPolicyTests
 bash tools/test-interface.sh
-bash tools/test-voice-engine.sh
 xcodegen generate --spec Xcode/project.json --project Xcode
 xcodebuild -resolvePackageDependencies \
   -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
