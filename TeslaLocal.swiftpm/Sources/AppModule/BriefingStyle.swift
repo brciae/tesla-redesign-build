@@ -9,12 +9,11 @@ enum BriefingStyle: String, CaseIterable, Identifiable {
         case .standard: "원래 목소리와 기본 템포"
         case .calm: "낮은 속도와 여유 있는 음성 구간 간격"
         case .brisk: "조금 빠른 속도와 짧은 음성 구간 간격"
-        case .friendly: "부드러운 템포와 인사 표현"
+        case .friendly: "부드러운 템포"
     } }
     var pause: TimeInterval { switch self { case .standard: 0.10; case .calm: 0.30; case .brisk: 0.04; case .friendly: 0.18 } }
     func phrase(_ text: String, category: String) -> String {
-        guard self == .friendly, category == "voiceConnection" else { return text }
-        return "안녕하세요. " + text
+        text
     }
     static var selected: Self { Self(rawValue: UserDefaults.standard.string(forKey: "voiceDeliveryStyle") ?? "standard") ?? .standard }
 }

@@ -43,7 +43,7 @@ enum SpeechText {
             (#"°\s*C"#, "섭씨 ", " 도"), (#"°\s*F"#, "화씨 ", " 도"),
             (#"km/h|㎞/h"#, "시속 ", " 킬로미터"), (#"mph"#, "시속 ", " 마일"),
             (#"kWh"#, "", " 킬로와트시"), (#"kW"#, "", " 킬로와트"),
-            (#"km|㎞"#, "", " 킬로미터"), (#"mi"#, "", " 마일"),
+            (#"km|㎞"#, "", " 킬로미터"), (#"mi"#, "", " 마일"), (#"m|ｍ"#, "", " 미터"),
             (#"kPa"#, "", " 킬로파스칼"), (#"psi"#, "", " 피에스아이"), (#"bar"#, "", " 바"),
             // v43: Korean unit words too, not only the Latin abbreviations. The recorded voice speaks a
             // number as its own clip, so "60킬로미터" has to become "육십 킬로미터" before it is matched.
@@ -80,7 +80,11 @@ enum SpeechText {
         }
         let high = whole / 10000, low = whole % 10000
         var result = whole == 0 ? "영" : (high > 0 ? (high == 1 ? "" : group(high)) + "만" : "") + group(low)
-        if parts.count == 2 { result += " 점 " + parts[1].compactMap { $0.wholeNumberValue.map { digits[$0] } }.joined(separator: " ") }
+        if parts.count == 2 {
+            var fraction = String(parts[1])
+            while fraction.last == "0" { fraction.removeLast() }
+            if !fraction.isEmpty { result += " 점 " + fraction.compactMap { $0.wholeNumberValue.map { digits[$0] } }.joined(separator: " ") }
+        }
         return result
     }
 }

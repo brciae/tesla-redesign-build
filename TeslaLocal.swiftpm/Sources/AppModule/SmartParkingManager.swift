@@ -101,6 +101,9 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
               let telemetry = snapshot.parkingTelemetry() else { return }
         let vehicle = buildVehicleSnapshot(from: telemetry)
         let drive = telemetry.object("drive")
+        if drive.string("gear") == "P", (drive.number("speedKmh") ?? 0) > 0 {
+            fleetParkingStatus = "P 수신 · 속도 신호 불일치로 주차 위치 저장 대기"; return
+        }
         guard !["D", "R", "N"].contains(drive.string("gear")), (drive.number("speedKmh") ?? 0) <= 0 else { fleetParkingStatus = "주행 상태에서는 주차 위치를 저장할 수 없음"; return }
         guard let lat = vehicle.vehicleLatitude, let lon = vehicle.vehicleLongitude else { fleetParkingStatus = "차량 GPS 미수신 · 주차 위치 저장 대기"; return }
         let samePlace: Bool = {

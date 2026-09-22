@@ -319,6 +319,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     .offset(x: m.wide ? panelW + 20 * m.u : m.w - 72 * m.u, y: m.wide ? m.pad : panelY - 84 * m.u)
             }
             VStack(spacing: 6 * m.u) {
+                if data.showsMedia { NavigationMediaHeader(data: data, action: onMedia) }
                 ManeuverStack(data: data, u: m.u)
                 if data.laneCount > 0 { LaneStrip(data: data, u: m.u) }
             }
@@ -330,15 +331,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     .frame(width: min(bottomW, 470 * m.u), height: pillH)
                     .frame(width: bottomW, alignment: .trailing)
                     .offset(x: bottomX, y: m.h - pillH - m.pad * 0.7)
-                if data.showsMedia {
-                    island(m).frame(width: bottomW, alignment: .trailing)
-                        .offset(x: bottomX, y: m.h - pillH - m.pad * 0.7 - 52 * m.u)
-                }
             } else {
-                if data.showsMedia {
-                    island(m).frame(width: m.w)
-                        .offset(y: panelY - 50 * m.u - m.pad)
-                }
                 TripPill(data: data, u: m.u, stacked: true)
                     .frame(width: bottomW, height: pillH * 1.5)
                     .offset(x: bottomX, y: m.h - pillH * 1.5 - m.pad)
@@ -631,6 +624,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             .frame(width: m.w - m.pad * 2, alignment: .trailing)
             .offset(x: m.pad, y: m.pad)
             VStack(alignment: .trailing, spacing: 8 * m.u) {
+                if data.showsMedia { NavigationMediaHeader(data: data, action: onMedia).frame(width: rightW) }
                 TurnBanner(data: data, u: m.u)
                     .frame(width: rightW, alignment: .leading)
                 if data.laneCount > 0 { LaneStrip(data: data, u: m.u).frame(width: rightW) }
@@ -643,17 +637,6 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             if m.wide, let limit = data.speedLimit {
                 LimitSign(limit: limit, distance: data.speedLimitDistance, size: 46 * m.u)
                     .offset(x: m.w - rightW - m.pad - 58 * m.u, y: m.pad + 44 * m.u)
-            }
-            if data.showsMedia {
-                if m.wide {
-                    media(.mini, m)
-                        .frame(width: rightW)
-                        .offset(x: m.w - rightW - m.pad, y: m.h - m.pad - 62 * m.u)
-                } else {
-                    media(.mini, m)
-                        .frame(width: rightW)
-                        .offset(x: m.pad, y: panelY - 64 * m.u - m.pad)
-                }
             }
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
@@ -1691,6 +1674,29 @@ private struct MediaCard: View {
 }
 
 /// Minimal now-playing capsule (Dynamic Island style). Tap to expand for track controls; collapses after 5 s.
+/// One compact row above maneuver guidance; never floats over the route or expands into it.
+private struct NavigationMediaHeader: View {
+    let data: NavigationReadout
+    let action: (String) -> Void
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "music.note").foregroundStyle(.blue)
+            Text(data.mediaTitle.isEmpty ? data.mediaSource : data.mediaTitle)
+                .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { action("mediaToggle") } label: {
+                Image(systemName: data.mediaPlaying ? "pause.fill" : "play.fill").frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .disabled(!data.connected || data.mediaBusy)
+            .accessibilityLabel(data.mediaPlaying ? "일시정지" : "재생")
+        }
+        .padding(.leading, 12).frame(height: 44)
+        .background(Color.black.opacity(0.92), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .contain).accessibilityIdentifier("navigation.media.header")
+    }
+}
+
 private struct MediaIsland: View {
     let data: NavigationReadout
     let u: CGFloat

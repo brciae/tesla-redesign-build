@@ -137,9 +137,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let d = UserDefaults.standard
         guard d.bool(forKey: "voiceEnabled") else { return }
         if !destination.isEmpty {
-            say("운전 대시보드를 시작합니다. 목적지 \(destination) 안내를 준비합니다.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
-        } else {
-            say("운전 대시보드를 시작합니다. 안전 운전하세요.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
+            say("\(destination) 안내 시작.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
         }
     }
 

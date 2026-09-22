@@ -386,11 +386,12 @@ final class TeslaFleetClient: ObservableObject {
         }
     }
 
-    /// Refresh on login/selection/foreground/manual request, never a background polling loop.
+    /// Foreground reads are throttled; failures/absence back off. Never wake the car automatically.
     @MainActor func refreshVehicleSnapshot(force: Bool = false) async {
         guard getStoredToken() != nil else { return }
         guard !isReadingVehicle else { return }
-        guard force || Date().timeIntervalSince(lastVehicleRead) >= 30 else { return }
+        let interval: TimeInterval = vehicleReadError == nil && vehicleSnapshot?.isRecent() == true ? 30 : 120
+        guard force || Date().timeIntervalSince(lastVehicleRead) >= interval else { return }
         isReadingVehicle = true
         let requestID = UUID(); vehicleReadID = requestID
         vehicleReadError = nil; vehicleReadStatus = "차량 조회 중"

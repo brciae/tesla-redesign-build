@@ -180,15 +180,18 @@ struct DrivingWorkspace: View {
 
     private var readout: NavigationReadout {
         var r = NavigationReadout()
-        let fresh = model.output.object("fresh"), d = model.groups.object("drive"), c = model.groups.object("charge"), t = model.groups.object("climate")
+        let fresh = model.output.object("fresh"), c = model.groups.object("charge"), t = model.groups.object("climate")
+        let fleetDrive = !link.authentic && model.fleet.vehicleSnapshot?.vin == model.fleet.selectedVin ? model.fleet.vehicleSnapshot?.driveDisplay() ?? [:] : [:]
+        let driveFresh = fresh.flag("drive") || fleetDrive.string("mode") == "recent"
+        let d = fresh.flag("drive") ? model.groups.object("drive") : (fleetDrive.string("mode") == "recent" ? fleetDrive : [:])
         r.speedUnit = units.speedLabel; r.connected = link.authentic
         r.clock = Date().formatted(date: .omitted, time: .shortened)
         r.vehicleName = model.settings.string("name", "Model Y")
 
-        if fresh.flag("drive"), let speed = d.number("speedKmh"), speed.isFinite, speed >= 0 {
+        if driveFresh, let speed = d.number("speedKmh"), speed.isFinite, speed >= 0 {
             r.speed = String(format: "%.0f", units.distanceValue(speed)); r.speedFraction = speed / 140
             r.speedKmh = speed
-            r.gear = d.string("gear", "P")
+            r.gear = d.string("gear", "—")
             r.powerKW = d.number("powerKW")
             if let odo = d.number("odometerKm"), odo.isFinite { r.odometer = units.format(odo, suffix: " km") }
         } else if let at = navigation.telemetry["at"] as? Double,
@@ -205,7 +208,8 @@ struct DrivingWorkspace: View {
             r.gear = "—"
         }
 
-        if let odo = model.groups.object("drive").number("odometerKm"), odo.isFinite {
+        if driveFresh { r.gear = d.string("gear", "—") }
+        if let odo = d.number("odometerKm"), odo.isFinite {
             r.odometer = units.format(odo, suffix: " km")
         }
 

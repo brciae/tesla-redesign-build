@@ -22,6 +22,12 @@ struct FleetVehicleSnapshot {
     var locked: Bool? { flag("vehicle_state", "locked") }
     var charging: Bool { (payload["charge_state"] as? [String: Any])?["charging_state"] as? String == "Charging" }
     var hasMeasurements: Bool { soc != nil || insideC != nil || locked != nil }
+    func sectionIsRecent(_ section: String, now: Date = Date()) -> Bool {
+        let age = now.timeIntervalSince(receivedAt)
+        guard age >= 0, age <= 120, let at = number(section, "timestamp") else { return false }
+        let nowMS = now.timeIntervalSince1970 * 1000
+        return at <= nowMS + 5000 && nowMS - at <= 120000
+    }
     func isRecent(now: Date = Date()) -> Bool {
         let age = now.timeIntervalSince(receivedAt)
         guard age >= 0 && age <= 120 else { return false }
@@ -32,6 +38,10 @@ struct FleetVehicleSnapshot {
         let recent = isRecent(now: now)
         let meta: [String: Any] = ["mode": recent ? "recent" : "cached", "label": recent ? "Fleet 최근 조회" : "Fleet 마지막 수신", "at": receivedAt.timeIntervalSince1970 * 1000]
         var charge = meta, climate = meta
+        charge["mode"] = sectionIsRecent("charge_state", now: now) ? "recent" : "cached"
+        climate["mode"] = sectionIsRecent("climate_state", now: now) ? "recent" : "cached"
+        charge["at"] = number("charge_state", "timestamp")
+        climate["at"] = number("climate_state", "timestamp")
         charge["soc"] = soc; charge["rangeKm"] = rangeKm
         if let status = (payload["charge_state"] as? [String: Any])?["charging_state"] as? String,
            ["Charging", "Stopped", "Complete", "Disconnected", "NoPower", "Starting"].contains(status) { charge["charging"] = charging; charge["isCharging"] = charging }
@@ -49,14 +59,54 @@ struct FleetVehicleSnapshot {
         if coordinates { location["latitude"] = lat; location["longitude"] = lon }
         location["gpsAt"] = number("drive_state", "timestamp")
         if let at = number("drive_state", "timestamp"), now.timeIntervalSince1970 * 1000 - at <= 120000, at <= now.timeIntervalSince1970 * 1000 + 5000 {
-            location["mode"] = recent ? "recent" : "cached"
+            location["mode"] = sectionIsRecent("drive_state", now: now) ? "recent" : "cached"
         } else { location["mode"] = coordinates ? "cached" : "missing" }
-        return ["charge": charge, "climate": climate, "location": location]
+        return ["charge": charge, "climate": climate, "location": location, "drive": driveDisplay(now: now)]
+    }
+
+    func driveDisplay(now: Date = Date()) -> [String: Any] {
+        var drive: [String: Any] = ["mode": sectionIsRecent("drive_state", now: now) ? "recent" : "cached", "receivedAt": receivedAt.timeIntervalSince1970 * 1000]
+        drive["at"] = number("drive_state", "timestamp")
+        if let gear = (payload["drive_state"] as? [String: Any])?["shift_state"] as? String, ["P", "D", "R", "N"].contains(gear) { drive["gear"] = gear }
+        if let speed = number("drive_state", "speed"), speed >= 0 { drive["speedKmh"] = speed * 1.609344 }
+        let raw = payload["drive_state"] as? [String: Any] ?? [:]
+        drive["destination"] = raw["active_route_destination"] as? String
+        drive["destinationLat"] = number("drive_state", "active_route_latitude")
+        drive["destinationLng"] = number("drive_state", "active_route_longitude")
+        drive["arrivalMinutes"] = number("drive_state", "active_route_minutes_to_arrival")
+        if let miles = number("drive_state", "active_route_miles_to_arrival"), miles >= 0 { drive["arrivalKm"] = miles * 1.609344 }
+        return drive
+    }
+
+    /// Missing permissions/fields are not a route cancellation. Only explicit empty values qualify.
+    func navigationEvent(now: Date = Date()) -> [String: Any] {
+        guard sectionIsRecent("drive_state", now: now) else { return ["type": "wait"] }
+        let d = driveDisplay(now: now), raw = payload["drive_state"] as? [String: Any] ?? [:]
+        let name = (raw["active_route_destination"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stamp = number("drive_state", "timestamp") ?? 0
+        let receipt = receivedAt.timeIntervalSince1970 * 1000
+        if let name, !name.isEmpty, let lat = number("drive_state", "active_route_latitude"), let lon = number("drive_state", "active_route_longitude"),
+           (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) {
+            let tokenData = try? JSONSerialization.data(withJSONObject: [name, lat, lon])
+            return ["type": "route", "name": name, "latitude": lat, "longitude": lon, "at": stamp, "receivedAt": receipt,
+                    "token": tokenData.flatMap { String(data: $0, encoding: .utf8) } ?? ""]
+        }
+        func explicitEmpty(_ key: String) -> Bool {
+            guard let value = raw[key] else { return false }
+            return value is NSNull || number("drive_state", key) == 0
+        }
+        let emptyName = raw["active_route_destination"] is NSNull || name == ""
+        let parked = d["gear"] as? String == "P"
+        if emptyName, explicitEmpty("active_route_minutes_to_arrival"), explicitEmpty("active_route_miles_to_arrival"),
+           parked || (explicitEmpty("active_route_latitude") && explicitEmpty("active_route_longitude")) {
+            return ["type": "absent", "at": stamp, "receivedAt": receipt, "parked": parked]
+        }
+        return ["type": "wait"]
     }
 
     /// Read-only translation. A missing Fleet shift_state is not proof of P.
     func parkingTelemetry(now: Date = Date()) -> [String: Any]? {
-        guard isRecent(now: now), let driveAt = number("drive_state", "timestamp"),
+        guard sectionIsRecent("drive_state", now: now), let driveAt = number("drive_state", "timestamp"),
               driveAt <= now.timeIntervalSince1970 * 1000 + 5000,
               now.timeIntervalSince1970 * 1000 - driveAt <= 120000 else { return nil }
         let stamp = receivedAt.timeIntervalSince1970 * 1000
@@ -65,7 +115,7 @@ struct FleetVehicleSnapshot {
         if let speed = number("drive_state", "speed"), speed >= 0 { drive["speedKmh"] = speed * 1.609344 }
         if let odo = number("vehicle_state", "odometer") { drive["odometerKm"] = odo * 1.609344 }
         let overlay = homeOverlay(now: now)
-        var closures: [String: Any] = ["at": stamp]
+        var closures: [String: Any] = ["at": number("vehicle_state", "timestamp") ?? 0]
         closures["locked"] = locked
         for (key, fleetKey) in [("driverFront", "df"), ("driverRear", "dr"), ("passengerFront", "pf"), ("passengerRear", "pr"), ("frunk", "ft"), ("trunk", "rt")] {
             if let value = number("vehicle_state", fleetKey), value >= 0 { closures[key] = value > 0 }

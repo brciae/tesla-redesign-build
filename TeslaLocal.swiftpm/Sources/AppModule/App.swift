@@ -107,12 +107,7 @@ struct MainView: View {
             .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
             .onChange(of: selectedTab) { _, newTab in
                 if newTab == .menu { menuPath = NavigationPath() }
-                handleTabVoice(newTab)
             }
-            .onChange(of: model.chargingPresented) { _, presented in
-                if presented { model.voice.say("충전 상세 화면을 열었습니다.", category: "voiceControl", manual: true) }
-            }
-            .onChange(of: navigation.presented) { _, presented in handleNavVoice(presented) }
     }
 
     private var mainContent: some View {
@@ -141,26 +136,6 @@ struct MainView: View {
         else { model.resignActive() }
     }
 
-    private func handleTabVoice(_ tab: AppTab) {
-        let prompt: String
-        switch tab {
-        case .home: prompt = "홈 화면으로 이동했습니다."
-        case .controls: prompt = "차량 컨트롤 화면으로 이동했습니다."
-        case .energy: prompt = "에너지 화면으로 이동했습니다."
-        case .drive: prompt = "운행 내비 화면으로 이동했습니다."
-        case .menu: prompt = "전체 메뉴로 이동했습니다."
-        default: prompt = ""
-        }
-        if !prompt.isEmpty { model.voice.say(prompt, category: "voiceControl", manual: true) }
-    }
-
-    private func handleNavVoice(_ presented: Bool) {
-        if presented {
-            model.voice.say("주행 대시보드를 표시합니다.", category: "voiceControl", manual: true)
-        } else {
-            model.voice.say("주행 대시보드를 닫았습니다.", category: "voiceControl", manual: true)
-        }
-    }
 }
 private struct AppDestinations: ViewModifier {
     @EnvironmentObject private var model: AppModel
@@ -170,9 +145,6 @@ private struct AppDestinations: ViewModifier {
     func body(content: Content) -> some View {
         content.navigationDestination(for: Page.self) { page in
             destinationView(for: page)
-                .onAppear {
-                    model.voice.say("\(page.rawValue) 화면입니다.", category: "voiceControl", manual: true)
-                }
         }
     }
 

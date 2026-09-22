@@ -184,15 +184,15 @@ struct AutomationPolicy {
         var text: String
         switch rule.trigger {
         case .boarding: text = "탑승을 환영합니다."
-        case .departure: text = "출발했습니다. 안전한 운행 되세요."
+        case .departure: text = "출발했습니다."
         case .arrival: text = sample.tripSummary
         case .chargeStart: text = "충전이 시작되었습니다."
-        case .chargeEnd: text = "충전이 종료되어 기록을 저장했습니다."
-        case .batteryLow: text = "배터리 잔량이 \(Int(sample.soc ?? 0))퍼센트입니다. 충전 계획을 확인하세요."
-        case .tireLow: text = "타이어 공기압 주의 신호가 있습니다. 안전한 곳에서 타이어 상태를 확인하세요."
-        case .rest: text = "앱에서 관측한 연속 운전 시간이 \(Int(rule.threshold))분을 넘었습니다. 안전한 곳에서 잠시 쉬어 가세요."
+        case .chargeEnd: text = "충전 종료."
+        case .batteryLow: text = "배터리 \(Int(sample.soc ?? 0))퍼센트. 충전이 필요합니다."
+        case .tireLow: text = "타이어 저압 경고. 안전한 곳에서 확인하세요."
+        case .rest: text = "관측 운전 시간 \(Int(rule.threshold))분 초과. 휴식이 필요합니다."
         case .remaining: text = "목적지까지 약 \(Int(sample.remainingMinutes ?? 0))분 남았습니다."
-        case .delay: text = "차량 내비의 도착 예상이 처음보다 약 \(Int(max(0, delayMinutes)))분 늦어졌습니다."
+        case .delay: text = "최초 예상보다 약 \(Int(max(0, delayMinutes)))분 늦어졌습니다."
         case .destination: text = "목적지가 \(sample.destination)으로 변경되었습니다."
         }
             if !rule.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { text = rule.message }
@@ -217,7 +217,7 @@ struct AutomationPolicy {
     }
 
     static func greeting(hour: Int) -> String {
-        switch hour { case 5..<12: return "좋은 아침입니다."; case 12..<18: return "좋은 오후입니다."; case 18..<22: return "좋은 저녁입니다."; default: return "늦은 시간입니다. 편안하고 안전하게 이동하세요." }
+        switch hour { case 5..<12: return "좋은 아침입니다."; case 12..<18: return "좋은 오후입니다."; case 18..<22: return "좋은 저녁입니다."; default: return "안녕하세요." }
     }
     static func allowsHour(_ rule: AutomationRule, hour: Int) -> Bool {
         guard rule.hoursEnabled else { return true }
@@ -303,18 +303,18 @@ struct AutomationPolicy {
             var fire = false, text = "", milestone: String?
             switch rule.trigger {
             case .boarding: fire = boarding; text = "탑승을 환영합니다."
-            case .departure: fire = departure; text = "출발했습니다. 안전한 운행 되세요."
+            case .departure: fire = departure; text = "출발했습니다."
             case .arrival: fire = sample.endedTrip != nil; text = sample.tripSummary
             case .chargeStart: fire = sample.chargeFresh && old?.chargeFresh == true && old?.charging != nil && old?.charging != 5 && sample.charging == 5; text = "충전이 시작되었습니다."
-            case .chargeEnd: fire = sample.endedCharge != nil; text = "충전이 종료되어 기록을 저장했습니다."
-            case .batteryLow: fire = sample.moving && sample.chargeFresh && sample.soc != nil && (sample.soc ?? 101) <= rule.threshold; text = "배터리 잔량이 \(Int(sample.soc ?? 0))퍼센트입니다. 충전 계획을 확인하세요."
+            case .chargeEnd: fire = sample.endedCharge != nil; text = "충전 종료."
+            case .batteryLow: fire = sample.moving && sample.chargeFresh && sample.soc != nil && (sample.soc ?? 101) <= rule.threshold; text = "배터리 \(Int(sample.soc ?? 0))퍼센트. 충전이 필요합니다."
             case .tireLow:
                 let low = sample.tires.compactMap { $0 }.filter { $0 > 0 && $0 < rule.threshold }
                 fire = sample.moving && sample.tireFresh && (sample.tireWarnings || (rule.customTireThreshold && !low.isEmpty))
-                text = "타이어 공기압 주의 신호가 있습니다. 안전한 곳에서 타이어 상태를 확인하세요."
+                text = "타이어 저압 경고. 안전한 곳에서 확인하세요."
             case .rest:
                 let stage = Int(driveSeconds / max(60, rule.threshold * 60)); milestone = "rest:\(rule.id):\(stage)"
-                fire = sample.moving && stage > 0; text = "앱에서 관측한 연속 운전 시간이 \(Int(rule.threshold))분을 넘었습니다. 안전한 곳에서 잠시 쉬어 가세요."
+                fire = sample.moving && stage > 0; text = "관측 운전 시간 \(Int(rule.threshold))분 초과. 휴식이 필요합니다."
             case .remaining:
                 milestone = "route:\(rule.id):remaining"
                 fire = sample.moving && !sample.route.isEmpty && sample.remainingMinutes != nil && sample.route == old?.route && (old?.remainingMinutes ?? -1) > rule.threshold && (sample.remainingMinutes ?? 1e9) <= rule.threshold
@@ -323,7 +323,7 @@ struct AutomationPolicy {
                 let delay = sample.now + (sample.remainingMinutes ?? 0) * 60 - (routeBaseline ?? sample.now)
                 let stage = Int(max(0, delay) / max(60, rule.threshold * 60)); milestone = "route:\(rule.id):delay:\(stage)"
                 fire = sample.moving && !sample.route.isEmpty && sample.remainingMinutes != nil && routeBaseline != nil && stage > 0
-                text = "차량 내비의 도착 예상이 처음보다 약 \(Int(max(0, delay) / 60))분 늦어졌습니다."
+                text = "최초 예상보다 약 \(Int(max(0, delay) / 60))분 늦어졌습니다."
             case .destination:
                 fire = sample.driveFresh && old?.driveFresh == true && !sample.route.isEmpty && !(old?.route.isEmpty ?? true) && sample.route != old?.route
                 text = "목적지가 \(sample.destination)으로 변경되었습니다."

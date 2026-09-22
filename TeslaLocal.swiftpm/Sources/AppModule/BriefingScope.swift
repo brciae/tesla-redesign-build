@@ -11,7 +11,9 @@ enum BriefingScope: String, CaseIterable {
     case preferences = "표시·음성 설정", menu = "메뉴 및 설정", daily = "오늘의 브리핑"
 
     func text(_ details: [String], demo: Bool = false) -> String {
-        let content = details.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        var seen = Set<String>()
+        let content = details.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
         return ((demo ? ["예시 자료입니다."] : [])
             + (content.isEmpty ? ["요약할 자료가 아직 없습니다."] : content)).joined(separator: " ")
     }
