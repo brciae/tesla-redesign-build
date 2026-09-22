@@ -138,7 +138,10 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 try? FileManager.default.moveItem(at: src, to: dst)
             }
         }
-        try? FileManager.default.removeItem(at: legacyDir)
+        // A failed move must never delete the only remaining audio copy.
+        if let remaining = try? FileManager.default.contentsOfDirectory(atPath: legacyDir.path), remaining.isEmpty {
+            try? FileManager.default.removeItem(at: legacyDir)
+        }
     }
 
     override init() {

@@ -376,11 +376,9 @@ struct TypecastSettingsSection: View {
                     Text("영구 보관 캐시: \(typecast.cacheFileCount)개 (\(String(format: "%.1f", typecast.cacheTotalSizeMB))MB)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Button("캐시 비우기") {
+                    VoiceCacheDeleteButton {
                         typecast.clearCache()
                     }
-                    .font(.caption)
-                    .foregroundStyle(.red)
                 }
             }
         }

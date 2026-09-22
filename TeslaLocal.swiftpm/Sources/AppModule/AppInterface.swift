@@ -193,6 +193,24 @@ struct InfoRow: View {
     }
 }
 
+struct VoiceCacheDeleteButton: View {
+    var delete: () -> Void
+    @State private var confirming = false
+    var body: some View {
+        Button("캐시 비우기") { confirming = true }
+            .font(.caption)
+            .foregroundStyle(.red)
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("voice.cache.delete")
+            .confirmationDialog("모든 음성의 저장된 캐시를 삭제할까요?", isPresented: $confirming, titleVisibility: .visible) {
+                Button("모든 음성 캐시 삭제", role: .destructive, action: delete)
+                Button("취소", role: .cancel) {}
+            } message: {
+                Text("음성을 바꿔도 캐시는 유지됩니다. 삭제 후 다시 합성하면 API 사용량이 발생할 수 있습니다.")
+            }
+    }
+}
+
 enum AppTab: Hashable {
     case home, controls, energy, drive, menu
     case vehicle, automation, settings
