@@ -29,7 +29,11 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
-            Section { ScreenBriefingControls(screen: "표시·음성 설정") }
+            Section { ScreenBriefingControls(scope: .preferences, text: {
+                let selected = identifier.replacingOccurrences(of: "typecast:", with: "")
+                let name = TypecastCatalog.find(selected)?.nameKo ?? selected
+                return "선택 음성 \(name). 안내 음량 \(Int(volume * 100))퍼센트. 길안내 음성 \(navVoice ? "켜짐" : "꺼짐"). 하단 메뉴 불투명도 \(Int(tabBarOpacity * 100))퍼센트입니다."
+            }) }
             Section("하단 메뉴 표시") {
                 HStack {
                     Text("배경 불투명도")
@@ -78,6 +82,7 @@ struct PreferencesView: View {
             Section("고급") {
                 NavigationLink("음성 세부 설정") {
                     Form {
+                        LocalBriefingControls(title: "음성 세부 설정") { ["안내 음량 \(Int(volume * 100))퍼센트.", duck ? "안내 중 음악 음량 줄임." : "음악 음량 유지.", quiet && quietStart != quietEnd ? "자동 브리핑 조용시간 \(quietStart)시부터 \(quietEnd)시까지입니다." : "조용시간 제한 없음."] }
                         Section("음성 조절") {
                             slider("속도", value: $rate, range: 0.3...0.6)
                             slider("안내 음량", value: $volume, range: 0...1)

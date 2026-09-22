@@ -66,7 +66,7 @@ struct TeslaInteractiveClimateView: View {
 
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
-                ScreenBriefingControls(screen: "실내 공조")
+                ScreenBriefingControls(scope: .climate)
                 // Top HVAC Controls Grid (Matching Tesla Screen Top Bar [1, 2, 16, 15, 17, 13, 14, 11])
                 teslaTopHVACBar
 

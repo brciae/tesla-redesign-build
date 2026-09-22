@@ -33,12 +33,15 @@ struct FleetVehicleSnapshot {
         let meta: [String: Any] = ["mode": recent ? "recent" : "cached", "label": recent ? "Fleet 최근 조회" : "Fleet 마지막 수신", "at": receivedAt.timeIntervalSince1970 * 1000]
         var charge = meta, climate = meta
         charge["soc"] = soc; charge["rangeKm"] = rangeKm
-        charge["charging"] = charging
+        if let status = (payload["charge_state"] as? [String: Any])?["charging_state"] as? String,
+           ["Charging", "Stopped", "Complete", "Disconnected", "NoPower", "Starting"].contains(status) { charge["charging"] = charging; charge["isCharging"] = charging }
         charge["chargerKW"] = number("charge_state", "charger_power")
         charge["limit"] = number("charge_state", "charge_limit_soc")
         charge["addedKWh"] = number("charge_state", "charge_energy_added")
         if let hours = number("charge_state", "time_to_full_charge") { charge["minutesToLimit"] = hours * 60 }
         climate["insideC"] = insideC; climate["outsideC"] = outsideC
+        climate["isOn"] = flag("climate_state", "is_climate_on")
+        climate["targetC"] = number("climate_state", "driver_temp_setting")
         return ["charge": charge, "climate": climate]
     }
 }

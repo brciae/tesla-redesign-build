@@ -23,6 +23,9 @@ struct TypecastCharacterPickerSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                LocalBriefingControls(title: "타입캐스트 캐릭터 선택") {
+                    ["선택 음성 \(TypecastCatalog.find(typecast.selectedVoiceId)?.nameKo ?? "사용자 지정 음성").", "\(selectedCategory) 분류에서 \(filteredCharacters.count)개가 검색됐습니다."]
+                }
                 // Category Pills
                 categoryPills
                     .padding(.vertical, 8)

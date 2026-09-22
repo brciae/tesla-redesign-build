@@ -22,6 +22,18 @@ struct VehicleAppearanceView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                LocalBriefingControls(title: "차꾸미기") {
+                    var lines = [showingOriginal ? "원래 모델 비교 중입니다." : "저장 전 미리보기입니다."]
+                    switch selection {
+                    case "색상": lines.append("차체 색상 \(VehiclePaintPreset.modelYL.first { $0.hex == display.paint }?.name ?? "사용자 색상"), 마감 \(display.finish.rawValue)입니다.")
+                    case "틴팅": lines.append("화면 틴팅 농도 \(Int(display.tintStrength * 100))퍼센트입니다.")
+                    case "인테리어": lines.append("실내 색상 \(VehicleInteriorPreset.presets.first { $0.hex.uppercased() == display.interiorColor.uppercased() }?.name ?? "사용자 색상")입니다.")
+                    case "번호판": lines.append(display.plate.isEmpty ? "번호판 문구 미입력입니다." : "번호판 문구는 \(display.plate)입니다.")
+                    case "랩핑": lines.append("랩핑 \(display.wrap.rawValue)입니다.")
+                    default: break
+                    }
+                    return lines
+                }
                 RealityVehicleView(runtime: model.runtime, presentation: ["allowInteraction": true, "animate": false, "states": [:]], command: camera, reducedMotion: reduced, appearance: display) { error = $0 }
                     .frame(height: 245).clipped().accessibilityLabel("차꾸미기 3D 미리보기. 좌우로 회전 가능")
                 HStack {

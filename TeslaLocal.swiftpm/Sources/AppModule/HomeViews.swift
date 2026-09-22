@@ -245,7 +245,7 @@ struct HomeView: View {
 
             // Briefing button
             Spacer(minLength: 8)
-            ScreenBriefingControls(screen: "홈", compact: true)
+            ScreenBriefingControls(scope: .home, compact: true)
 
             // Settings button
             NavigationLink(value: Page.preferences) {
@@ -483,7 +483,7 @@ struct LocationStatusView: View {
         let hasCoords = l.flag("hasCoordinates")
         let lat = l.number("latitude")
         let lng = l.number("longitude")
-        PageBody(title: "차량 위치") {
+        PageBody(title: "차량 위치", briefing: .location, briefingText: { model.screenBriefing(.location, address: roadAddress) }) {
             VStack(spacing: 16) {
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -631,7 +631,7 @@ struct ChargeStatusView: View {
         let c = homePresentation(model, link).object("charge")
         let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
         let isPlugged = isCharging || c.flag("plugged")
-        PageBody(title: "충전") {
+        PageBody(title: "충전", briefing: .charging) {
             VStack(spacing: 16) {
                 // 3D Charging Vehicle (only connects cable/energy when plugged/charging)
                 Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
@@ -697,7 +697,7 @@ struct SecurityStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     var body: some View {
-        PageBody(title: "보안 및 잠금") {
+        PageBody(title: "보안 및 잠금", briefing: .security) {
             VStack(spacing: 16) {
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -1118,6 +1118,7 @@ struct EnergyTabRootView: View {
                 ChargeStatusView(link: link)
             } else {
                 ScrollView {
+                    ScreenBriefingControls(scope: .battery, text: { model.screenBriefing(.battery, days: batteryDays) })
                     BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(batteryDays)), days: $batteryDays)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -1165,7 +1166,7 @@ struct MenuTabRootView: View {
     @ObservedObject var navigation: EmbeddedNavigation
 
     var body: some View {
-        PageBody(title: "메뉴 및 설정") {
+        PageBody(title: "메뉴 및 설정", briefing: .menu) {
             VStack(spacing: 16) {
                 // Vehicle Identity & Connection Status Card
                 vehicleStatusHeader

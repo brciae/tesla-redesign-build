@@ -30,7 +30,7 @@ struct TeslaInteractiveControlsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
-                ScreenBriefingControls(screen: "차량 제어")
+                ScreenBriefingControls(scope: .controls)
                 // Live Status / Toast Banner
                 if let statusToast {
                     HStack(spacing: 8) {
@@ -725,6 +725,7 @@ struct TeslaFleetTokenSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section { LocalBriefingControls(title: "테슬라 Fleet 연동") { [fleet.isAuthenticated ? "계정 인증 완료." : "계정 인증 필요.", fleet.selectedVin.isEmpty ? "차량 미선택." : "차량 선택됨.", "조회 상태: \(fleet.vehicleDisplayStatus).", isExchanging ? "인증 교환 중입니다." : ""] } }
                 // MARK: - Dual Connection Architecture Guide
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
@@ -1157,6 +1158,7 @@ struct TeslaFleetTokenSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    LocalBriefingControls(title: "토큰 발급 안내") { [fleet.isAuthenticated ? "현재 계정 인증 완료 상태입니다." : "현재 계정 인증이 완료되지 않았습니다."] }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("테슬라 공식 토큰 발급 안내")
                             .font(.title2.weight(.bold))

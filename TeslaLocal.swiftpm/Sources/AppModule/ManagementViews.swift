@@ -4,6 +4,7 @@ import CoreLocation
 import Charts
 import UniformTypeIdentifiers
 import AppIntents
+import UserNotifications
 
 struct CareView: View {
     @EnvironmentObject private var model: AppModel
@@ -11,7 +12,7 @@ struct CareView: View {
     @State private var addMaintenance = false
     @State private var addParking = false
     var body: some View {
-        PageBody(title: "차량 관리") {
+        PageBody(title: "차량 관리", briefing: .care) {
             ParkingSection(addParking: $addParking)
             InfoCard {
                 CardTitle(title: "타이어 공기압", systemImage: "tirepressure",
@@ -145,6 +146,10 @@ struct ParkingHistoryView: View {
     var body: some View {
         let notes = Array(model.state.rows("parkingNotes").reversed())
         List {
+            LocalBriefingControls(title: "주차 기록") {
+                guard let latest = notes.first else { return ["저장된 주차 기록이 없습니다."] }
+                return ["최근 주차 메모: \(latest.string("note", "메모 없음")).", "\(dateText(latest.number("at"))) 기록입니다."]
+            }
             ForEach(notes, id: \.selfID) { note in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(note.string("note", "주차 위치")).font(.subheadline.weight(.semibold))
@@ -177,6 +182,7 @@ struct MaintenanceForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                LocalBriefingControls(title: "정비 기록") { [title.isEmpty ? "정비 항목 미입력." : "\(title).", odo.isEmpty ? "" : "작업 시 주행거리 \(odo)킬로미터.", next.isEmpty ? "" : "다음 확인 \(next)킬로미터.", cost.isEmpty ? "" : "비용 \(cost)원.", "저장 전 입력 내용입니다."] }
                 if let error = model.errorMessage { Text(error).foregroundStyle(.orange) }
                 TextField("정비·소모품 이름", text: $title); DatePicker("작업 날짜", selection: $date, displayedComponents: .date)
                 TextField("작업 시 주행거리 km", text: $odo).keyboardType(.decimalPad)
@@ -205,6 +211,7 @@ struct ParkingForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                LocalBriefingControls(title: "주차 메모") { [note.isEmpty ? "주차 메모 미입력." : note, photo == nil ? "사진 없음." : "사진 첨부됨.", "저장 전 입력 내용입니다."] }
                 if model.demo {
                     Text("예시 모드에서는 저장되지 않음 · 홈 화면에서 예시 모드를 종료한 뒤 사용").foregroundStyle(.orange)
                 }
@@ -343,15 +350,10 @@ struct AutomationUtilitiesView: View {
     @State private var time = Calendar.current.date(from: DateComponents(hour: 8, minute: 0)) ?? Date()
     @State private var weatherConsent = false
     var body: some View {
-        PageBody(title: title) {
+        PageBody(title: title, briefing: .schedule, briefingText: { await scheduleSummary() }) {
             InfoCard {
                 Text("연속 상태 수집").font(.headline)
                 Toggle("앱 전환 후 BLE 조회 유지", isOn: $backgroundRead)
-            }
-            InfoCard {
-                Text("음성 브리핑").font(.headline)
-                Button("현재 자료로 브리핑 듣기") { model.speak() }
-                Button("음성 중지") { model.stopSpeech() }
             }
             InfoCard {
                 Text("매일 출발 확인 알림").font(.headline)
@@ -369,6 +371,16 @@ struct AutomationUtilitiesView: View {
             }
         }.confirmationDialog("차량 위치를 기반으로 날씨를 조회합니다", isPresented: $weatherConsent) { Button("위치 전송 후 조회") { model.fetchWeather() } }
     }
+    private func scheduleSummary() async -> String {
+        let center = UNUserNotificationCenter.current()
+        let requests = await center.pendingNotificationRequests()
+        let settings = await center.notificationSettings()
+        guard let request = requests.first(where: { $0.identifier == "YL.dailyBrief" }),
+              let trigger = request.trigger as? UNCalendarNotificationTrigger,
+              let hour = trigger.dateComponents.hour, let minute = trigger.dateComponents.minute else { return "등록된 출발 확인 알림이 없습니다." }
+        let blocked = settings.authorizationStatus == .denied ? " 알림 권한이 꺼져 있어 수신할 수 없습니다." : ""
+        return "매일 \(hour)시 \(minute)분 출발 확인 알림이 등록되어 있습니다." + blocked
+    }
 }
 struct ConnectionView: View {
     @EnvironmentObject private var model: AppModel
@@ -385,6 +397,7 @@ struct ConnectionView: View {
     @State private var historyImporter = false
     var body: some View {
         Form {
+            Section { LocalBriefingControls(title: "연결 상태") { [link.authentic ? "블루투스 인증 완료." : "블루투스 미연결.", "Fleet: \(model.fleet.vehicleDisplayStatus).", "저장된 운행 \(model.state.rows("trips").count)회, 충전 \(model.state.rows("charges").count)회입니다."] } }
             Section {
                 NavigationLink("표시 단위·자동 음성 안내", value: Page.preferences)
                 TextField("표시 이름", text: $name)

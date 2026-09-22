@@ -282,6 +282,7 @@ struct SmartParkingCard: View {
                                 .scaledToFit()
                         }
                         .navigationTitle(record.displayTitle)
+                        .safeAreaInset(edge: .bottom) { LocalBriefingControls(title: "주차 사진") { [record.displayTitle] }.padding().background(.regularMaterial) }
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {

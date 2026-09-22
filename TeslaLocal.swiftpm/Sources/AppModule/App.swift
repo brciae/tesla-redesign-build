@@ -195,16 +195,18 @@ private struct AppDestinations: ViewModifier {
         case .automation: AutomationView()
         case .connection: ConnectionView(link: link)
         case .briefing: BriefingView()
-        case .vehicle3D: PageBody(title: "차량 3D") { Vehicle3DPanel(link: link) }
+        case .vehicle3D: PageBody(title: "차량 3D", briefing: .vehicle3D) { Vehicle3DPanel(link: link) }
         }
     }
 }
 struct PageBody<Content: View>: View {
     let title: String
+    let briefing: BriefingScope
+    var briefingText: (() async -> String)? = nil
     @ViewBuilder var content: () -> Content
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) { ScreenBriefingControls(screen: title); content() }
+            VStack(alignment: .leading, spacing: 24) { ScreenBriefingControls(scope: briefing, text: briefingText); content() }
                 .frame(maxWidth: 680)
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
@@ -265,7 +267,7 @@ struct DriveView: View {
     @State private var confirmEnd = false
     var body: some View {
         let d = model.groups.object("drive"), c = model.groups.object("charge")
-        PageBody(title: "주행 정보") {
+        PageBody(title: "주행 정보", briefing: .driving) {
             VStack(spacing: 8) {
                 Text(model.output.object("fresh").flag("drive") ? valueText(d.number("speedKmh").map { units.distanceValue($0) }) : "—").font(.system(size: 88, weight: .light, design: .rounded)).monospacedDigit()
                 Caption(units.speedLabel); Text(model.output.object("fresh").flag("drive") ? d.string("gear", "—") : "—").font(.system(size: 28, weight: .medium))
@@ -301,7 +303,7 @@ struct DriveView: View {
 struct BriefingView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
-        PageBody(title: "오늘의 브리핑") {
+        PageBody(title: "오늘의 브리핑", briefing: .daily) {
             InfoCard { Label("출발 전", systemImage: "sun.horizon").font(.headline); Text(model.output.string("briefing")).font(.system(size: 23)).lineSpacing(7); HStack { Button("읽어주기") { model.speak() }; Spacer(); Button("음성 중지") { model.stopSpeech() } } }
             InfoCard {
                 CardTitle(title: "마지막 회차 요약", systemImage: "flag.checkered",
@@ -332,7 +334,7 @@ struct TripsView: View {
     }()
 
     var body: some View {
-        PageBody(title: "운행 기록") {
+        PageBody(title: "운행 기록", briefing: .trips, briefingText: { model.screenBriefing(.trips, days: period) }) {
             let estimates = model.output.object("energyPeriods").object(String(period))
             let trips = Array(estimates.rows("trips").reversed())
             Picker("기간", selection: $period) { Text("7일").tag(7); Text("30일").tag(30); Text("90일").tag(90); Text("전체").tag(36500) }.pickerStyle(.segmented)
@@ -346,15 +348,15 @@ struct TripsView: View {
                             .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("오늘의 브리핑").font(.headline)
+                                Text("선택 기간 운행 요약").font(.headline)
                                 Spacer()
-                                Button { model.speak() } label: {
+                                Button { model.speak(model.screenBriefing(.trips, days: period)) } label: {
                                     Label("읽어주기", systemImage: "speaker.wave.2.fill")
                                         .font(.caption.weight(.semibold))
                                 }
                                 .buttonStyle(.bordered)
                             }
-                            Caption(model.output.string("briefing"))
+                            Caption(model.screenBriefing(.trips, days: period))
                         }
                     }
                 }
@@ -506,7 +508,7 @@ struct TripListView: View {
     @Environment(\.vehicleUnits) private var units
     let trips: [Object]
     var body: some View {
-        PageBody(title: "운행 전체 기록") {
+        PageBody(title: "운행 전체 기록", briefing: .allTrips, briefingText: { model.screenBriefing(.allTrips, rows: trips) }) {
             ForEach(trips, id: \.selfID) { trip in
                 InfoCard {
                     HStack {
@@ -563,7 +565,7 @@ struct BatteryView: View {
     var body: some View {
         let health = model.output.object("health"), target = model.output.object("target")
         let charges = model.output.object("charging").rows("rows")
-        PageBody(title: "배터리·충전") {
+        PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }) {
             BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days)
             InfoCard {
                 CardTitle(title: "충전 요약", systemImage: "bolt.fill",
@@ -675,7 +677,7 @@ struct ChargeListView: View {
     let charges: [Object]
     @State private var editing: Object?
     var body: some View {
-        PageBody(title: "충전 전체 기록") {
+        PageBody(title: "충전 전체 기록", briefing: .charges, briefingText: { model.screenBriefing(.charges, rows: charges) }) {
             ForEach(charges, id: \.selfID) { c in
                 InfoCard {
                     HStack {
@@ -718,6 +720,7 @@ struct ChargeForm: View {
     var body: some View {
         NavigationStack {
             Form {
+                LocalBriefingControls(title: "충전 기록 편집") { [place.isEmpty ? "" : "충전 장소 \(place).", supply.isEmpty ? "" : "공급량 \(supply)킬로와트시.", cost.isEmpty ? "" : "결제액 \(cost)원.", start.isEmpty || end.isEmpty ? "" : "잔량 \(start)에서 \(end)퍼센트.", "저장 전 입력 내용입니다."] }
                 if let error = model.errorMessage { Section { Text(error).foregroundStyle(.orange) } }
                 Section {
                     PhotosPicker(selection: $picker, matching: .images) {

@@ -55,6 +55,7 @@ struct DrivingWorkspace: View {
         .sheet(isPresented: $settings) {
             NavigationStack {
                 Form {
+                    Section { LocalBriefingControls(title: "운전 화면 설정") { ["지도는 \(preferredMapEngine == "kakao" ? "카카오" : "애플"), 테마는 \(navigation.theme.title)입니다."] } }
                     Section("지도 엔진") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
                             Text("카카오 지도 (KNSDK)").tag("kakao")
@@ -162,7 +163,7 @@ struct DrivingWorkspace: View {
                     .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
             }
 
-            ScreenBriefingControls(screen: "운전 대시보드", compact: true)
+            ScreenBriefingControls(scope: .dashboard, compact: true)
             Button { settings = true } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: compact ? 14 : 16))

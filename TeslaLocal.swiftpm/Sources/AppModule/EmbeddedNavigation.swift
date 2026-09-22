@@ -445,6 +445,7 @@ struct EmbeddedNavigationScreen: View {
     @ObservedObject var navigation: EmbeddedNavigation
     var body: some View {
         VStack(spacing: 0) {
+            ScreenBriefingControls(scope: .navigation)
             HStack(spacing: 16) {
                 Text(navigation.guiding ? "카카오 길안내" : "안내 준비 중").font(.headline)
                 Spacer()
@@ -474,7 +475,7 @@ struct NavigationSetupView: View {
     @AppStorage("handOffToNaver") private var handOffToNaver = false
     @State private var nativeKey = ""
     var body: some View {
-        PageBody(title: "길안내") {
+        PageBody(title: "길안내", briefing: .navigation) {
             InfoCard {
                 Label("위치 권한과 정확도", systemImage: "location.circle").font(.headline)
                 Text(navigation.locationPermission)
