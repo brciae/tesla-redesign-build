@@ -19,7 +19,7 @@ struct SmartParkingCard: View {
                 Caption("직접 저장한 시각을 기록함 · 실제 도착 시각은 차량에서 제공하지 않음")
             }.padding()
         }
-        if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == model.fleet.selectedVin {
+        if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
             LocalBriefingControls(title: "주차 상태") {
                 var lines = [record.displayTitle + ".", "\(formatTime(record.timestamp)) 위치 기록입니다."]
                 if let warning = record.verification.securityWarning { lines.append(warning) }
