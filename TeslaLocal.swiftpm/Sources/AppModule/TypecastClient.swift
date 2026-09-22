@@ -463,7 +463,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // MARK: - Test Preview Playback
 
-    func testSpeech(text: String = "안녕하세요! 테슬라 스마트 드라이빙을 시작합니다.", voiceId: String? = nil, completion: (() -> Void)? = nil) {
+    func testSpeech(text: String = "음성 연결 확인. 300미터 앞에서 우회전하세요.", voiceId: String? = nil, completion: (() -> Void)? = nil) {
         stop()
         testCompletion = completion
         lastStatus = "타입캐스트 음성 생성 중…"

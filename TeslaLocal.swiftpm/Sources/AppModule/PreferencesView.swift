@@ -55,7 +55,7 @@ struct PreferencesView: View {
 
                 VoicePreviewControls(preview: {
                     let name = currentVoiceName
-                    model.voice.preview("안녕하세요. \(name) 음성 안내입니다. 안전 운전하세요.")
+                    model.voice.preview("\(name) 목소리입니다. 300미터 앞에서 우회전하세요.")
                 }, stop: { model.stopSpeech() })
                 VoiceStatus(voice: model.voice)
             }
