@@ -39,7 +39,8 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/LocalRuntime.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastCatalog.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastClient.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift"
    ],
    "settings": {
     "base": {
