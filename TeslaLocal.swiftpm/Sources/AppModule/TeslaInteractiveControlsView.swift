@@ -808,7 +808,7 @@ struct TeslaFleetTokenSheet: View {
                             Divider().padding(.vertical, 2)
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text("고객 비밀번호 (Client Secret - 선택/권장):")
+                                    Text("개발자 앱 Client Secret (필수 · 계정 비밀번호 아님):")
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.secondary)
                                     Spacer()
@@ -837,9 +837,10 @@ struct TeslaFleetTokenSheet: View {
                             fleet.saveClientId(clientIdText)
                             fleet.saveRedirectUri(redirectUriText)
                             fleet.saveClientSecret(clientSecretText)
+                            authCodeText = ""
                             if let authURL = fleet.startWebAuthorization() {
                                 UIApplication.shared.open(authURL)
-                            }
+                            } else { message = fleet.lastError ?? "로그인 설정 확인 필요" }
                         } label: {
                             HStack {
                                 Spacer()
@@ -859,7 +860,7 @@ struct TeslaFleetTokenSheet: View {
                         // Step 2: Code / Callback URL Input
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("2단계: 인증 코드 또는 리다이렉트 URL 붙여넣기")
+                                Text("2단계: 이번 로그인 완료 후 전체 URL 붙여넣기")
                                     .font(.caption.weight(.bold))
                                 Spacer()
                                 Button("클립보드 붙여넣기") {
@@ -872,7 +873,7 @@ struct TeslaFleetTokenSheet: View {
                                 .controlSize(.mini)
                             }
 
-                            TextField("code=... 또는 전체 리다이렉트 URL 입력", text: $authCodeText)
+                            TextField("https://.../callback?code=...&state=... 전체 주소", text: $authCodeText)
                                 .font(.system(size: 12, design: .monospaced))
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
@@ -916,7 +917,7 @@ struct TeslaFleetTokenSheet: View {
                         fleet.saveRegion(newRegion)
                     }
 
-                    Text("※ 한국/아시아 출고 차량(VIN: LRW...)은 APAC 리전이 기본입니다. 조회 시 작동하는 서버로 자동 폴백됩니다.")
+                    Text("※ 한국·아시아(중국 제외)는 공식 NA 서버를 사용합니다. 차량 생산지나 VIN으로 리전을 변경하지 않습니다.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -1031,16 +1032,13 @@ struct TeslaFleetTokenSheet: View {
                 clientIdText = fleet.getClientId()
                 redirectUriText = fleet.getRedirectUri()
                 clientSecretText = fleet.getClientSecret() ?? ""
-                if let clip = UIPasteboard.general.string, clip.contains("code=") {
-                    authCodeText = clip
-                }
             }
         }
     }
 
     private func exchangeCodeAndConnect() {
         let code = authCodeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty else { return }
+        guard !code.isEmpty, !isExchanging else { return }
         isExchanging = true
         message = "테슬라 인증 서버에서 토큰 교환 중…"
 
@@ -1050,6 +1048,7 @@ struct TeslaFleetTokenSheet: View {
                 fleet.saveRedirectUri(redirectUriText)
                 fleet.saveClientSecret(clientSecretText)
                 _ = try await fleet.exchangeAuthorizationCode(code: code)
+                await MainActor.run { authCodeText = "" }
                 let list = try await fleet.fetchVehicles()
                 await MainActor.run {
                     isExchanging = false
@@ -1063,7 +1062,7 @@ struct TeslaFleetTokenSheet: View {
             } catch {
                 await MainActor.run {
                     isExchanging = false
-                    message = "인증 실패: \(error.localizedDescription)"
+                    message = fleet.isAuthenticated ? "토큰 저장됨 · 차량 조회 실패: \(error.localizedDescription)" : "인증 실패: \(error.localizedDescription)"
                 }
             }
         }

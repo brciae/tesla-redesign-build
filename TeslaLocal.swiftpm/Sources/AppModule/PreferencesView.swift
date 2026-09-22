@@ -200,7 +200,7 @@ struct TypecastSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            InfoRow("타입캐스트 멀티 계정 안내", "계정을 추가하여 등록해두시면 각 계정의 15,000 크레딧을 1번부터 차례대로 자동 소진합니다. 한 번 생성된 오디오는 앱에 영구 캐싱되어 0크레딧으로 즉시 재생됩니다.")
+            InfoRow("타입캐스트 API 이용 안내", "현재 선택한 키만 사용하며 자동 계정 순환은 하지 않습니다. 무료 API는 IP당 계정 제한이 있으며 웹 구독과 API 플랜은 별개입니다.")
         }
     }
 
@@ -223,7 +223,7 @@ struct TypecastSettingsSection: View {
             }
 
             let count = typecast.validApiKeys.count
-            Text(count == 0 ? "타입캐스트 API 키를 등록하세요. 이용 가능 여부와 크레딧은 타입캐스트 API 계정에서 확인하세요." : "현재 \(count)개 키 등록됨. 접근 제한(403) 발생 시 자동 계정 전환을 중단합니다.")
+            Text(count == 0 ? "타입캐스트 API 키를 등록하세요. 이용 가능 여부와 크레딧은 타입캐스트 API 계정에서 확인하세요." : "현재 \(count)개 키 등록됨. 현재 선택한 키만 사용하며 자동 전환하지 않습니다.")
                 .font(.caption2)
                 .foregroundStyle(count > 1 ? .green : .secondary)
 
@@ -275,7 +275,7 @@ struct TypecastSettingsSection: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus.circle.fill")
-                    Text("계정 추가 (+15,000 크레딧 슬롯)")
+                    Text("API 키 추가 (수동 선택용)")
                 }
                 .font(.caption.weight(.semibold))
             }

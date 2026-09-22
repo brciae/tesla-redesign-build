@@ -3,15 +3,14 @@ import AVFoundation
 import CryptoKit
 
 /// Client and local cache manager for Typecast (타입캐스트) AI Text-to-Speech API.
-/// Supports monthly 15,000 free credits with aggressive local disk caching
-/// to achieve zero-credit re-use and instantaneous (0ms) offline replay.
+/// Reuses Typecast-generated audio from the local cache.
 final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = TypecastClient()
 
     @Published var isEnabled: Bool {
         didSet { UserDefaults.standard.set(isEnabled, forKey: "typecastEnabled") }
     }
-    // Dynamic Typecast accounts pool (each account 15,000 free credits)
+    // Saved API keys; selection is manual and errors never trigger account cycling.
     @Published var apiKeys: [String] {
         didSet {
             UserDefaults.standard.set(apiKeys, forKey: "typecastApiKeys")
@@ -122,7 +121,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             self.apiKeys = savedKeys
         } else {
             let legacyKey = UserDefaults.standard.string(forKey: "typecastApiKey") ?? ""
-            self.apiKeys = [legacyKey, "", "", "", ""]
+            self.apiKeys = [legacyKey]
         }
         self.activeKeyIndex = UserDefaults.standard.integer(forKey: "typecastActiveKeyIndex")
         self.selectedVoiceId = UserDefaults.standard.string(forKey: "typecastVoiceId") ?? Self.defaultVoiceId
