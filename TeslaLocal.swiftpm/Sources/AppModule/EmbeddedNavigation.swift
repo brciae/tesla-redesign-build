@@ -463,7 +463,7 @@ struct EmbeddedNavigationScreen: View {
                 Text(navigation.guiding ? "카카오 길안내" : "안내 준비 중").font(.headline)
                 Spacer()
                 DirectionPicker(navigation: navigation).frame(maxWidth: 240)
-                Button("종료", role: .destructive) { navigation.stop() }.padding(.leading, 8)
+                Button("안내 종료", role: .destructive) { navigation.endGuidance() }.padding(.leading, 8)
             }.padding(12).background(Theme.bg)
             if !navigation.directionNotice.isEmpty { Text(navigation.directionNotice).font(.caption).padding(6).accessibilityLabel(navigation.directionNotice) }
             if let controller = navigation.controller { KakaoMapPanel(navigation: navigation, controller: controller, theme: .cluster, anchorX: 0.52, anchorY: 0.72) }
