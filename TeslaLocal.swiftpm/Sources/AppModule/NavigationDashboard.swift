@@ -177,7 +177,6 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         GeometryReader { geo in
             layout(NavMetrics(size: geo.size))
         }
-        .accessibilityIdentifier("navigation.theme." + theme.rawValue)
     }
 
     private func layout(_ m: NavMetrics) -> some View {

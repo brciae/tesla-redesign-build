@@ -205,7 +205,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     }
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         if !guiding, let controller, let point = locations.last, Self.usableLocation(point) {
-            controller.updateStandbyLocation(latitude: point.coordinate.latitude, longitude: point.coordinate.longitude, bearing: point.course, speed: point.speed)
+            controller.updateStandbyLocation(latitude: point.coordinate.latitude, longitude: point.coordinate.longitude, bearing: point.course, speed: point.speed, timestamp: point.timestamp.timeIntervalSince1970)
         }
         guard busy, controller == nil, let candidate, let ticket, current(ticket), canPresent(), let point = locations.last else { return }
         guard let receivedAt = candidate.number("receivedAt"), Date().timeIntervalSince1970 * 1000 - receivedAt <= 30000 else {

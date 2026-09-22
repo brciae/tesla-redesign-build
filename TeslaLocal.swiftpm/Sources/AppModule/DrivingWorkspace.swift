@@ -427,7 +427,7 @@ struct LiveStandbyMapView: View {
                 Image(systemName: "location.fill")
                     .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.4))
                     .font(.system(size: 13))
-                Text(readout.destination.isEmpty ? "실시간 지도 주행 중 · 테슬라 내비 연동 대기" : "\(readout.destination) 길안내 준비")
+                Text(readout.destination.isEmpty ? "자유주행 · 목적지 미설정" : "\(readout.destination) 길안내 준비")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
                 if !readout.destination.isEmpty {
