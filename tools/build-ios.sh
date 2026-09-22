@@ -19,6 +19,8 @@ xcodebuild -version
 xcodegen --version
 node tools/embed-js.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
+swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests
+Xcode/TypecastPolicyTests
 # The original artwork stays unchanged; asset layout adds a 5% margin on each side.
 node tools/js-logic-tests.cjs
 swift tools/prepare-icon.swift
