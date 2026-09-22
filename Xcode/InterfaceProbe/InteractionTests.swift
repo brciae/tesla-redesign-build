@@ -97,6 +97,21 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["경로 확인 중"].exists)
         XCUIDevice.shared.orientation = .portrait
     }
+    func testParkedRouteStopButton() {
+        let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "parked-route-probe"]; app.launch()
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let stop = app.buttons["navigation.parked.stop"]
+            XCTAssertTrue(stop.waitForExistence(timeout: 8))
+            XCTAssertTrue(stop.isHittable)
+            XCTAssertGreaterThanOrEqual(stop.frame.height, 44)
+            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Parked route stop \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
+        }
+        app.buttons["navigation.parked.stop"].tap()
+        XCTAssertTrue(app.staticTexts["navigation.stopped"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["navigation.parked.stop"].exists)
+        XCUIDevice.shared.orientation = .portrait
+    }
     func testAppearanceProductionScreens() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["reset-appearance-fixture"]; app.launch()

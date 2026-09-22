@@ -96,6 +96,7 @@ struct NavigationProbe: View {
     @State private var blank = false
     @State private var bend = 0.0
     @State private var moving = false
+    @State private var routeStopped = false
     @StateObject private var model = AppModel()
     var body: some View {
         VStack(spacing: 0) {
@@ -111,6 +112,10 @@ struct NavigationProbe: View {
                     }
                 }.padding(.horizontal, 8)
             }.frame(height: 44)
+            if ProcessInfo.processInfo.arguments.contains("parked-route-probe") {
+                if routeStopped { Text("자유주행").accessibilityIdentifier("navigation.stopped") }
+                else { ParkedNavigationActions { routeStopped = true } }
+            }
             NavigationDashboard(theme: theme, data: sample) {
                 NavigationMapFixture()
             } car: {
