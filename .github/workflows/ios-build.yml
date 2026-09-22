@@ -1,4 +1,4 @@
-name: iOS Build v73
+name: iOS Build
 on:
   workflow_dispatch:
   push:
@@ -9,6 +9,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Read app version
+        id: version
+        run: |
+          node -e 'const fs=require("fs"),s=require("./Xcode/project.json").settings.base; fs.appendFileSync(process.env.GITHUB_OUTPUT, "version="+s.MARKETING_VERSION+"\nbuild="+s.CURRENT_PROJECT_VERSION+"\n");'
       - name: Tools
         run: brew install xcodegen
       - name: Node route-gate / freshness tests
@@ -17,7 +21,7 @@ jobs:
         run: bash tools/build-ios.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: YLCompanion-v73
+          name: App-Tesla ${{ steps.version.outputs.version }} Build${{ steps.version.outputs.build }} v01 Review
           path: Xcode/BuildOutput/*.ipa
       - uses: actions/upload-artifact@v4
         if: always()
