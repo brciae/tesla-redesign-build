@@ -18,11 +18,10 @@ jobs:
       - name: Delivery and restart recovery
         working-directory: server
         run: |
-          docker compose cp integration.py archive:/tmp/integration.py
-          docker compose exec -T archive python /tmp/integration.py
+          docker compose exec -T archive python - < integration.py
           docker compose restart archive kafka
           docker compose up --wait --wait-timeout 180
-          docker compose exec -T archive python /tmp/integration.py
+          docker compose exec -T archive python - < integration.py
           docker stats --no-stream
       - name: Diagnostics
         if: failure()
