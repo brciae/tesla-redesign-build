@@ -1,0 +1,23 @@
+# Activate only after public hostname/certificate/port verification.
+# docker compose -f docker-compose.yml -f docker-compose.telemetry.yml up -d
+services:
+  telemetry:
+    image: tesla/fleet-telemetry:v0.9.4
+    restart: unless-stopped
+    mem_limit: 192m
+    cpu_shares: 256
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [/fleet-telemetry, -config=/config/config.json]
+    ports: ["8443:8443"]
+    volumes:
+      - ./telemetry-config.json:/config/config.json:ro
+      - ./certs:/certs:ro
+    networks: [archive]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}

@@ -8,3 +8,5 @@ test_voice.py
 .DS_Store
 *.ipa
 __pycache__/
+server/certs/
+server/telemetry-config.json

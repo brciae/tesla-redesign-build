@@ -1,8 +1,12 @@
 import json
 import tempfile
 import unittest
+import threading
+import urllib.request
+import urllib.error
+from http.server import HTTPServer
 from pathlib import Path
-from store import Archive
+from store import Archive, handler_for
 
 VIN = "LRWYGCEK0NC000001"
 OTHER = "LRWYGCEK0NC000002"
@@ -54,6 +58,32 @@ class ArchiveTests(unittest.TestCase):
         self.assertTrue(second["more"])
         self.assertFalse(third["more"])
         self.assertEqual(sum(len(p["payloads"]) for p in (first, second, third)), 105)
+
+    def test_api_requires_token_and_rejects_bad_cursor(self):
+        token = "fixture-archive-token-that-is-not-a-real-secret"
+        server = HTTPServer(("127.0.0.1", 0), handler_for(self.archive, token, {"ready": True}))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = "http://127.0.0.1:" + str(server.server_port)
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(base + "/v1/telemetry?vin=" + VIN)
+            self.assertEqual(denied.exception.code, 401)
+            denied.exception.close()
+            request = urllib.request.Request(base + "/v1/telemetry?vin=" + VIN + "&after=-1",
+                                             headers={"Authorization": "Bearer " + token})
+            with self.assertRaises(urllib.error.HTTPError) as invalid:
+                urllib.request.urlopen(request)
+            self.assertEqual(invalid.exception.code, 400)
+            invalid.exception.close()
+            request = urllib.request.Request(base + "/v1/telemetry?vin=" + VIN,
+                                             headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(request) as response:
+                self.assertEqual(json.load(response)["payloads"], [])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
 
 if __name__ == "__main__":
