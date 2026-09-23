@@ -2,144 +2,104 @@ import RealityKit
 import UIKit
 import simd
 
-/// 3D Tesla Charging Scene Decor: renders the connected charging cable,
-/// flowing green neon energy pulse wave along the cable, and pulsing charge port LED.
-@MainActor
-final class ChargingSceneDecor {
-    private let vehicle: Entity
+/// Smooth round cable with a continuous luminance wave shared by all vehicle scenes.
+@MainActor final class ChargingSceneDecor {
     private let rig = Entity()
-    private var cableSegments: [ModelEntity] = []
-    private var pulseSegments: [ModelEntity] = []
-    private var portLed: ModelEntity?
+    private var cores: [ModelEntity] = []
+    private var halos: [ModelEntity] = []
+    private var distances: [Float] = []
+    private var led: ModelEntity?
+    private var length: Float = 1
+    private var elapsed: Float = 0
+    private var built = false
     private(set) var isCharging = false
     private(set) var isPlugged = false
-    private var pulseTime: Float = 0
-    private var ledTime: Float = 0
-    private var isBuilt = false
-
-    var needsAnimation: Bool {
-        isCharging
-    }
-
-    // Waypoints connecting the vehicle's rear-left charge port to the ground and outward.
-    // Car coordinates: +x is Left, +y is Up, +z is Forward, -z is Rear.
-    // Tesla Model Y charge port is at approximately x: +0.92m, y: +1.02m, z: -2.22m.
-    private let waypoints: [SIMD3<Float>] = [
-        [0.92, 1.02, -2.22],  // Charge port inlet
-        [1.06, 0.82, -2.06],  // Cable drape curve 1
-        [1.22, 0.52, -1.78],  // Cable drape curve 2
-        [1.36, 0.22, -1.42],  // Cable drape curve 3
-        [1.46, 0.03, -1.08],  // Ground contact point
-        [1.70, 0.02, -0.52],  // Ground extension curve
-        [2.00, 0.02, 0.15]    // Floor lead towards charger
+    var needsAnimation: Bool { isCharging && isPlugged }
+    private let points: [SIMD3<Float>] = [
+        [0.92, 1.02, -2.22], [1.06, 0.82, -2.06], [1.22, 0.52, -1.78],
+        [1.36, 0.22, -1.42], [1.46, 0.03, -1.08], [1.70, 0.02, -0.52], [2.00, 0.02, 0.15]
     ]
-
-    init(vehicle: Entity) {
-        self.vehicle = vehicle
-        vehicle.addChild(rig)
-        rig.isEnabled = false
-    }
-
+    init(vehicle: Entity) { vehicle.addChild(rig); rig.isEnabled = false }
     func setIsCharging(_ charging: Bool, plugged: Bool = true) {
-        isCharging = charging
-        isPlugged = plugged
-        if plugged && !isBuilt {
-            buildCable()
-        }
+        let changed = isCharging != charging || isPlugged != plugged
+        isCharging = charging; isPlugged = plugged
+        if plugged && !built { build() }
         rig.isEnabled = plugged
-        for pulse in pulseSegments {
-            pulse.isEnabled = charging
-        }
-        if !charging {
-            portLed?.isEnabled = false
-        }
+        for entity in cores + halos { entity.isEnabled = charging && plugged }
+        led?.isEnabled = charging && plugged
+        if changed { elapsed = 0; renderWave() }
     }
-
-    private func buildCable() {
-        guard !isBuilt else { return }
-        isBuilt = true
-
-        let cableColor = UIColor(white: 0.14, alpha: 1.0)
-        let cableMaterial = UnlitMaterial(color: cableColor)
-        let pulseColor = UIColor(red: 0.0, green: 1.0, blue: 0.55, alpha: 0.95)
-        let pulseMaterial = UnlitMaterial(color: pulseColor)
-
-        // 1. Build charging cable segments between waypoints
-        for i in 0..<(waypoints.count - 1) {
-            let p0 = waypoints[i]
-            let p1 = waypoints[i + 1]
-            let delta = p1 - p0
-            let length = simd_length(delta)
-            guard length > 0.01 else { continue }
-
-            let dir = simd_normalize(delta)
-            let mid = (p0 + p1) * 0.5
-
-            // Main black rubber cable
-            let thickness: Float = (i >= 4) ? 0.028 : 0.032
-            let cableMesh = MeshResource.generateBox(width: thickness, height: thickness, depth: length)
-            let segEntity = ModelEntity(mesh: cableMesh, materials: [cableMaterial])
-            segEntity.position = mid
-            segEntity.orientation = simd_quatf(from: [0, 0, 1], to: dir)
-            rig.addChild(segEntity)
-            cableSegments.append(segEntity)
-
-            // Neon green energy glowing core (active only during charging)
-            let pulseMesh = MeshResource.generateBox(width: thickness * 0.45, height: thickness * 0.45, depth: length * 0.92)
-            let pulseEntity = ModelEntity(mesh: pulseMesh, materials: [pulseMaterial])
-            pulseEntity.position = mid + SIMD3<Float>(0, 0.008, 0)
-            pulseEntity.orientation = simd_quatf(from: [0, 0, 1], to: dir)
-            pulseEntity.isEnabled = isCharging
-            rig.addChild(pulseEntity)
-            pulseSegments.append(pulseEntity)
-        }
-
-        // 2. Charge Port Pulsing Green LED
-        let ledMesh = MeshResource.generatePlane(width: 0.065, height: 0.065)
-        let ledEntity = ModelEntity(mesh: ledMesh, materials: [UnlitMaterial(color: pulseColor)])
-        ledEntity.position = [0.93, 1.02, -2.22]
-        ledEntity.orientation = simd_quatf(angle: .pi * 0.5, axis: [0, 1, 0])
-        ledEntity.isEnabled = isCharging
-        rig.addChild(ledEntity)
-        portLed = ledEntity
-
-        // Notice: NO groundWash plane created here to keep the ground clean and pitch black
+    private func material(_ brightness: Float, halo: Bool = false) -> UnlitMaterial {
+        var value = UnlitMaterial(color: UIColor(red: CGFloat(0.01 + brightness * 0.20), green: CGFloat(0.24 + brightness * 0.76), blue: CGFloat(0.13 + brightness * 0.46), alpha: 1))
+        if halo { value.blending = .transparent(opacity: .init(floatLiteral: 0.025 + brightness * 0.16)) }
+        return value
     }
-
-    /// Step animations at display rate: flowing energy wave + breathing port LED
+    private func curve(_ index: Int, _ t: Float) -> SIMD3<Float> {
+        let a = points[max(0, index - 1)], b = points[index]
+        let c = points[index + 1], d = points[min(points.count - 1, index + 2)]
+        let t2 = t * t, t3 = t2 * t
+        let linear = (c - a) * t
+        let quadratic = (2 * a - 5 * b + 4 * c - d) * t2
+        let cubic = (-a + 3 * b - 3 * c + d) * t3
+        let p = (2 * b + linear + quadratic + cubic) * 0.5
+        return SIMD3<Float>(p.x, max(0.02, p.y), p.z)
+    }
+    private func tube(_ a: SIMD3<Float>, _ b: SIMD3<Float>, radius: Float, material: UnlitMaterial) -> ModelEntity {
+        let delta = b - a
+        let entity = ModelEntity(mesh: .generateCylinder(height: simd_length(delta) + radius, radius: radius), materials: [material])
+        entity.position = (a + b) * 0.5
+        entity.orientation = simd_quatf(from: SIMD3<Float>(0, 1, 0), to: simd_normalize(delta))
+        rig.addChild(entity)
+        return entity
+    }
+    private func build() {
+        built = true
+        var samples: [SIMD3<Float>] = []
+        for index in 0..<(points.count - 1) {
+            for step in 0..<16 { samples.append(curve(index, Float(step) / 16)) }
+        }
+        samples.append(points.last!)
+        var distance: Float = 0
+        for index in 0..<(samples.count - 1) {
+            let a = samples[index], b = samples[index + 1]
+            let segmentLength = simd_distance(a, b)
+            _ = tube(a, b, radius: 0.014, material: UnlitMaterial(color: UIColor(white: 0.095, alpha: 1)))
+            let lift = SIMD3<Float>(0, 0.012, 0)
+            cores.append(tube(a + lift, b + lift, radius: 0.007, material: material(0.2)))
+            halos.append(tube(a + lift, b + lift, radius: 0.023, material: material(0.2, halo: true)))
+            distances.append(distance + segmentLength * 0.5)
+            distance += segmentLength
+        }
+        length = distance
+        let port = ModelEntity(mesh: .generateSphere(radius: 0.022), materials: [material(0.7)])
+        port.position = points[0]; rig.addChild(port); led = port
+        renderWave()
+    }
     func step(dt: Float) {
-        guard isCharging, isBuilt else { return }
-
-        pulseTime += dt * 2.8 // Flow speed
-        ledTime += dt * 3.6   // LED pulse speed
-
-        // 1. Flowing energy wave: animate visibility/opacity of pulse segments sequentially
-        let count = pulseSegments.count
-        guard count > 0 else { return }
-
-        // Moving wave phase along the cable
-        let cycle = pulseTime.truncatingRemainder(dividingBy: Float(count))
-        for i in 0..<count {
-            // Wave flows from ground (highest index) towards the port (index 0)
-            let reversedIndex = Float(count - 1 - i)
-            let dist = abs(reversedIndex - cycle)
-            let waveIntensity = max(0.2, 1.0 - min(1.0, dist * 0.6))
-            pulseSegments[i].isEnabled = waveIntensity > 0.35
-        }
-
-        // 2. Breathing LED glow at the charge port inlet
-        let breath = 0.45 + 0.55 * sin(ledTime)
-        portLed?.isEnabled = breath > 0.4
+        guard needsAnimation, built else { return }
+        elapsed += min(0.1, max(0, dt))
+        renderWave()
     }
-
+    private func renderWave() {
+        guard built else { return }
+        // Distance-based travel stays smooth around bends; wrap happens outside the cable.
+        let tail: Float = 0.85
+        let travel = length + 2 * tail
+        let head = length + tail - (elapsed * 0.85).truncatingRemainder(dividingBy: travel)
+        for index in cores.indices {
+            let delta = distances[index] - head
+            let width: Float = delta >= 0 ? 0.48 : 0.13
+            let wave = exp(-(delta * delta) / (2 * width * width))
+            let intensity: Float = UIAccessibility.isReduceMotionEnabled ? 0.45 : 0.10 + 0.90 * wave
+            cores[index].model?.materials = [material(intensity)]
+            halos[index].model?.materials = [material(intensity, halo: true)]
+        }
+        let breath: Float = UIAccessibility.isReduceMotionEnabled ? 0.6 : 0.6 + 0.25 * sin(elapsed * 1.8)
+        led?.model?.materials = [material(breath)]
+    }
     func teardown() {
-        for seg in cableSegments { seg.removeFromParent() }
-        for pulse in pulseSegments { pulse.removeFromParent() }
-        cableSegments.removeAll()
-        pulseSegments.removeAll()
-        portLed?.removeFromParent()
-        portLed = nil
         rig.removeFromParent()
-        isBuilt = false
+        for child in Array(rig.children) { child.removeFromParent() }
+        cores.removeAll(); halos.removeAll(); distances.removeAll(); led = nil; built = false
     }
 }

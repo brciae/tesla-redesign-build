@@ -7,7 +7,7 @@ struct FleetVehicleSnapshot {
     let receivedAt: Date
     let payload: [String: Any]
 
-    private func number(_ section: String, _ key: String) -> Double? {
+    func number(_ section: String, _ key: String) -> Double? {
         guard let value = (payload[section] as? [String: Any])?[key] as? NSNumber,
               CFGetTypeID(value) != CFBooleanGetTypeID(), value.doubleValue.isFinite else { return nil }
         return value.doubleValue

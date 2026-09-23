@@ -180,7 +180,11 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     }
 
     private func layout(_ m: NavMetrics) -> some View {
-        let rect = mapRect(m)
+        let mediaHeight: CGFloat = data.showsMedia ? 48 : 0
+        let footerHeight: CGFloat = 54 + mediaHeight
+        let headerHeight: CGFloat = m.wide ? 0 : (data.laneCount > 0 ? 164 : 124)
+        let sidebar: CGFloat = m.wide ? min(280, m.w * 0.30) : 0
+        let rect = CGRect(x: sidebar, y: headerHeight, width: m.w - sidebar, height: max(1, m.h - headerHeight - footerHeight))
         let canvasColor = theme.canvas
         let textColor = Color.white
         return ZStack(alignment: .topLeading) {
@@ -188,17 +192,57 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             map()
                 .frame(width: rect.width, height: rect.height)
                 .background(NavInk.mapBase)
-                .mask { mapMask(rect: rect, m: m) }
+                .clipped()
                 .position(x: rect.midX, y: rect.midY)
-                .opacity(theme == .minimal ? 0 : 1)
-                .allowsHitTesting(theme != .minimal)
-                .accessibilityHidden(theme == .minimal)
-            overlay(m)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("navigation.map")
+            navigationPriorityHeader(m, wide: m.wide)
+                .frame(width: m.wide ? sidebar : m.w, height: m.wide ? m.h - footerHeight : headerHeight)
+                .accessibilityIdentifier("navigation.guidance")
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(data.destination.isEmpty ? "경로 미수신" : data.destination).font(.caption).lineLimit(1)
+                        Text("\(data.arrival) 도착 · \(data.remaining) · \(data.remainingDistance)").font(.subheadline.bold()).lineLimit(1).minimumScaleFactor(0.75)
+                    }
+                    Spacer(minLength: 0)
+                    Text(data.battery + " · " + data.range).font(.caption).lineLimit(1)
+                }.padding(.horizontal, 12).frame(height: 54).background(theme.canvas)
+                if data.showsMedia {
+                    NavigationMediaHeader(data: data, action: onMedia)
+                        .frame(height: mediaHeight).accessibilityIdentifier("navigation.mediaDock")
+                }
+            }.frame(width: m.w, height: footerHeight).offset(y: m.h - footerHeight)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
         .clipped()
         .foregroundStyle(textColor)
         .environment(\.colorScheme, .dark)
+    }
+
+    private func navigationPriorityHeader(_ m: NavMetrics, wide: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 36)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(data.turnDistance).font(.system(size: 28, weight: .bold)).monospacedDigit()
+                    Text(data.turn).font(.subheadline.bold()).lineLimit(2).minimumScaleFactor(0.8)
+                }
+                if !wide { Spacer(minLength: 0); Text(data.speed).font(.title.bold()).monospacedDigit(); Text(data.speedUnit).font(.caption2) }
+            }
+            if wide {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(data.speed).font(.system(size: 40, weight: .semibold)).monospacedDigit()
+                    Text(data.speedUnit).font(.caption)
+                    Spacer()
+                    if let limit = data.speedLimit { LimitSign(limit: limit, distance: data.speedLimitDistance, size: 40) }
+                }
+            }
+            if !data.next.isEmpty { Text("이후 " + data.next).font(.caption).lineLimit(1) }
+            if data.laneCount > 0 { LaneStrip(data: data, u: min(1, m.u)).frame(maxHeight: 40) }
+            if wide { Text(data.road).font(.caption).foregroundStyle(NavInk.muted).lineLimit(2); Spacer(minLength: 0) }
+        }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(theme.canvas)
     }
 
     private func mapRect(_ m: NavMetrics) -> CGRect {

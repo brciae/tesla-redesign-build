@@ -90,22 +90,23 @@ struct TeslaInteractiveClimateView: View {
     }
     private var cabinStage: some View {
         GeometryReader { geometry in
-            let offset = min(82.0, geometry.size.width * 0.25)
+            let offset = min(68.0, geometry.size.width * 0.21)
             ZStack {
                 RoundedRectangle(cornerRadius: 26).fill(LinearGradient(colors: [Color(white: 0.11), Color(white: 0.06)], startPoint: .top, endPoint: .bottom))
-                Image("TeslaTopInterior").resizable().scaledToFit().frame(maxHeight: 380).accessibilityHidden(true)
+                Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490).accessibilityHidden(true)
                 if currentAppearance.enabled && currentAppearance.interiorColor.uppercased() != "17191B" {
-                    Image("TeslaTopInterior").resizable().scaledToFit().frame(maxHeight: 380)
+                    Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490)
                         .colorMultiply(Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))).opacity(0.42).blendMode(.screen).accessibilityHidden(true)
                 }
-                seatControl("운전석", position: 0, field: "seat_heater_left", coolField: "seat_fan_front_left").offset(x: -offset, y: -15)
-                seatControl("조수석", position: 1, field: "seat_heater_right", coolField: "seat_fan_front_right").offset(x: offset, y: -15)
-                seatControl("후열 좌", position: 2, field: "seat_heater_rear_left").offset(x: -offset, y: 112)
-                seatControl("후열 중", position: 4, field: "seat_heater_rear_center").offset(y: 112)
-                seatControl("후열 우", position: 5, field: "seat_heater_rear_right").offset(x: offset, y: 112)
-                Text("시트 열선 · 통풍").font(.headline).offset(y: -170)
-            }.frame(width: geometry.size.width, height: 410)
-        }.frame(height: 410).disabled(blocked)
+                seatControl("운전석", position: 0, field: "seat_heater_left", coolField: "seat_fan_front_left").offset(x: -offset, y: -50)
+                seatControl("조수석", position: 1, field: "seat_heater_right", coolField: "seat_fan_front_right").offset(x: offset, y: -50)
+                seatControl("2열 좌", position: 2, field: "seat_heater_rear_left").offset(x: -offset, y: 68)
+                seatControl("2열 우", position: 5, field: "seat_heater_rear_right").offset(x: offset, y: 68)
+                seatControl("3열 좌", position: 7, field: "seat_heater_third_row_left").offset(x: -offset, y: 186)
+                seatControl("3열 우", position: 8, field: "seat_heater_third_row_right").offset(x: offset, y: 186)
+                Text("Model Y L · 6인승").font(.headline).offset(y: -245)
+            }.frame(width: geometry.size.width, height: 530)
+        }.frame(height: 530).disabled(blocked)
     }
     private func seatControl(_ title: String, position: Int, field: String, coolField: String? = nil) -> some View {
         VStack(spacing: 4) {

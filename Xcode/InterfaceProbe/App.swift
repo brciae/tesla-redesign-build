@@ -4,7 +4,7 @@ import CryptoKit
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
     init() {
-        if ProcessInfo.processInfo.arguments.contains("climate-probe") { precondition(UIImage(named: "TeslaTopInterior") != nil, "Cabin fixture must include the production image asset") }
+        if ProcessInfo.processInfo.arguments.contains("climate-probe") { precondition(UIImage(named: "TeslaYLInterior") != nil, "Cabin fixture must include the production image asset") }
         if ProcessInfo.processInfo.arguments.contains("reset-appearance-fixture") {
             for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("appearance.v1.") {
                 UserDefaults.standard.removeObject(forKey: key)
@@ -241,6 +241,7 @@ struct ProbeRoot: View {
     func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
+    var output: Object = [:]
     let fleet = TeslaFleetClient()
     let link = VehicleLink()
     let voice = ProbeVoice()
@@ -304,6 +305,9 @@ final class TeslaFleetClient: ObservableObject {
         "climate_state": ["seat_heater_left": 1, "seat_heater_right": 0, "seat_fan_front_left": 0, "seat_fan_front_right": 2, "timestamp": Date().timeIntervalSince1970 * 1000],
         "vehicle_state": ["tpms_pressure_fl": 2.9, "tpms_pressure_fr": 2.8, "locked": true, "sentry_mode": false, "car_version": "fixture", "timestamp": Date().timeIntervalSince1970 * 1000]])
     func refreshVehicleSnapshot(force: Bool = false) async {}
+    func readSupplement(_ kind: FleetSupplement) async throws -> FleetSupplementResult {
+        FleetSupplementResult(vin: selectedVin, receivedAt: Date(), payload: ["fixture": true])
+    }
     func setPreconditioningMax(on: Bool) async throws -> Bool { true }
     func setSteeringWheelHeater(on: Bool) async throws -> Bool { true }
     func setSeatCooler(seatPosition: Int, level: Int) async throws -> Bool { true }

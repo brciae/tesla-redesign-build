@@ -27,7 +27,7 @@ struct DrivingWorkspace: View {
                     }
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
-                            KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: navigation.theme == .cluster ? 0.52 : 0.58, anchorY: 0.72)
+                            KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: 0.50, anchorY: 0.72)
                         } else {
                             LiveStandbyMapView(navigation: navigation, readout: readout) {
                                 settings = true

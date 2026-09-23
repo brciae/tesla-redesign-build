@@ -11,6 +11,16 @@ struct FleetInsightsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                InfoCard {
+                    Text("내 차량 분석·관리").font(.headline)
+                    NavigationLink("주행 습관·에너지·비용 비교") { DrivingInsightsView() }
+                    NavigationLink("보증 기간·남은 거리") {
+                        WarrantyGuideView(vin: fleet.selectedVin, odometerKm: snapshot?.number("vehicle_state", "odometer").map { $0 * 1.609344 })
+                    }
+                    ForEach(FleetSupplement.allCases) { kind in
+                        NavigationLink(kind.title) { FleetSupplementView(fleet: fleet, kind: kind) }
+                    }
+                }
                 LocalBriefingControls(title: "차량 상세 데이터", summary: { snapshot?.insightSummary() ?? ["선택 차량의 Fleet 자료가 아직 없습니다."] })
                 HStack {
                     Text(fleet.vehicleReadStatus).font(.subheadline)

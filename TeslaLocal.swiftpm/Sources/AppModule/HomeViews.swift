@@ -1110,6 +1110,7 @@ struct EnergyTabRootView: View {
             Picker("에너지 구분", selection: $selectedSection) {
                 Text("충전 제어").tag(0)
                 Text("배터리 분석").tag(1)
+                Text("소비·비용").tag(2)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1119,6 +1120,8 @@ struct EnergyTabRootView: View {
 
             if selectedSection == 0 {
                 ChargeStatusView(link: link)
+            } else if selectedSection == 2 {
+                DrivingInsightsView()
             } else {
                 ScrollView {
                     ScreenBriefingControls(scope: .battery, text: { model.screenBriefing(.battery, days: batteryDays) })
@@ -1176,14 +1179,13 @@ struct MenuTabRootView: View {
 
                 // Group 1: 차량 커스텀 & 점검
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("차량 커스텀 & 점검")
+                    Text("차량 관리")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color.white.opacity(0.6))
                         .padding(.leading, 6)
 
                     GlassMenuCard {
-                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 컬러 · 휠 · 캘리퍼 · 틴팅 · 시트/인테리어", colors: [Color.purple, Color.pink])
-                        glassMenuItem(.fleetInsights, "chart.bar.doc.horizontal", title: "차량 상세 데이터", subtitle: "충전 진단 · 타이어 · 도착 전망 · 전체 수신 필드", colors: [Color.cyan, Color.blue])
+                        glassMenuItem(.fleetInsights, "chart.bar.doc.horizontal", title: "차량 분석·관리", subtitle: "보증 · 경고 · 서비스 · 충전소 · 데이터", colors: [Color.cyan, Color.blue])
                         glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "차량 관리 및 케어", subtitle: "타이어 공기압(TPMS) · 와이퍼 모드 · 서비스 점검", colors: [Color.orange, Color.yellow])
                         glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 알림 · 운전자 프로필", colors: [Color.blue, Color.cyan], isLast: true)
                     }
@@ -1197,6 +1199,7 @@ struct MenuTabRootView: View {
                         .padding(.leading, 6)
 
                     GlassMenuCard {
+                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내 디자인", colors: [Color.purple, Color.pink])
                         glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
                         glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 음성 · API 키 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
                     }

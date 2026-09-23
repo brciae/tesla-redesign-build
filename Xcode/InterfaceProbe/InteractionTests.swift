@@ -10,7 +10,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["반려동물"].waitForExistence(timeout: 5))
         let lower = XCTAttachment(screenshot: app.screenshot()); lower.name = "Restored climate seats and modes"; lower.lifetime = .keepAlways; add(lower)
         app.terminate(); app.launchArguments = ["fleet-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["충전 진단"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["내 차량 분석·관리"].waitForExistence(timeout: 10))
         let fleet = XCTAttachment(screenshot: app.screenshot()); fleet.name = "Fleet detail cards"; fleet.lifetime = .keepAlways; add(fleet)
     }
 
@@ -94,11 +94,12 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["34"].waitForExistence(timeout: 8), "speed missing: \(theme) \(orientation.rawValue)")
                 XCTAssertTrue(app.staticTexts["1.5 km"].exists, "turn distance missing: \(theme) \(orientation.rawValue)")
                 XCTAssertTrue(app.staticTexts["1.5 km"].firstMatch.isHittable, "turn distance covered: \(theme) \(orientation.rawValue)")
-                if ["클러스터", "관제"].contains(theme) {
-                    let media = app.staticTexts["navigation.media.title"]
-                    XCTAssertTrue(media.exists, "media header missing")
-                    XCTAssertLessThanOrEqual(media.frame.maxY, app.staticTexts["1.5 km"].firstMatch.frame.minY, "media must stay above directions")
-                }
+                let media = app.staticTexts["navigation.media.title"]
+                XCTAssertTrue(media.exists, "media dock missing: \(theme)")
+                let map = app.otherElements["navigation.map"]
+                XCTAssertTrue(map.exists, "map must remain visible in every theme")
+                XCTAssertGreaterThan(map.frame.height, 120)
+                XCTAssertLessThanOrEqual(map.frame.maxY, media.frame.minY, "media must remain outside the map")
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Navigation \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }
