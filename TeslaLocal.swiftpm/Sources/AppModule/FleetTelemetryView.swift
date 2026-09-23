@@ -16,12 +16,12 @@ struct FleetTelemetryView: View {
             VStack(alignment: .leading, spacing: 18) {
                 InfoCard {
                     Text("배터리·차량 심층 분석").font(.headline)
-                    Caption("차량의 스트리밍 원본 값과 시각을 보존합니다. 현재 Fleet 조회와 별도이며, 수집 서버 연결 전에는 미수신으로 표시합니다.")
+                    Caption("수신된 배터리 온도·전기 상태와 변화 추이를 모아 봅니다. 차량 데이터 수집 서버를 연결하면 앱을 닫은 동안의 기록도 이어갈 수 있습니다.")
                     Text(store.status).font(.caption)
                     Button("Telemetry 기록 가져오기") { importing = true }.disabled(vin.isEmpty)
                     if !error.isEmpty { Caption(error) }
                 }
-                InfoCard {
+                if ["ModuleTempMin", "ModuleTempMax", "PackVoltage", "PackCurrent", "EnergyRemaining", "NominalFullPackEnergyKwh"].contains(where: { latest[$0]?.number != nil && latest[$0]?.invalid == false }) { InfoCard {
                     Text("배터리 열관리·전기 상태").font(.headline)
                     measurement("최저 모듈 온도", field: "ModuleTempMin", unit: "°C")
                     measurement("최고 모듈 온도", field: "ModuleTempMax", unit: "°C")
@@ -32,7 +32,7 @@ struct FleetTelemetryView: View {
                     measurement("남은 에너지", field: "EnergyRemaining", unit: "kWh")
                     measurement("차량 보고 완충 에너지", field: "NominalFullPackEnergyKwh", unit: "kWh")
                     Caption("온도·전압 편차는 2초 이내 같은 시각의 유효한 값끼리 비교합니다. 이 값만으로 배터리 결함이나 열화를 판정하지 않습니다.")
-                }
+                } }
                 InfoCard {
                     Text("기록 추이").font(.headline)
                     Picker("추이 항목", selection: $selectedField) {
@@ -73,13 +73,17 @@ struct FleetTelemetryView: View {
             } catch { self.error = error.localizedDescription }
         }
     }
-    private func measurement(_ title: String, field: String, unit: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack { Text(title); Spacer(); Text(latest[field].flatMap { $0.invalid ? nil : $0.number }.map { String(format: "%.1f %@", $0, unit) } ?? "미수신") }.font(.subheadline)
-            if let value = latest[field] { Text("원본 시각 " + value.at.formatted(date: .abbreviated, time: .standard)).font(.caption2).foregroundStyle(Theme.muted) }
+    @ViewBuilder private func measurement(_ title: String, field: String, unit: String) -> some View {
+        if let value = latest[field], !value.invalid, let number = value.number {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack { Text(title); Spacer(); Text(String(format: "%.1f %@", number, unit)) }.font(.subheadline)
+                Text(value.at.formatted(date: .abbreviated, time: .standard)).font(.caption2).foregroundStyle(Theme.muted)
+            }
         }
     }
-    private func difference(_ title: String, high: String, low: String, unit: String, scale: Double) -> some View {
-        HStack { Text(title); Spacer(); Text(FleetTelemetryData.pairedDifference(latest[high], latest[low]).map { String(format: "%.1f %@", $0 * scale, unit) } ?? "동시 표본 없음") }.font(.subheadline)
+    @ViewBuilder private func difference(_ title: String, high: String, low: String, unit: String, scale: Double) -> some View {
+        if let value = FleetTelemetryData.pairedDifference(latest[high], latest[low]) {
+            HStack { Text(title); Spacer(); Text(String(format: "%.1f %@", value * scale, unit)) }.font(.subheadline)
+        }
     }
 }
