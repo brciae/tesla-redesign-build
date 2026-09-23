@@ -30,6 +30,7 @@ function hostCall(op,json){
       case 'export':value=engine.state;break;
       case 'settings':value=engine.settings(a);break;
       case 'ingest':value=engine.ingest(a,now);break;
+      case 'ingestFleetCharge':value=engine.ingestFleetCharge(a,now);break;
       case 'finish':value=engine.finish(now,true);break;
       case 'addCharge':value=engine.addCharge(a);break;
       case 'maintenance':value=engine.addMaintenance(a);break;

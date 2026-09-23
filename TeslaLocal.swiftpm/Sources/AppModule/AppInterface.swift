@@ -1,4 +1,26 @@
 import SwiftUI
+
+struct CompanionToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 16) {
+                configuration.label.frame(maxWidth: .infinity, alignment: .leading)
+                ZStack {
+                    Capsule().fill(configuration.isOn ? Color(red: 0.38, green: 0.16, blue: 0.87) : Color(white: 0.15))
+                    HStack {
+                        if configuration.isOn { Text("I").font(.caption).foregroundStyle(.white.opacity(0.8)); Spacer(minLength: 0) }
+                        Circle().fill(.white).frame(width: 30, height: 30).shadow(color: .black.opacity(0.16), radius: 2, y: 1)
+                        if !configuration.isOn { Spacer(minLength: 0); Text("○").font(.caption).foregroundStyle(.white.opacity(0.5)) }
+                    }.padding(.horizontal, 5)
+                }.frame(width: 64, height: 38).accessibilityHidden(true)
+            }.frame(minHeight: 48).contentShape(Rectangle()).opacity(enabled ? 1 : 0.45)
+        }.buttonStyle(.plain)
+            .accessibilityValue(configuration.isOn ? "켜짐" : "꺼짐")
+            .animation(reduced ? nil : .easeInOut(duration: 0.18), value: configuration.isOn)
+    }
+}
 import UIKit
 import AVFoundation
 
@@ -279,4 +301,3 @@ struct VoicePreviewControls: View {
         }
     }
 }
-

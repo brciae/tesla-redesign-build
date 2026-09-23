@@ -33,6 +33,7 @@ enum Page: String, Hashable {
     case navigation = "카카오 내장 내비", preferences = "표시·음성 설정"
     case appearance = "차꾸미기"
     case fleetInsights = "차량 상세 데이터"
+    case notifications = "알림 설정"
 }
 func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { guard let value, value.isFinite else { return "—" }; return String(format: "%.*f", digits, value) + suffix }
 func dateText(_ ms: Double?, time: Bool = true) -> String { guard let ms else { return "미수신" }; let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = time ? "M월 d일 HH:mm" : "yyyy.MM.dd"; return f.string(from: Date(timeIntervalSince1970: ms/1000)) }
@@ -97,13 +98,15 @@ struct MainView: View {
 
     var body: some View {
         mainContent
+            .toggleStyle(CompanionToggleStyle())
             .environment(\.vehicleUnits, VehicleUnits(distance: distance, temperature: temperature, pressure: pressure))
             .animation(reduced ? nil : .easeInOut(duration: 0.25), value: navigation.presented)
             .tint(.white)
             .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
             .onOpenURL { url in model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
-            .task { if phase == .active { model.resume() } }
+            .task { if phase == .active { model.resume(); consumeNotificationRoute() } }
             .onChange(of: phase) { _, p in handlePhase(p) }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("YL.openChargingFromNotification"))) { _ in consumeNotificationRoute() }
             .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
             .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
             .onChange(of: selectedTab) { _, newTab in
@@ -132,9 +135,14 @@ struct MainView: View {
     }
 
     private func handlePhase(_ p: ScenePhase) {
-        if p == .active { model.resume() }
+        if p == .active { model.resume(); consumeNotificationRoute() }
         else if p == .background { model.pause() }
         else { model.resignActive() }
+    }
+    private func consumeNotificationRoute() {
+        guard UserDefaults.standard.bool(forKey: "YL.openChargingPending") else { return }
+        UserDefaults.standard.removeObject(forKey: "YL.openChargingPending")
+        selectedTab = .energy; energyPath = NavigationPath(); energyPath.append(Page.charging)
     }
 
 }
@@ -163,6 +171,7 @@ private struct AppDestinations: ViewModifier {
         case .preferences: PreferencesView()
         case .appearance: VehicleAppearanceView()
         case .fleetInsights: FleetInsightsView(fleet: model.fleet)
+        case .notifications: NotificationSettingsView()
         case .battery: BatteryView()
         case .trips: TripsView()
         case .care: CareView()
@@ -664,7 +673,8 @@ struct ChargeListView: View {
                         Metric(title: c.number("supplyKWh") != nil ? "영수증 공급" : "차량 보고", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh"), digits: 1, suffix: " kWh")
                         if let cost = c.number("cost") { Metric(title: "결제액", value: cost, suffix: "원") }
                     }
-                    Caption("\(valueText(c.number("startSOC")))% → \(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : c.flag("complete") ? "완료" : "부분 관측")")
+                    Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")
+                    if c.flag("startSOCEstimated") || c.flag("endSOCEstimated") { InfoNote("잔량 계산 근거", "충전 도중 연결된 경우 시작 잔량은 차량 충전량과 배터리 용량으로 계산합니다. 완료 신호를 늦게 받은 경우 종료 잔량은 차량 충전 한도를 참고합니다. 직접 수신한 시작·완료 잔량은 그대로 보존합니다.") }
                 }
             }
         }

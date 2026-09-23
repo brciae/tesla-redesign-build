@@ -1111,6 +1111,7 @@ struct EnergyTabRootView: View {
                 Text("충전 제어").tag(0)
                 Text("배터리 분석").tag(1)
                 Text("소비·비용").tag(2)
+                Text("달력").tag(3)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1122,6 +1123,8 @@ struct EnergyTabRootView: View {
                 ChargeStatusView(link: link)
             } else if selectedSection == 2 {
                 DrivingInsightsView()
+            } else if selectedSection == 3 {
+                EnergyCalendarView()
             } else {
                 ScrollView {
                     ScreenBriefingControls(scope: .battery, text: { model.screenBriefing(.battery, days: batteryDays) })
@@ -1201,6 +1204,7 @@ struct MenuTabRootView: View {
                     GlassMenuCard {
                         glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내 디자인", colors: [Color.purple, Color.pink])
                         glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
+                        glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 상태별 알림 · 권한 · 전달 시험", colors: [Color.purple, Color.blue])
                         glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 음성 · API 키 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
                     }
                 }

@@ -1,6 +1,24 @@
 // v29 regression tests: route gate (stop / jitter / absence) and per-group freshness.
 const path = require('path');
 const C = require(path.join(__dirname, '../TeslaLocal.swiftpm/Sources/AppModule/Resources/analysis.js'));
+const chargeAssert = require('node:assert/strict');
+{
+  const engine = new C.Engine(), now = Date.now() - 60000, vin = '5YJYGDEE0LF000001';
+  const feed = (dt, charging, soc, addedKWh) => engine.ingestFleetCharge({vin, at: now + dt, charging, soc, addedKWh, limit: 80}, now + dt);
+  feed(0, 2, 40, 0); feed(1000, 5, 40, 0); feed(10000, 5, 50, 7.5);
+  chargeAssert.equal(engine.state.activeCharge.startSOC, 40);
+  const resumed = new C.Engine(); resumed.load(JSON.parse(JSON.stringify(engine.state)), {resumeActive: true});
+  chargeAssert.equal(resumed.state.activeCharge.startSOC, 40, 'restart must preserve session start');
+  resumed.ingestFleetCharge({vin, at: now + 20000, charging: 6, soc: 80, addedKWh: 30, limit: 80}, now + 20000);
+  chargeAssert.equal(resumed.state.charges.length, 1);
+  chargeAssert.equal(resumed.state.charges[0].startSOC, 40);
+  chargeAssert.equal(resumed.state.charges[0].endSOC, 80);
+  chargeAssert.equal(resumed.state.groups.charge, undefined, 'Fleet history must not become BLE automation evidence');
+  const partial = new C.Engine(); partial.ingestFleetCharge({vin, at: now, charging: 5, soc: 60, addedKWh: 15}, now);
+  chargeAssert.equal(partial.state.activeCharge.startSOC, 40);
+  chargeAssert.equal(partial.state.activeCharge.startSOCEstimated, true, 'mid-session start inferred from added energy must be identified');
+  chargeAssert.throws(() => partial.ingestFleetCharge({vin: '5YJYGDEE0LF000002', at: now, charging: 5}, now));
+}
 const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } };
 const g = new C.EmbeddedRouteGate();
 const ev = (lat, at, name = 'A') => ({ type: 'route', name, latitude: lat, longitude: 127, at, receivedAt: at, token: name + lat });

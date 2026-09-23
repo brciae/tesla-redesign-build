@@ -3,6 +3,13 @@ import Foundation
 @main struct FleetTelemetryTests {
     static func main() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_100)
+        precondition(ChargeEventPolicy.bleState(5) == "Charging" && ChargeEventPolicy.bleState(6) == "Complete")
+        let previousCharge = ChargeObservation(vin: "A", at: now.addingTimeInterval(-30), state: "Charging", soc: 79, limit: 80)
+        let completeCharge = ChargeObservation(vin: "A", at: now, state: "Complete", soc: 80, limit: 80)
+        let completed = ChargeEventPolicy.event(previous: previousCharge, current: completeCharge, now: now)
+        precondition(completed?.kind == "complete" && completed!.body.contains("80%") && !completed!.body.contains("100%"))
+        precondition(ChargeEventPolicy.event(previous: nil, current: completeCharge, now: now) == nil)
+        precondition(ChargeEventPolicy.event(previous: previousCharge, current: completeCharge, now: now.addingTimeInterval(600)) == nil)
         func packet(_ second: Int, _ values: [[String: Any]], vin: String = "CAR-A") throws -> Data {
             try JSONSerialization.data(withJSONObject: ["vin": vin, "createdAt": ["seconds": second], "data": values])
         }

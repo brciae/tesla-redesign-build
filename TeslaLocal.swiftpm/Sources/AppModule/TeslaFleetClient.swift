@@ -49,6 +49,7 @@ final class TeslaFleetClient: ObservableObject {
     @Published var lastError: String?
     @Published var lastSuccessMessage: String?
     @Published var vehicleSnapshot: FleetVehicleSnapshot?
+    var onVehicleSnapshot: ((FleetVehicleSnapshot) -> Void)?
     @Published var vehicleReadStatus = "차량 미조회"
     @Published var vehicleReadError: String?
     @Published var isReadingVehicle = false
@@ -448,7 +449,11 @@ final class TeslaFleetClient: ObservableObject {
             let snapshot = FleetVehicleSnapshot(vin: requestVin, receivedAt: Date(), payload: data)
             guard snapshot.hasMeasurements else { throw FleetAuthPolicy.failure("차량은 온라인이나 상태 데이터가 비어 있습니다. 데이터 권한 확인 필요.") }
             vehicleSnapshot = snapshot
+            onVehicleSnapshot?(snapshot)
             FleetTelemetryStore.shared.observe(snapshot)
+            if snapshot.sectionIsRecent("charge_state"), let at = snapshot.number("charge_state", "timestamp"), let status = (snapshot.payload["charge_state"] as? [String: Any])?["charging_state"] as? String {
+                ChargeNotificationManager.shared.observe(ChargeObservation(vin: requestVin, at: Date(timeIntervalSince1970: at / 1000), state: status, soc: snapshot.soc, limit: snapshot.number("charge_state", "charge_limit_soc")))
+            }
             SmartParkingManager.shared.observeFleet(snapshot)
             lastRemoteChargeData = data["charge_state"] as? [String: Any]
             vehicleReadStatus = snapshot.isRecent() ? "Fleet 상태 수신" : "Fleet 저장값 수신"

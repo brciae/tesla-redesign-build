@@ -68,6 +68,18 @@ final class AppModel: ObservableObject {
             return !self.demo && UIApplication.shared.applicationState == .active && !self.link.controlBusy && !self.link.preparingControl && self.link.confirmation == nil
         }
         fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
+        fleet.onVehicleSnapshot = { [weak self] snapshot in
+            guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin, snapshot.sectionIsRecent("charge_state"),
+                  let charge = snapshot.payload["charge_state"] as? Object,
+                  let status = charge["charging_state"] as? String,
+                  let state = ["Disconnected": 2, "NoPower": 3, "Starting": 4, "Charging": 5, "Complete": 6, "Stopped": 7, "Calibrating": 8][status] else { return }
+            var input: Object = ["vin": snapshot.vin, "charging": state]
+            input["at"] = snapshot.number("charge_state", "timestamp")
+            input["soc"] = snapshot.soc; input["limit"] = snapshot.number("charge_state", "charge_limit_soc")
+            input["addedKWh"] = snapshot.number("charge_state", "charge_energy_added")
+            do { self.output = try self.runtime.call("ingestFleetCharge", input) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
+        }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
         }
@@ -91,6 +103,10 @@ final class AppModel: ObservableObject {
                 let previousCount = self.state.rows("trips").count
                 let previousCharges = self.state.rows("charges").count
                 self.output = try self.runtime.call("ingest", snapshot) as? Object ?? [:]
+                let charging = snapshot.object("groups").object("charge")
+                if let raw = charging.number("charging"), let status = ChargeEventPolicy.bleState(Int(raw)), let at = charging.number("at") {
+                    ChargeNotificationManager.shared.observe(ChargeObservation(vin: self.settings.string("vin"), at: Date(timeIntervalSince1970: at / 1000), state: status, soc: charging.number("soc"), limit: charging.number("limit")))
+                }
                 if snapshot.object("groups")["drive"] != nil {
                     self.considerNavigation()
                     let d = snapshot.object("groups").object("drive")
