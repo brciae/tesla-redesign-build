@@ -102,3 +102,12 @@ console.log('PASS: receipt parsing');
  e.addCharge({at:now-86400000,source:'manual'});
  chargeAssert.equal(e.chargeSummary().rows[0].at,now,'recent list must sort by event time, not insertion order');
 }
+
+{
+ const e=new C.Engine(),now=Date.now(),vin='5YJYGDEE0LF000001';
+ const feed=(seconds,gear,odo,soc)=>e.ingestFleetDrive({vin,drive:{at:now+seconds*1000,gear,speedKmh:gear==='D'?36:0,odometerKm:odo},charge:{at:now+seconds*1000,soc}},now+seconds*1000);
+ feed(0,'P',100,80); feed(10,'D',100,80); feed(70,'D',100.6,79); feed(80,'P',100.7,79); feed(130,'P',100.7,79);
+ chargeAssert.equal(e.state.trips.length,1,'Fleet-only drive must populate shared trip history');
+ chargeAssert.equal(e.state.trips[0].distanceKm,0.7);
+ chargeAssert.equal(e.state.groups.drive,undefined,'Fleet history must not authorize BLE automation');
+}

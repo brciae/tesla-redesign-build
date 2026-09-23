@@ -237,9 +237,9 @@
       }
       return this.view(now);
     }
-    drive(g,now){
+    drive(g,now,context=this.state.groups){
       if(!fresh(g,now)||this.lastDrive&&g.at<=this.lastDrive.at)return;
-      const s=this.state,prev=this.lastDrive,c=fresh(s.groups.charge,now,TTL.charge)?s.groups.charge:null;
+      const s=this.state,prev=this.lastDrive,c=fresh(context.charge,now,TTL.charge)?context.charge:null;
       // Resume after disconnect in P: close the previous trip before a new drive starts.
       if(s.activeTrip?.parkAt!=null&&g.at-s.activeTrip.parkAt>=45000)this.finish(s.activeTrip.parkAt,false);
       const moving=['D','R'].includes(g.gear)&&num(g.speedKmh,1,350);
@@ -273,7 +273,7 @@
         if(hasOdometers){if(validDistance)t.distanceKm+=dx;else t.missing=true;}
         else t.missing=true;
         t.lastAt=g.at;t.lastOdo=g.odometerKm;if(c)t.lastSOC=c.soc;
-        const loc=s.groups.location;if(freshLocation(loc,now)&&t.points.length<2000)t.points.push({at:g.at,lat:loc.latitude,lng:loc.longitude});
+        const loc=context.location;if(freshLocation(loc,now)&&t.points.length<2000)t.points.push({at:g.at,lat:loc.latitude,lng:loc.longitude});
         if(g.gear==='P'){if(t.parkAt==null)t.parkAt=g.at;if(g.at-t.parkAt>=45000)this.finish(g.at,false);}else t.parkAt=null;
       }
       this.lastDrive=g;
@@ -293,6 +293,13 @@
       const delta=trip.startSOC!=null&&trip.endSOC!=null?round(trip.startSOC-trip.endSOC):null;
       s.lastBrief=`이번 운행 거리는 ${trip.distanceKm} km, 소요 시간은 ${Math.round((trip.end-trip.start)/60000)}분입니다. `+(delta==null?'배터리 사용량은 확인되지 않았습니다.':`배터리 잔량은 ${Math.abs(delta)} 퍼센트포인트 ${delta>=0?'감소':'증가'}했습니다.`)+(trip.missing?' 일부 구간은 확인되지 않아 추정값으로 안내합니다.':'');
       return trip;
+    }
+    ingestFleetDrive(input,now=Date.now()){
+      if(typeof input.vin!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(input.vin))throw Error('Fleet 차량 식별값 오류');
+      if(this.state.settings.vin&&this.state.settings.vin!==input.vin)throw Error('기록 차량과 Fleet 차량이 다릅니다.');
+      if(!this.state.settings.vin){if(this.state.trips.length||this.state.charges.length)throw Error('기존 기록의 차량을 먼저 선택해 주세요.');this.state.settings.vin=input.vin;}
+      if(input.drive)this.drive(input.drive,now,{charge:input.charge,location:input.location});
+      return this.view(now);
     }
     ingestFleetCharge(input,now=Date.now()){
       if(typeof input.vin!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(input.vin))throw Error('Fleet 차량 식별값 오류');

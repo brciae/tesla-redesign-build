@@ -1671,6 +1671,7 @@ private struct MediaCard: View {
         VStack(alignment: .leading, spacing: 2 * u) {
             Text(title).font(.system(size: 16 * u, weight: .semibold))
                 .lineLimit(style == .mini ? 1 : 2).minimumScaleFactor(0.7)
+                .accessibilityIdentifier("navigation.media.title")
             Text(subtitle).font(.system(size: 13 * u))
                 .foregroundStyle(data.mediaStatus.isEmpty ? NavInk.muted : NavInk.amber)
                 .lineLimit(1).minimumScaleFactor(0.7)

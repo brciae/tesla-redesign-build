@@ -69,7 +69,14 @@ final class AppModel: ObservableObject {
         }
         fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
         fleet.onVehicleSnapshot = { [weak self] snapshot in
-            guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin, snapshot.sectionIsRecent("charge_state"),
+            guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin else { return }
+            if !self.link.authentic, snapshot.sectionIsRecent("drive_state") {
+                let overlay = snapshot.homeOverlay()
+                let history: Object = ["vin": snapshot.vin, "drive": snapshot.driveDisplay(), "charge": overlay["charge"] ?? Object(), "location": overlay["location"] ?? Object()]
+                do { self.output = try self.runtime.call("ingestFleetDrive", history) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+                catch { self.storageStatus = "Fleet 운행 기록 저장: " + error.localizedDescription }
+            }
+            guard snapshot.sectionIsRecent("charge_state"),
                   let charge = snapshot.payload["charge_state"] as? Object,
                   let status = charge["charging_state"] as? String,
                   let state = ["Disconnected": 2, "NoPower": 3, "Starting": 4, "Charging": 5, "Complete": 6, "Stopped": 7, "Calibrating": 8][status] else { return }

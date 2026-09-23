@@ -19,7 +19,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["반려동물"].waitForExistence(timeout: 5))
         let lower = XCTAttachment(screenshot: app.screenshot()); lower.name = "Restored climate seats and modes"; lower.lifetime = .keepAlways; add(lower)
         app.terminate(); app.launchArguments = ["fleet-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["내 차량 분석·관리"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["내 차량"].waitForExistence(timeout: 10))
         let fleet = XCTAttachment(screenshot: app.screenshot()); fleet.name = "Fleet detail cards"; fleet.lifetime = .keepAlways; add(fleet)
     }
 
