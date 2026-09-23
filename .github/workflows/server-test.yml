@@ -1,10 +1,16 @@
 name: NAS archive validation
 on:
   workflow_dispatch:
+    inputs:
+      probe_origin:
+        description: Optional HTTPS archive origin to check from outside the LAN
+        required: false
+        type: string
   push:
     paths: ['server/**', '.github/workflows/server-test.yml']
 jobs:
   archive:
+    if: ${{ !inputs.probe_origin }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -33,3 +39,30 @@ jobs:
         if: always()
         working-directory: server
         run: docker compose down -v
+  public-endpoint:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.probe_origin != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check TLS, readiness and authentication without credentials
+        env:
+          PROBE_ORIGIN: ${{ inputs.probe_origin }}
+        run: |
+          python - <<'PY'
+          import os, urllib.request, urllib.error, urllib.parse, json
+          origin = os.environ['PROBE_ORIGIN'].rstrip('/')
+          url = urllib.parse.urlsplit(origin)
+          assert url.scheme == 'https' and url.hostname and not url.username and not url.password
+          assert not url.path and not url.query and not url.fragment
+          with urllib.request.urlopen(origin + '/health', timeout=15) as response:
+              result = json.load(response)
+              assert result.get('ready') is True
+          print('Public HTTPS readiness: PASS')
+          try:
+              urllib.request.urlopen(origin + '/v1/telemetry', timeout=15)
+          except urllib.error.HTTPError as error:
+              assert error.code == 401, error.code
+              print('Unauthenticated access denied: PASS')
+          else:
+              raise AssertionError('Unauthenticated request was not denied')
+          PY
