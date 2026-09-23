@@ -53,7 +53,8 @@ func dateText(_ value: Double?) -> String { value == nil ? "미확인" : "기록
         m.output["energyPeriods"] = ["30": ["drivingKmPerKWh": 6.2, "overallKmPerKWh": 4.7, "parkingKWh": 3.2, "unclassifiedKWh": 0.8, "capacityAssumed": true]]
         let analysis = m.screenBriefing(.batteryAndCharging)
         precondition(analysis.contains("6.2") && analysis.contains("4.7") && analysis.contains("24퍼센트"))
-        precondition(analysis.contains("구분할 수 없습니다") && analysis.contains("가정"))
+        precondition(analysis.contains("주차 중 자연방전") && analysis.contains("가정"))
+        precondition(!analysis.contains("분류되지 않은") && !analysis.contains("구분할 수 없습니다"))
         precondition(analysis.contains("0퍼센트가 열화 없음을 뜻하지는"))
         m.home = [:]; m.groups = [:]; m.output = [:]
         for scope in BriefingScope.allCases {

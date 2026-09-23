@@ -14,6 +14,7 @@ struct FleetInsightsView: View {
                 InfoCard {
                     Text("내 차량 분석·관리").font(.headline)
                     NavigationLink("주행 습관·에너지·비용 비교") { DrivingInsightsView() }
+                    NavigationLink("배터리 온도·전압·Telemetry 추이") { FleetTelemetryView(vin: fleet.selectedVin) }
                     NavigationLink("보증 기간·남은 거리") {
                         WarrantyGuideView(vin: fleet.selectedVin, odometerKm: snapshot?.number("vehicle_state", "odometer").map { $0 * 1.609344 })
                     }

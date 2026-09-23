@@ -46,11 +46,31 @@ import simd
     }
     private func tube(_ a: SIMD3<Float>, _ b: SIMD3<Float>, radius: Float, material: UnlitMaterial) -> ModelEntity {
         let delta = b - a
-        let entity = ModelEntity(mesh: .generateCylinder(height: simd_length(delta) + radius, radius: radius), materials: [material])
+        let entity = ModelEntity(mesh: cylinder(height: simd_length(delta) + radius, radius: radius), materials: [material])
         entity.position = (a + b) * 0.5
         entity.orientation = simd_quatf(from: SIMD3<Float>(0, 1, 0), to: simd_normalize(delta))
         rig.addChild(entity)
         return entity
+    }
+    private func cylinder(height: Float, radius: Float) -> MeshResource {
+        var positions: [SIMD3<Float>] = [], normals: [SIMD3<Float>] = [], indices: [UInt32] = []
+        for ring in 0...1 {
+            for side in 0..<12 {
+                let angle = Float(side) * .pi / 6
+                let normal = SIMD3<Float>(cos(angle), 0, sin(angle))
+                positions.append(SIMD3<Float>(normal.x * radius, (Float(ring) - 0.5) * height, normal.z * radius))
+                normals.append(normal)
+            }
+        }
+        for side in 0..<12 {
+            let a = UInt32(side), b = UInt32((side + 1) % 12)
+            indices += [a, a + 12, b, b, a + 12, b + 12]
+        }
+        var descriptor = MeshDescriptor(name: "charging-cable-tube")
+        descriptor.positions = MeshBuffers.Positions(positions)
+        descriptor.normals = MeshBuffers.Normals(normals)
+        descriptor.primitives = .triangles(indices)
+        return (try? MeshResource.generate(from: [descriptor])) ?? .generateSphere(radius: radius)
     }
     private func build() {
         built = true

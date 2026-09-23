@@ -448,6 +448,7 @@ final class TeslaFleetClient: ObservableObject {
             let snapshot = FleetVehicleSnapshot(vin: requestVin, receivedAt: Date(), payload: data)
             guard snapshot.hasMeasurements else { throw FleetAuthPolicy.failure("차량은 온라인이나 상태 데이터가 비어 있습니다. 데이터 권한 확인 필요.") }
             vehicleSnapshot = snapshot
+            FleetTelemetryStore.shared.observe(snapshot)
             SmartParkingManager.shared.observeFleet(snapshot)
             lastRemoteChargeData = data["charge_state"] as? [String: Any]
             vehicleReadStatus = snapshot.isRecent() ? "Fleet 상태 수신" : "Fleet 저장값 수신"

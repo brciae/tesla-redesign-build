@@ -27,10 +27,7 @@ extension AppModel {
             if gap >= 5 {
                 result.append(String(format: "같은 거리 기준으로 종합 전비가 약 %.0f퍼센트 낮아, 주행 외 소비가 효율 차이에 영향을 주고 있습니다.", gap))
                 if let parking = energy.number("parkingKWh"), parking.isFinite, parking > 0 {
-                    result.append(String(format: "기록상 주차 구간에서 약 %.1f킬로와트시가 감소했습니다. 주차 중 감시 모드와 공조 유지 시간을 먼저 확인하면 절감할 부분을 찾는 데 도움이 됩니다. 어느 기능이 얼마를 썼는지는 현재 자료만으로 구분할 수 없습니다.", parking))
-                }
-                if let unknown = energy.number("unclassifiedKWh"), unknown.isFinite, unknown > 0 {
-                    result.append(String(format: "이 가운데 분류되지 않은 감소량도 %.1f킬로와트시 있어, 모두 대기전력이나 공조 탓으로 볼 수는 없습니다.", unknown))
+                    result.append(String(format: "주차 중 자연방전으로 집계한 소비가 약 %.1f킬로와트시입니다. 주차 중 감시 모드와 공조 유지 시간을 줄이면 종합 전비 개선에 도움이 될 수 있습니다.", parking))
                 }
             } else { result.append("두 전비의 차이가 작아, 현재 기록에서는 주행 외 소비의 영향이 크지 않습니다.") }
         } else { result.append(String(format: "주행 전비는 킬로와트시당 %.1f킬로미터로 추정되며, 종합 전비는 자료를 더 확인해야 합니다.", driving)) }

@@ -2,12 +2,16 @@ import SwiftUI
 
 struct DrivingInsightsView: View {
     @EnvironmentObject private var model: AppModel
+    @ObservedObject private var telemetry = FleetTelemetryStore.shared
     @State private var days = 30
     @State private var electricity = ""
     @State private var gasoline = ""
     @State private var gasolineEfficiency = ""
     private var energy: Object { model.output.object("energyPeriods").object(String(days)) }
     private var usage: Object { model.output.object("battery").object(String(days)) }
+    private var parking: [FleetParkingBucket] {
+        FleetParkingAnalysis.buckets(telemetry.records, vin: model.fleet.selectedVin, from: Date().addingTimeInterval(-Double(days) * 86400), to: Date())
+    }
     private var comparison: OwnershipAnalysis.CostComparison? {
         OwnershipAnalysis.cost(distanceKm: energy.number("totalDistanceKm"), energyKWh: energy.number("totalKWh"), electricity: Double(electricity), gasoline: Double(gasoline), gasolineEfficiency: Double(gasolineEfficiency))
     }
@@ -24,15 +28,33 @@ struct DrivingInsightsView: View {
                         number("종합 전비", energy.number("overallKmPerKWh"), "km/kWh")
                     }
                     Text(model.screenBriefing(.battery, days: days)).font(.subheadline).lineSpacing(5)
-                    Caption("최근 \(days)일 · 기록 종료일 기준. 같은 기간의 주행·주차·미분류 소비를 비교합니다. 차종·계절 평균이나 운전 점수는 검증된 비교 데이터 없이 만들지 않습니다.")
+                    Caption("최근 \(days)일 · 기록 종료일 기준 · 같은 기간의 소비를 비교합니다.")
                 }
                 InfoCard {
                     Text("에너지가 쓰인 곳").font(.headline)
                     number("기록 거리", energy.number("totalDistanceKm"), "km")
                     number("주행 소비", energy.number("drivingKWh"), "kWh")
-                    number("주차 소비", energy.number("parkingKWh"), "kWh")
-                    number("미분류 소비", energy.number("unclassifiedKWh"), "kWh")
-                    Caption(energy.string("note"))
+                    HStack {
+                        number("주차 중 소비", energy.number("parkingKWh"), "kWh")
+                        InfoNote("주차 중 소비", "상태·시간 기록으로 확인되는 감시 모드·공조·대기는 세분해 표시합니다. 원인을 나눌 근거가 없는 주차 구간은 자연방전으로 묶습니다.")
+                    }
+                    number("전체 소비", energy.number("totalKWh"), "kWh")
+                    if parking.isEmpty {
+                        number("주차 중 자연방전", energy.number("parkingKWh"), "kWh")
+                    } else {
+                        ForEach(parking) { bucket in
+                            HStack {
+                                Text(bucket.title).font(.subheadline)
+                                Spacer()
+                                Text(String(format: "%.0f분", bucket.seconds / 60)).monospacedDigit()
+                                if bucket.energySeconds >= bucket.seconds * 0.95 {
+                                    Text(String(format: "· %.2f kWh", bucket.measuredKWh)).monospacedDigit()
+                                }
+                            }
+                        }
+                        InfoNote("주차 소비 세부 분류", "연속해서 확인된 주차 상태와 감시 모드·공조 상태로 구간을 나눕니다. 전력량은 해당 구간 전체 소비입니다. 누적 에너지 계수가 함께 수신된 구간만 kWh를 표시합니다.")
+                    }
+                    InfoNote("계산 기준", energy.string("note"))
                 }
                 InfoCard {
                     Text("같은 거리를 달렸을 때의 비용").font(.headline)
