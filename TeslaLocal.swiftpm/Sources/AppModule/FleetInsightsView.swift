@@ -18,7 +18,7 @@ struct FleetInsightsView: View {
                     NavigationLink("보증 기간·남은 거리") {
                         WarrantyGuideView(vin: fleet.selectedVin, odometerKm: snapshot?.number("vehicle_state", "odometer").map { $0 * 1.609344 })
                     }
-                    ForEach(FleetSupplement.allCases) { kind in
+                    ForEach(FleetSupplement.allCases.filter { $0 != .telemetryConfig && $0 != .telemetryErrors }) { kind in
                         NavigationLink(kind.title) { FleetSupplementView(fleet: fleet, kind: kind) }
                     }
                 }

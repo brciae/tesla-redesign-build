@@ -7,9 +7,9 @@ struct FleetSupplementView: View {
     @State private var error = ""
     @State private var busy = false
     @State private var search = ""
-    private var rows: [FleetInsightRow] {
+    private var cards: [FleetSupplementCard] {
         guard result?.vin == fleet.selectedVin else { return [] }
-        return (result?.rows ?? []).filter { search.isEmpty || $0.label.localizedCaseInsensitiveContains(search) || $0.value.localizedCaseInsensitiveContains(search) }
+        return (result?.cards ?? []).filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.rows.contains { $0.value.localizedCaseInsensitiveContains(search) } }
     }
     var body: some View {
         ScrollView {
@@ -20,16 +20,23 @@ struct FleetSupplementView: View {
                 if let result, result.vin == fleet.selectedVin {
                     Text("조회 " + result.receivedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(Theme.muted)
                     TextField("항목 또는 내용 검색", text: $search).textFieldStyle(.roundedBorder)
-                    ForEach(rows, id: \.label) { row in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(row.label.replacingOccurrences(of: "자료.", with: "")).font(.caption.monospaced()).foregroundStyle(Theme.muted)
-                            Text(row.value).font(.subheadline).textSelection(.enabled)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    ForEach(cards) { card in
+                        InfoCard {
+                            Label(card.title, systemImage: kind == .nearbyCharging || kind == .chargingHistory ? "bolt.fill" : "car.fill").font(.headline)
+                            ForEach(Array(card.rows.enumerated()), id: \.offset) { _, row in
+                                HStack(alignment: .top) {
+                                    Text(row.label).foregroundStyle(Theme.muted)
+                                    Spacer(minLength: 16)
+                                    Text(row.value).multilineTextAlignment(.trailing)
+                                }.font(.subheadline)
+                            }
+                        }
                     }
-                    if rows.isEmpty { Caption("표시할 항목이 없습니다. 검색어와 응답 내용을 확인해 주세요.") }
+                    if cards.isEmpty { ContentUnavailableView("표시할 기록 없음", systemImage: "tray", description: Text("조회한 범위에 표시할 기록이 없습니다.")) }
                 } else { Caption("필요할 때 직접 조회합니다. 계정 권한이나 차량 지원에 따라 제공 범위가 다를 수 있습니다.") }
             }.padding(16)
         }.background(Theme.bg).navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
+        .task { await refresh() }
         .onChange(of: fleet.selectedVin) { _, _ in result = nil; error = "" }
     }
     @MainActor private func refresh() async {

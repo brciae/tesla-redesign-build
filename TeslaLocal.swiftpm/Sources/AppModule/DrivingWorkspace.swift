@@ -153,7 +153,7 @@ struct DrivingWorkspace: View {
     private var readout: NavigationReadout {
         var r = NavigationReadout()
         let fresh = model.output.object("fresh"), c = model.groups.object("charge"), t = model.groups.object("climate")
-        let fleetDrive = !link.authentic && model.fleet.vehicleSnapshot?.vin == model.fleet.selectedVin ? model.fleet.vehicleSnapshot?.driveDisplay() ?? [:] : [:]
+        let fleetDrive = model.fleet.vehicleSnapshot?.vin == model.fleet.selectedVin ? model.fleet.vehicleSnapshot?.driveDisplay() ?? [:] : [:]
         let driveFresh = fresh.flag("drive") || fleetDrive.string("mode") == "recent"
         let d = fresh.flag("drive") ? model.groups.object("drive") : (fleetDrive.string("mode") == "recent" ? fleetDrive : [:])
         r.speedUnit = units.speedLabel; r.connected = link.authentic

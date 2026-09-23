@@ -54,3 +54,46 @@ struct FleetSupplementResult {
         FleetVehicleSnapshot(vin: vin, receivedAt: receivedAt, payload: ["자료": payload]).flattenedFields(section: "자료")
     }
 }
+
+struct FleetSupplementCard: Identifiable {
+    let id: String
+    let title: String
+    let rows: [FleetInsightRow]
+}
+
+extension FleetSupplementResult {
+    /// Present known user-facing fields; IDs, raw schema paths and server internals stay out of the UI.
+    var cards: [FleetSupplementCard] {
+        let labels: [String: String] = [
+            "site_name": "충전소", "name": "이름", "title": "제목", "description": "안내", "message": "안내",
+            "start_time": "시작", "end_time": "종료", "charge_start_date_time": "충전 시작", "charge_stop_date_time": "충전 종료",
+            "chargeStartDateTime": "충전 시작", "chargeStopDateTime": "충전 종료", "siteLocationName": "충전소",
+            "energy_used": "충전량 (kWh)", "total_energy": "충전량 (kWh)", "energyDelivered": "충전량 (kWh)",
+            "total_cost": "결제 금액", "totalCost": "결제 금액", "currency": "통화", "billingType": "결제 유형",
+            "available_stalls": "사용 가능", "total_stalls": "전체 충전기", "power_kw": "최대 출력 (kW)",
+            "address": "주소", "city": "도시", "status": "상태", "version": "버전", "release_notes": "업데이트 내용",
+            "first_name": "이름", "last_name": "성", "email": "이메일", "service_status": "서비스 상태",
+            "alert_name": "경고", "alert_body": "내용", "timestamp": "기록 시각", "date": "날짜"
+        ]
+        func visit(_ value: Any, path: String) -> [FleetSupplementCard] {
+            if let list = value as? [Any] { return list.enumerated().flatMap { visit($0.element, path: path + "." + String($0.offset)) } }
+            guard let object = value as? [String: Any] else { return [] }
+            var items: [FleetInsightRow] = []
+            for key in object.keys.sorted() {
+                guard let label = labels[key], let raw = object[key], !(raw is NSNull), !(raw is [String: Any]), !(raw is [Any]) else { continue }
+                var text = String(describing: raw)
+                if key == "status" || key == "service_status" {
+                    text = ["available": "이용 가능", "completed": "완료", "pending": "대기", "scheduled": "예약됨", "in_progress": "진행 중"][text] ?? text
+                }
+                items.append(FleetInsightRow(label: label, value: text))
+            }
+            let title = (object["site_name"] ?? object["siteLocationName"] ?? object["title"] ?? object["name"]) as? String ?? "차량 기록"
+            var result = items.isEmpty ? [] : [FleetSupplementCard(id: path, title: title, rows: items)]
+            for key in object.keys.sorted() where object[key] is [Any] || object[key] is [String: Any] {
+                result += visit(object[key]!, path: path + "." + key)
+            }
+            return result
+        }
+        return visit(payload, path: "record")
+    }
+}

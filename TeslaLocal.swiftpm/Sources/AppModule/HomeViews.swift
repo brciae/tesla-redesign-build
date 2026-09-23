@@ -14,6 +14,14 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
         }
         result["connection"] = model.fleet.vehicleDisplayStatus
     }
+    // Use Fleet for a display group that BLE has not delivered. Never inject it into BLE command evidence.
+    if !model.demo, link.authentic, let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
+        for (name, value) in snapshot.homeOverlay() {
+            if result.object(name).string("mode") != "recent", let group = value as? Object, group.string("mode") == "recent" {
+                result[name] = group
+            }
+        }
+    }
     return result
 }
 

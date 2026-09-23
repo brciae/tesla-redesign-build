@@ -585,7 +585,7 @@ struct BatteryView: View {
                     ForEach(charges.prefix(3), id: \.selfID) { charge in
                         HStack(spacing: 4) {
                             ChargeRow(charge: charge)
-                            RecordActions(edit: { editing = charge }, delete: { model.mutate("deleteCharge", ["id": charge.selfID]) }, title: "충전 기록")
+                            if !charge.flag("active") { RecordActions(edit: { editing = charge }, delete: { model.mutate("deleteCharge", ["id": charge.selfID]) }, title: "충전 기록") }
                         }
                     }
                     if charges.count > 3 {
@@ -641,9 +641,10 @@ struct ChargeRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(dateText(charge.number("at"))).font(.subheadline.weight(.semibold))
-                Text("\(valueText(charge.number("startSOC")))% → \(valueText(charge.number("endSOC")))%")
+                Text("\(charge.flag("startSOCEstimated") ? "약 " : "")\(valueText(charge.number("startSOC")))% → \(charge.flag("endSOCEstimated") ? "약 " : "")\(valueText(charge.number("endSOC")))%")
                     .font(.caption2).foregroundStyle(Theme.muted).monospacedDigit()
             }
+            if charge.flag("collectedAfterEnd") { Text("종료 후 수집").font(.caption2).foregroundStyle(Theme.muted) }
             Spacer(minLength: 4)
             Text(valueText(charge.number("supplyKWh") ?? charge.number("vehicleReportedKWh"), digits: 1) + " kWh")
                 .font(.subheadline).monospacedDigit()
@@ -675,6 +676,7 @@ struct ChargeListView: View {
                     }
                     Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")
                     if c.flag("startSOCEstimated") || c.flag("endSOCEstimated") { InfoNote("잔량 계산 근거", "충전 도중 연결된 경우 시작 잔량은 차량 충전량과 배터리 용량으로 계산합니다. 완료 신호를 늦게 받은 경우 종료 잔량은 차량 충전 한도를 참고합니다. 직접 수신한 시작·완료 잔량은 그대로 보존합니다.") }
+                    if c.flag("collectedAfterEnd") { Caption("종료 후 수집한 기록 · 표시 시각은 차량 자료 수집 시각") }
                     if c.flag("endSOCLastObserved") { Caption("종료 잔량에는 충전 중 마지막으로 수신한 값을 보존했습니다.") }
                 }
             }

@@ -10,6 +10,10 @@ import Foundation
             "vehicle_state": ["locked": false, "timestamp": ms, "odometer": 1000]
         ])
         precondition(abs((snapshot.driveDisplay(now: now)["odometerKm"] as? Double ?? 0) - 1609.344) < 0.001)
+        let supplement = FleetSupplementResult(vin: "TEST", receivedAt: now, payload: ["superchargers": [["name": "충전소 A", "available_stalls": 3, "total_stalls": 8, "internal_id": "hidden"]]])
+        precondition(supplement.cards.count == 1)
+        precondition(supplement.cards[0].rows.contains { $0.label == "사용 가능" && $0.value == "3" })
+        precondition(!supplement.cards[0].rows.contains { $0.value == "hidden" })
         let sections = snapshot.insightSections()
         precondition(sections.count == 5)
         precondition(sections.first(where: { $0.title == "타이어 상태" })!.rows.first!.value == "미수신")

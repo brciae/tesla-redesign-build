@@ -32,7 +32,7 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-au
 Xcode/FleetAuthTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetCommandPolicy.swift tools/fleet-command-tests.swift -o Xcode/FleetCommandTests
 Xcode/FleetCommandTests
-swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/FleetSupplement.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
 Xcode/FleetSnapshotTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/FleetParkingAnalysis.swift TeslaLocal.swiftpm/Sources/AppModule/OwnershipAnalysis.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift tools/fleet-telemetry-tests.swift -o Xcode/FleetTelemetryTests
 Xcode/FleetTelemetryTests
