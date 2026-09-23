@@ -1,4 +1,5 @@
 #import "YLKakaoController.h"
+#import "YLNavigationSpeech.h"
 #import <KNSDK/KNSDK.h>
 #import <KNSDK/KNMapView.h>
 #import <KNSDK/KNMapCameraUpdate.h>
@@ -10,6 +11,101 @@
 #import <KNSDK/KNMapViewEventListener.h>
 #import <AVFoundation/AVFoundation.h>
 #import <math.h>
+
+
+// Fail compilation if the pinned SDK changes a speech maneuver ID.
+_Static_assert(KNRGCode_Start == 100, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Goal == 101, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Via == 1000, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Straight == 0, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftTurn == 1, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightTurn == 2, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_UTurn == 3, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftDirection == 5, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightDirection == 6, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_OutHighway == 7, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftOutHighway == 8, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightOutHighway == 9, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_InHighway == 10, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftInHighway == 11, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightInHighway == 12, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_OverPath == 14, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_UnderPath == 15, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_OverPathSide == 16, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_UnderPathSide == 17, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_1 == 18, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_2 == 19, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_3 == 20, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_4 == 21, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_5 == 22, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_6 == 23, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_7 == 24, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_8 == 25, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_9 == 26, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_10 == 27, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_11 == 28, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Direction_12 == 29, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_1 == 30, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_2 == 31, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_3 == 32, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_4 == 33, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_5 == 34, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_6 == 35, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_7 == 36, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_8 == 37, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_9 == 38, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_10 == 39, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_11 == 40, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RotaryDirection_12 == 41, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_OutCityway == 42, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftOutCityway == 43, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightOutCityway == 44, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_InCityway == 45, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftInCityway == 46, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightInCityway == 47, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_ChangeLeftHighway == 48, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_ChangeRightHighway == 49, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_InFerry == 61, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_OutFerry == 62, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_UnprotectedLeftTurn == 63, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Tunnel == 64, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_TunnelSide == 65, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftTunnel == 66, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftTunnelSide == 67, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightTunnel == 68, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightTunnelSide == 69, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_1 == 70, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_2 == 71, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_3 == 72, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_4 == 73, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_5 == 74, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_6 == 75, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_7 == 76, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_8 == 77, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_9 == 78, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_10 == 79, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_11 == 80, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RoundaboutDirection_12 == 81, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftStraight == 82, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightStraight == 83, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_Tollgate == 84, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_NonstopTollgate == 85, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_JoinAfterBranch == 86, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftOverPath == 87, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftOverPathSide == 88, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightOverPath == 89, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightOverPathSide == 90, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftUnderPath == 91, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_LeftUnderPathSide == 92, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightUnderPath == 93, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_RightUnderPathSide == 94, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_IndoorEnterance == 900, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_IndoorExit == 901, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_IndoorToUpFloor == 902, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_IndoorToDownFloor == 903, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_IndoorToAdjacentParkingLot == 904, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_IndoorFromAdjacentParkingLot == 905, "KNRGCode speech contract changed");
+_Static_assert(KNRGCode_IndoorRotationPoint == 906, "KNRGCode speech contract changed");
 
 // Contract: official UI binary 1.12.19, not the older Swift snippets on the website.
 // No simulation, URL handoff, screenshot map, private Tesla API or vehicle commands.
@@ -368,26 +464,24 @@ static NSArray *YLLifecycleObservers;
     }
     if ([object isKindOfClass:KNDirection.class]) {
         KNDirection *dir = (KNDirection *)object;
-        if (dir.rgCode == KNRGCode_Goal) return [prefix stringByAppendingString:@"목적지입니다."];
-        if (dir.rgCode == KNRGCode_Via) return [prefix stringByAppendingString:@"경유지입니다."];
-        return [prefix stringByAppendingString:[self directionInfo:object][@"spoken"]];
+        SInt32 metres = target && [self locationIsFresh] ? [self.locationGuide.location distToLocation:target] : -1;
+        return YLNavigationSpeech(dir.rgCode, dir.nodeName, dir.directionNames, metres);
     }
     if ([object isKindOfClass:KNSafety.class]) {
         KNSafety *point = object;
-        NSDictionary *labels = @{@0:@"사고 구간", @1:@"급커브 구간", @2:@"낙석 주의 구간", @3:@"안개 주의 구간", @4:@"추락 주의", @5:@"미끄러운 도로", @6:@"과속 방지턱", @10:@"철도 건널목", @11:@"어린이 보호 구역", @12:@"도로 폭 좁아짐", @13:@"급경사 내리막", @14:@"야생동물 출몰 지역", @15:@"졸음 쉼터", @16:@"사고 구간", @17:@"오르막 구간", @18:@"신호등 주의", @20:@"요금소", @21:@"사고 구간", @22:@"사고 구간", @23:@"사고 구간", @24:@"상습 결빙 구간", @26:@"사고 구간", @28:@"높이 제한", @29:@"중량 제한", @31:@"안개 주의 구간", @32:@"상습 결빙 구간", @40:@"지하차도 침수 주의", @81:@"이동식 단속 구간", @82:@"과속 단속", @83:@"교통 정보 수집 카메라", @84:@"버스 전용 차로 단속 구간", @85:@"과적 단속", @86:@"신호 과속 단속 구간", @87:@"주정차 단속 구간", @88:@"적재 불량 단속", @89:@"버스 전용 차로 단속 구간", @90:@"고정식 단속 구간", @91:@"과속 단속", @92:@"구간 단속 시작", @93:@"구간 단속 종료", @94:@"갓길 단속", @95:@"끼어들기 단속", @96:@"구간 단속", @97:@"지정차로 단속", @98:@"구간 단속 시작", @99:@"구간 단속 종료", @100:@"과속 단속", @101:@"안전띠 단속", @102:@"과속 단속", @103:@"신호 과속 단속 구간", @104:@"노후 경유차 운행 제한 단속", @105:@"구간 단속 시작", @106:@"후면 구간 단속 종료", @692:@"구간 단속 시작", @693:@"구간 단속 종료", @696:@"구간 단속", @705:@"구간 단속 시작", @706:@"후면 구간 단속 종료"};
-        // v42: a few calls are a whole sentence rather than "<label>입니다", so they can be said by the
-        // recorded voice instead of dropping the whole announcement back to the synthesiser.
-        NSDictionary *sentences = @{@93:@"구간 단속이 끝났습니다.", @99:@"구간 단속이 끝났습니다.", @106:@"구간 단속이 끝났습니다.",
-                                    @693:@"구간 단속이 끝났습니다.", @706:@"구간 단속이 끝났습니다.",
-                                    @12:@"도로 폭이 좁아집니다.", @15:@"졸음쉼터로 진입합니다."};
-        // v43: the speed limit is its own sentence. Inside the label it produced one long comma clause
-        // that the recorded voice could never say, so the whole warning fell back to the synthesiser.
+        NSDictionary *labels = @{@0:@"사고 다발 구간", @1:@"급커브 구간", @2:@"낙석 주의 구간", @3:@"안개 주의 구간", @4:@"추락 주의", @5:@"미끄러운 도로", @6:@"과속 방지턱", @10:@"철도 건널목", @11:@"어린이 보호 구역", @12:@"도로 폭 좁아짐", @13:@"급경사 내리막", @14:@"야생동물 출몰 지역", @15:@"졸음 쉼터", @16:@"졸음운전 사고 다발 구간", @17:@"오르막 구간", @18:@"신호등 주의", @20:@"무정차 요금소", @21:@"차량 사고 다발 구간", @22:@"보행자 사고 다발 구간", @23:@"어린이 사고 다발 구간", @24:@"상습 결빙 구간", @26:@"고의성 교통사고 다발 지점", @28:@"높이 제한", @29:@"중량 제한", @31:@"안개 주의 구간", @32:@"상습 결빙 구간", @40:@"지하차도 침수 주의", @80:@"단속 지점", @81:@"이동식 과속 단속 구간", @82:@"과속 단속", @83:@"교통 정보 수집 카메라", @84:@"버스 전용 차로 단속 구간", @85:@"과적 단속", @86:@"신호 과속 단속 구간", @87:@"주정차 단속 구간", @88:@"적재 불량 단속", @89:@"버스 전용 차로 단속 구간", @90:@"고정식 단속 구간", @91:@"차로 및 과속 단속", @92:@"구간 단속 시작", @93:@"구간 단속 종료", @94:@"갓길 단속", @95:@"끼어들기 단속", @96:@"구간 단속", @97:@"지정차로 단속", @98:@"구간 단속 시작", @99:@"구간 단속 종료", @100:@"과속 단속", @101:@"안전띠 단속", @102:@"과속 단속", @103:@"신호 과속 단속 구간", @104:@"노후 경유차 운행 제한 단속", @105:@"구간 단속 시작", @106:@"후면 구간 단속 종료", @692:@"구간 단속 시작", @693:@"구간 단속 종료", @696:@"구간 단속", @705:@"구간 단속 시작", @706:@"후면 구간 단속 종료"};
+        // Announce the point ahead, not an event that has supposedly already happened.
+        NSDictionary *sentences = @{@93:@"구간 단속 종료 지점입니다.", @99:@"차로 변경 단속 종료 지점입니다.", @106:@"후면 구간 단속 종료 지점입니다.",
+                                    @693:@"구간 단속 종료 지점입니다.", @706:@"후면 구간 단속 종료 지점입니다.",
+                                    @90:@"신호 위반 단속 지점입니다.", @98:@"차로 변경 단속 시작 지점입니다.",
+                                    @12:@"도로 폭이 좁아집니다.", @15:@"졸음쉼터가 있습니다."};
         NSString *limitSentence = @"";
         if ([point isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)point).speedLimit > 0)
             limitSentence = [NSString stringWithFormat:@" 제한 속도는 시속 %d킬로미터입니다.", (int)((KNSafety_Camera *)point).speedLimit];
         NSString *whole = sentences[@(point.code)];
         if (whole) return [[prefix stringByAppendingString:whole] stringByAppendingString:limitSentence];
-        NSString *label = labels[@(point.code)] ?: @"안전 운행 주의 지점";
+        NSString *label = labels[@(point.code)];
+        if (!label.length) return @""; // Unknown hazards need a supported meaning, not a filler sentence.
         if ([point isKindOfClass:KNSafety_Caution.class]) {
             SInt32 limit = ((KNSafety_Caution *)point).limit;
             if (limit > 0 && point.code == KNSafetyCode_HeightLimitPos) label = [label stringByAppendingFormat:@", %.1f미터", limit/100.0];
@@ -403,7 +497,7 @@ static NSArray *YLLifecycleObservers;
             return @""; // SDK does not expose the source sentence for these audio-only events.
         case KNVoiceCode_SchoolZone: return @"어린이 보호 구역입니다.";
         case KNVoiceCode_Alert: return @"주의하세요.";
-        case KNVoiceCode_Hipass: return @"하이패스 차로 안내 지점입니다.";
+        case KNVoiceCode_Hipass: return @"하이패스 차로를 확인하세요.";
         case KNVoiceCode_StrateToNext: return @"계속 직진하세요.";
         case KNVoiceCode_CheckingRouteChange: return @"경로를 재탐색합니다.";
         case KNVoiceCode_RouteChanged: return @"새로운 경로로 안내합니다.";
@@ -413,8 +507,9 @@ static NSArray *YLLifecycleObservers;
         case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로입니다.";
         case KNVoiceCode_Alram: return @"";
         case KNVoiceCode_LinkSound: return @"";
-        case KNVoiceCode_Safety: return @"안전 운행 주의 지점을 확인해 주세요.";
-        case KNVoiceCode_Turn: return self.routeGuide.curDirection ? [self directionInfo:self.routeGuide.curDirection][@"spoken"] : @"진행 경로를 확인해 주세요.";
+        // Missing event objects cannot be replaced by a possibly different screen maneuver.
+        case KNVoiceCode_Safety: return @"";
+        case KNVoiceCode_Turn: return @"";
         default: return @"";
     }
 }
@@ -592,28 +687,9 @@ static NSArray *YLLifecycleObservers;
     NSString *name = direction.nodeName ?: @"";
     if (direction.rgCode >= KNRGCode_RotaryDirection_1 && direction.rgCode <= KNRGCode_RotaryDirection_12) exitClock = direction.rgCode - KNRGCode_RotaryDirection_1 + 1;
     if (direction.rgCode >= KNRGCode_RoundaboutDirection_1 && direction.rgCode <= KNRGCode_RoundaboutDirection_12) exitClock = direction.rgCode - KNRGCode_RoundaboutDirection_1 + 1;
-    NSString *spokenAction;
-    if (direction.rgCode == KNRGCode_Goal) {
-        spokenAction = @"목적지에 도착했습니다.";
-    } else if (direction.rgCode == KNRGCode_Via) {
-        spokenAction = @"경유지에 도착했습니다.";
-    } else if (exitClock >= 1 && exitClock <= 4) {
-        static NSString *const kRoundaboutExits[] = {
-            @"",
-            @"회전 교차로에서 첫 번째 출구로 나가세요.",
-            @"회전 교차로에서 두 번째 출구로 나가세요.",
-            @"회전 교차로에서 세 번째 출구로 나가세요.",
-            @"회전 교차로에서 네 번째 출구로 나가세요."
-        };
-        spokenAction = kRoundaboutExits[exitClock];
-    } else if (exitClock > 0) {
-        spokenAction = [NSString stringWithFormat:@"회전교차로 %ld시 방향 출구입니다.", (long)exitClock];
-    } else {
-        spokenAction = [action stringByAppendingString:@"입니다."];
-    }
     NSString *toward = [direction.directionNames componentsJoinedByString:@" · "] ?: @"";
     NSString *text = [@[name, toward, action] componentsJoinedByString:@" "];
-    return @{@"text": [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet], @"symbol":symbol, @"highway":highway, @"exitClock":@(exitClock), @"spoken":spokenAction};
+    return @{@"text": [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet], @"symbol":symbol, @"highway":highway, @"exitClock":@(exitClock)};
 }
 - (void)publishTelemetry {
     if (YLGuidanceOwner != self || !self.telemetryHandler) return;
