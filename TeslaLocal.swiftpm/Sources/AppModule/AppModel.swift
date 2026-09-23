@@ -105,7 +105,8 @@ final class AppModel: ObservableObject {
                 self.output = try self.runtime.call("ingest", snapshot) as? Object ?? [:]
                 let charging = snapshot.object("groups").object("charge")
                 if let raw = charging.number("charging"), let status = ChargeEventPolicy.bleState(Int(raw)), let at = charging.number("at") {
-                    ChargeNotificationManager.shared.observe(ChargeObservation(vin: self.settings.string("vin"), at: Date(timeIntervalSince1970: at / 1000), state: status, soc: charging.number("soc"), limit: charging.number("limit")))
+                    let observation = ChargeObservation(vin: self.settings.string("vin"), at: Date(timeIntervalSince1970: at / 1000), state: status, soc: charging.number("soc"), limit: charging.number("limit"))
+                    Task { @MainActor in ChargeNotificationManager.shared.observe(observation) }
                 }
                 if snapshot.object("groups")["drive"] != nil {
                     self.considerNavigation()
