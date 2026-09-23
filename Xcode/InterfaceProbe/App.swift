@@ -4,6 +4,7 @@ import CryptoKit
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
     init() {
+        if ProcessInfo.processInfo.arguments.contains("climate-probe") { precondition(UIImage(named: "TeslaTopInterior") != nil, "Cabin fixture must include the production image asset") }
         if ProcessInfo.processInfo.arguments.contains("reset-appearance-fixture") {
             for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("appearance.v1.") {
                 UserDefaults.standard.removeObject(forKey: key)

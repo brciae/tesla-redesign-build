@@ -43,7 +43,10 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetInsightsView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefing.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefing.swift",
+    {
+     "path": "Assets.xcassets"
+    }
    ],
    "settings": {
     "base": {
