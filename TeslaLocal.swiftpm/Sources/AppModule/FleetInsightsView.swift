@@ -43,7 +43,7 @@ struct FleetInsightsView: View {
                     NavigationLink { DrivingInsightsView() } label: { destination("주행·소비", "chart.bar.fill", .mint) }
                     NavigationLink { EnergyCalendarView() } label: { destination("충전 달력", "calendar", .cyan) }
                     NavigationLink { FleetTelemetryView(vin: fleet.selectedVin) } label: { destination("배터리 추이", "waveform.path.ecg", .orange) }
-                    NavigationLink { WarrantyGuideView(vin: fleet.selectedVin, odometerKm: model.displayOdometerKm) } label: { destination("보증·관리", "checkmark.shield.fill", .purple) }
+                    NavigationLink { WarrantyGuideView(vin: fleet.selectedVin, odometerKm: model.displayOdometerKm, vehicleReference: model.vehicleReference) } label: { destination("보증·관리", "checkmark.shield.fill", .purple) }
                 }.buttonStyle(.plain)
                 if !model.vehicleReference.isEmpty {
                     InfoCard {

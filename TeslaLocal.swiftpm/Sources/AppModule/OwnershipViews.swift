@@ -95,9 +95,9 @@ struct DrivingInsightsView: View {
 }
 
 struct WarrantyGuideView: View {
-    @EnvironmentObject private var model: AppModel
     let vin: String
     let odometerKm: Double?
+    var vehicleReference: Object = [:]
     @State private var start = Date()
     @State private var confirmed = false
     private var key: String { "warranty.start." + vin }
@@ -128,7 +128,7 @@ struct WarrantyGuideView: View {
         if confirmed { UserDefaults.standard.set(start, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
     }
     private func coverage(_ title: String, years: Int, km: Double?) -> some View {
-        let reference = model.vehicleReference
+        let reference = vehicleReference
         let endKey = title == "기본 차량" ? "basicWarrantyEnd" : title == "배터리·구동장치" ? "batteryWarrantyEnd" : ""
         let suppliedEnd = endKey.isEmpty ? nil : ISO8601DateFormatter().date(from: reference.string(endKey) + "T12:00:00Z")
         let end = suppliedEnd ?? (confirmed ? OwnershipAnalysis.warrantyEnd(start: start, years: years) : nil)

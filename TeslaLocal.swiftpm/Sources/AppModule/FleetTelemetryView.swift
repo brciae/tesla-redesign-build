@@ -12,6 +12,7 @@ struct FleetTelemetryView: View {
     @State private var error = ""
     @State private var search = ""
     @State private var selectedField = "ModuleTempMax"
+    @State private var serverExpanded = true
     private var latest: [String: FleetTelemetryReading] { store.latest(vin: vin) }
     private var trend: [FleetTelemetryReading] { Array(store.records.filter { $0.vin == vin && $0.field == selectedField && !$0.invalid && $0.number != nil }.suffix(240)) }
     var body: some View {
@@ -24,12 +25,16 @@ struct FleetTelemetryView: View {
                     Button("Telemetry 기록 가져오기") { importing = true }.disabled(vin.isEmpty)
                     if !error.isEmpty { Caption(error) }
                 }
-                DisclosureGroup("NAS 차량 기록 서버 설정") {
-                    Text("NAS 차량 기록 서버").font(.headline)
+                DisclosureGroup("NAS 차량 기록 서버 설정", isExpanded: $serverExpanded) {
+                    Text("서버 주소").font(.subheadline.bold()).frame(maxWidth: .infinity, alignment: .leading)
                     TextField("https://차량서버주소", text: $serverAddress)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    SecureField("연결 키 · 저장 후에는 비워 두어도 됩니다", text: $serverToken)
+                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("archive.address")
+                    Text("NAS 연결 키").font(.subheadline.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                    SecureField("서버 전용 키 입력", text: $serverToken)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("archive.token")
+                    Text("타입캐스트 키·Tesla 토큰·NAS 비밀번호와 다릅니다. 저장 후에는 다시 입력하지 않아도 됩니다.").font(.caption).foregroundStyle(Theme.muted)
                     Button(archive.busy ? "기록 가져오는 중…" : "연결 저장 · 기록 가져오기") {
                         do {
                             try archive.configure(address: serverAddress, token: serverToken)
@@ -83,6 +88,7 @@ struct FleetTelemetryView: View {
         }.background(Theme.bg).navigationTitle("배터리 추이")
         .task(id: vin) {
             serverAddress = archive.address
+            serverExpanded = archive.address.isEmpty
             await archive.sync(vin: vin)
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in

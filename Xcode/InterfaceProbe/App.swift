@@ -15,6 +15,7 @@ import MapKit
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST") } }
             else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
             else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
             else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
@@ -330,8 +331,8 @@ struct ClimateFleetProbe: View {
             Group {
                 if fleetScreen { FleetInsightsView(fleet: model.fleet) }
                 else { TeslaInteractiveClimateView(link: model.link).navigationTitle("실내 공조") }
-            }.environmentObject(model)
-        }
+            }
+        }.environmentObject(model)
     }
 }
 

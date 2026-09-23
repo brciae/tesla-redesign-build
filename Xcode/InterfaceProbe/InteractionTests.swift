@@ -1,6 +1,14 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testNASConnectionFieldsVisible() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["archive-probe"]; app.launch()
+        XCTAssertTrue(app.textFields["archive.address"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.secureTextFields["archive.token"].isHittable)
+        XCTAssertTrue(app.staticTexts["NAS 연결 키"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "NAS labeled connection fields"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testDestinationSearchEntry() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["search-probe"]; app.launch()

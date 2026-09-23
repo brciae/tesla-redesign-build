@@ -16,8 +16,12 @@ final class DestinationSuggestions: NSObject, ObservableObject, MKLocalSearchCom
         items = []
         completer.queryFragment = query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) { items = completer.results }
-    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) { items = [] }
+    nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        DispatchQueue.main.async { [weak self, weak completer] in self?.items = completer?.results ?? [] }
+    }
+    nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        DispatchQueue.main.async { [weak self] in self?.items = [] }
+    }
 }
 
 struct SavedNavigationPlace: Codable, Identifiable {
