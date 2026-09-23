@@ -1,0 +1,34 @@
+name: NAS archive validation
+on:
+  workflow_dispatch:
+  push:
+    paths: ['server/**', '.github/workflows/server-test.yml']
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Storage regression tests
+        working-directory: server
+        run: python -m unittest -v test_store.py
+      - name: Start isolated NAS stack
+        working-directory: server
+        run: docker compose up --build --wait --wait-timeout 240
+      - name: Delivery and restart recovery
+        working-directory: server
+        run: |
+          docker compose cp integration.py archive:/tmp/integration.py
+          docker compose exec -T archive python /tmp/integration.py
+          docker compose restart archive kafka
+          docker compose up --wait --wait-timeout 180
+          docker compose exec -T archive python /tmp/integration.py
+          docker stats --no-stream
+      - name: Diagnostics
+        if: failure()
+        working-directory: server
+        run: docker compose ps -a && docker compose logs --tail 50
+      - name: Clean up test volumes
+        if: always()
+        working-directory: server
+        run: docker compose down -v

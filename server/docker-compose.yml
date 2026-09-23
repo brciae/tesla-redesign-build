@@ -1,0 +1,96 @@
+services:
+  initialize:
+    image: python:3.12-slim
+    restart: "no"
+    network_mode: none
+    mem_limit: 64m
+    volumes:
+      - archive-data:/data
+      - kafka-data:/kafka
+    command:
+      - python
+      - -c
+      - |
+        import os, pathlib, secrets
+        os.chown('/data', 10001, 10001)
+        os.chown('/kafka', 1000, 1000)
+        path = pathlib.Path('/data/api-token')
+        if not path.exists():
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as f: f.write(secrets.token_urlsafe(48))
+            os.chown(path, 10001, 10001)
+  kafka:
+    image: apache/kafka:3.9.1
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 268435456
+      KAFKA_LOG_SEGMENT_BYTES: 16777216
+      KAFKA_LOG_FLUSH_INTERVAL_MESSAGES: 1
+      KAFKA_NUM_NETWORK_THREADS: 2
+      KAFKA_NUM_IO_THREADS: 2
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx256m
+      CLUSTER_ID: TGVzbGFOQVNBcmNoaXZlMQ
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks: [archive]
+    healthcheck:
+      test: [CMD-SHELL, "bash -c 'echo > /dev/tcp/127.0.0.1/9092'"]
+      interval: 60s
+      timeout: 20s
+      start_period: 90s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+  archive:
+    build: .
+    restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      API_TOKEN_FILE: /data/api-token
+      KAFKA_BOOTSTRAP: kafka:9092
+      PYTHONDONTWRITEBYTECODE: "1"
+    ports: ["127.0.0.1:8787:8787"]
+    volumes:
+      - archive-data:/data
+    networks: [archive]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health',timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+volumes:
+  kafka-data:
+  archive-data:
+networks:
+  archive:
+    internal: true

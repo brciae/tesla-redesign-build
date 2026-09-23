@@ -1,0 +1,19 @@
+{
+  "host": "0.0.0.0",
+  "port": 8443,
+  "log_level": "warn",
+  "json_log_enable": true,
+  "namespace": "tesla",
+  "reliable_ack": true,
+  "transmit_decoded_records": true,
+  "kafka": {
+    "bootstrap.servers": "kafka:9092",
+    "acks": "all",
+    "enable.idempotence": true,
+    "queue.buffering.max.messages": 1000,
+    "queue.buffering.max.kbytes": 8192
+  },
+  "records": {"V": ["kafka"], "alerts": ["kafka"], "errors": ["kafka"], "connectivity": ["kafka"]},
+  "reliable_ack_sources": {"V": "kafka", "alerts": "kafka", "errors": "kafka", "connectivity": "kafka"},
+  "tls": {"server_cert": "/certs/fullchain.pem", "server_key": "/certs/privkey.pem"}
+}
