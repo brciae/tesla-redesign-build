@@ -78,7 +78,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         defer { isCheckingConnection = false }
         connectionStatus = "\(identity) · API 목록 요청 중…"
         do {
-            let catalog = try await fetchVoiceCatalog(apiKey: key)
+            let catalog = try await fetchVoiceCatalog(apiKey: key, force: true)
             connectionStatus = "\(identity) · GET /v3/voices · HTTP 200 · 보이스 \(Set(catalog.values).count)개. 목록 인증만 확인됨. 음성 합성 권한은 별도 확인 필요."
         } catch {
             connectionStatus = "\(identity) · GET /v3/voices · \(error.localizedDescription)"
@@ -112,6 +112,11 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         ("한영", "한영", "표현력이 풍부하고 생생한 대화 톤")
     ]
 
+    // Validated metadata is scoped to the selected key and expires after 10 minutes.
+    private var catalogKeyFingerprint = ""
+    private var catalogFetchedAt = Date.distantPast
+    private var catalogRequest: Task<[String: String], Error>?
+    private var catalogRequestKey = ""
     private var player: AVAudioPlayer?
     private var testCompletion: (() -> Void)?
 
@@ -235,7 +240,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return result
     }
 
-    private func fetchVoiceCatalog(apiKey: String) async throws -> [String: String] {
+    @MainActor
+    private func fetchVoiceCatalog(apiKey: String, force: Bool = false) async throws -> [String: String] {
+        let fingerprint = SHA256.hash(data: Data(apiKey.utf8)).map { String(format: "%02x", $0) }.joined()
+        if !force, catalogKeyFingerprint == fingerprint, Date().timeIntervalSince(catalogFetchedAt) < 600, !voiceCatalog.isEmpty { return voiceCatalog }
+        if catalogRequestKey == fingerprint, let pending = catalogRequest { return try await pending.value }
+        let task = Task { try await self.requestVoiceCatalog(apiKey: apiKey) }
+        catalogRequest = task; catalogRequestKey = fingerprint
+        defer { if catalogRequestKey == fingerprint { catalogRequest = nil; catalogRequestKey = "" } }
+        let catalog = try await task.value
+        voiceCatalog = catalog; catalogKeyFingerprint = fingerprint; catalogFetchedAt = Date()
+        return catalog
+    }
+
+    private func requestVoiceCatalog(apiKey: String) async throws -> [String: String] {
         let url = URL(string: "https://api.typecast.ai/v3/voices?model=ssfm-v30")!
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
@@ -245,7 +263,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw URLError(.badServerResponse)
         }
         guard http.statusCode == 200 else {
-            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey])
+            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey], stage: "GET /v3/voices · model=ssfm-v30")
         }
         let catalog = parseVoices(from: data)
         guard !catalog.isEmpty else {
@@ -411,7 +429,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.setValue(key, forHTTPHeaderField: "X-API-KEY")
-                request.timeoutInterval = 12.0
+                request.timeoutInterval = 60.0 // Full reports need more synthesis time; navigation retains its playback deadline.
 
                 let body: [String: Any] = [
                     "voice_id": resolvedVoice,
@@ -443,7 +461,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     return savedURL
                 }
 
-                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry)
+                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry, stage: "POST /v1/text-to-speech · model=ssfm-v30 · voice=\(resolvedVoice)")
             } catch {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 let failure = error as NSError

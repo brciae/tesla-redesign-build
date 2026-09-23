@@ -140,6 +140,11 @@ struct VoiceItem {
     let expires: Date
     let priority: Int
     let manual: Bool
+    // Manual reports may finish synthesis after their queue deadline. Maneuvers
+    // and automatic events retain their strict real-time playback deadline.
+    func canStartPlayback(at now: Date) -> Bool {
+        (manual && !key.hasPrefix("navigation.") && key != "dashboard.start") || now < expires
+    }
 }
 
 struct VoiceQueue {

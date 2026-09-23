@@ -123,3 +123,78 @@ struct FleetVehicleSnapshot {
         return ["drive": drive, "location": overlay["location"] ?? [:], "charge": overlay["charge"] ?? [:], "climate": overlay["climate"] ?? [:], "closures": closures]
     }
 }
+
+
+struct FleetInsightRow { let label: String; let value: String }
+struct FleetInsightSection { let title: String; let source: String; let rows: [FleetInsightRow] }
+
+extension FleetVehicleSnapshot {
+    func insightSections() -> [FleetInsightSection] {
+        func metric(_ section: String, _ key: String, _ label: String, _ unit: String, digits: Int = 1, scale: Double = 1) -> FleetInsightRow {
+            let value = number(section, key).map { String(format: "%.*f", digits, $0 * scale) + unit } ?? "미수신"
+            return FleetInsightRow(label: label, value: value)
+        }
+        func status(_ key: String, _ label: String) -> FleetInsightRow {
+            FleetInsightRow(label: label, value: flag("vehicle_state", key).map { $0 ? "켜짐" : "꺼짐" } ?? "미수신")
+        }
+        var tires: [FleetInsightRow] = []
+        for (key, label) in [("fl", "앞 왼쪽"), ("fr", "앞 오른쪽"), ("rl", "뒤 왼쪽"), ("rr", "뒤 오른쪽")] {
+            tires.append(metric("vehicle_state", "tpms_pressure_" + key, label, " bar", digits: 2))
+            tires.append(FleetInsightRow(label: label + " 경고", value: flag("vehicle_state", "tpms_hard_warning_" + key).map { $0 ? "차량 공기압 경고" : "차량 경고 없음" } ?? "미수신"))
+        }
+        var security = [FleetInsightRow(label: "잠금", value: locked.map { $0 ? "잠김" : "잠금 해제" } ?? "미수신"), status("sentry_mode", "감시 모드"), status("is_user_present", "차량 감지 탑승")]
+        for (key, label) in [("fd_window", "앞 왼쪽 창문"), ("fp_window", "앞 오른쪽 창문"), ("rd_window", "뒤 왼쪽 창문"), ("rp_window", "뒤 오른쪽 창문"), ("df", "앞 왼쪽 문"), ("pf", "앞 오른쪽 문"), ("dr", "뒤 왼쪽 문"), ("pr", "뒤 오른쪽 문"), ("ft", "프렁크"), ("rt", "트렁크")] {
+            security.append(FleetInsightRow(label: label, value: number("vehicle_state", key).map { $0 == 0 ? "닫힘" : "열림" } ?? "미수신"))
+        }
+        let vehicle = payload["vehicle_state"] as? [String: Any] ?? [:]
+        let update = vehicle["software_update"] as? [String: Any] ?? [:]
+        let firmware = [FleetInsightRow(label: "차량 소프트웨어", value: vehicle["car_version"] as? String ?? "미수신"), FleetInsightRow(label: "업데이트 상태", value: update["status"] as? String ?? "미수신"), FleetInsightRow(label: "업데이트 버전", value: update["version"] as? String ?? "미수신"), metric("vehicle_state", "odometer", "총 주행거리", " km", scale: 1.609344)]
+        return [
+            FleetInsightSection(title: "충전 진단", source: "charge_state", rows: [
+                metric("charge_state", "charger_power", "충전 전력", " kW"), metric("charge_state", "charger_voltage", "입력 전압", " V", digits: 0),
+                metric("charge_state", "charger_actual_current", "실제 전류", " A", digits: 0), metric("charge_state", "charge_current_request", "요청 전류", " A", digits: 0),
+                metric("charge_state", "charge_current_request_max", "요청 가능 최대 전류", " A", digits: 0), metric("charge_state", "charge_energy_added", "이번 세션 충전량", " kWh"),
+                metric("charge_state", "charge_rate", "표시 주행거리 증가 속도", " km/h", scale: 1.609344), metric("charge_state", "time_to_full_charge", "차량 예상 잔여 시간", " 분", digits: 0, scale: 60)]),
+            FleetInsightSection(title: "타이어 상태", source: "vehicle_state", rows: tires),
+            FleetInsightSection(title: "도착 전망", source: "drive_state", rows: [
+                FleetInsightRow(label: "차량 목적지", value: (payload["drive_state"] as? [String: Any])?["active_route_destination"] as? String ?? "미수신"),
+                metric("drive_state", "active_route_energy_at_arrival", "차량 예상 도착 배터리", " %"), metric("drive_state", "active_route_minutes_to_arrival", "남은 시간", " 분", digits: 0),
+                metric("drive_state", "active_route_miles_to_arrival", "남은 거리", " km", scale: 1.609344), metric("drive_state", "active_route_traffic_minutes_delay", "교통 지연", " 분", digits: 0)]),
+            FleetInsightSection(title: "주차·보안 확인", source: "vehicle_state", rows: security),
+            FleetInsightSection(title: "소프트웨어·주행거리", source: "vehicle_state", rows: firmware)
+        ]
+    }
+
+    func insightSummary() -> [String] {
+        var lines = ["Fleet 차량 상세 자료를 살펴보겠습니다."]
+        if !isRecent() { lines.append("일부 값은 마지막 수신 자료이므로 현재 상태와 다를 수 있습니다.") }
+        if sectionIsRecent("vehicle_state") {
+            let open = ["df", "pf", "dr", "pr", "ft", "rt"].compactMap { number("vehicle_state", $0) }.filter { $0 > 0 }.count
+            if open > 0 { lines.append("문이나 트렁크가 \(open)곳 열려 있으므로, 차량을 떠나기 전 확인해 주세요.") }
+            if flag("vehicle_state", "sentry_mode") == true { lines.append("감시 모드가 켜져 있습니다. 주차 소비량이 늘었다면 감시 모드 사용 시간도 함께 비교해 보세요.") }
+        }
+        if sectionIsRecent("drive_state"), let arrival = number("drive_state", "active_route_energy_at_arrival"), (0...100).contains(arrival) {
+            lines.append(String(format: "차량이 예상한 도착 배터리는 %.0f퍼센트이며, 속도와 날씨에 따라 달라질 수 있습니다.", arrival))
+            if arrival < 15 { lines.append("도착 여유가 적으므로 경로상의 충전 가능 지점을 미리 확인하는 편이 좋겠습니다.") }
+        }
+        if lines.count == 1 { lines.append("항목별 수신 상태는 아래 카드에서 확인할 수 있습니다.") }
+        return lines
+    }
+
+    /// Recursively enumerate every returned field, including nested update data.
+    func flattenedFields(section: String) -> [FleetInsightRow] {
+        func flatten(_ value: Any, path: String) -> [FleetInsightRow] {
+            if let dictionary = value as? [String: Any] {
+                if dictionary.isEmpty { return [FleetInsightRow(label: path, value: "빈 객체")] }
+                return dictionary.keys.sorted().flatMap { flatten(dictionary[$0]!, path: path.isEmpty ? $0 : path + "." + $0) }
+            }
+            if let array = value as? [Any] {
+                if array.isEmpty { return [FleetInsightRow(label: path, value: "빈 목록")] }
+                return array.enumerated().flatMap { flatten($0.element, path: path + "[\($0.offset)]") }
+            }
+            return [FleetInsightRow(label: path, value: value is NSNull ? "미수신 (null)" : String(describing: value))]
+        }
+        guard let value = payload[section] else { return [] }
+        return flatten(value, path: section)
+    }
+}

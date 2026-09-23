@@ -13,6 +13,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private var typecastPlayer: AVAudioPlayer?
     private var activeTicket: UUID?
+    private var synthesisTask: Task<Void, Never>?
     private var releaseWork: DispatchWorkItem?
     private var memoryObserver: NSObjectProtocol?
     private var queue = VoiceQueue()
@@ -216,7 +217,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             playbackState = "음량 0"
             return true
         }
-        guard Date() < item.expires else {
+        guard item.canStartPlayback(at: Date()) else {
             playbackState = "안내 기한 만료"
             drain()
             return true
@@ -239,7 +240,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         // 2. Online fetch via Typecast API
         playbackState = "타입캐스트 음성 생성 중…"
-        Task {
+        synthesisTask = Task {
             do {
                 let audioURL = try await tc.synthesize(text: item.text, voiceId: resolvedTarget)
                 await MainActor.run {
@@ -266,7 +267,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         guard activeTicket == ticket else { return }
         // Network synthesis can finish after the maneuver has already expired.
         // Keep the generated cache, but never play an out-of-date instruction.
-        guard Date() < item.expires else {
+        guard item.canStartPlayback(at: Date()) else {
             activeTicket = nil
             activeManual = false
             speaking = false
@@ -283,14 +284,19 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             p.delegate = self
             p.volume = volume
             p.prepareToPlay()
-            p.play()
+            guard p.play() else { throw LocalError.message("오디오 출력을 시작하지 못했습니다.") }
             self.typecastPlayer = p
             self.speaking = true
             self.playbackState = "읽는 중 · 타입캐스트 AI 음성"
             self.refreshOutput()
         } catch {
             activeTicket = nil
-            notice = "타입캐스트 오디오 재생 실패"
+            typecastPlayer = nil
+            activeManual = false
+            speaking = false
+            navigationSpeaking = false
+            activePriority = 0
+            notice = "타입캐스트 오디오 재생 실패: \(error.localizedDescription)"
             playbackState = "재생 실패"
             drain()
         }
@@ -330,6 +336,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func cancelCurrent() {
+        synthesisTask?.cancel()
+        synthesisTask = nil
         activeTicket = nil
         activeManual = false
         speaking = false

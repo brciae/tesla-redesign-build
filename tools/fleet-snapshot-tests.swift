@@ -9,6 +9,13 @@ import Foundation
             "climate_state": ["inside_temp": 0, "outside_temp": -5, "timestamp": ms],
             "vehicle_state": ["locked": false, "timestamp": ms]
         ])
+        let sections = snapshot.insightSections()
+        precondition(sections.count == 5)
+        precondition(sections.first(where: { $0.title == "타이어 상태" })!.rows.first!.value == "미수신")
+        precondition(snapshot.flattenedFields(section: "charge_state").contains(where: { $0.label == "charge_state.battery_level" && $0.value == "72" }))
+        let nested = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["vehicle_state": ["software_update": ["status": "available"], "missing": NSNull()]])
+        precondition(nested.flattenedFields(section: "vehicle_state").count == 2)
+        precondition(nested.flattenedFields(section: "vehicle_state").contains(where: { $0.value == "미수신 (null)" }))
         precondition(snapshot.soc == 72 && abs(snapshot.rangeKm! - 160.9344) < 0.00001)
         precondition(snapshot.insideC == 0 && snapshot.outsideC == -5 && snapshot.locked == false)
         precondition(snapshot.charging && snapshot.hasMeasurements && snapshot.isRecent(now: now))

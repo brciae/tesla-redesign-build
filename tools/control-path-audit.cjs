@@ -28,7 +28,7 @@ assert(!bridge.includes('회전 교차로에서 첫 번째 출구'), 'Clock dire
 assert(!bridge.includes('졸음쉼터로 진입합니다'), 'Nearby rest area is not a route instruction');
 assert(!bridge.includes('구간 단속이 끝났습니다'), 'Upcoming endpoint is not completed section');
 const playback = read('VoiceCoordinator').split('private func playTypecastAudio(')[1].split('func audioPlayerDidFinishPlaying')[0];
-assert(playback.includes('guard Date() < item.expires') && playback.indexOf('guard Date() < item.expires') < playback.indexOf('try activateAudio(defaults)'), 'Recheck expiry after online synthesis and before playback');
+assert(playback.includes('guard item.canStartPlayback(at: Date())') && playback.indexOf('guard item.canStartPlayback(at: Date())') < playback.indexOf('try activateAudio(defaults)'), 'Recheck expiry after online synthesis and before playback');
 assert(playback.includes('guard activeTicket == ticket'), 'Replaced requests cannot start late playback');
 assert(bridge.includes('directionFreqModeNormalWay = mode'));
 assert(!bridge.includes('if (self.guiding && self.locationGuide.location) return YES;'));

@@ -1,6 +1,43 @@
 import Foundation
 
 extension AppModel {
+    /// Connect adjacent measurements without mechanically joining advice or warnings.
+    private func connectedFacts(_ facts: [String]) -> [String] {
+        var result: [String] = []
+        var index = 0
+        while index < facts.count {
+            let first = facts[index]
+            if index + 1 < facts.count, first.hasSuffix("입니다."), facts[index + 1].hasSuffix("입니다."),
+               first.count + facts[index + 1].count < 130, !first.contains("마지막 수신값"), !facts[index + 1].contains("마지막 수신값") {
+                result.append(String(first.dropLast(4)) + "이며, " + facts[index + 1])
+                index += 2
+            } else { result.append(first); index += 1 }
+        }
+        return result
+    }
+
+    private func energyInterpretation(_ energy: Object) -> [String] {
+        guard let driving = energy.number("drivingKmPerKWh"), driving.isFinite, driving > 0 else {
+            return ["주행 에너지 자료가 충분하지 않아 전비와 소비 원인 분석은 보류합니다."]
+        }
+        var result: [String] = []
+        if let overall = energy.number("overallKmPerKWh"), overall.isFinite, overall > 0, overall <= driving {
+            result.append(String(format: "주행 전비는 킬로와트시당 %.1f킬로미터, 주차 중 감소량까지 반영한 종합 전비는 %.1f킬로미터로 추정됩니다.", driving, overall))
+            let gap = (1 - overall / driving) * 100
+            if gap >= 5 {
+                result.append(String(format: "같은 거리 기준으로 종합 전비가 약 %.0f퍼센트 낮아, 주행 외 소비가 효율 차이에 영향을 주고 있습니다.", gap))
+                if let parking = energy.number("parkingKWh"), parking.isFinite, parking > 0 {
+                    result.append(String(format: "기록상 주차 구간에서 약 %.1f킬로와트시가 감소했습니다. 주차 중 감시 모드와 공조 유지 시간을 먼저 확인하면 절감할 부분을 찾는 데 도움이 됩니다. 어느 기능이 얼마를 썼는지는 현재 자료만으로 구분할 수 없습니다.", parking))
+                }
+                if let unknown = energy.number("unclassifiedKWh"), unknown.isFinite, unknown > 0 {
+                    result.append(String(format: "이 가운데 분류되지 않은 감소량도 %.1f킬로와트시 있어, 모두 대기전력이나 공조 탓으로 볼 수는 없습니다.", unknown))
+                }
+            } else { result.append("두 전비의 차이가 작아, 현재 기록에서는 주행 외 소비의 영향이 크지 않습니다.") }
+        } else { result.append(String(format: "주행 전비는 킬로와트시당 %.1f킬로미터로 추정되며, 종합 전비는 자료를 더 확인해야 합니다.", driving)) }
+        if energy.flag("capacityAssumed") { result.append("배터리 용량을 가정해 계산한 값이므로 절대 수치보다 같은 조건에서의 추세를 비교해 주세요.") }
+        return result
+    }
+
     func screenBriefing(_ scope: BriefingScope, days: Int = 30, rows: [Object]? = nil, address: String = "") -> String {
         let home = homePresentation(self, link)
         let charge = home.object("charge"), climate = home.object("climate")
@@ -66,13 +103,29 @@ extension AppModel {
             if !costs.isEmpty { details.append("금액 확인 \(costs.count)회 합계는 \(Int(costs.reduce(0, +).rounded()))원입니다.") }
         case .battery, .batteryAndCharging:
             let usage = output.object("battery").object(String(days))
+            let energy = output.object("energyPeriods").object(String(days))
+            let estimates = energy.isEmpty ? usage.object("energy") : energy
             let index = output.object("healthIndex")
-            details = [days >= 36500 ? "전체 기록 기준입니다." : "최근 \(days)일 기록 기준입니다."]
-            if let distance = usage.number("distanceKm"), distance.isFinite { details.append(String(format: "기록 거리는 %.1f킬로미터입니다.", distance)) }
-            if let efficiency = usage.object("energy").number("drivingKmPerKWh"), efficiency.isFinite { details.append(String(format: "전비, 킬로와트시당 %.1f킬로미터입니다.", efficiency)) }
-            if index.flag("initial") { details.append("배터리 건강 지수 미측정.") }
-            else if let soh = index.number("soh"), soh.isFinite { details.append(String(format: "추정 배터리 건강 지수 %.1f퍼센트입니다.", soh)) }
+            details = ["배터리와 충전 상태를 살펴보겠습니다."]
             if scope == .batteryAndCharging { details.append(battery) }
+            details.append(days >= 36500 ? "전체 기록을 기준으로 분석했습니다." : "최근 \(days)일 기록을 기준으로 분석했습니다.")
+            if let distance = usage.number("distanceKm") ?? estimates.number("totalDistanceKm"), distance.isFinite {
+                details.append(String(format: "기록 거리는 %.1f킬로미터입니다.", distance))
+            }
+            details += energyInterpretation(estimates)
+            if index.flag("estimated"), !index.flag("initial"), let degradation = index.number("degradationPercent"), degradation.isFinite, (0...100).contains(degradation) {
+                var health = String(format: "초기 관측 용량과 비교한 상대 열화율은 %.1f퍼센트로 추정되며", degradation)
+                if let uncertainty = index.number("uncertaintyPercent"), uncertainty.isFinite {
+                    health += String(format: ", 관측 산포는 약 %.1f퍼센트포인트입니다.", uncertainty)
+                } else { health += ", 신차 대비 공식 배터리 진단값은 아닙니다." }
+                details.append(health)
+            } else { details.append("배터리 열화는 비교 가능한 충전 자료가 부족해 아직 판단할 수 없습니다. 화면의 초기값 0퍼센트가 열화 없음을 뜻하지는 않습니다.") }
+            if scope == .batteryAndCharging, charge.string("mode") == "recent", charge.flag("isCharging") {
+                let power = charge.number("chargerKW"), minutes = charge.number("minutesToLimit")
+                if let power, power.isFinite, let minutes, minutes.isFinite, minutes >= 0 {
+                    details.append(String(format: "현재 %.1f킬로와트로 충전 중이며, 차량이 예상한 목표까지의 시간은 약 %.0f분입니다. 충전 후반에는 전력이 낮아져 완료 시각이 달라질 수 있습니다.", power, minutes))
+                }
+            }
         case .location:
             let location = home.object("location")
             if location.flag("hasCoordinates"), let lat = location.number("latitude"), let lon = location.number("longitude"), lat.isFinite, lon.isFinite {
@@ -103,6 +156,6 @@ extension AppModel {
                 if !open.isEmpty { details.insert(open.joined(separator: ", ") + " 열려 있습니다.", at: 0) }
             }
         }
-        return scope.text(details, demo: demo)
+        return scope.text(connectedFacts(details), demo: demo)
     }
 }

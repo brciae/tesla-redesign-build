@@ -4,6 +4,7 @@ const root = 'TeslaLocal.swiftpm/Sources/AppModule/';
 // Every app-owned destination, tab subsection and modal with its own content.
 // OS camera, sharing, file/permission pickers are intentionally outside app narration.
 const screens = {
+  'FleetInsightsView.swift': ['FleetInsightsView'],
   'App.swift': ['DriveView','BriefingView','TripsView','TripListView','BatteryView','ChargeListView','ChargeForm'],
   'HomeViews.swift': ['HomeView','LocationStatusView','ChargeStatusView','SecurityStatusView','EnergyTabRootView','MenuTabRootView'],
   'ManagementViews.swift': ['CareView','ParkingHistoryView','MaintenanceForm','ParkingForm','AutomationUtilitiesView','ConnectionView'],

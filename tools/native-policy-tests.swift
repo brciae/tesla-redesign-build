@@ -2,6 +2,15 @@ import Foundation
 
 @main struct NativePolicyTests {
     static func main() {
+        let expired = Date(timeIntervalSince1970: 10)
+        let afterSynthesis = Date(timeIntervalSince1970: 45)
+        for key in ["manual", "preview", "climate.temp"] {
+            precondition(VoiceItem(key: key, text: "report", expires: expired, priority: 2, manual: true).canStartPlayback(at: afterSynthesis))
+        }
+        for key in ["navigation.turn", "navigation.safety", "dashboard.start"] {
+            precondition(!VoiceItem(key: key, text: "expired", expires: expired, priority: 4, manual: true).canStartPlayback(at: afterSynthesis))
+        }
+        precondition(!VoiceItem(key: "automatic", text: "expired", expires: expired, priority: 1, manual: false).canStartPlayback(at: afterSynthesis))
         let spokenUnits = ["실내 22°C": "실내 섭씨 이십이 도", "21.5 ° C": "섭씨 이십일 점 오 도", "-5℃": "섭씨 영하 오 도", "72°F": "화씨 칠십이 도", "80%": "팔십 퍼센트", "60 km/h": "시속 육십 킬로미터", "2.8 bar": "이 점 팔 바", "68도": "육십팔 도"]
         for (input, expected) in spokenUnits {
             precondition(SpeechText.prepare(input) == expected, "Speech unit: \(input)")

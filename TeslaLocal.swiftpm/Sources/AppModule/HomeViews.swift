@@ -1183,6 +1183,7 @@ struct MenuTabRootView: View {
 
                     GlassMenuCard {
                         glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 컬러 · 휠 · 캘리퍼 · 틴팅 · 시트/인테리어", colors: [Color.purple, Color.pink])
+                        glassMenuItem(.fleetInsights, "chart.bar.doc.horizontal", title: "차량 상세 데이터", subtitle: "충전 진단 · 타이어 · 도착 전망 · 전체 수신 필드", colors: [Color.cyan, Color.blue])
                         glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "차량 관리 및 케어", subtitle: "타이어 공기압(TPMS) · 와이퍼 모드 · 서비스 점검", colors: [Color.orange, Color.yellow])
                         glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 알림 · 운전자 프로필", colors: [Color.blue, Color.cyan], isLast: true)
                     }
