@@ -263,6 +263,19 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     private func playTypecastAudio(_ url: URL, ticket: UUID, item: VoiceItem, defaults: UserDefaults) {
+        guard activeTicket == ticket else { return }
+        // Network synthesis can finish after the maneuver has already expired.
+        // Keep the generated cache, but never play an out-of-date instruction.
+        guard Date() < item.expires else {
+            activeTicket = nil
+            activeManual = false
+            speaking = false
+            navigationSpeaking = false
+            activePriority = 0
+            playbackState = "안내 기한 만료"
+            drain()
+            return
+        }
         do {
             try activateAudio(defaults)
             let volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
