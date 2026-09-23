@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 struct FleetTelemetryView: View {
     let vin: String
     @ObservedObject private var store = FleetTelemetryStore.shared
+    @ObservedObject private var archive = FleetArchiveClient.shared
+    @State private var serverAddress = ""
+    @State private var serverToken = ""
     @State private var importing = false
     @State private var error = ""
     @State private var search = ""
@@ -20,6 +23,22 @@ struct FleetTelemetryView: View {
                     Text(store.status).font(.caption)
                     Button("Telemetry 기록 가져오기") { importing = true }.disabled(vin.isEmpty)
                     if !error.isEmpty { Caption(error) }
+                }
+                InfoCard {
+                    Text("NAS 차량 기록 서버").font(.headline)
+                    TextField("https://차량서버주소", text: $serverAddress)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    SecureField("연결 키 · 저장 후에는 비워 두어도 됩니다", text: $serverToken)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button(archive.busy ? "기록 가져오는 중…" : "연결 저장 · 기록 가져오기") {
+                        do {
+                            try archive.configure(address: serverAddress, token: serverToken)
+                            serverToken = ""; error = ""
+                            Task { await archive.sync(vin: vin) }
+                        } catch { self.error = error.localizedDescription }
+                    }.disabled(archive.busy || vin.isEmpty)
+                    Caption(archive.status)
+                    Caption("QuickConnect 관리 화면과 별도의 차량 기록 서버 주소를 사용합니다. 연결 키는 기기의 보안 저장소에 보관됩니다.")
                 }
                 if ["ModuleTempMin", "ModuleTempMax", "PackVoltage", "PackCurrent", "EnergyRemaining", "NominalFullPackEnergyKwh"].contains(where: { latest[$0]?.number != nil && latest[$0]?.invalid == false }) { InfoCard {
                     Text("배터리 열관리·전기 상태").font(.headline)
@@ -63,6 +82,10 @@ struct FleetTelemetryView: View {
                 }
             }.padding(16)
         }.background(Theme.bg).navigationTitle("배터리·Telemetry")
+        .task(id: vin) {
+            serverAddress = archive.address
+            await archive.sync(vin: vin)
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             do {
                 let url = try result.get(); let access = url.startAccessingSecurityScopedResource()

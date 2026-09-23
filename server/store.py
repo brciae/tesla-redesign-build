@@ -77,8 +77,8 @@ class Archive:
             db.execute("INSERT INTO offsets VALUES(?,?,?) ON CONFLICT(topic,partition) DO UPDATE SET offset=max(offset,excluded.offset)",
                        (topic, partition, offset))
 
-    def page(self, vin, after, limit=100):
-        if not VIN.fullmatch(vin) or after < 0 or not 1 <= limit <= 100:
+    def page(self, vin, after, limit=40):
+        if not VIN.fullmatch(vin) or after < 0 or not 1 <= limit <= 40:
             raise ValueError("invalid request")
         with self.connect() as db:
             rows = db.execute("SELECT id,payload FROM events WHERE vin=? AND kind='tesla_V' AND valid=1 AND id>? ORDER BY id LIMIT ?",

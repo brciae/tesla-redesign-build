@@ -49,9 +49,11 @@ class ArchiveTests(unittest.TestCase):
             self.archive.ingest("tesla_V", 0, i, VIN.encode(), payload(value=i))
         first = self.archive.page(VIN, 0)
         second = self.archive.page(VIN, first["next"])
+        third = self.archive.page(VIN, second["next"])
         self.assertTrue(first["more"])
-        self.assertFalse(second["more"])
-        self.assertEqual(len(first["payloads"]) + len(second["payloads"]), 105)
+        self.assertTrue(second["more"])
+        self.assertFalse(third["more"])
+        self.assertEqual(sum(len(p["payloads"]) for p in (first, second, third)), 105)
 
 
 if __name__ == "__main__":
