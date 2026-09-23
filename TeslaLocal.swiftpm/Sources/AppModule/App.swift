@@ -675,6 +675,7 @@ struct ChargeListView: View {
                     }
                     Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")
                     if c.flag("startSOCEstimated") || c.flag("endSOCEstimated") { InfoNote("잔량 계산 근거", "충전 도중 연결된 경우 시작 잔량은 차량 충전량과 배터리 용량으로 계산합니다. 완료 신호를 늦게 받은 경우 종료 잔량은 차량 충전 한도를 참고합니다. 직접 수신한 시작·완료 잔량은 그대로 보존합니다.") }
+                    if c.flag("endSOCLastObserved") { Caption("종료 잔량에는 충전 중 마지막으로 수신한 값을 보존했습니다.") }
                 }
             }
         }

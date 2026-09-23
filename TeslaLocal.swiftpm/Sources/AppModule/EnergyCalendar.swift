@@ -27,7 +27,7 @@ enum EnergyCalendarAnalysis {
         }
         func index(_ ms: Double?) -> Int? {
             guard let ms else { return nil }; let date = Date(timeIntervalSince1970: ms / 1000)
-            guard interval.contains(date) else { return nil }
+            guard date >= interval.start, date < interval.end else { return nil }
             return calendar.component(.day, from: date) - 1
         }
         for trip in trips where trip["duplicate"] as? Bool != true {

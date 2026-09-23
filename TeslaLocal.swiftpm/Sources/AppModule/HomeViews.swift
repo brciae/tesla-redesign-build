@@ -26,7 +26,7 @@ struct HomeView: View {
     var body: some View {
         let p = homePresentation(model, link), c = p.object("charge")
         let climate = p.object("climate")
-        let isCharging = (c.string("mode") == "recent" || model.demo) && ((c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging"))
+        let isCharging = (c.string("mode") == "recent" || model.demo) && c.chargingNow
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -631,7 +631,7 @@ struct ChargeStatusView: View {
     @State private var add = false
     var body: some View {
         let c = homePresentation(model, link).object("charge")
-        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let isCharging = c.chargingNow
         let isPlugged = isCharging || c.flag("plugged")
         PageBody(title: "충전", briefing: .charging) {
             VStack(spacing: 16) {
@@ -835,7 +835,7 @@ private struct TeslaOfficialChargingCardView: View {
         let rangeKm = c.number("rangeKm").map { String(Int($0.rounded())) } ?? "—"
         let chargerKW = c.number("chargerKW") ?? 0.0
         let addedKWh = c.number("addedKWh") ?? 0.0
-        let isCharging = (model.demo || c.string("mode") == "recent") && (c.flag("charging") || chargerKW > 0.5)
+        let isCharging = (model.demo || c.string("mode") == "recent") && c.chargingNow
         let voltage = c.number("chargerVoltage").map { String(Int($0.rounded())) } ?? "—"
 
         VStack(spacing: 0) {

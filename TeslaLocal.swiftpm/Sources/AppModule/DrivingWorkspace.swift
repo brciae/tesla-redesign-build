@@ -82,7 +82,7 @@ struct DrivingWorkspace: View {
                 }.navigationTitle("운전 화면 설정").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { settings = false } } }
             }
         }
-        .sheet(isPresented: $destinationSearch) { DestinationSearchView(navigation: navigation).environmentObject(model) }
+        .sheet(isPresented: $destinationSearch) { DestinationSearchView(navigation: navigation, canEdit: readout.gear != "D" && readout.gear != "R" && readout.speedKmh <= 5).environmentObject(model) }
         .onAppear {
             navigation.screenAppeared()
             model.voice.announceDashboardStart(destination: readout.destination)

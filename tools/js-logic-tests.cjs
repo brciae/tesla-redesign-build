@@ -18,6 +18,12 @@ const chargeAssert = require('node:assert/strict');
   chargeAssert.equal(partial.state.activeCharge.startSOC, 40);
   chargeAssert.equal(partial.state.activeCharge.startSOCEstimated, true, 'mid-session start inferred from added energy must be identified');
   chargeAssert.throws(() => partial.ingestFleetCharge({vin: '5YJYGDEE0LF000002', at: now, charging: 5}, now));
+  partial.ingestFleetCharge({vin, at: now + 200000, charging: 7, soc: 20}, now + 200000);
+  chargeAssert.equal(partial.state.charges[0].endSOC, 60, 'late disconnected reading must not replace the last charging SOC');
+  chargeAssert.equal(partial.state.charges[0].endSOCLastObserved, true);
+  const restored = new C.Engine(); restored.load(JSON.parse(JSON.stringify(partial.state)));
+  chargeAssert.equal(restored.state.charges.length, 1, 'late stop must leave persistable charge history');
+  chargeAssert.equal(partial.batteryUsage(now + 200000, 7).chargeSOC, null, 'estimated session is not observed charge SOC');
 }
 const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } };
 const g = new C.EmbeddedRouteGate();

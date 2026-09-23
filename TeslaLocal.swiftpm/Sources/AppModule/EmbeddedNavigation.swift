@@ -322,7 +322,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         } else {
             // Unblocked cancel: the next authenticated vehicle snapshot restarts guidance.
             _ = gate("cancel", ["block": false]); stopNative(keepDisplay: presented)
-            status = message + " · 다음 차량 수신 시 자동 재시도 (\(startFailures)/3)"
+            status = message + (manualRouteToken != nil ? " · 재시도를 눌러 선택한 목적지로 다시 안내" : " · 다음 차량 수신 시 자동 재시도 (\(startFailures)/3)")
         }
     }
     private func stopNative(keepDisplay: Bool = false) {

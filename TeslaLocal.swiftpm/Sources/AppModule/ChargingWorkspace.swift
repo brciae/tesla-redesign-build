@@ -24,7 +24,7 @@ struct ChargingWorkspace: View {
         let chargerKW = c.number("chargerKW")
         let minutesToLimit = c.number("minutesToLimit")
         let addedKWh = c.number("addedKWh")
-        let isCharging = (model.demo || c.string("mode") == "recent") && ((chargerKW ?? 0) > 0.5 || c.flag("charging"))
+        let isCharging = (model.demo || c.string("mode") == "recent") && c.chargingNow
         let isPlugged = isCharging || c.flag("plugged")
         let voltage = c.number("chargerVoltage").map { Int($0.rounded()) }
 

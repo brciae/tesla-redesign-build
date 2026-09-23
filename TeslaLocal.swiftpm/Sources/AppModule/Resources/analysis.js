@@ -312,16 +312,16 @@
           const capacity=this.health().capacity??s.settings.assumedCapacityKWh??75;
           const estimate=num(g.soc,0,100)&&num(g.addedKWh,0,300)?round(Math.max(0,g.soc-g.addedKWh/capacity*100),1):null;
           const start=boundary?(num(prev.soc,0,100)?prev.soc:g.soc):estimate;
-          s.activeCharge={id:id(),at:boundary?prev.at:g.at,startSOC:start??null,startSOCObserved:boundary,startSOCEstimated:!boundary&&estimate!=null,endSOC:g.soc??null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
+          s.activeCharge={id:id(),at:boundary?prev.at:g.at,startSOC:num(start,0,100)?start:null,startSOCObserved:boundary&&num(start,0,100),startSOCEstimated:!boundary&&estimate!=null,endSOC:num(g.soc,0,100)?g.soc:null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
         }
         const c=s.activeCharge;if(g.addedKWh!=null&&c.lastAdded!=null&&g.addedKWh<c.lastAdded)c.partial=true;
         c.endSOC=num(g.soc,0,100)?g.soc:c.endSOC;c.lastAt=g.at;
         if(num(g.addedKWh,0,300)){c.lastAdded=g.addedKWh;c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);}
       }else if(s.activeCharge&&[2,6,7].includes(g.charging)){
         const c=s.activeCharge;const near=(g.at-(c.lastAt??c.at))<=120000;
-        const observedEnd=near&&num(g.soc,0,100);
-        const estimatedEnd=!observedEnd&&g.charging===6&&num(g.limit,1,100)?g.limit:null;
-        c.endSOC=observedEnd?g.soc:estimatedEnd??c.endSOC;c.endSOCObserved=observedEnd;c.endSOCEstimated=!observedEnd;c.end=g.at;c.source=c.source===g.source||!g.source?c.source:(c.source??'BLE')+'+Fleet';c.storedKWh=null;c.supplyKWh=null;c.cost=null;c.complete=c.startSOCObserved===true&&observedEnd;
+        const observedEnd=near&&num(g.soc,0,100)&&(c.startSOC==null||g.soc>=c.startSOC);
+        const estimatedEnd=!observedEnd&&g.charging===6&&num(g.limit,1,100)&&g.limit>=(c.endSOC??c.startSOC??0)?g.limit:null;
+        c.endSOC=observedEnd?g.soc:estimatedEnd??c.endSOC;c.endSOCObserved=observedEnd;c.endSOCEstimated=estimatedEnd!=null;c.endSOCLastObserved=!observedEnd&&estimatedEnd==null;c.end=near?g.at:c.lastAt??g.at;c.source=c.source===g.source||!g.source?c.source:[...new Set((c.source??'BLE').split('+').concat(g.source))].join('+');c.storedKWh=null;c.supplyKWh=null;c.cost=null;c.complete=c.startSOCObserved===true&&observedEnd;
         if(num(g.addedKWh,0,300))c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);
         append(s.charges,c);s.activeCharge=null;
       }
@@ -492,7 +492,7 @@
       const trips=s.trips.filter(t=>inPeriod(t.end)),charges=[...s.charges,...(s.activeCharge?[{...s.activeCharge,end:s.activeCharge.lastAt??s.activeCharge.at,active:true}]:[])].filter(c=>inPeriod(c.end??c.at));
       // Endpoint changes remain observations even when intermediate packets are missing.
       const usable=trips.filter(t=>num(t.startSOC,0,100)&&num(t.endSOC,0,100)&&t.startSOC>t.endSOC&&t.distanceKm>0);
-      const chargeObserved=charges.filter(c=>num(c.startSOC,0,100)&&num(c.endSOC,c.startSOC,100));
+      const chargeObserved=charges.filter(c=>!c.active&&c.complete===true&&!c.startSOCEstimated&&!c.endSOCEstimated&&!c.endSOCLastObserved&&num(c.startSOC,0,100)&&num(c.endSOC,c.startSOC,100));
       const sum=(list,fn)=>list.reduce((n,v)=>n+fn(v),0),soc=t=>t.startSOC-t.endSOC;
       const rateTrips=usable.filter(t=>!t.missing),rateDistance=sum(rateTrips,t=>t.distanceKm),driveSOC=sum(usable,soc);
       const parking=s.parkingPeriods.filter(p=>inPeriod(p.end));
@@ -544,7 +544,7 @@
       const soc=(c&&fresh(c,now,TTL.charge)&&c.soc!=null)?c.soc:null;
       const rangeKm=(c&&fresh(c,now,TTL.charge)&&c.rangeKm!=null)?Math.round(c.rangeKm):null;
       const insideC=(t&&fresh(t,now,TTL.climate)&&t.insideC!=null)?Math.round(t.insideC):null;
-      const isChg=c&&(c.charging===1||(c.chargerKW||0)>0.5);
+      const isChg=c&&fresh(c,now,TTL.charge)&&(c.charging>0?c.charging===5:(c.chargerKW||0)>0.5);
 
       if(isChg){
         parts.push('충전 중입니다.');

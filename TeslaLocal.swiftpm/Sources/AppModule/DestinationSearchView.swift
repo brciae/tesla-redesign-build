@@ -14,6 +14,7 @@ struct DestinationSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
     @ObservedObject var navigation: EmbeddedNavigation
+    var canEdit: Bool = true
     @State private var query = ""
     @State private var results: [SavedNavigationPlace] = []
     @State private var recent: [SavedNavigationPlace] = []
@@ -53,6 +54,7 @@ struct DestinationSearchView: View {
             home = load(SavedNavigationPlace.self, "navigation.home")
             work = load(SavedNavigationPlace.self, "navigation.work")
         }.onDisappear { task?.cancel() }
+            .onChange(of: canEdit) { _, allowed in if !allowed { task?.cancel(); dismiss() } }
     }
     private func shortcut(_ name: String, icon: String, place: SavedNavigationPlace?) -> some View {
         Button { if let place { select(place) } else { message = "장소를 검색한 뒤 \(name)(으)로 저장해 주세요." } } label: {
@@ -81,6 +83,7 @@ struct DestinationSearchView: View {
             }
             Button("이 목적지로 길안내 시작") {
                 do {
+                    guard canEdit else { return }
                     try navigation.startManualDestination(name: place.name, coordinate: place.coordinate, vin: model.settings.string("vin"))
                     recent = Array(([place] + recent.filter { $0.id != place.id }).prefix(20)); save(recent, "navigation.recent")
                     UserDefaults.standard.set("kakao", forKey: "preferredMapEngine")
@@ -103,7 +106,8 @@ struct DestinationSearchView: View {
                 let request = MKLocalSearch.Request(); request.naturalLanguageQuery = text; request.resultTypes = [.address, .pointOfInterest]
                 let response = try await MKLocalSearch(request: request).start()
                 guard !Task.isCancelled else { return }
-                results = response.mapItems.map { SavedNavigationPlace(name: $0.name ?? "목적지", address: $0.placemark.title ?? "", latitude: $0.placemark.coordinate.latitude, longitude: $0.placemark.coordinate.longitude) }
+                var seen = Set<String>()
+                results = response.mapItems.map { SavedNavigationPlace(name: $0.name ?? "목적지", address: $0.placemark.title ?? "", latitude: $0.placemark.coordinate.latitude, longitude: $0.placemark.coordinate.longitude) }.filter { seen.insert($0.id).inserted }
                 if results.isEmpty { message = "검색 결과가 없습니다. 지역명이나 도로명 주소를 함께 입력해 주세요." }
             } catch { if !Task.isCancelled { message = "장소 검색을 완료하지 못했습니다. " + error.localizedDescription } }
         }
