@@ -146,7 +146,9 @@ struct TeslaInteractiveClimateView: View {
         }.padding(10).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16)).disabled(blocked)
     }
     private func modeButton(_ title: String, icon: String, index: Int) -> some View {
-        tile(title, icon: icon, active: acceptedMode == index) {
+        let modes = ["off": 0, "on": 1, "dog": 2, "camp": 3]
+        let current = acceptedMode ?? modes[measured.string("climate_keeper_mode")]
+        return tile(title, icon: icon, active: current == index) {
             run(title + " 모드", accepted: { acceptedMode = index }) { try await model.fleet.setClimateKeeperMode(mode: index) }
         }
     }

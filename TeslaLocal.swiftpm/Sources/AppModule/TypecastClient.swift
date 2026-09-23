@@ -277,7 +277,6 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         do {
             let catalog = try await fetchVoiceCatalog(apiKey: activeApiKey)
             await MainActor.run {
-                self.voiceCatalog = catalog
                 self.lastStatus = "API 보이스 목록 동기화 완료"
             }
         } catch {
@@ -297,7 +296,6 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw NSError(domain: "Typecast", code: 404, userInfo: [NSLocalizedDescriptionKey:
                 "선택한 음성을 현재 계정의 ssfm-v30 API 목록에서 찾을 수 없음. API 지원 음성 확인 필요"])
         }
-        await MainActor.run { self.voiceCatalog = catalog }
         return id
     }
 
@@ -425,6 +423,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             do {
                 try Task.checkCancellation()
                 let resolvedVoice = try await resolveVoiceId(for: voiceInput, apiKey: key)
+                try Task.checkCancellation()
                 var request = URLRequest(url: apiURL)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
