@@ -10,6 +10,7 @@ struct DrivingWorkspace: View {
     @ObservedObject private var appearance = VehicleAppearanceStore.shared
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @State private var settings = false
+    @State private var destinationSearch = false
     @State private var carError: String?
     var body: some View {
         GeometryReader { proxy in
@@ -81,6 +82,7 @@ struct DrivingWorkspace: View {
                 }.navigationTitle("운전 화면 설정").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { settings = false } } }
             }
         }
+        .sheet(isPresented: $destinationSearch) { DestinationSearchView(navigation: navigation).environmentObject(model) }
         .onAppear {
             navigation.screenAppeared()
             model.voice.announceDashboardStart(destination: readout.destination)
@@ -113,6 +115,11 @@ struct DrivingWorkspace: View {
 
             Spacer(minLength: 0)
 
+            Button { destinationSearch = true } label: {
+                Label("목적지", systemImage: "magnifyingglass").font(.subheadline.bold()).frame(minHeight: 44)
+            }.disabled(readout.gear == "D" || readout.gear == "R" || readout.speedKmh > 5)
+                .accessibilityLabel("목적지 검색")
+
             Group {
                 Button {
                     navigation.recenter()
@@ -128,46 +135,6 @@ struct DrivingWorkspace: View {
                 .transition(.opacity)
             }
 
-            Button {
-                preferredMapEngine = (preferredMapEngine == "kakao" ? "apple" : "kakao")
-                if preferredMapEngine == "kakao" && navigation.controller == nil {
-                    navigation.startStandbyKakaoMap()
-                }
-                model.voice.say(preferredMapEngine == "kakao" ? "카카오 지도로 전환했습니다." : "애플 지도로 전환했습니다.", key: "nav.mapengine", category: "voiceControl", priority: 3, ttl: 4, manual: true)
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: preferredMapEngine == "kakao" ? "map.fill" : "apple.logo")
-                        .font(.system(size: compact ? 10 : 11))
-                    Text(preferredMapEngine == "kakao" ? "카카오" : "애플")
-                        .font(.system(size: compact ? 11 : 12, weight: .bold))
-                }
-                .padding(.horizontal, compact ? 7 : 9)
-                .frame(minHeight: compact ? 30 : 36)
-                .background(Color.white.opacity(0.12), in: Capsule())
-            }
-            .accessibilityLabel("지도 엔진 전환")
-
-            Menu {
-                Picker("내비 테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
-            } label: {
-                Text(navigation.theme.title)
-                    .font(.system(size: compact ? 12 : 13, weight: .medium))
-                    .padding(.horizontal, compact ? 8 : 10)
-                    .frame(minHeight: compact ? 30 : 44)
-                    .background(compact ? Color.white.opacity(0.12) : Color.clear, in: Capsule())
-            }
-            .accessibilityLabel("내비 테마 선택")
-
-            Menu {
-                Button { model.openInTMap() } label: { Label("티맵으로 안내", systemImage: "arrow.turn.up.right") }
-                Button { model.openInKakaoNavi() } label: { Label("카카오내비로 안내", systemImage: "map") }
-                Button { model.openInNaverMap() } label: { Label("네이버 지도로 안내", systemImage: "paperplane") }
-            } label: {
-                Image(systemName: "arrow.triangle.turn.up.right.circle")
-                    .font(.system(size: compact ? 15 : 17))
-                    .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
-            }
-
             ScreenBriefingControls(scope: .dashboard, compact: true)
             Button { settings = true } label: {
                 Image(systemName: "slider.horizontal.3")
@@ -176,7 +143,7 @@ struct DrivingWorkspace: View {
             }
             .accessibilityLabel("운전 화면 설정")
         }
-        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+        .lineLimit(1)
         .padding(.horizontal, compact ? 10 : 8)
         .padding(.vertical, compact ? 4 : 0)
         .background(compact ? AnyView(Capsule().fill(.ultraThinMaterial).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.8))) : AnyView(EmptyView()))
@@ -218,7 +185,7 @@ struct DrivingWorkspace: View {
             r.odometer = units.format(odo, suffix: " km")
         }
 
-        let dest = navigation.guiding || navigation.busy ? d.string("destination") : ""
+        let dest = navigation.guiding || navigation.busy ? (navigation.manualDestination.isEmpty ? d.string("destination") : navigation.manualDestination) : ""
         r.destination = dest
         if !dest.isEmpty {
             r.turn = dest

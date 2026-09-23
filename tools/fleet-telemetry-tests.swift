@@ -36,7 +36,7 @@ import Foundation
         precondition(abs(buckets[0].measuredKWh - 1.0 / 60) < 0.00001)
         precondition(FleetParkingAnalysis.buckets(parking, vin: "CAR-B", from: .distantPast, to: now).isEmpty)
         let comparison = OwnershipAnalysis.cost(distanceKm: 100, energyKWh: 20, electricity: 300, gasoline: 1800, gasolineEfficiency: 12)!
-        precondition(comparison.electric == 6000 && comparison.gasoline == 15000 && comparison.savings == 9000)
+        precondition(abs(comparison.electric - 6000) < 0.001 && abs(comparison.gasoline - 15000) < 0.001 && abs(comparison.savings - 9000) < 0.001)
         precondition(OwnershipAnalysis.cost(distanceKm: nil, energyKWh: 20, electricity: 300, gasoline: 1800, gasolineEfficiency: 12) == nil)
         print("PASS: VIN/time/invalid telemetry, idempotent import, observed parking attribution, comparable energy costs")
     }
