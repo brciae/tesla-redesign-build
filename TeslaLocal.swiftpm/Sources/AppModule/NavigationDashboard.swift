@@ -1791,6 +1791,7 @@ private struct MediaIsland: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 15 * u, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.7).truncationMode(.tail)
+                    .accessibilityIdentifier("navigation.media.title")
                 if expanded, !subtitle.isEmpty {
                     Text(subtitle).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted).lineLimit(1)
                 }

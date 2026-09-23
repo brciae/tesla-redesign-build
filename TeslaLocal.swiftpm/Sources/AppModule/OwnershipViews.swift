@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct DrivingInsightsView: View {
     @EnvironmentObject private var model: AppModel
@@ -27,7 +28,11 @@ struct DrivingInsightsView: View {
                         Spacer()
                         number("종합 전비", energy.number("overallKmPerKWh"), "km/kWh")
                     }
-                    Caption("최근 \(days)일 · 기록 종료일 기준 · 같은 기간의 소비를 비교합니다.")
+                    Chart {
+                        if let value = energy.number("drivingKmPerKWh") { BarMark(x: .value("전비", value), y: .value("구분", "주행")).foregroundStyle(.mint.gradient).cornerRadius(5) }
+                        if let value = energy.number("overallKmPerKWh") { BarMark(x: .value("전비", value), y: .value("구분", "종합")).foregroundStyle(.cyan.gradient).cornerRadius(5) }
+                    }.frame(height: 105)
+                    Caption("최근 \(days)일 · km/kWh")
                 }
                 InfoCard {
                     Text("에너지가 쓰인 곳").font(.headline)
@@ -38,6 +43,12 @@ struct DrivingInsightsView: View {
                         InfoNote("주차 중 소비", "상태·시간 기록으로 확인되는 감시 모드·공조·대기는 세분해 표시합니다. 원인을 나눌 근거가 없는 주차 구간은 자연방전으로 묶습니다.")
                     }
                     number("전체 소비", energy.number("totalKWh"), "kWh")
+                    Chart {
+                        if let value = energy.number("drivingKWh"), value > 0 { SectorMark(angle: .value("소비", value), innerRadius: .ratio(0.68), angularInset: 3).foregroundStyle(.mint).annotation(position: .overlay) { Text("주행").font(.caption2.bold()).foregroundStyle(.black) } }
+                        if let value = energy.number("parkingKWh"), value > 0 { SectorMark(angle: .value("소비", value), innerRadius: .ratio(0.68), angularInset: 3).foregroundStyle(.orange) }
+                    }.frame(height: 170)
+                    HStack { Label("주행", systemImage: "circle.fill").foregroundStyle(.mint); Label("주차", systemImage: "circle.fill").foregroundStyle(.orange) }.font(.caption)
+
                     if parking.isEmpty {
                         number("주차 중 자연방전", energy.number("parkingKWh"), "kWh")
                     } else {
@@ -61,15 +72,15 @@ struct DrivingInsightsView: View {
                     input("휘발유 가격 · 원/L", text: $gasoline)
                     input("비교 차량 연비 · km/L", text: $gasolineEfficiency)
                     if let comparison {
+                        Chart {
+                            BarMark(x: .value("차량", "전기차"), y: .value("비용", comparison.electric)).foregroundStyle(.mint.gradient).cornerRadius(6)
+                            BarMark(x: .value("차량", "가솔린"), y: .value("비용", comparison.gasoline)).foregroundStyle(.gray.gradient).cornerRadius(6)
+                        }.frame(height: 180)
                         number("전기 사용 비용 추정", comparison.electric, "원", digits: 0)
                         number("가솔린 비교 비용", comparison.gasoline, "원", digits: 0)
                         Text(String(format: "동일 거리 에너지 비용 차이 %.0f원", comparison.savings)).font(.headline).foregroundStyle(.mint)
                         Caption("양수는 전기 비용이 적다는 뜻입니다. 실제 결제액·전체 유지비가 아니며 충전 손실, 보험, 세금, 정비비는 포함하지 않습니다.")
                     } else { Caption("자주 이용하는 충전 단가와 비교 차량 연비를 입력하면 같은 거리의 비용 차이를 계산합니다.") }
-                }
-                InfoCard {
-                    Text("분석 가능한 운전 습관").font(.headline)
-                    Caption("주행 전비와 종합 전비의 차이가 크면 주차 중 소비부터 살펴보세요. 두 수치가 함께 낮아지는 날에는 짧은 이동, 외기 온도, 공조 사용량을 이전 주행과 비교하는 것이 도움이 됩니다.")
                 }
             }.padding(16)
         }.background(Theme.bg).navigationTitle("주행·소비 분석")
@@ -84,6 +95,7 @@ struct DrivingInsightsView: View {
 }
 
 struct WarrantyGuideView: View {
+    @EnvironmentObject private var model: AppModel
     let vin: String
     let odometerKm: Double?
     @State private var start = Date()
@@ -92,7 +104,7 @@ struct WarrantyGuideView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                InfoCard {
+                DisclosureGroup("보증 기준 설정") {
                     Text("Model Y L 보증 안내").font(.headline)
                     Caption("대한민국 신차 보증 안내 기준입니다. 내 차량의 계약·보증서는 Tesla 앱의 ‘제원 및 보증 → 보증’에서 확인하세요.")
                     DatePicker("보증서의 보증 시작일", selection: $start, in: ...Date(), displayedComponents: .date)
@@ -116,11 +128,23 @@ struct WarrantyGuideView: View {
         if confirmed { UserDefaults.standard.set(start, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
     }
     private func coverage(_ title: String, years: Int, km: Double?) -> some View {
-        InfoCard {
-            Text(title).font(.headline)
-            Text("\(years)년" + (km.map { String(format: " 또는 %.0f km", $0) } ?? " · 거리 제한 없음"))
-            if confirmed, let end = OwnershipAnalysis.warrantyEnd(start: start, years: years) { Text("기간 기준 만료일 " + end.formatted(date: .numeric, time: .omitted)).font(.subheadline) }
-            Caption(OwnershipAnalysis.warrantySummary(start: confirmed ? start : nil, years: years, limitKm: km, odometerKm: odometerKm))
+        let reference = model.vehicleReference
+        let endKey = title == "기본 차량" ? "basicWarrantyEnd" : title == "배터리·구동장치" ? "batteryWarrantyEnd" : ""
+        let suppliedEnd = endKey.isEmpty ? nil : ISO8601DateFormatter().date(from: reference.string(endKey) + "T12:00:00Z")
+        let end = suppliedEnd ?? (confirmed ? OwnershipAnalysis.warrantyEnd(start: start, years: years) : nil)
+        return InfoCard {
+            Label(title, systemImage: title.contains("배터리") ? "battery.100percent" : "checkmark.shield.fill").font(.headline)
+            if let end {
+                let remaining = max(0, Calendar.current.dateComponents([.day], from: Date(), to: end).day ?? 0)
+                HStack { Text("남은 기간").font(.caption).foregroundStyle(Theme.muted); Spacer(); Text("\(remaining)일").font(.title2.bold()) }
+                ProgressView(value: min(1, Double(remaining) / (Double(years) * 365.25))).tint(.purple)
+                Text("만료 " + end.formatted(date: .numeric, time: .omitted)).font(.caption2).foregroundStyle(Theme.muted)
+            } else { Text("\(years)년").font(.title2.bold()) }
+            if let km, let odo = odometerKm {
+                HStack { Text("남은 거리").font(.caption).foregroundStyle(Theme.muted); Spacer(); Text(String(format: "%.0f km", max(0, km - odo))).font(.title2.bold()) }
+                ProgressView(value: max(0, min(1, (km - odo) / km))).tint(.mint)
+                Text(String(format: "한도 %.0f km", km)).font(.caption2).foregroundStyle(Theme.muted)
+            } else if let km { Text(String(format: "거리 한도 %.0f km", km)).font(.subheadline) }
         }
     }
 }

@@ -181,7 +181,7 @@ struct DrivingWorkspace: View {
         }
 
         if driveFresh { r.gear = d.string("gear", "—") }
-        if let odo = d.number("odometerKm") ?? fleetDrive.number("odometerKm"), odo.isFinite {
+        if let odo = model.displayOdometerKm, odo.isFinite {
             r.odometer = units.format(odo, suffix: " km")
         }
 

@@ -1,6 +1,25 @@
 import SwiftUI
 import MapKit
 
+@MainActor
+final class DestinationSuggestions: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    @Published var items: [MKLocalSearchCompletion] = []
+    private let completer = MKLocalSearchCompleter()
+    static let korea = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 36.3, longitude: 127.8), span: MKCoordinateSpan(latitudeDelta: 6, longitudeDelta: 6))
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.region = Self.korea
+        completer.resultTypes = [.address, .pointOfInterest]
+    }
+    func update(_ query: String) {
+        items = []
+        completer.queryFragment = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) { items = completer.results }
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) { items = [] }
+}
+
 struct SavedNavigationPlace: Codable, Identifiable {
     var id: String { name + String(latitude) + String(longitude) }
     let name: String
@@ -25,12 +44,13 @@ struct DestinationSearchView: View {
     @State private var busy = false
     @State private var message = ""
     @State private var task: Task<Void, Never>?
+    @StateObject private var suggestions = DestinationSuggestions()
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack {
-                        TextField("장소·주소 검색", text: $query).textFieldStyle(.roundedBorder).submitLabel(.search).onSubmit { search() }
+                        TextField("장소·주소 검색", text: $query).textFieldStyle(.roundedBorder).submitLabel(.search).onSubmit { search() }.accessibilityIdentifier("destination.query")
                         Button("검색") { search() }.disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
                     }
                     if busy { ProgressView() }
@@ -43,6 +63,16 @@ struct DestinationSearchView: View {
                             shortcut("회사", icon: "building.2.fill", place: work)
                         }
                         if !results.isEmpty { Text("검색 결과").font(.headline); places(results) }
+                        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && results.isEmpty {
+                            ForEach(Array(suggestions.items.prefix(8).enumerated()), id: \.offset) { _, item in
+                                Button { search(completion: item) } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Label(item.title, systemImage: "mappin.circle.fill")
+                                        Text(item.subtitle).font(.caption).foregroundStyle(Theme.muted)
+                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                }.buttonStyle(.plain)
+                            }
+                        }
                         if !recent.isEmpty { Text("최근 목적지").font(.headline); places(recent) }
                         if home == nil || work == nil { Caption("장소를 검색한 뒤 집·회사로 저장하면 한 번에 경로를 열 수 있습니다.") }
                     }
@@ -53,7 +83,11 @@ struct DestinationSearchView: View {
             recent = load([SavedNavigationPlace].self, "navigation.recent") ?? []
             home = load(SavedNavigationPlace.self, "navigation.home")
             work = load(SavedNavigationPlace.self, "navigation.work")
-        }.onDisappear { task?.cancel() }
+        }.onDisappear { task?.cancel(); suggestions.update("") }
+            .onChange(of: query) { _, value in
+                task?.cancel(); busy = false; results = []; selected = nil; route = nil; message = ""
+                suggestions.update(value)
+            }
             .onChange(of: canEdit) { _, allowed in if !allowed { task?.cancel(); dismiss() } }
     }
     private func shortcut(_ name: String, icon: String, place: SavedNavigationPlace?) -> some View {
@@ -86,7 +120,6 @@ struct DestinationSearchView: View {
                     guard canEdit else { return }
                     try navigation.startManualDestination(name: place.name, coordinate: place.coordinate, vin: model.settings.string("vin"))
                     recent = Array(([place] + recent.filter { $0.id != place.id }).prefix(20)); save(recent, "navigation.recent")
-                    UserDefaults.standard.set("kakao", forKey: "preferredMapEngine")
                     dismiss()
                 } catch { message = error.localizedDescription }
             }.buttonStyle(.borderedProminent).frame(minHeight: 48)
@@ -97,18 +130,47 @@ struct DestinationSearchView: View {
             }
         }
     }
-    private func search() {
-        task?.cancel(); selected = nil; message = ""; busy = true
+    private func search(completion: MKLocalSearchCompletion? = nil) {
+        task?.cancel(); selected = nil; route = nil; results = []; message = ""; busy = true
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         task = Task { @MainActor in
             defer { if !Task.isCancelled { busy = false } }
             do {
-                let request = MKLocalSearch.Request(); request.naturalLanguageQuery = text; request.resultTypes = [.address, .pointOfInterest]
-                let response = try await MKLocalSearch(request: request).start()
+                let request = completion.map { MKLocalSearch.Request(completion: $0) } ?? MKLocalSearch.Request()
+                if completion == nil { request.naturalLanguageQuery = text }
+                request.region = DestinationSuggestions.korea
+                request.resultTypes = [.address, .pointOfInterest]
+                var items: [MKMapItem] = []
+                var searchError: Error?
+                do { items = try await MKLocalSearch(request: request).start().mapItems }
+                catch { searchError = error }
+                guard !Task.isCancelled else { return }
+                // Verified institutional address: https://www.iae.re.kr/document/contact
+                // Resolve the address through the provider; never invent a destination coordinate.
+                let normalized = text.replacingOccurrences(of: " ", with: "").lowercased()
+                if completion == nil && ["고등기술연구원", "고등기술연구원연구조합", "iae"].contains(normalized) {
+                    let addressRequest = MKLocalSearch.Request()
+                    addressRequest.naturalLanguageQuery = "경기도 용인시 처인구 백암면 고안로51번길 175-28"
+                    addressRequest.region = DestinationSuggestions.korea
+                    addressRequest.resultTypes = .address
+                    if let response = try? await MKLocalSearch(request: addressRequest).start() {
+                        items += response.mapItems
+                    }
+                }
+                if items.isEmpty && completion == nil {
+                    let fallback = MKLocalSearch.Request()
+                    fallback.naturalLanguageQuery = text
+                    fallback.resultTypes = [.address, .pointOfInterest]
+                    do { items = try await MKLocalSearch(request: fallback).start().mapItems }
+                    catch { searchError = error }
+                }
                 guard !Task.isCancelled else { return }
                 var seen = Set<String>()
-                results = response.mapItems.map { SavedNavigationPlace(name: $0.name ?? "목적지", address: $0.placemark.title ?? "", latitude: $0.placemark.coordinate.latitude, longitude: $0.placemark.coordinate.longitude) }.filter { seen.insert($0.id).inserted }
-                if results.isEmpty { message = "검색 결과가 없습니다. 지역명이나 도로명 주소를 함께 입력해 주세요." }
+                results = items.map { SavedNavigationPlace(name: $0.name ?? "목적지", address: $0.placemark.title ?? "", latitude: $0.placemark.coordinate.latitude, longitude: $0.placemark.coordinate.longitude) }.filter { seen.insert($0.id).inserted }
+                if results.isEmpty {
+                    if let searchError { throw searchError }
+                    message = "일치하는 장소를 찾지 못했습니다. 추천 장소를 선택하거나 도로명 주소로 검색해 주세요."
+                }
             } catch { if !Task.isCancelled { message = "장소 검색을 완료하지 못했습니다. " + error.localizedDescription } }
         }
     }

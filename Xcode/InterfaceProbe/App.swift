@@ -243,7 +243,13 @@ struct ProbeRoot: View {
     func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
-    var output: Object = [:]
+    var output: Object = ["charging": ["rows": [
+        ["id": "fixture-charge-1", "at": Date().addingTimeInterval(-86400).timeIntervalSince1970 * 1000, "supplyKWh": 30.0, "cost": 9000],
+        ["id": "fixture-charge-2", "at": Date().addingTimeInterval(-172800).timeIntervalSince1970 * 1000, "supplyKWh": 50.0, "cost": 15000]], "supplyKWh": 80.0, "cost": 24000],
+        "energyPeriods": ["30": ["drivingKmPerKWh": 6.2, "overallKmPerKWh": 4.7, "drivingKWh": 100.0, "parkingKWh": 30.0, "totalKWh": 130.0, "totalDistanceKm": 620.0]]]
+    var state: Object { output.object("state") }
+    var vehicleReference: Object = ["sourceDate": "2026-09-24", "nominalKWh": 88.2, "chemistry": "NCM", "cellMaker": "검증용 제조사", "basicWarrantyEnd": "2030-09-10", "batteryWarrantyEnd": "2034-09-10"]
+    var displayOdometerKm: Double? { 1234 }
     let fleet = TeslaFleetClient()
     let link = VehicleLink()
     let voice = ProbeVoice()
@@ -303,9 +309,9 @@ final class TeslaFleetClient: ObservableObject {
     var vehicleReadStatus = "검증용 수신값"; var vehicleReadError: String?
     var selectedVin = "UI-FIXTURE"
     var vehicleSnapshot: FleetVehicleSnapshot? = FleetVehicleSnapshot(vin: "UI-FIXTURE", receivedAt: Date(), payload: [
-        "charge_state": ["battery_level": 90, "charger_power": 7, "charger_voltage": 220, "charger_actual_current": 32, "charge_energy_added": 12.4, "timestamp": Date().timeIntervalSince1970 * 1000],
+        "charge_state": ["battery_level": 90, "battery_range": 280, "charger_power": 7, "charger_voltage": 220, "charger_actual_current": 32, "charge_energy_added": 12.4, "timestamp": Date().timeIntervalSince1970 * 1000],
         "climate_state": ["seat_heater_left": 1, "seat_heater_right": 0, "seat_fan_front_left": 0, "seat_fan_front_right": 2, "timestamp": Date().timeIntervalSince1970 * 1000],
-        "vehicle_state": ["tpms_pressure_fl": 2.9, "tpms_pressure_fr": 2.8, "locked": true, "sentry_mode": false, "car_version": "fixture", "timestamp": Date().timeIntervalSince1970 * 1000]])
+        "vehicle_state": ["tpms_pressure_fl": 2.9, "tpms_pressure_fr": 2.8, "tpms_pressure_rl": 2.9, "tpms_pressure_rr": 2.85, "locked": true, "sentry_mode": false, "car_version": "fixture", "timestamp": Date().timeIntervalSince1970 * 1000]])
     func refreshVehicleSnapshot(force: Bool = false) async {}
     func readSupplement(_ kind: FleetSupplement) async throws -> FleetSupplementResult {
         FleetSupplementResult(vin: selectedVin, receivedAt: Date(), payload: ["fixture": true])

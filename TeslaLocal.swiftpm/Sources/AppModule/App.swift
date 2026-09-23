@@ -640,7 +640,7 @@ struct ChargeRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(dateText(charge.number("at"))).font(.subheadline.weight(.semibold))
+                Text(dateText(charge.number("at"), time: charge.string("atPrecision") != "day")).font(.subheadline.weight(.semibold))
                 Text("\(charge.flag("startSOCEstimated") ? "약 " : "")\(valueText(charge.number("startSOC")))% → \(charge.flag("endSOCEstimated") ? "약 " : "")\(valueText(charge.number("endSOC")))%")
                     .font(.caption2).foregroundStyle(Theme.muted).monospacedDigit()
             }
@@ -665,7 +665,7 @@ struct ChargeListView: View {
             ForEach(charges, id: \.selfID) { c in
                 InfoCard {
                     HStack {
-                        Label(dateText(c.number("at")), systemImage: "bolt.fill").font(.headline)
+                        Label(dateText(c.number("at"), time: c.string("atPrecision") != "day"), systemImage: "bolt.fill").font(.headline)
                         Spacer()
                         Caption(c.string("source"))
                         RecordActions(edit: { editing = c }, delete: { model.mutate("deleteCharge", ["id": c.selfID]) }, title: "충전 기록")

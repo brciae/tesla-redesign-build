@@ -4,10 +4,13 @@ final class InteractionTests: XCTestCase {
     func testDestinationSearchEntry() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["search-probe"]; app.launch()
-        XCTAssertTrue(app.textFields["장소·주소 검색"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["destination.query"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["검색"].isEnabled)
         XCTAssertTrue(app.buttons["집"].isHittable)
         XCTAssertTrue(app.buttons["회사"].isHittable)
+        let field = app.textFields["destination.query"]
+        field.tap(); field.typeText("고등기술연구원")
+        XCTAssertTrue(app.buttons["검색"].isEnabled)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Destination search entry"; shot.lifetime = .keepAlways; add(shot)
     }
     func testRestoredClimateAndFleetCards() {
@@ -21,6 +24,21 @@ final class InteractionTests: XCTestCase {
         app.terminate(); app.launchArguments = ["fleet-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["내 차량"].waitForExistence(timeout: 10))
         let fleet = XCTAttachment(screenshot: app.screenshot()); fleet.name = "Fleet detail cards"; fleet.lifetime = .keepAlways; add(fleet)
+    }
+
+    func testVisualFleetOverviewAndWarranty() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["fleet-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["내 차량"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["최근 충전"].exists)
+        var shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet visual charge overview"; shot.lifetime = .keepAlways; add(shot)
+        app.swipeUp()
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet tire diagram and visual menu"; shot.lifetime = .keepAlways; add(shot)
+        let warranty = app.buttons["보증·관리"]
+        if !warranty.isHittable { app.swipeUp() }
+        XCTAssertTrue(warranty.waitForExistence(timeout: 5)); warranty.tap()
+        XCTAssertTrue(app.staticTexts["남은 거리"].firstMatch.waitForExistence(timeout: 5))
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Warranty remaining bars"; shot.lifetime = .keepAlways; add(shot)
     }
 
     func testTabBarOpacityAndContentSeparation() {

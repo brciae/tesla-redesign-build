@@ -22,6 +22,17 @@ final class AppModel: ObservableObject {
     @Published private(set) var storageStatus: String?
     @Published var demo = false
     @Published var sharedFile: URL?
+    var vehicleReference: Object {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        return UserDefaults.standard.dictionary(forKey: "vehicle.reference." + vin) ?? [:]
+    }
+    var displayOdometerKm: Double? {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        var values = [vehicleReference.number("odometerKm")]
+        if settings.string("vin") == vin { values.append(groups.object("drive").number("odometerKm")) }
+        if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin { values.append(snapshot.number("vehicle_state", "odometer").map { $0 * 1.609344 }) }
+        return values.compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max()
+    }
     var isSpeaking: Bool { voice.speaking }
     @Published var receiptDraft: Object = [:]
     @Published var receiptText = ""
@@ -353,6 +364,20 @@ final class AppModel: ObservableObject {
             guard root.string("kind") == "YLCompanionBackup", root.number("schema") == 1 else { throw LocalError.message("YL Companion JSON 백업만 지원함. Tesla·다른 앱의 내보내기 자료는 형식 확인 후 변환 필요.") }
             let counts = try runtime.call("mergeHistory", root.object("state")) as? Object ?? [:]
             try persist(); refresh()
+            let reference = root.object("vehicleReference")
+            let vin = root.object("state").object("settings").string("vin")
+            if !vin.isEmpty, reference.string("vin") == vin {
+                var checked: Object = [:]
+                for key in ["odometerKm", "nominalAh", "nominalVoltage", "nominalKWh", "basicWarrantyKm", "batteryWarrantyKm"] {
+                    if let value = reference.number(key), value.isFinite, value >= 0 { checked[key] = value }
+                }
+                for key in ["vin", "sourceDate", "source", "cellMaker", "cellShape", "chemistry", "basicWarrantyEnd", "batteryWarrantyEnd"] {
+                    let text = reference.string(key)
+                    if !text.isEmpty, text.count <= 200 { checked[key] = text }
+                }
+                UserDefaults.standard.set(checked, forKey: "vehicle.reference." + vin)
+                objectWillChange.send()
+            }
             errorMessage = "과거 운행 \(Int(counts.number("trips") ?? 0))건 · 충전 \(Int(counts.number("charges") ?? 0))건 추가 · 중복 \(Int(counts.number("duplicates") ?? 0))건 제외"
         } catch { errorMessage = error.localizedDescription }
     }
