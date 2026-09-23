@@ -13,7 +13,7 @@ private struct AutomationDashboard: View {
     @State private var editor: AutomationRule?
     @State private var importing = false
     var body: some View {
-        PageBody(title: "자동화") {
+        PageBody(title: "자동화", briefing: .automation) {
             summary
             rulesSection("내가 만든 룰", rules: store.rules.filter { !$0.id.hasPrefix("builtin.") })
             rulesSection("기본 안내", rules: store.rules.filter { $0.id.hasPrefix("builtin.") })
@@ -69,22 +69,7 @@ private struct AutomationDashboard: View {
                 ForEach(rules) { r in
                     HStack(spacing: 12) {
                         Button {
-                            let sampleMsg: String
-                            if !r.message.isEmpty {
-                                sampleMsg = r.message
-                            } else {
-                                switch r.trigger {
-                                case .boarding: sampleMsg = "좋은 시간입니다. 탑승을 환영합니다. 배터리 82퍼센트입니다."
-                                case .departure: sampleMsg = "출발합니다. 안전 운전하세요."
-                                case .arrival: sampleMsg = "운행이 종료되었습니다. 수고하셨습니다."
-                                case .chargeStart: sampleMsg = "충전을 시작합니다."
-                                case .chargeEnd: sampleMsg = "충전이 완료되었습니다."
-                                case .batteryLow: sampleMsg = "배터리 잔량이 부족합니다. 충전이 필요합니다."
-                                case .tireLow: sampleMsg = "타이어 공기압이 낮습니다. 점검해 주세요."
-                                default: sampleMsg = "\(r.name) 조건이 감지되었습니다."
-                                }
-                            }
-                            model.voice.say(sampleMsg, key: "rule.preview.\(r.id)", category: "voiceAutomations", priority: 3, ttl: 10, manual: true)
+                            model.voice.preview(AutomationPolicy.previewText(for: r, hour: Calendar.current.component(.hour, from: Date())))
                         } label: {
                             Image(systemName: "speaker.wave.2.fill")
                                 .font(.system(size: 13, weight: .semibold))
@@ -129,6 +114,17 @@ struct AutomationRuleEditor: View {
     var body: some View {
         NavigationStack {
             Form {
+                LocalBriefingControls(title: "자동화 편집") {
+                    var lines = ["\(rule.name). \(rule.enabled ? "활성" : "비활성") 설정입니다.", "조건은 \(rule.trigger.title), 동작은 \(rule.action.title)입니다."]
+                    if rule.trigger == .batteryLow { lines.append("잔량 \(Int(rule.threshold))퍼센트 이하입니다.") }
+                    if [.rest, .remaining, .delay].contains(rule.trigger) { lines.append("기준 \(Int(rule.threshold))분입니다.") }
+                    if rule.trigger == .tireLow && rule.customTireThreshold { lines.append("공기압 \(rule.threshold)바 미만입니다.") }
+                    if rule.cabinCondition != "always" { lines.append("실내 \(rule.cabinThresholdC)도 \(rule.cabinCondition == "above" ? "이상" : "이하") 조건입니다.") }
+                    if rule.action == .temperature { lines.append("목표 온도 \(rule.targetC)도입니다.") }
+                    if rule.hoursEnabled { lines.append("\(rule.startHour)시부터 \(rule.endHour)시까지 적용됩니다.") }
+                    lines.append("최소 반복 간격 \(rule.cooldownMinutes)분. 저장 전 편집 내용입니다.")
+                    return lines
+                }
                 if !error.isEmpty { Text(error).foregroundStyle(.orange) }
                 Section("이름·조건") {
                     TextField("규칙 이름", text: $rule.name)
@@ -159,12 +155,10 @@ struct AutomationRuleEditor: View {
                     TextField("비워두면 기본 안내", text: $rule.message, axis: .vertical).lineLimit(3...6)
                     Caption("변수: {인사} · {배터리} · {목적지}. 알 수 없는 값은 미확인으로 안내함.")
                     VoicePreviewControls(previewTitle: "음성만 미리 듣기", preview: {
-                        let text = rule.message.isEmpty ? "탑승이 확인되었습니다. 안전한 운행 되세요." : rule.message
-                        let sample = text.replacingOccurrences(of: "{인사}", with: AutomationPolicy.greeting(hour: Calendar.current.component(.hour, from: Date()))).replacingOccurrences(of: "{배터리}", with: "미확인").replacingOccurrences(of: "{목적지}", with: "미설정")
-                        model.voice.preview(sample)
+                        model.voice.preview(AutomationPolicy.previewText(for: rule, hour: Calendar.current.component(.hour, from: Date())))
                     }, stop: { model.stopSpeech() })
                     VoiceStatus(voice: model.voice)
-                    Caption("미리 듣기는 차량 명령을 보내지 않음.")
+                    Caption("예시 데이터로 음성만 재생 · 차량 명령 없음.")
                 }
                 Section("시간·반복") {
                     Toggle("시간대 제한", isOn: $rule.hoursEnabled)
@@ -200,6 +194,9 @@ private struct AutomationHistory: View {
     @ObservedObject var store: AutomationCoordinator
     var body: some View {
         List {
+            LocalBriefingControls(title: "자동화 실행 내역") {
+                Array(store.logs.prefix(3)).map { "\($0.rule): \($0.status). \($0.message)" }
+            }
             if store.logs.isEmpty { Text("아직 실행된 규칙 없음") }
             ForEach(store.logs) { log in VStack(alignment: .leading, spacing: 7) { Text(log.rule).font(.headline); Text(log.message); Text(log.status).foregroundStyle(Theme.muted); Text(Date(timeIntervalSince1970: log.at), style: .date).font(.caption); Text(Date(timeIntervalSince1970: log.at), style: .time).font(.caption) } }
         }.navigationTitle("실행 내역 · 최근 80건")
@@ -215,6 +212,7 @@ private struct AutomationImportView: View {
     @State private var picker = false
     var body: some View {
         NavigationStack { Form {
+            LocalBriefingControls(title: "규칙 가져오기") { [text.isEmpty ? "가져올 내용 미입력." : "입력 내용 검토 전입니다.", error.isEmpty ? "" : "검사 오류: \(error)"] }
             Caption("YL 자동화 JSON 한 개를 가져옴. 테파일럿 원본 가져오기는 형식이 확인되지 않아 지원하지 않음. 가져온 규칙은 꺼진 상태이며 검토·저장 후 직접 켜야 함.")
             TextEditor(text: $text).frame(minHeight: 180).font(.system(.caption, design: .monospaced))
             PasteButton(payloadType: String.self) { values in text = String((values.first ?? "").prefix(32768)) }
@@ -280,6 +278,7 @@ private struct AutomationAIView: View {
             AutomationRuleEditor(store: store, initial: draft) { ai.draft = nil; ai.presented = false }
         } else {
             NavigationStack { Form {
+                LocalBriefingControls(title: "AI로 자동화 만들기") { ["선택 AI는 \(provider)입니다.", installed && !shortcut.isEmpty ? "단축어 설정 확인됨." : "단축어 준비 확인 필요.", ai.status] }
                 Section("AI 선택") {
                     Picker("생성에 사용할 AI", selection: $provider) { Text("Claude").tag("Claude"); Text("ChatGPT").tag("ChatGPT"); Text("Gemini").tag("Gemini") }
                     Caption("PC·API 키·별도 유료 API 없이 iPhone의 AI 앱·단축어를 사용함. 선택한 AI에 직접 쓴 요청과 공개 규칙 형식만 전달함. 차량 키·VIN·운행 기록은 보내지 않음. 구독 한도가 적용되며 AI 앱의 추가 과금 옵션은 사용하지 않아야 함.")

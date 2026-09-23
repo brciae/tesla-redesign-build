@@ -11,6 +11,7 @@ struct PreferencesView: View {
     @AppStorage("unitDistance") private var distance = "km"
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
+    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
     @AppStorage("voiceEnabled") private var enabled = true
     @AppStorage("voiceIdentifier") private var identifier = "typecast:은경"
     @AppStorage("voiceDeliveryStyle") private var deliveryStyle = "standard"
@@ -28,6 +29,23 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
+            Section { ScreenBriefingControls(scope: .preferences, text: {
+                let selected = identifier.replacingOccurrences(of: "typecast:", with: "")
+                let name = TypecastCatalog.find(selected)?.nameKo ?? selected
+                return "선택 음성 \(name). 안내 음량 \(Int(volume * 100))퍼센트. 길안내 음성 \(navVoice ? "켜짐" : "꺼짐"). 하단 메뉴 불투명도 \(Int(tabBarOpacity * 100))퍼센트입니다."
+            }) }
+            Section("하단 메뉴 표시") {
+                HStack {
+                    Text("배경 불투명도")
+                    Spacer()
+                    Text("\(Int(tabBarOpacity * 100))%").monospacedDigit()
+                }
+                Slider(value: $tabBarOpacity, in: 0.5...1, step: 0.05)
+                    .accessibilityLabel("하단 메뉴 배경 불투명도")
+                    .accessibilityIdentifier("tabbar.opacity")
+                Text("100%로 설정하면 하단 메뉴 뒤의 내용이 비치지 않습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
@@ -37,7 +55,7 @@ struct PreferencesView: View {
 
                 VoicePreviewControls(preview: {
                     let name = currentVoiceName
-                    model.voice.preview("안녕하세요. \(name) 음성 안내입니다. 안전 운전하세요.")
+                    model.voice.preview("\(name) 목소리입니다. 300미터 앞에서 우회전하세요.")
                 }, stop: { model.stopSpeech() })
                 VoiceStatus(voice: model.voice)
             }
@@ -64,6 +82,7 @@ struct PreferencesView: View {
             Section("고급") {
                 NavigationLink("음성 세부 설정") {
                     Form {
+                        LocalBriefingControls(title: "음성 세부 설정") { ["안내 음량 \(Int(volume * 100))퍼센트.", duck ? "안내 중 음악 음량 줄임." : "음악 음량 유지.", quiet && quietStart != quietEnd ? "자동 브리핑 조용시간 \(quietStart)시부터 \(quietEnd)시까지입니다." : "조용시간 제한 없음."] }
                         Section("음성 조절") {
                             slider("속도", value: $rate, range: 0.3...0.6)
                             slider("안내 음량", value: $volume, range: 0...1)
@@ -187,22 +206,21 @@ struct TypecastSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
 
-            InfoRow("타입캐스트 멀티 계정 안내", "계정을 추가하여 등록해두시면 각 계정의 15,000 크레딧을 1번부터 차례대로 자동 소진합니다. 한 번 생성된 오디오는 앱에 영구 캐싱되어 0크레딧으로 즉시 재생됩니다.")
+            InfoRow("타입캐스트 API 이용 안내", "현재 선택한 키만 사용하며 자동 계정 순환은 하지 않습니다. 무료 API는 IP당 계정 제한이 있으며 웹 구독과 API 플랜은 별개입니다.")
         }
     }
 
     private var keyPoolSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("API Key 계정 풀 (매월 계정당 15,000자 무료)")
+                Text("타입캐스트 API 키")
                     .font(.caption.weight(.semibold))
                 Spacer()
-                if typecast.validApiKeys.count > 1 {
+                if !typecast.validApiKeys.isEmpty {
                     Button {
                         _ = typecast.switchToNextKey()
-                        model.voice.say("\(typecast.activeKeyIndex + 1)번 계정으로 전환했습니다.", category: "voiceControl")
                     } label: {
-                        Label("계정 전환 (\(typecast.activeKeyIndex + 1)/\(typecast.validApiKeys.count))", systemImage: "arrow.triangle.2.circlepath")
+                        Label("사용할 API 키 선택", systemImage: "arrow.triangle.2.circlepath")
                             .font(.caption2.weight(.bold))
                     }
                     .buttonStyle(.bordered)
@@ -210,8 +228,7 @@ struct TypecastSettingsSection: View {
             }
 
             let count = typecast.validApiKeys.count
-            let totalCredits = count * 15000
-            Text(count == 0 ? "계정별 API Key를 등록하세요. 계정당 매월 15,000 무료 크레딧이 제공됩니다." : "현재 \(count)개 계정 연계됨 (매월 총 \(totalCredits.formatted())자 크레딧 자동 순차 소진 지원)")
+            Text(count == 0 ? "타입캐스트 API 키를 등록하세요. 이용 가능 여부와 크레딧은 타입캐스트 API 계정에서 확인하세요." : "현재 \(count)개 키 등록됨. 현재 선택한 키만 사용하며 자동 전환하지 않습니다.")
                 .font(.caption2)
                 .foregroundStyle(count > 1 ? .green : .secondary)
 
@@ -235,7 +252,7 @@ struct TypecastSettingsSection: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
 
-                        if typecast.activeKeyIndex == idx && typecast.validApiKeys.indices.contains(idx) {
+                        if typecast.activeKeyIndex == idx && !typecast.activeApiKey.isEmpty {
                             Text("활성")
                                 .font(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 6)
@@ -263,12 +280,29 @@ struct TypecastSettingsSection: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus.circle.fill")
-                    Text("계정 추가 (+15,000 크레딧 슬롯)")
+                    Text("API 키 추가 (수동 선택용)")
                 }
                 .font(.caption.weight(.semibold))
             }
             .padding(.top, 4)
+
+            Text(typecast.selectedKeyDescription)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+            Button {
+                Task { await typecast.checkConnection() }
+            } label: {
+                Label(typecast.isCheckingConnection ? "연결 검사 중…" : "API 연결 검사 (음성 생성 없음)", systemImage: "network")
+            }
+            .disabled(typecast.isCheckingConnection || !typecast.hasKey)
+            if !typecast.connectionStatus.isEmpty {
+                Text(typecast.connectionStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
         }
+        .buttonStyle(.borderless)
     }
 
     private var presetsSection: some View {
@@ -332,7 +366,7 @@ struct TypecastSettingsSection: View {
     }
 
     private var auditionSection: some View {
-        HStack {
+        VStack(alignment: .leading, spacing: 12) {
             Button {
                 typecast.testSpeech()
             } label: {
@@ -340,20 +374,17 @@ struct TypecastSettingsSection: View {
                     .font(.footnote.weight(.semibold))
             }
             .buttonStyle(.borderedProminent)
+            .tint(.blue)
             .disabled(typecast.isSynthesizing || !typecast.hasKey)
-
-            Spacer()
 
             if typecast.cacheFileCount > 0 {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("영구 보관 캐시: \(typecast.cacheFileCount)개 (\(String(format: "%.1f", typecast.cacheTotalSizeMB))MB)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Button("캐시 비우기") {
+                    VoiceCacheDeleteButton {
                         typecast.clearCache()
                     }
-                    .font(.caption)
-                    .foregroundStyle(.red)
                 }
             }
         }

@@ -3,8 +3,18 @@ import CoreLocation
 
 // The same presentation contract drives the header and all new status pages.
 func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
-    (try? model.runtime.call("home", ["connected": link.connected, "authenticated": link.authentic,
+    var result = (try? model.runtime.call("home", ["connected": link.connected, "authenticated": link.authentic,
         "sessionStartedAt": link.sessionStartedAt, "demo": model.demo])) as? Object ?? [:]
+    if !model.demo, !link.authentic, model.fleet.isAuthenticated {
+        result["charge"] = ["mode": "missing", "label": "Fleet 미수신"]
+        result["climate"] = ["mode": "missing", "label": "Fleet 미수신"]
+        result["location"] = ["mode": "missing", "label": "Fleet 위치 미수신", "hasCoordinates": false]
+        if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
+            for (key, value) in snapshot.homeOverlay() { result[key] = value }
+        }
+        result["connection"] = model.fleet.vehicleDisplayStatus
+    }
+    return result
 }
 
 struct HomeView: View {
@@ -16,12 +26,13 @@ struct HomeView: View {
     var body: some View {
         let p = homePresentation(model, link), c = p.object("charge")
         let climate = p.object("climate")
-        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let isCharging = (c.string("mode") == "recent" || model.demo) && ((c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging"))
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 // Top Header Bar
                 headerView(p: p, c: c)
+                if !model.demo, model.fleet.isAuthenticated { fleetStatusCard }
 
                 // 3D Vehicle Hero Panel
                 Vehicle3DPanel(link: link, compact: true)
@@ -40,7 +51,7 @@ struct HomeView: View {
                     quickControlTile(
                         .security,
                         "lock.fill",
-                        link.authentic ? "잠금 해제" : "잠금",
+                        "도어 잠금",
                         highlight: false
                     )
                     let insideC = climate.number("insideC")
@@ -131,7 +142,7 @@ struct HomeView: View {
                         .font(.system(size: 16, weight: .light, design: .rounded))
                         .tracking(4)
                         .foregroundStyle(Color.white.opacity(0.6))
-                    Caption("YL COMPANION · v0.73 (Build 73)")
+                    Caption("YL COMPANION · v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
                     if model.demo {
                         Button("예시 모드 종료") { model.exitDemo() }
                             .font(.caption.weight(.semibold))
@@ -153,8 +164,43 @@ struct HomeView: View {
         .refreshable { model.refreshVehicle() }
     }
 
+    private var fleetStatusCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(model.fleet.vehicleDisplayStatus, systemImage: "antenna.radiowaves.left.and.right")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button {
+                    Task { @MainActor in await model.fleet.refreshVehicleSnapshot(force: true) }
+                } label: { Image(systemName: "arrow.clockwise").frame(width: 36, height: 36) }
+                .disabled(model.fleet.isReadingVehicle)
+                .accessibilityLabel("Fleet 차량 상태 새로고침")
+            }
+            if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
+                HStack(spacing: 16) {
+                    Text(snapshot.soc.map { "배터리 \(Int($0))%" } ?? "배터리 미수신")
+                    Text(snapshot.rangeKm.map { "주행가능 \(Int($0)) km" } ?? "거리 미수신")
+                }.font(.subheadline)
+                HStack(spacing: 16) {
+                    Text(snapshot.locked.map { $0 ? "도어 잠김" : "도어 잠금 해제" } ?? "잠금 상태 미수신")
+                    if let inside = snapshot.insideC { Text("실내 \(Int(inside.rounded()))°C") }
+                }.font(.caption)
+                Text("Fleet 마지막 수신 \(snapshot.receivedAt.formatted(date: .omitted, time: .standard)) · 실시간 스트리밍 아님")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let error = model.fleet.vehicleReadError {
+                Text(error).font(.caption).foregroundStyle(.orange)
+            } else if model.fleet.vehicleReadStatus == "차량 절전 중" || model.fleet.vehicleReadStatus == "차량 오프라인" {
+                Text("계정 연결은 완료됨. 차량이 깨어나고 통신이 가능해진 뒤 새로고침하면 현재 상태를 조회합니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+    }
+
     private func headerView(p: Object, c: Object) -> some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             // Vehicle profile pill
             NavigationLink(value: Page.connection) {
                 HStack(spacing: 8) {
@@ -170,7 +216,7 @@ struct HomeView: View {
             .buttonStyle(MotionButtonStyle())
             .accessibilityLabel("차량 프로필 및 연결 설정")
 
-            Spacer()
+            HStack(spacing: 8) {
 
             // Live Connection Status Badge
             NavigationLink(value: Page.connection) {
@@ -179,10 +225,11 @@ struct HomeView: View {
                         .fill(link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray))
                         .frame(width: 8, height: 8)
                         .shadow(color: (link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange).opacity(0.7), radius: 4)
-                    Text(model.demo ? "예시 모드" : (link.authentic ? "연결됨" : "대기 중"))
+                    Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
                         .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
                         .foregroundStyle(Color.white.opacity(0.9))
-                    if link.busy || link.refreshing {
+                    if link.refreshing || model.fleet.isReadingVehicle {
                         ProgressView().controlSize(.mini)
                     }
                 }
@@ -198,20 +245,8 @@ struct HomeView: View {
             .buttonStyle(MotionButtonStyle())
 
             // Briefing button
-            NavigationLink(value: Page.briefing) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle()
-                            .fill(Color(white: 0.14).opacity(0.8))
-                            .background(.ultraThinMaterial, in: Circle())
-                    )
-                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
-            }
-            .buttonStyle(MotionButtonStyle())
-            .accessibilityLabel("오늘의 브리핑")
+            Spacer(minLength: 8)
+            ScreenBriefingControls(scope: .home, compact: true)
 
             // Settings button
             NavigationLink(value: Page.preferences) {
@@ -228,6 +263,7 @@ struct HomeView: View {
             }
             .buttonStyle(MotionButtonStyle())
             .accessibilityLabel("설정")
+            }
         }
     }
 
@@ -448,7 +484,7 @@ struct LocationStatusView: View {
         let hasCoords = l.flag("hasCoordinates")
         let lat = l.number("latitude")
         let lng = l.number("longitude")
-        PageBody(title: "차량 위치") {
+        PageBody(title: "차량 위치", briefing: .location, briefingText: { model.screenBriefing(.location, address: roadAddress) }) {
             VStack(spacing: 16) {
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -528,7 +564,8 @@ struct LocationStatusView: View {
                         }
 
                         Button {
-                            link.refreshNow(retryUnavailable: true)
+                            if link.authentic { link.refreshNow(retryUnavailable: true) }
+                            else { Task { await model.fleet.refreshVehicleSnapshot(force: true) } }
                         } label: {
                             HStack {
                                 Image(systemName: "arrow.clockwise")
@@ -540,7 +577,7 @@ struct LocationStatusView: View {
                             .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                             .foregroundStyle(.white)
                         }
-                        .disabled(model.demo || !link.authentic || link.refreshing)
+                        .disabled(model.demo || (!link.authentic && !model.fleet.isAuthenticated) || link.refreshing)
                     }
                     .padding(16)
                 }
@@ -596,7 +633,7 @@ struct ChargeStatusView: View {
         let c = homePresentation(model, link).object("charge")
         let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
         let isPlugged = isCharging || c.flag("plugged")
-        PageBody(title: "충전") {
+        PageBody(title: "충전", briefing: .charging) {
             VStack(spacing: 16) {
                 // 3D Charging Vehicle (only connects cable/energy when plugged/charging)
                 Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
@@ -662,7 +699,7 @@ struct SecurityStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     var body: some View {
-        PageBody(title: "보안 및 잠금") {
+        PageBody(title: "보안 및 잠금", briefing: .security) {
             VStack(spacing: 16) {
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -782,6 +819,7 @@ struct PowerFlowGraphView: View {
 }
 
 private struct TeslaOfficialChargingCardView: View {
+    @EnvironmentObject private var model: AppModel
     let c: Object
     @ObservedObject var link: VehicleLink
     @State private var targetLimit: Double = 80
@@ -793,12 +831,12 @@ private struct TeslaOfficialChargingCardView: View {
     @State private var isRightPressed = false
 
     var body: some View {
-        let soc = Int(round(c.number("soc") ?? 56))
-        let rangeKm = Int(round(c.number("rangeKm") ?? 296))
+        let soc = Int(round(c.number("soc") ?? 0))
+        let rangeKm = c.number("rangeKm").map { String(Int($0.rounded())) } ?? "—"
         let chargerKW = c.number("chargerKW") ?? 0.0
         let addedKWh = c.number("addedKWh") ?? 0.0
-        let isCharging = c.flag("charging") || chargerKW > 0.5
-        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 0
+        let isCharging = (model.demo || c.string("mode") == "recent") && (c.flag("charging") || chargerKW > 0.5)
+        let voltage = c.number("chargerVoltage").map { String(Int($0.rounded())) } ?? "—"
 
         VStack(spacing: 0) {
             // Main Card Body
@@ -806,7 +844,7 @@ private struct TeslaOfficialChargingCardView: View {
                 // Readout Header: SOC % & Range km + Live Status Badge
                 HStack(alignment: .firstTextBaseline) {
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text("\(soc)")
+                        Text(c.number("soc") == nil ? "—" : "\(soc)")
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
                         Text("%")
@@ -841,7 +879,7 @@ private struct TeslaOfficialChargingCardView: View {
                             Circle()
                                 .fill(Color(red: 0.35, green: 0.85, blue: 0.45))
                                 .frame(width: 7, height: 7)
-                            Text("충전 대기")
+                            Text(c.string("mode") == "recent" ? "충전 대기" : "상태 미확인")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Color.white.opacity(0.8))
                         }
@@ -879,7 +917,7 @@ private struct TeslaOfficialChargingCardView: View {
                                         endPoint: .trailing
                                     )
                                 )
-                                .frame(width: max(8, w * min(socFrac, targetFrac)), height: 8)
+                                .frame(width: max(0, w * min(socFrac, targetFrac)), height: 8)
                                 .shadow(color: Color(red: 0.22, green: 0.88, blue: 0.55).opacity(0.4), radius: 3, x: 0, y: 0)
 
                             // Target Limit Marker Line / Thumb
@@ -915,7 +953,7 @@ private struct TeslaOfficialChargingCardView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color.white.opacity(0.85))
                         Spacer()
-                        Text(isCharging ? "충전기 출력 \(Int(round(chargerKW))) kW · +\(Int(round(addedKWh))) kWh" : "충전 대기 상태")
+                        Text(isCharging ? "충전기 출력 \(Int(round(chargerKW))) kW · +\(c.number("addedKWh").map { String(Int($0.rounded())) } ?? "—") kWh" : (c.string("mode") == "recent" ? "충전 대기 상태" : "충전 상태 미확인"))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
@@ -950,7 +988,7 @@ private struct TeslaOfficialChargingCardView: View {
 
                     Spacer()
 
-                    Text("\(currentAmps) / \(maxAmps) A · \(voltage) V")
+                    Text("요청 \(currentAmps) A · \(voltage) V")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
 
@@ -987,14 +1025,15 @@ private struct TeslaOfficialChargingCardView: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(height: 1)
 
+            Button("선택 전류 적용") { model.requestVehicleControl("chargeAmps", title: "충전 전류 설정", args: ["value": currentAmps]) }.buttonStyle(.bordered)
             // Bottom Action Buttons (충전 제어 | 충전 포트)
             HStack(spacing: 0) {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     if isCharging {
-                        link.askControl("chargeStop", title: "충전 중지")
+                        model.requestVehicleControl("chargeStop", title: "충전 중지")
                     } else {
-                        link.askControl("chargeStart", title: "충전 시작")
+                        model.requestVehicleControl("chargeStart", title: "충전 시작")
                     }
                 } label: {
                     Text(isCharging ? "충전 중지" : "충전 시작")
@@ -1011,7 +1050,7 @@ private struct TeslaOfficialChargingCardView: View {
 
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    link.askControl("portOpen", title: isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
+                    model.requestVehicleControl("portOpen", title: isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
                 } label: {
                     Text(isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
                         .font(.system(size: 14, weight: .medium))
@@ -1082,6 +1121,7 @@ struct EnergyTabRootView: View {
                 ChargeStatusView(link: link)
             } else {
                 ScrollView {
+                    ScreenBriefingControls(scope: .battery, text: { model.screenBriefing(.battery, days: batteryDays) })
                     BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(batteryDays)), days: $batteryDays)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -1129,7 +1169,7 @@ struct MenuTabRootView: View {
     @ObservedObject var navigation: EmbeddedNavigation
 
     var body: some View {
-        PageBody(title: "메뉴 및 설정") {
+        PageBody(title: "메뉴 및 설정", briefing: .menu) {
             VStack(spacing: 16) {
                 // Vehicle Identity & Connection Status Card
                 vehicleStatusHeader
@@ -1157,7 +1197,7 @@ struct MenuTabRootView: View {
 
                     GlassMenuCard {
                         glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 AI 음성 선택 · 다중 계정 풀 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
+                        glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 음성 · API 키 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
                     }
                 }
             }
@@ -1167,8 +1207,8 @@ struct MenuTabRootView: View {
     private var vehicleStatusHeader: some View {
         let vin = model.settings.string("vin")
         let cleanVin = vin.isEmpty ? "VIN 미등록" : vin
-        let isConnected = link.authentic || model.fleet.isAuthenticated
-        let connText = link.authentic ? "차량 BLE 정상 연결" : (model.fleet.isAuthenticated ? "Tesla Fleet API 연결됨" : "차량 연결 대기 중")
+        let isConnected = link.authentic || (model.fleet.vehicleSnapshot?.isRecent() == true && model.fleet.vehicleReadError == nil)
+        let connText = link.authentic ? "차량 BLE 정상 연결" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "차량 연결 대기 중")
         let connColor = isConnected ? Color.green : Color.orange
 
         return HStack(spacing: 14) {

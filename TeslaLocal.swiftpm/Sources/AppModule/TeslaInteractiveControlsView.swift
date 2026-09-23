@@ -30,6 +30,7 @@ struct TeslaInteractiveControlsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
+                ScreenBriefingControls(scope: .controls)
                 // Live Status / Toast Banner
                 if let statusToast {
                     HStack(spacing: 8) {
@@ -120,10 +121,10 @@ struct TeslaInteractiveControlsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(bleActive && fleetActive
-                        ? "하이브리드 제어 준비 완료"
+                        ? "BLE 연결 · Fleet 인증됨"
                         : (bleActive
                             ? "BLE 근거리 직통 연결됨"
-                            : (fleetActive ? "LTE 원격 클라우드 연결됨" : "차량 통신 대기 중")))
+                            : (fleetActive ? "Fleet 인증됨 · 제어 준비 별도" : "차량 통신 대기 중")))
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
 
@@ -145,16 +146,7 @@ struct TeslaInteractiveControlsView: View {
                     }
                 }
 
-                Text(bleActive && fleetActive
-                    ? "차량 근거리에서는 지연 없는 BLE로 직접 제어하며, 멀리 떨어져 있을 때는 테슬라 Fleet API(LTE)를 통해 전 세계 어디서든 차량을 원격 제어합니다."
-                    : (bleActive
-                        ? "차량 근거리에서 암호화된 블루투스 명령(잠금, 프렁크, 트렁크, 충전구)을 직접 전송합니다. 원격 제어를 원하시면 하단에서 테슬라 Fleet 토큰을 등록하세요."
-                        : (fleetActive
-                            ? "테슬라 공식 Fleet API 및 차량 내장 LTE 모뎀으로 원격 제어(원격 시동, 전조등, 경적, 잠금, 공조)를 전송합니다."
-                            : "차량 근거리(BLE)로 접근하거나, 하단 설정에서 테슬라 공식 Fleet API 토큰을 입력하시면 원격 LTE 제어가 활성화됩니다."
-                        )
-                    )
-                )
+                Text(fleetActive ? model.fleet.commandStatus : "근거리 제어는 BLE 제어 키, 원격 제어는 Fleet 인증·서명 서버·차량 가상키 등록이 필요합니다.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.white.opacity(0.68))
                 .lineSpacing(3)
@@ -228,7 +220,7 @@ struct TeslaInteractiveControlsView: View {
                 }
                 .offset(x: -78, y: 138)
 
-                // Rear Trunk Hotspot - Bottom Center (Rear trunk lid)
+                // Keep the rear control beside the vehicle, clear of the plate.
                 sleekHotspot(
                     icon: "car.side.rear.open.fill",
                     label: "트렁크",
@@ -240,7 +232,7 @@ struct TeslaInteractiveControlsView: View {
                         fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }
                     )
                 }
-                .offset(x: 0, y: 140)
+                .offset(x: 78, y: 138)
             }
             .frame(height: 420)
 
@@ -379,7 +371,12 @@ struct TeslaInteractiveControlsView: View {
                 Text(label)
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Color.white.opacity(0.9))
+                    .fixedSize()
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(white: 0.08), in: Capsule())
             }
+            .frame(minWidth: 64, minHeight: 64)
         }
         .buttonStyle(MotionButtonStyle())
     }
@@ -387,7 +384,7 @@ struct TeslaInteractiveControlsView: View {
     // MARK: - Tesla Official-Style Horizontal Quick Action Bar
 
     private var teslaQuickActionBar: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
             teslaQuickButton(
                 icon: isLocked ? "lock.fill" : "lock.open.fill",
                 title: isLocked ? "도어 잠김" : "잠금 해제",
@@ -491,7 +488,7 @@ struct TeslaInteractiveControlsView: View {
                     .foregroundStyle(Color.white.opacity(0.7))
                 Spacer()
                 if model.fleet.isAuthenticated {
-                    Text("LTE 연결됨")
+                    Text("Fleet 인증됨")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(Color.cyan)
                 }
@@ -509,21 +506,18 @@ struct TeslaInteractiveControlsView: View {
                 }
 
                 quickTile(title: "전조등 깜빡임", icon: "headlight.high.beam.fill", accent: Color.yellow) {
-                    model.voice.say("전조등을 깜빡였습니다.", key: "controls.flash", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     executeFleetAction(title: "전조등 깜빡임") {
                         try await model.fleet.flashLights()
                     }
                 }
 
                 quickTile(title: "경적 울리기", icon: "speaker.wave.3.fill", accent: Color.cyan) {
-                    model.voice.say("경적을 울렸습니다.", key: "controls.horn", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     executeFleetAction(title: "경적 울리기") {
                         try await model.fleet.honkHorn()
                     }
                 }
 
                 quickTile(title: "최대 성에 제거", icon: "snowflake", accent: Color(red: 0.35, green: 0.65, blue: 1.0)) {
-                    model.voice.say("최대 성에 제거를 켰습니다.", key: "controls.maxdefrost", category: "voiceControl", priority: 3, ttl: 4, manual: true)
                     executeFleetAction(title: "최대 성에 제거") {
                         try await model.fleet.setPreconditioningMax(on: true)
                     }
@@ -585,7 +579,7 @@ struct TeslaInteractiveControlsView: View {
 
                     Text(model.fleet.isAuthenticated
                         ? (model.fleet.selectedVin.isEmpty ? "토큰 등록됨 · 차량 선택 필요" : "연동 활성 · VIN: \(model.fleet.selectedVin)")
-                        : "토큰을 등록하면 전 세계 어디서든 차량 LTE로 원격 제어 가능"
+                        : "계정 인증 후 서명 서버·차량 가상키 등록 필요"
                     )
                     .font(.system(size: 11))
                     .foregroundStyle(Color.white.opacity(0.6))
@@ -642,18 +636,8 @@ struct TeslaInteractiveControlsView: View {
         bleAction: String,
         fleetAction: @escaping () async throws -> Bool
     ) {
-        let voiceMessage: String = {
-            switch bleAction {
-            case "lock": return "차량 문을 잠갔습니다."
-            case "unlock": return "차량 문을 잠금 해제했습니다."
-            case "frunkOpen": return "전면 트렁크(프렁크)를 열었습니다."
-            case "trunkMove": return "후면 트렁크를 조작했습니다."
-            case "portOpen": return "충전 도어를 열었습니다."
-            case "portClose": return "충전 도어를 닫았습니다."
-            default: return "\(title) 명령을 실행했습니다."
-            }
-        }()
-        model.voice.say(voiceMessage, key: "controls.\(bleAction)", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+        guard !model.demo else { statusToast = "데모에서는 차량 제어할 수 없습니다."; return }
+        guard !link.controlBusy, !link.preparingControl, link.confirmation == nil, !model.fleet.isSendingCommand else { statusToast = "앞선 명령 처리 중입니다."; return }
         if !model.demo && link.authentic && link.controlEnabled && !link.controlBusy {
             // BLE Prioritized
             link.askControl(bleAction, title: title)
@@ -674,7 +658,7 @@ struct TeslaInteractiveControlsView: View {
         title: String,
         action: @escaping () async throws -> Bool
     ) {
-        guard model.fleet.isAuthenticated else {
+        guard !model.demo, !isExecutingRemote, model.fleet.isAuthenticated else {
             statusToast = "원격(LTE) 제어를 위해 테슬라 Fleet API 토큰 설정이 필요합니다."
             tokenSheet = true
             return
@@ -683,10 +667,11 @@ struct TeslaInteractiveControlsView: View {
         statusToast = "\(title) (LTE 원격 전송 중…)"
         Task {
             do {
-                _ = try await action()
+                guard try await action() else { throw FleetCommandPolicy.failure("차량이 명령을 승인하지 않았습니다.") }
                 await MainActor.run {
                     isExecutingRemote = false
-                    statusToast = "\(title) 차량으로 전달되었습니다."
+                    statusToast = "\(title) 승인 응답 수신"
+                    model.voice.say("\(title) 승인 응답을 받았습니다.", category: "voiceControl", manual: true)
                 }
             } catch {
                 await MainActor.run {
@@ -714,10 +699,35 @@ struct TeslaFleetTokenSheet: View {
     @State private var isLoading = false
     @State private var message: String? = nil
     @State private var showTokenGuide = false
+    @State private var isRegisteringPartner = false
+    @State private var proxyText = ""
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("원격 제어 준비") {
+                    Text(fleet.commandStatus)
+                    TextField("HTTPS 명령 서명 서버 주소", text: $proxyText).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Text("저장한 서버로 차량 명령 실행 시 Tesla 액세스 토큰과 VIN을 전송합니다. 직접 운영하거나 신뢰하는 서버만 입력하세요. 서버 개인키에 대응하는 가상키를 차량에 등록해야 합니다.").font(.caption)
+                    Button("이 서버를 신뢰하고 주소 저장") {
+                        do { try fleet.saveCommandProxy(proxyText); message = "서명 서버 주소 저장됨. 차량 가상키 등록 후 제어를 확인하세요." }
+                        catch { message = error.localizedDescription }
+                    }
+                    Link("Tesla 가상키 등록 안내", destination: URL(string: "https://developer.tesla.com/docs/fleet-api/virtual-keys/developer-guide")!)
+                    Button("차량 깨우기 요청") {
+                        guard !isLoading else { return }
+                        isLoading = true
+                        Task { @MainActor in
+                            defer { isLoading = false }
+                            do {
+                                let online = try await fleet.wakeUp()
+                                message = online ? "차량 온라인 응답 수신" : "깨우기 요청됨 · 잠시 후 차량 조회 필요"
+                                if online { await fleet.refreshVehicleSnapshot(force: true) }
+                            } catch { message = error.localizedDescription }
+                        }
+                    }.disabled(isLoading || !fleet.isAuthenticated)
+                }
+                Section { LocalBriefingControls(title: "테슬라 Fleet 연동") { [fleet.isAuthenticated ? "계정 인증 완료." : "계정 인증 필요.", fleet.selectedVin.isEmpty ? "차량 미선택." : "차량 선택됨.", "조회 상태: \(fleet.vehicleDisplayStatus).", isExchanging ? "인증 교환 중입니다." : ""] } }
                 // MARK: - Dual Connection Architecture Guide
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
@@ -808,7 +818,7 @@ struct TeslaFleetTokenSheet: View {
                             Divider().padding(.vertical, 2)
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
-                                    Text("고객 비밀번호 (Client Secret - 선택/권장):")
+                                    Text("개발자 앱 Client Secret (필수 · 계정 비밀번호 아님):")
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.secondary)
                                     Spacer()
@@ -837,9 +847,10 @@ struct TeslaFleetTokenSheet: View {
                             fleet.saveClientId(clientIdText)
                             fleet.saveRedirectUri(redirectUriText)
                             fleet.saveClientSecret(clientSecretText)
+                            authCodeText = ""
                             if let authURL = fleet.startWebAuthorization() {
                                 UIApplication.shared.open(authURL)
-                            }
+                            } else { message = fleet.lastError ?? "로그인 설정 확인 필요" }
                         } label: {
                             HStack {
                                 Spacer()
@@ -859,7 +870,7 @@ struct TeslaFleetTokenSheet: View {
                         // Step 2: Code / Callback URL Input
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("2단계: 인증 코드 또는 리다이렉트 URL 붙여넣기")
+                                Text("2단계: 이번 로그인 완료 후 전체 URL 붙여넣기")
                                     .font(.caption.weight(.bold))
                                 Spacer()
                                 Button("클립보드 붙여넣기") {
@@ -872,7 +883,7 @@ struct TeslaFleetTokenSheet: View {
                                 .controlSize(.mini)
                             }
 
-                            TextField("code=... 또는 전체 리다이렉트 URL 입력", text: $authCodeText)
+                            TextField("https://.../callback?code=...&state=... 전체 주소", text: $authCodeText)
                                 .font(.system(size: 12, design: .monospaced))
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
@@ -916,9 +927,32 @@ struct TeslaFleetTokenSheet: View {
                         fleet.saveRegion(newRegion)
                     }
 
-                    Text("※ 한국/아시아 출고 차량(VIN: LRW...)은 APAC 리전이 기본입니다. 조회 시 작동하는 서버로 자동 폴백됩니다.")
+                    Text("※ 한국·아시아(중국 제외)는 공식 NA 서버를 사용합니다. 차량 생산지나 VIN으로 리전을 변경하지 않습니다.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("차량 조회 HTTP 412 · 개발자 앱 등록") {
+                    Text("계정 로그인과 개발자 앱 등록은 별도입니다. 위에 입력한 개발자 정보와 리다이렉트 도메인을 사용해 현재 Fleet 리전에 앱을 등록합니다. 도메인의 공개 키가 먼저 게시되어 있어야 합니다.")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(isRegisteringPartner ? "등록 처리 중…" : "현재 리전에 개발자 앱 등록") {
+                        isRegisteringPartner = true
+                        message = "개발자 앱 등록 중…"
+                        fleet.saveClientId(clientIdText)
+                        fleet.saveClientSecret(clientSecretText)
+                        fleet.saveRedirectUri(redirectUriText)
+                        Task { @MainActor in
+                            defer { isRegisteringPartner = false }
+                            do {
+                                try await fleet.registerPartnerAccount()
+                                await fleet.refreshVehicleSnapshot(force: true)
+                                message = fleet.vehicleReadError.map { "앱 등록 응답 수신 · " + $0 } ?? "앱 등록 응답 수신 · " + fleet.vehicleDisplayStatus
+                            } catch { message = error.localizedDescription }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isRegisteringPartner || isExchanging || isLoading)
                 }
 
                 // MARK: - Manual Token Input Section (Secondary / Fallback)
@@ -1027,20 +1061,18 @@ struct TeslaFleetTokenSheet: View {
             }
             .onAppear {
                 tokenText = fleet.getStoredToken() ?? ""
+                proxyText = fleet.commandProxy
                 vinText = fleet.selectedVin
                 clientIdText = fleet.getClientId()
                 redirectUriText = fleet.getRedirectUri()
                 clientSecretText = fleet.getClientSecret() ?? ""
-                if let clip = UIPasteboard.general.string, clip.contains("code=") {
-                    authCodeText = clip
-                }
             }
         }
     }
 
     private func exchangeCodeAndConnect() {
         let code = authCodeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty else { return }
+        guard !code.isEmpty, !isExchanging else { return }
         isExchanging = true
         message = "테슬라 인증 서버에서 토큰 교환 중…"
 
@@ -1050,6 +1082,7 @@ struct TeslaFleetTokenSheet: View {
                 fleet.saveRedirectUri(redirectUriText)
                 fleet.saveClientSecret(clientSecretText)
                 _ = try await fleet.exchangeAuthorizationCode(code: code)
+                await MainActor.run { authCodeText = "" }
                 let list = try await fleet.fetchVehicles()
                 await MainActor.run {
                     isExchanging = false
@@ -1063,7 +1096,7 @@ struct TeslaFleetTokenSheet: View {
             } catch {
                 await MainActor.run {
                     isExchanging = false
-                    message = "인증 실패: \(error.localizedDescription)"
+                    message = fleet.isAuthenticated ? "토큰 저장됨 · 차량 조회 실패: \(error.localizedDescription)" : "인증 실패: \(error.localizedDescription)"
                 }
             }
         }
@@ -1128,6 +1161,7 @@ struct TeslaFleetTokenSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    LocalBriefingControls(title: "토큰 발급 안내") { [fleet.isAuthenticated ? "현재 계정 인증 완료 상태입니다." : "현재 계정 인증이 완료되지 않았습니다."] }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("테슬라 공식 토큰 발급 안내")
                             .font(.title2.weight(.bold))
@@ -1208,4 +1242,3 @@ struct TeslaFleetTokenSheet: View {
         }
     }
 }
-

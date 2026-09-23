@@ -177,13 +177,37 @@ struct VoiceAdvancedControls: View {
     }
 }
 
-/// Form row explanation placeholder: renders EmptyView to keep settings forms clean.
+/// Keep supporting information available without crowding the default form.
 struct InfoRow: View {
     let title: String
     let text: String
     init(_ title: String, _ text: String) { self.title = title; self.text = text }
     var body: some View {
-        EmptyView()
+        DisclosureGroup(title) {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+struct VoiceCacheDeleteButton: View {
+    var delete: () -> Void
+    @State private var confirming = false
+    var body: some View {
+        Button("캐시 비우기") { confirming = true }
+            .font(.caption)
+            .foregroundStyle(.red)
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("voice.cache.delete")
+            .confirmationDialog("모든 음성의 저장된 캐시를 삭제할까요?", isPresented: $confirming, titleVisibility: .visible) {
+                Button("모든 음성 캐시 삭제", role: .destructive, action: delete)
+                Button("취소", role: .cancel) {}
+            } message: {
+                Text("음성을 바꿔도 캐시는 유지됩니다. 삭제 후 다시 합성하면 API 사용량이 발생할 수 있습니다.")
+            }
     }
 }
 
@@ -215,6 +239,7 @@ struct AppTabScaffold<Vehicle: View, Automation: View, Settings: View>: View {
 /// 5 primary navigation roots matching commercial EV app standards; driving mode is presented outside this container.
 struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: View, Menu: View>: View {
     @Binding var selection: AppTab
+    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
     @ViewBuilder var home: () -> Home
     @ViewBuilder var controls: () -> Controls
     @ViewBuilder var energy: () -> Energy
@@ -222,13 +247,20 @@ struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: V
     @ViewBuilder var menu: () -> Menu
     var body: some View {
         TabView(selection: $selection) {
-            home().tabItem { Label("홈", systemImage: "car.fill") }.tag(AppTab.home)
-            controls().tabItem { Label("컨트롤", systemImage: "slider.horizontal.2.square.on.square") }.tag(AppTab.controls)
-            energy().tabItem { Label("에너지", systemImage: "bolt.fill") }.tag(AppTab.energy)
-            drive().tabItem { Label("운행", systemImage: "map.fill") }.tag(AppTab.drive)
-            menu().tabItem { Label("메뉴", systemImage: "ellipsis.circle.fill") }.tag(AppTab.menu)
+            styled(home()).tabItem { Label("홈", systemImage: "car.fill") }.tag(AppTab.home)
+            styled(controls()).tabItem { Label("컨트롤", systemImage: "slider.horizontal.2.square.on.square") }.tag(AppTab.controls)
+            styled(energy()).tabItem { Label("에너지", systemImage: "bolt.fill") }.tag(AppTab.energy)
+            styled(drive()).tabItem { Label("운행", systemImage: "map.fill") }.tag(AppTab.drive)
+            styled(menu()).tabItem { Label("메뉴", systemImage: "ellipsis.circle.fill") }.tag(AppTab.menu)
         }
         .environment(\.selectAppTab, { selection = $0 })
+    }
+
+    private func styled<Content: View>(_ content: Content) -> some View {
+        content
+            .safeAreaPadding(.bottom, 8)
+            .toolbarBackground(Color(white: 0.12).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
     }
 }
 
@@ -247,3 +279,4 @@ struct VoicePreviewControls: View {
         }
     }
 }
+

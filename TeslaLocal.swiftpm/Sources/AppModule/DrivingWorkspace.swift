@@ -16,8 +16,14 @@ struct DrivingWorkspace: View {
             let isLandscape = proxy.size.width > proxy.size.height
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
-                    if !isLandscape {
-                        topBar(compact: false)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        topBar(compact: isLandscape)
+                    }
+                    .frame(height: isLandscape ? 52 : 48)
+                    if readout.gear == "P", navigation.guiding || navigation.busy {
+                        ParkedNavigationActions {
+                            navigation.endGuidance()
+                        }
                     }
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
@@ -48,16 +54,13 @@ struct DrivingWorkspace: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
                 }
 
-                if isLandscape {
-                    topBar(compact: true)
-                        .padding(.top, 6)
-                }
             }
             .background(navigation.theme.canvas)
         }
         .sheet(isPresented: $settings) {
             NavigationStack {
                 Form {
+                    Section { LocalBriefingControls(title: "운전 화면 설정") { ["지도는 \(preferredMapEngine == "kakao" ? "카카오" : "애플"), 테마는 \(navigation.theme.title)입니다."] } }
                     Section("지도 엔진") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
                             Text("카카오 지도 (KNSDK)").tag("kakao")
@@ -110,18 +113,18 @@ struct DrivingWorkspace: View {
 
             Spacer(minLength: 0)
 
-            if !navigation.following {
+            Group {
                 Button {
                     navigation.recenter()
-                    model.voice.say("차량 위치를 중심으로 지도를 맞췄습니다.", key: "nav.recenter", category: "voiceControl", priority: 2, ttl: 3, manual: true)
                 } label: {
                     Image(systemName: "location.fill")
                         .font(.system(size: compact ? 12 : 14))
-                        .frame(width: compact ? 30 : 44, height: compact ? 30 : 44)
+                        .frame(width: 44, height: 44)
                         .background(Color.white.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("map.recenter")
+                .accessibilityLabel("현위치로 이동")
                 .transition(.opacity)
             }
 
@@ -165,6 +168,7 @@ struct DrivingWorkspace: View {
                     .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
             }
 
+            ScreenBriefingControls(scope: .dashboard, compact: true)
             Button { settings = true } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: compact ? 14 : 16))
@@ -172,6 +176,7 @@ struct DrivingWorkspace: View {
             }
             .accessibilityLabel("운전 화면 설정")
         }
+        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, compact ? 10 : 8)
         .padding(.vertical, compact ? 4 : 0)
         .background(compact ? AnyView(Capsule().fill(.ultraThinMaterial).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.8))) : AnyView(EmptyView()))
@@ -180,34 +185,40 @@ struct DrivingWorkspace: View {
 
     private var readout: NavigationReadout {
         var r = NavigationReadout()
-        let fresh = model.output.object("fresh"), d = model.groups.object("drive"), c = model.groups.object("charge"), t = model.groups.object("climate")
+        let fresh = model.output.object("fresh"), c = model.groups.object("charge"), t = model.groups.object("climate")
+        let fleetDrive = !link.authentic && model.fleet.vehicleSnapshot?.vin == model.fleet.selectedVin ? model.fleet.vehicleSnapshot?.driveDisplay() ?? [:] : [:]
+        let driveFresh = fresh.flag("drive") || fleetDrive.string("mode") == "recent"
+        let d = fresh.flag("drive") ? model.groups.object("drive") : (fleetDrive.string("mode") == "recent" ? fleetDrive : [:])
         r.speedUnit = units.speedLabel; r.connected = link.authentic
         r.clock = Date().formatted(date: .omitted, time: .shortened)
         r.vehicleName = model.settings.string("name", "Model Y")
 
-        if fresh.flag("drive"), let speed = d.number("speedKmh"), speed.isFinite, speed >= 0 {
+        if driveFresh, let speed = d.number("speedKmh"), speed.isFinite, speed >= 0 {
             r.speed = String(format: "%.0f", units.distanceValue(speed)); r.speedFraction = speed / 140
             r.speedKmh = speed
-            r.gear = d.string("gear", "P")
+            r.gear = d.string("gear", "—")
             r.powerKW = d.number("powerKW")
             if let odo = d.number("odometerKm"), odo.isFinite { r.odometer = units.format(odo, suffix: " km") }
-        } else if let gpsSpeed = navigation.telemetry["gpsSpeedKmh"] as? Double, gpsSpeed.isFinite, gpsSpeed >= 0 {
+        } else if let at = navigation.telemetry["at"] as? Double,
+                  (0...10).contains(Date().timeIntervalSince1970 - at),
+                  let gpsSpeed = navigation.telemetry["gpsSpeedKmh"] as? Double, gpsSpeed.isFinite, gpsSpeed >= 0 {
             // Live phone GPS speed when moving
             r.speed = String(format: "%.0f", units.distanceValue(gpsSpeed)); r.speedFraction = gpsSpeed / 140; r.speedKmh = gpsSpeed
-            r.gear = gpsSpeed > 1.5 ? "D" : "P"
+            r.gear = "—" // Phone motion does not establish the vehicle's selected gear.
         } else {
             // Graceful parked / standby state
-            r.speed = "0"
+            r.speed = "—"
             r.speedFraction = 0
-            r.speedKmh = 0
-            r.gear = "P"
+            r.speedKmh = 0 // Keep wheel animation still; the visible value stays unknown.
+            r.gear = "—"
         }
 
-        if let odo = model.groups.object("drive").number("odometerKm"), odo.isFinite {
+        if driveFresh { r.gear = d.string("gear", "—") }
+        if let odo = d.number("odometerKm"), odo.isFinite {
             r.odometer = units.format(odo, suffix: " km")
         }
 
-        let dest = d.string("destination")
+        let dest = navigation.guiding || navigation.busy ? d.string("destination") : ""
         r.destination = dest
         if !dest.isEmpty {
             r.turn = dest
@@ -222,11 +233,11 @@ struct DrivingWorkspace: View {
             }
         } else {
             let isMoving = (r.gear == "D" || r.speedKmh > 2)
-            r.turn = isMoving ? "자유 주행 모드" : "안내 대기"
+            r.turn = "자유주행"
             r.turnSymbol = "location.north.circle.fill"
             r.turnDistance = ""
-            r.remaining = "실시간 주행"
-            r.remainingDistance = "목적지 미설정"
+            r.remaining = r.gear == "P" ? "주차 중" : "실시간 주행"
+            r.remainingDistance = "경로 안내 없음"
             r.arrival = "—"
         }
         r.road = "실시간 주행"
@@ -236,13 +247,11 @@ struct DrivingWorkspace: View {
             r.battery = units.format(soc, suffix: "%")
             r.range = units.format(c.number("rangeKm"), suffix: " km")
             r.rangeKm = c.number("rangeKm")
-        } else {
-            let cachedSoc = model.groups.object("charge").number("soc") ?? 80.0
-            let cachedRange = model.groups.object("charge").number("rangeKm") ?? 340.0
-            r.batterySOC = cachedSoc
-            r.battery = units.format(cachedSoc, suffix: "%")
-            r.range = units.format(cachedRange, suffix: " km")
-            r.rangeKm = cachedRange
+        } else if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin, snapshot.isRecent() {
+            r.batterySOC = snapshot.soc
+            r.battery = units.format(snapshot.soc, suffix: "%")
+            r.range = units.format(snapshot.rangeKm, suffix: " km")
+            r.rangeKm = snapshot.rangeKm
         }
 
         if fresh.flag("drive"), let arrival = d.number("arrivalSOC"), arrival.isFinite, (0...100).contains(arrival) { r.arrivalSOC = arrival }
@@ -261,11 +270,9 @@ struct DrivingWorkspace: View {
         if fresh.flag("climate"), let inside = t.number("insideC") {
             r.inside = units.format(inside, suffix: "°C")
             r.outside = units.format(t.number("outsideC"), suffix: "°C")
-        } else {
-            let cachedInside = model.groups.object("climate").number("insideC") ?? 21.5
-            let cachedOutside = model.groups.object("climate").number("outsideC") ?? 20.0
-            r.inside = units.format(cachedInside, suffix: "°C")
-            r.outside = units.format(cachedOutside, suffix: "°C")
+        } else if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin, snapshot.isRecent() {
+            r.inside = units.format(snapshot.insideC, suffix: "°C")
+            r.outside = units.format(snapshot.outsideC, suffix: "°C")
         }
         let n = navigation.telemetry
         if let stamp = n["at"] as? Double, (0...10).contains(Date().timeIntervalSince1970 - stamp), n["valid"] as? Bool == true {
@@ -366,7 +373,7 @@ struct LiveStandbyMapView: View {
 
     var body: some View {
         ZStack {
-            StandbyMKMapView()
+            StandbyMKMapView(recenterRequest: navigation.recenterRequest)
 
             VStack {
                 Spacer()
@@ -420,7 +427,7 @@ struct LiveStandbyMapView: View {
                 Image(systemName: "location.fill")
                     .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.4))
                     .font(.system(size: 13))
-                Text(readout.destination.isEmpty ? "실시간 지도 주행 중 · 테슬라 내비 연동 대기" : "\(readout.destination) 길안내 준비")
+                Text(readout.destination.isEmpty ? "자유주행 · 목적지 미설정" : "\(readout.destination) 길안내 준비")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
                 if !readout.destination.isEmpty {
@@ -454,6 +461,12 @@ struct LiveStandbyMapView: View {
 }
 
 struct StandbyMKMapView: UIViewRepresentable {
+    var recenterRequest: Int
+    final class Coordinator {
+        var lastRequest: Int
+        init(_ request: Int) { lastRequest = request }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(recenterRequest) }
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
         map.overrideUserInterfaceStyle = .dark
@@ -469,7 +482,8 @@ struct StandbyMKMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        if uiView.userTrackingMode != .followWithHeading && uiView.userTrackingMode != .follow {
+        if context.coordinator.lastRequest != recenterRequest {
+            context.coordinator.lastRequest = recenterRequest
             uiView.setUserTrackingMode(.followWithHeading, animated: true)
         }
     }

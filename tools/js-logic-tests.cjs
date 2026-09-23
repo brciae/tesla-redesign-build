@@ -5,7 +5,7 @@ const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1
 const g = new C.EmbeddedRouteGate();
 const ev = (lat, at, name = 'A') => ({ type: 'route', name, latitude: lat, longitude: 127, at, receivedAt: at, token: name + lat });
 let r = g.observe(ev(37.5, 1000), true, false); assert(r.type === 'start', 'first start');
-r = g.observe(ev(37.50001, 2000, 'A (renamed)'), true, true); assert(r.type === 'refresh', 'coordinate jitter/rename keeps guidance');
+r = g.observe(ev(37.500001, 2000, 'A (renamed)'), true, true); assert(r.type === 'refresh', 'equivalent float32 coordinate/rename keeps guidance');
 for (let i = 0; i < 5; i++) { r = g.observe({ type: 'absent', at: 3000 + i * 5000, receivedAt: 3000 + i * 5000 }, true, true); assert(r.type === 'wait', 'stop-time absence tolerated'); }
 r = g.observe(ev(37.5, 40000), false, true); assert(r.type === 'refresh', 'background refresh keeps guidance');
 let cleared = false;
@@ -19,6 +19,40 @@ assert(C.fresh({ at: now - 600000, receivedAt: now - 1000 }, now, C.TTL.charge),
 assert(!C.fresh({ at: now - 1000, receivedAt: now - 200000 }, now, C.TTL.charge), 'stale receipt');
 assert(!C.fresh({ at: now + 300000, receivedAt: now }, now, C.TTL.drive), 'future source stamp');
 console.log('PASS: route gate + freshness');
+
+// New receipts with an unchanged vehicle timestamp must still confirm route cancellation.
+const parkedGate = new C.EmbeddedRouteGate();
+parkedGate.observe(ev(37.5, 1000), true, false);
+const absent = receipt => ({type:'absent', at:1000, receivedAt:receipt, parked:true});
+assert(parkedGate.observe(absent(2000), true, true).type === 'wait', 'first parked absence');
+for(let i=0;i<4;i++) assert(parkedGate.observe(absent(2000), true, true).type === 'wait', 'cached receipt cannot count');
+assert(parkedGate.observe(absent(7000), true, true).type === 'wait', 'second parked absence');
+assert(parkedGate.observe(absent(12000), true, true).type === 'clear', 'fixed source clock clears after new receipts');
+parkedGate.reset(); parkedGate.observe(ev(37.5, 1000), true, false);
+parkedGate.observe({...absent(2000), parked:false},true,true);
+parkedGate.observe({...absent(7000), parked:false},true,true);
+assert(parkedGate.observe(absent(12000),true,true).type==='wait','entering P resets confirmation');
+assert(parkedGate.observe(ev(37.5,15000),true,true).type==='refresh','P alone does not cancel a valid route');
+assert(parkedGate.absence===null,'route restoration resets absence');
+parkedGate.cancel();
+assert(parkedGate.observe(ev(37.5,16000),true,false).type==='wait','manual route stop blocks old destination while freely driving');
+assert(parkedGate.observe(ev(37.6,17000),true,false).type==='start','new destination can start after manual stop');
+assert(C.embeddedDestination({at:now,receivedAt:now,destination:'',destinationLat:37.5,destinationLng:127,arrivalMinutes:5},now).type==='wait','empty name with retained active route must not clear');
+console.log('PASS: parked route termination, repeated receipts, partial route protection');
+const switched = new C.EmbeddedRouteGate();
+switched.observe(ev(37.5, 20000), true, false);
+assert(switched.observe(ev(37.6, 10000), true, true).type === 'wait', 'old transport sample cannot restart another destination');
+assert(switched.observe({...ev(37.6, 10000), receivedAt:30000}, true, true).type === 'wait', 'new receipt cannot revive older source');
+assert(switched.observe(ev(37.6, 30000), true, true).type === 'start', 'genuinely newer destination still starts');
+const oldRoute={at:now-840000,receivedAt:now,destination:'A',destinationLat:37.5,destinationLng:127};
+assert(C.embeddedDestination(oldRoute,now).type==='wait','14-minute source cannot start navigation');
+assert(C.navigationEvent(oldRoute,now,null,'app').type==='wait','external navigation also rejects old source');
+assert(C.embeddedDestination({...oldRoute,at:now},now).type==='route','fresh source accepted');
+const nearbyGate = new C.EmbeddedRouteGate();
+nearbyGate.observe(ev(37.5,1000,'A'),true,false);
+assert(nearbyGate.observe(ev(37.50045,2000,'B'),true,true).type==='start','different destination only 50 metres away starts a new route');
+nearbyGate.cancel();
+assert(nearbyGate.observe(ev(37.5,3000,'A'),true,false).type==='start','manual stop does not block a different nearby destination');
 
 // v35: a receipt photo must fill the whole charge form, not just kWh and cost.
 const gs = C.parseReceipt(['GS칼텍스 강남충전소', '2026.09.14 14:23', '충전량 32.5 kWh', '단가 347원/kWh', '결제금액 11,278원', '시작 45% → 80%', '충전시간 42분'].join('\n'));

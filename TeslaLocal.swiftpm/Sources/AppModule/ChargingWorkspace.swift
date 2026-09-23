@@ -20,25 +20,26 @@ struct ChargingWorkspace: View {
     var body: some View {
         let p = homePresentation(model, link)
         let c = p.object("charge")
-        let soc = c.number("soc") ?? 56.0
-        let chargerKW = c.number("chargerKW") ?? 6.0
-        let minutesToLimit = c.number("minutesToLimit") ?? 190
-        let addedKWh = c.number("addedKWh") ?? 12.0
-        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let soc = c.number("soc")
+        let chargerKW = c.number("chargerKW")
+        let minutesToLimit = c.number("minutesToLimit")
+        let addedKWh = c.number("addedKWh")
+        let isCharging = (model.demo || c.string("mode") == "recent") && ((chargerKW ?? 0) > 0.5 || c.flag("charging"))
         let isPlugged = isCharging || c.flag("plugged")
-        let voltage = chargerKW > 0 ? Int(round(Double(chargerKW) * 1000.0 / Double(max(1, currentAmps)))) : 0
+        let voltage = c.number("chargerVoltage").map { Int($0.rounded()) }
 
-        let hours = Int(minutesToLimit) / 60
-        let mins = Int(minutesToLimit) % 60
+        let hours = Int(minutesToLimit ?? 0) / 60
+        let mins = Int(minutesToLimit ?? 0) % 60
         let remainingText: String = {
             if isCharging {
+                guard minutesToLimit != nil else { return "충전 중 · 남은 시간 미수신" }
                 if hours > 0 {
                     return "충전 한도까지 \(hours)시간 \(mins)분 남음"
                 } else {
                     return "충전 한도까지 \(mins)분 남음"
                 }
             } else {
-                return "충전 대기 중"
+                return c.string("mode") == "recent" ? "충전 대기 중" : "충전 상태 미확인"
             }
         }()
 
@@ -49,7 +50,7 @@ struct ChargingWorkspace: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    // Top Header Bar
+                    ScreenBriefingControls(scope: .charging).padding(.horizontal, 20)
                     headerBar(soc: soc, isCharging: isCharging, remainingText: remainingText)
                         .padding(.horizontal, 20)
                         .padding(.top, 10)
@@ -57,8 +58,6 @@ struct ChargingWorkspace: View {
                     // 3D Vehicle Charging View with plugged-in cable & flowing green neon pulses
                     ZStack(alignment: .bottom) {
                         Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
-                            .frame(height: 260)
-                            .clipped()
 
                         // Soft ground shadow & ambient reflection (only when charging)
                         if isCharging {
@@ -162,7 +161,7 @@ struct ChargingWorkspace: View {
     }
 
     // MARK: - Header
-    private func headerBar(soc: Double, isCharging: Bool, remainingText: String) -> some View {
+    private func headerBar(soc: Double?, isCharging: Bool, remainingText: String) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -183,12 +182,12 @@ struct ChargingWorkspace: View {
                                 .frame(width: 24, height: 12)
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(isCharging ? Color(red: 0.0, green: 0.9, blue: 0.45) : Color.white)
-                                .frame(width: max(2, 21 * CGFloat(soc / 100.0)), height: 8)
+                                .frame(width: max(0, 21 * CGFloat((soc ?? 0) / 100.0)), height: 8)
                                 .padding(.leading, 1.5)
                         }
                     }
 
-                    Text("\(Int(round(soc)))%")
+                    Text(soc.map { "\(Int($0.rounded()))%" } ?? "—%")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(isCharging ? Color(red: 0.0, green: 0.9, blue: 0.45) : .white)
 
@@ -224,11 +223,11 @@ struct ChargingWorkspace: View {
     private func quickActionRow(isCharging: Bool) -> some View {
         HStack {
             quickActionIcon("lock.fill", active: false) {
-                link.askControl(link.authentic ? "unlock" : "lock", title: "차량 잠금")
+                model.requestVehicleControl("lock", title: "차량 잠금")
             }
             Spacer()
             quickActionIcon("fanblades.fill", active: false) {
-                link.askControl("climateAuto", title: "실내 공조")
+                model.requestVehicleControl("climateOn", title: "실내 공조")
             }
             Spacer()
             quickActionIcon("bolt.fill", active: true) {
@@ -236,7 +235,7 @@ struct ChargingWorkspace: View {
             }
             Spacer()
             quickActionIcon("car.side.rear.open.fill", active: false) {
-                link.askControl("trunkOpen", title: "트렁크")
+                model.requestVehicleControl("trunkMove", title: "트렁크")
             }
         }
     }
@@ -261,10 +260,10 @@ struct ChargingWorkspace: View {
 
     // MARK: - Charging Control Card
     private func chargingControlCard(
-        soc: Double,
-        chargerKW: Double,
-        addedKWh: Double,
-        voltage: Int,
+        soc: Double?,
+        chargerKW: Double?,
+        addedKWh: Double?,
+        voltage: Int?,
         isCharging: Bool
     ) -> some View {
         VStack(spacing: 0) {
@@ -275,7 +274,7 @@ struct ChargingWorkspace: View {
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
 
-                    Text("\(Int(round(chargerKW))) kW · +\(String(format: "%.1f", addedKWh)) kWh · \(currentAmps)/\(maxAmps)A · \(voltage)V")
+                    Text("\(chargerKW.map { String(format: "%.1f", $0) } ?? "—") kW · +\(addedKWh.map { String(format: "%.1f", $0) } ?? "—") kWh · \(voltage.map(String.init) ?? "—") V")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color.white.opacity(0.6))
                 }
@@ -284,7 +283,7 @@ struct ChargingWorkspace: View {
                 GeometryReader { geo in
                     let w = geo.size.width
                     let targetFrac = CGFloat(targetLimit / 100.0)
-                    let socFrac = CGFloat(soc / 100.0)
+                    let socFrac = CGFloat((soc ?? 0) / 100.0)
 
                     ZStack(alignment: .leading) {
                         // Background full track
@@ -300,7 +299,7 @@ struct ChargingWorkspace: View {
                         // Active Glowing Green Progress
                         Capsule()
                             .fill(Color(red: 0.0, green: 0.9, blue: 0.45))
-                            .frame(width: max(7, w * min(socFrac, targetFrac)), height: 7)
+                            .frame(width: max(0, w * min(socFrac, targetFrac)), height: 7)
                             .shadow(color: Color(red: 0.0, green: 0.9, blue: 0.45).opacity(0.6), radius: 4, x: 0, y: 0)
 
                         // Draggable Limit Knob
@@ -325,7 +324,7 @@ struct ChargingWorkspace: View {
                                     .onEnded { _ in
                                         isSliderDragging = false
                                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                        model.voice.say("충전 한도를 \(Int(targetLimit))퍼센트로 설정했습니다.", key: "charging.limit", category: "voiceControl", priority: 2, ttl: 4, manual: true)
+                                        model.requestVehicleControl("chargeLimit", title: "충전 한도 설정", args: ["value": Int(targetLimit)])
                                     }
                             )
                     }
@@ -341,7 +340,6 @@ struct ChargingWorkspace: View {
                                 isLeftChevronPressed = true
                                 currentAmps -= 1
                             }
-                            model.voice.say("충전 전류를 \(currentAmps)암페어로 설정했습니다.", key: "charging.amps", category: "voiceControl", priority: 2, ttl: 3, manual: true)
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                                 isLeftChevronPressed = false
                             }
@@ -357,7 +355,7 @@ struct ChargingWorkspace: View {
 
                     Spacer()
 
-                    Text("\(currentAmps) A")
+                    Text("요청 \(currentAmps) A")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
 
@@ -370,7 +368,6 @@ struct ChargingWorkspace: View {
                                 isRightChevronPressed = true
                                 currentAmps += 1
                             }
-                            model.voice.say("충전 전류를 \(currentAmps)암페어로 설정했습니다.", key: "charging.amps", category: "voiceControl", priority: 2, ttl: 3, manual: true)
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                                 isRightChevronPressed = false
                             }
@@ -389,6 +386,7 @@ struct ChargingWorkspace: View {
             }
             .padding(18)
 
+            Button("선택 전류 적용") { model.requestVehicleControl("chargeAmps", title: "충전 전류 설정", args: ["value": currentAmps]) }.buttonStyle(.bordered)
             // Divider Line
             Rectangle()
                 .fill(Color.white.opacity(0.08))
@@ -399,11 +397,9 @@ struct ChargingWorkspace: View {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     if isCharging {
-                        link.askControl("chargeStop", title: "충전 중지")
-                        model.voice.say("충전을 중지합니다.", key: "charging.state", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                        model.requestVehicleControl("chargeStop", title: "충전 중지")
                     } else {
-                        link.askControl("chargeStart", title: "충전 시작")
-                        model.voice.say("충전을 시작합니다.", key: "charging.state", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                        model.requestVehicleControl("chargeStart", title: "충전 시작")
                     }
                 } label: {
                     Text(isCharging ? "충전 중지" : "충전 시작")
@@ -420,8 +416,7 @@ struct ChargingWorkspace: View {
 
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    link.askControl("portOpen", title: "충전 포트 잠금 해제")
-                    model.voice.say("충전 포트를 잠금 해제했습니다.", key: "charging.port", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                    model.requestVehicleControl("portOpen", title: "충전 포트 잠금 해제")
                 } label: {
                     Text("충전 포트 잠금 해제")
                         .font(.system(size: 14, weight: .medium))

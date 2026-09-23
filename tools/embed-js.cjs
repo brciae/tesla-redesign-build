@@ -3,11 +3,11 @@
 const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..', 'TeslaLocal.swiftpm', 'Sources', 'AppModule');
 const file = path.join(root, 'EmbeddedAppResources.swift');
-let swift = fs.readFileSync(file, 'utf8');
+let swift = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
 const map = { 'protocol.js': 'asset0', 'analysis.js': 'asset1', 'vehicle3d.js': 'asset2', 'home.js': 'asset3', 'bridge.js': 'asset4' };
 let changed = 0;
 for (const [name, asset] of Object.entries(map)) {
-    const raw = fs.readFileSync(path.join(root, 'Resources', name));
+    const raw = Buffer.from(fs.readFileSync(path.join(root, 'Resources', name), 'utf8').replace(/\r\n/g, '\n'));
     const body = (raw.toString('base64').match(/.{1,120}/g) || ['']).map(l => '    ' + l).join('\n');
     const marker = `    private static let ${asset} = """\n`;
     const start = swift.indexOf(marker);

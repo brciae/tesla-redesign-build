@@ -102,10 +102,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
-        let timeSinceLast = now.timeIntervalSince(lastGuideAt)
-        if text == lastGuideText && timeSinceLast < 12.0 { return }
-        if timeSinceLast < 3.5 && !safety { return }
-        if safety && timeSinceLast < 2.5 { return }
+        // The navigation SDK owns announcement timing and frequency.
         lastGuideText = text
         lastGuideAt = now
 
@@ -113,7 +110,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn")
 
         // Safety guidance interrupts regular chatter immediately
-        if safety {
+        if safety || !navigationSpeaking {
             cancelCurrent()
             quietUntil = .distantPast
         }
@@ -137,9 +134,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let d = UserDefaults.standard
         guard d.bool(forKey: "voiceEnabled") else { return }
         if !destination.isEmpty {
-            say("운전 대시보드를 시작합니다. 목적지 \(destination) 안내를 준비합니다.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
-        } else {
-            say("운전 대시보드를 시작합니다. 안전 운전하세요.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
+            say("\(destination) 안내 시작.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
         }
     }
 
@@ -155,9 +150,11 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         // INSTANT PREEMPTION: When user taps a button or triggers guidance, immediately cut off previous speech
         // mid-utterance without waiting for it to finish and with zero delay!
-        cancelCurrent()
-        queue.clear()
-        quietUntil = .distantPast
+        if !navigationSpeaking && (manual || priority > activePriority) {
+            cancelCurrent()
+            queue.clearAutomatic()
+            quietUntil = .distantPast
+        }
 
         queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
         drain()
@@ -179,9 +176,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         if !item.manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: Date()), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
 
         let tc = TypecastClient.shared
-        guard tc.isEnabled && tc.hasKey else {
-            notice = "타입캐스트 API Key를 등록해 주세요."
-            playbackState = "API Key 필요"
+        guard tc.isEnabled else {
+            notice = "타입캐스트 AI 음성을 켜 주세요."
+            playbackState = "타입캐스트 꺼짐"
             activeTicket = nil
             navigationSpeaking = false
             activePriority = 0
@@ -205,9 +202,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private func playTypecast(_ item: VoiceItem, voiceId: String? = nil) -> Bool {
         let tc = TypecastClient.shared
-        guard tc.isEnabled && tc.hasKey else {
-            notice = "타입캐스트 API Key를 등록해 주세요."
-            playbackState = "API Key 필요"
+        guard tc.isEnabled else {
+            notice = "타입캐스트 AI 음성을 켜 주세요."
+            playbackState = "타입캐스트 꺼짐"
             activeTicket = nil
             navigationSpeaking = false
             activePriority = 0
@@ -266,6 +263,19 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     private func playTypecastAudio(_ url: URL, ticket: UUID, item: VoiceItem, defaults: UserDefaults) {
+        guard activeTicket == ticket else { return }
+        // Network synthesis can finish after the maneuver has already expired.
+        // Keep the generated cache, but never play an out-of-date instruction.
+        guard Date() < item.expires else {
+            activeTicket = nil
+            activeManual = false
+            speaking = false
+            navigationSpeaking = false
+            activePriority = 0
+            playbackState = "안내 기한 만료"
+            drain()
+            return
+        }
         do {
             try activateAudio(defaults)
             let volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))

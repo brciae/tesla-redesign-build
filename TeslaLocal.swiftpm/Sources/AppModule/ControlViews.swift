@@ -10,7 +10,7 @@ struct ControlPanel: View {
     @State private var enrollment = false
 
     private var blocked: Bool {
-        model.demo || !link.authentic || !link.controlEnabled || link.controlBusy || link.preparingControl || link.confirmation != nil
+        model.demo || (!model.fleet.isAuthenticated && (!link.authentic || !link.controlEnabled)) || model.fleet.isSendingCommand || link.controlBusy || link.preparingControl || link.confirmation != nil
     }
 
     var body: some View {
@@ -130,7 +130,7 @@ struct ControlPanel: View {
 
                             Button {
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                link.askControl("temperature", title: "온도 설정", args: ["value": temperature])
+                                model.requestVehicleControl("temperature", title: "온도 설정", args: ["value": temperature])
                             } label: {
                                 Text("설정 적용")
                                     .font(.system(size: 14, weight: .semibold))
@@ -140,7 +140,7 @@ struct ControlPanel: View {
                                     .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(PlainButtonStyle())
-                            .disabled(blocked || !link.controlsReady(category: "climate"))
+                            .disabled(blocked || (!model.fleet.isAuthenticated && !link.controlsReady(category: "climate")))
                         }
                     }
                     .padding(14)
@@ -227,7 +227,7 @@ struct ControlPanel: View {
 
                             Button {
                                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                link.askControl("chargeLimit", title: "충전 한도 설정", args: ["value": limit])
+                                model.requestVehicleControl("chargeLimit", title: "충전 한도 설정", args: ["value": limit])
                             } label: {
                                 Text("한도 적용")
                                     .font(.system(size: 14, weight: .semibold))
@@ -237,7 +237,7 @@ struct ControlPanel: View {
                                     .background(Color(red: 0.28, green: 0.88, blue: 0.42), in: RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(PlainButtonStyle())
-                            .disabled(blocked || !link.controlsReady(category: "charge"))
+                            .disabled(blocked || (!model.fleet.isAuthenticated && !link.controlsReady(category: "charge")))
                         }
                     }
                     .padding(14)
@@ -279,7 +279,7 @@ struct ControlPanel: View {
     private func controlTile(action: String, title: String, icon: String, accent: Color, args: Object = [:]) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            link.askControl(action, title: title, args: args)
+            model.requestVehicleControl(action, title: title, args: args)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: icon)
@@ -296,7 +296,7 @@ struct ControlPanel: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
         }
         .buttonStyle(MotionButtonStyle())
-        .disabled(blocked || !link.controlsReady(category: category))
-        .opacity(blocked || !link.controlsReady(category: category) ? 0.45 : 1.0)
+        .disabled(blocked || (!model.fleet.isAuthenticated && !link.controlsReady(category: category)))
+        .opacity(blocked || (!model.fleet.isAuthenticated && !link.controlsReady(category: category)) ? 0.45 : 1.0)
     }
 }

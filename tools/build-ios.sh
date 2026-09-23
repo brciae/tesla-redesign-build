@@ -18,16 +18,32 @@ command -v xcodegen >/dev/null
 xcodebuild -version
 xcodegen --version
 node tools/embed-js.cjs
+node tools/typecast-only-audit.cjs
+node tools/briefing-coverage.cjs
+node tools/control-path-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
+xcrun clang -fobjc-arc -framework Foundation tools/navigation-speech-tests.m -o Xcode/NavigationSpeechTests
+Xcode/NavigationSpeechTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests
+Xcode/TypecastPolicyTests
 # The original artwork stays unchanged; asset layout adds a 5% margin on each side.
 node tools/js-logic-tests.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests
+Xcode/FleetAuthTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetCommandPolicy.swift tools/fleet-command-tests.swift -o Xcode/FleetCommandTests
+Xcode/FleetCommandTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
+Xcode/FleetSnapshotTests
 swift tools/prepare-icon.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-policy-tests.swift -o Xcode/NativePolicyTests
 Xcode/NativePolicyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationTransfer.swift tools/automation-policy-tests.swift -o Xcode/AutomationPolicyTests
 Xcode/AutomationPolicyTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests
+Xcode/ScreenBriefingTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/ParkingModels.swift tools/parking-record-tests.swift -o Xcode/ParkingRecordTests
+Xcode/ParkingRecordTests
 bash tools/test-interface.sh
-bash tools/test-voice-engine.sh
 xcodegen generate --spec Xcode/project.json --project Xcode
 xcodebuild -resolvePackageDependencies \
   -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
@@ -48,7 +64,9 @@ stage_dir="$(mktemp -d "$repo_root/Xcode/package.XXXXXX")"
 mkdir "$stage_dir/Payload"
 ditto "$app_path" "$stage_dir/Payload/YLCompanion.app"
 mkdir -p "$repo_root/Xcode/BuildOutput"
-artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla iPhone v73.ipa"
+app_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app_path/Info.plist")
+app_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app_path/Info.plist")
+artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla ${app_version} Build${app_build} v01 Review.ipa"
 ditto -c -k --keepParent "$stage_dir/Payload" "$artifact_path"
 unzip -t "$artifact_path"
 shasum -a 256 "$artifact_path"

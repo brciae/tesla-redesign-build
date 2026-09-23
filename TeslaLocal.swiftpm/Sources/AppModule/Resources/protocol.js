@@ -78,8 +78,9 @@
       const d=result.groups.drive;
       const emptyCoordinates=(d.destinationLat===null&&d.destinationLng===null)||(d.destinationLat===0&&d.destinationLng===0);
       // Some responses retain zero-valued ETA/traffic/coordinate fields after cancellation.
-      // Positive ETA or real destination coordinates are not cancellation evidence.
-      const emptyRoute=(d.destination===null||d.destination==='')&&emptyCoordinates&&
+      // Positive ETA/distance prevents cancellation. In P, retained coordinates alone may outlive
+      // the route; a missing name and zero/absent ETA still require repeated fresh receipts.
+      const emptyRoute=(d.destination===null||d.destination==='')&&(emptyCoordinates||d.gear==='P')&&
         (d.arrivalMinutes===null||d.arrivalMinutes===0)&&(d.arrivalKm===null||d.arrivalKm===0);
       d.routeFieldsAbsent=emptyRoute&&sourceTime(drive,4,null)!==null&&!!d.gear&&(d.gear==='P'||d.speedKmh!==null);
     }

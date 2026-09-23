@@ -23,8 +23,10 @@
   }
   function validCoordinates(lat,lng){return num(lat,-90,90)&&num(lng,-180,180)&&!(lat===0&&lng===0);}
   const freshLocation=(g,now)=>fresh(g,now)&&validCoordinates(g.latitude,g.longitude)&&(!g.positionStatus||g.positionStatus==='available')&&g.estimatedGPSValid!==false;
+  // Match the Fleet drive source-age limit; slow-changing charge/climate groups retain their own rules.
+  const freshNavigation=(g,now)=>fresh(g,now)&&g.at<=now+5000&&now-g.at<=120000;
   function navURL(drive,now,appname){
-    if(!fresh(drive,now))throw Error('목적지 데이터가 오래됨. 차량에서 다시 수신해야 함.');
+    if(!freshNavigation(drive,now))throw Error('목적지 데이터가 오래됨. 차량에서 다시 수신해야 함.');
     if(!drive.destination?.trim())throw Error('활성 목적지가 없음. 차량 내비에 목적지를 설정해야 함.');
     if(!validCoordinates(drive.destinationLat,drive.destinationLng))throw Error('목적지 좌표 미수신. 네이버에서 장소를 직접 확인해야 함.');
     if(!num(drive.destinationLat,31.43,44.35)||!num(drive.destinationLng,122.37,132))throw Error('네이버 문서의 국내 좌표 범위 밖임.');
@@ -33,47 +35,51 @@
     return 'nmap://navigation?'+Object.keys(q).map(k=>k+'='+encodeURIComponent(q[k])).join('&');
   }
   function navigationEvent(drive,now,lastSent,appname){
-    if(!fresh(drive,now)||!Number.isFinite(drive.receivedAt)||now-drive.receivedAt>30000||drive.receivedAt>now)return {type:'wait'};
+    if(!freshNavigation(drive,now)||!Number.isFinite(drive.receivedAt)||now-drive.receivedAt>30000||drive.receivedAt>now)return {type:'wait'};
     if(!drive.destination?.trim())return {type:'clear'};
     const url=navURL(drive,now,appname);
     const token=JSON.stringify([drive.destination.trim(),Number(drive.destinationLat.toFixed(5)),Number(drive.destinationLng.toFixed(5))]);
     return {type:token===lastSent?'same':'route',token,url};
   }
   function embeddedDestination(drive,now){
-    if(!fresh(drive,now)||!Number.isFinite(drive.receivedAt)||drive.receivedAt>now||now-drive.receivedAt>30000)return {type:'wait'};
+    if(!freshNavigation(drive,now)||!Number.isFinite(drive.receivedAt)||drive.receivedAt>now||now-drive.receivedAt>30000)return {type:'wait'};
     // A complete, fresh drive response with every route field absent needs repeated confirmation.
-    if(drive.routeFieldsAbsent===true)return {type:'absent',at:drive.at,receivedAt:drive.receivedAt};
+    if(drive.routeFieldsAbsent===true)return {type:'absent',at:drive.at,receivedAt:drive.receivedAt,parked:drive.gear==='P'};
     // An arbitrary partial group is not a vehicle destination-clear event.
     if(typeof drive.destination!=='string')return {type:'wait'};
     const name=drive.destination.trim();
-    if(!name)return {type:'clear'};
+    if(!name)return {type:'wait'};
     if(!validCoordinates(drive.destinationLat,drive.destinationLng))return {type:'wait'};
     return {type:'route',name:name.slice(0,300),latitude:drive.destinationLat,longitude:drive.destinationLng,
       at:drive.at,receivedAt:drive.receivedAt,token:JSON.stringify([name.slice(0,300),Number(drive.destinationLat.toFixed(5)),Number(drive.destinationLng.toFixed(5))])};
   }
   // Memory-only lifecycle. Never exported with vehicle records or restored on launch.
-  // v29: a destination is identified by position (<=200 m), not by the exact float/name token.
-  // Tesla re-reports float32 coordinates and renames POIs while stopped; that must not restart guidance.
-  const sameSpot=(a,b)=>{if(!a||!b)return false;const dy=(a.lat-b.lat)*111320,dx=(a.lng-b.lng)*111320*Math.cos(a.lat*Math.PI/180);return Math.hypot(dx,dy)<=200;};
+  // Match coordinate storage precision, not an invented geographic radius.
+  // Renaming a POI at the same coordinates must not restart guidance.
+  const sameSpot=(a,b)=>!!a&&!!b&&Math.fround(a.lat)===Math.fround(b.lat)&&Math.fround(a.lng)===Math.fround(b.lng);
   class EmbeddedRouteGate{
-    constructor(){this.generation=0;this.active=null;this.blocked=null;this.absence=null;this.lastObservation=0;}
+    constructor(){this.generation=0;this.active=null;this.blocked=null;this.absence=null;this.lastObservation=0;this.lastSource=0;}
     observe(event,ready,guiding){
+      if(event.type==='route'||event.type==='absent'){
+        if(!Number.isFinite(event.at)||!Number.isFinite(event.receivedAt)||event.at<this.lastSource||event.receivedAt<this.lastObservation)return {type:'wait'};
+        this.lastSource=event.at;
+      }
       if(event.type==='clear'){this.cancel(false);this.blocked=null;return {type:'clear'};}
       if(event.type==='absent'){
-        if(!Number.isFinite(event.at)||!Number.isFinite(event.receivedAt)||event.at<=this.lastObservation)return {type:'wait'};
-        this.lastObservation=event.at;
+        if(!Number.isFinite(event.at)||!Number.isFinite(event.receivedAt)||event.receivedAt<=this.lastObservation)return {type:'wait'};
+        this.lastObservation=event.receivedAt;
         const previous=this.absence;
-        this.absence=previous&&event.receivedAt>previous.last&&event.receivedAt-previous.last<=20000?
-          {first:previous.first,last:event.receivedAt,count:previous.count+1}:{first:event.receivedAt,last:event.receivedAt,count:1};
+        this.absence=previous&&previous.parked===(event.parked===true)&&event.receivedAt>previous.last&&event.receivedAt-previous.last<=75000?
+          {first:previous.first,last:event.receivedAt,count:previous.count+1,parked:event.parked===true}:{first:event.receivedAt,last:event.receivedAt,count:1,parked:event.parked===true};
         // Established guidance tolerates transient empty route groups (stops, Tesla re-routing, BLE partials). 
-        const need=this.active&&guiding?{count:6,span:45000}:{count:3,span:3000};
+        const need=event.parked?{count:3,span:10000}:(this.active&&guiding?{count:6,span:45000}:{count:3,span:3000});
         if(this.absence.count>=need.count&&this.absence.last-this.absence.first>=need.span){
           this.cancel(false);this.blocked=null;return {type:'clear',reason:'vehicleRouteAbsent'};
         }
         return {type:'wait'};
       }
       if(event.type!=='route')return {type:'wait'};
-      this.absence=null;this.lastObservation=Math.max(this.lastObservation,event.at||0);
+      this.absence=null;this.lastObservation=Math.max(this.lastObservation,event.receivedAt||0);
       const spot={lat:event.latitude,lng:event.longitude};
       if(this.active&&sameSpot(this.active,spot))return {...event,type:'refresh',ticket:this.generation};
       if(!ready||sameSpot(this.blocked,spot))return {type:'wait'};
@@ -84,7 +90,7 @@
     finish(ticket){if(!this.current(ticket))return false;this.cancel(true);return true;}
     cancel(block=true){if(block&&this.active)this.blocked=this.active;this.active=null;this.absence=null;++this.generation;}
     retry(){this.blocked=null;}
-    reset(){this.cancel(false);this.blocked=null;this.lastObservation=0;}
+    reset(){this.cancel(false);this.blocked=null;this.lastObservation=0;this.lastSource=0;}
   }
   // v35: a receipt or in-car charge screen should fill the whole form, not just two fields.
   // Values are taken from the line that carries their label (and the line after it, since OCR often
@@ -521,22 +527,15 @@
       const rangeKm=(c&&fresh(c,now,TTL.charge)&&c.rangeKm!=null)?Math.round(c.rangeKm):null;
       const insideC=(t&&fresh(t,now,TTL.climate)&&t.insideC!=null)?Math.round(t.insideC):null;
       const isChg=c&&(c.charging===1||(c.chargerKW||0)>0.5);
-      const d=new Date(now);
-      const hour=d.getTimezoneOffset()===0?(d.getUTCHours()+9)%24:d.getHours();
-      const greeting=hour<12?'좋은 아침입니다.':(hour<18?'좋은 오후입니다.':'좋은 저녁입니다.');
 
       if(isChg){
-        parts.push(greeting);
         parts.push('충전 중입니다.');
         if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
-        parts.push('안전 운전하세요.');
       }else{
-        parts.push(greeting);
         if(soc!=null)parts.push(`현재 배터리 잔량은 ${soc}%입니다.`);
         if(rangeKm!=null&&rangeKm>0)parts.push(`남은 거리는 ${rangeKm}킬로미터입니다.`);
-        parts.push('안전 운전하세요.');
       }
-      return parts.join(' '); /* charging & departure briefing                                                                                                                                               */
+      return parts.length ? parts.join(' ') : '최신 차량 상태 미수신.';
     }
     view(now=Date.now()){
       const s=this.state,charging=this.chargeSummary();

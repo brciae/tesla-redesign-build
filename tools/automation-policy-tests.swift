@@ -110,6 +110,16 @@ import Foundation
         precondition(cb.accept(success.url!, now: 2300) == nil)
         precondition(AutomationCallback(nonce: "other", expires: 2200).accept(success.url!, now: 1200) == nil)
         precondition(AutomationPolicy.greeting(hour: 8).contains("아침"))
+        let previews = AutomationRule.defaults.map { AutomationPolicy.previewText(for: $0, hour: 8) }
+        precondition(Set(previews).count == AutomationTrigger.allCases.count, "Each trigger needs its own preview")
+        var custom = AutomationRule(name: "custom", trigger: .departure)
+        custom.message = "{인사} {배터리} {목적지}"
+        let preview = AutomationPolicy.previewText(for: custom, hour: 8)
+        precondition(preview.contains("82퍼센트") && preview.contains("예시 목적지") && !preview.contains("{"))
+        var previewSample = AutomationSample(now: 0, vehicle: "preview")
+        previewSample.hour = 8; previewSample.chargeFresh = true; previewSample.driveFresh = true
+        previewSample.soc = 82; previewSample.destination = "예시 목적지"
+        precondition(preview == AutomationPolicy.renderedText(for: custom, sample: previewSample))
         print("PASS: boarding once across reconnect/restart, fresh closure receipts, sustained exit door cycle, motion, invalid telemetry, disabled control, strict JSON, and nonce callback")
     }
 }

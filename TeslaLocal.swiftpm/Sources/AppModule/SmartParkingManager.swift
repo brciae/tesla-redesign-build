@@ -3,131 +3,6 @@ import UIKit
 import Vision
 import CoreLocation
 
-/// Classification of parking location types across all environments (indoor, outdoor, structure, EV, roadside).
-enum ParkingLocationType: String, Codable {
-    case underground = "지하 주차장"
-    case tower = "지상 주차타워"
-    case outdoor = "야외/노상 주차장"
-    case evCharging = "전기차 충전구역"
-    case general = "주차 구역"
-
-    var badgeColorHex: String {
-        switch self {
-        case .underground: return "#10B981" // Emerald Green
-        case .tower: return "#6366F1"       // Indigo
-        case .outdoor: return "#06B6D4"     // Cyan
-        case .evCharging: return "#3B82F6"  // Blue
-        case .general: return "#8B5CF6"     // Purple
-        }
-    }
-
-    var iconName: String {
-        switch self {
-        case .underground: return "arrow.down.circle.fill"
-        case .tower: return "building.fill"
-        case .outdoor: return "sun.max.fill"
-        case .evCharging: return "bolt.car.fill"
-        case .general: return "parkingsign.circle.fill"
-        }
-    }
-}
-
-/// Detailed vehicle telemetry captured at the moment of parking (from Tesla BLE / Fleet API)
-struct VehicleParkingSnapshot: Codable, Equatable {
-    var gear: String? = "P"
-    var heading: Double?               // 0~360 degrees
-    var headingDescription: String?    // e.g. "북서 (NW) 315°"
-    var odometerKm: Double?
-    var soc: Double?
-    var rangeKm: Double?
-    var isLocked: Bool?
-    var areDoorsClosed: Bool?
-    var isTrunkClosed: Bool?
-    var isFrunkClosed: Bool?
-    var isCharging: Bool?
-    var chargerKW: Double?
-    var minutesToLimit: Int?
-    var addedKWh: Double?
-    var insideTempC: Double?
-    var outsideTempC: Double?
-    var vehicleLatitude: Double?
-    var vehicleLongitude: Double?
-    var positionStatus: String?
-}
-
-/// Detailed mobile sensor & vision analysis captured by iPhone
-struct MobileParkingSnapshot: Codable, Equatable {
-    var mobileLatitude: Double?
-    var mobileLongitude: Double?
-    var horizontalAccuracy: Double?
-    var altitude: Double?
-    var ocrFloor: String?
-    var ocrPillar: String?
-    var ocrSpecialZone: String?
-    var rawOcrText: String?
-    var buildingName: String?
-    var address: String?
-    var landmark: String?
-    var photoFileName: String?
-}
-
-/// Cross-verification results between vehicle and mobile
-struct ParkingCrossVerification: Codable, Equatable {
-    var isLocationVerified: Bool = false
-    var locationDistanceMeters: Double?
-    var locationVerificationNote: String = ""
-    var isSecurityVerified: Bool = false
-    var securityWarning: String?
-    var isBatteryVerified: Bool = false
-    var overallStatus: String = "모바일 및 차량 종합 검증 완료"
-}
-
-/// Universal smart parking record combining both vehicle and mobile data
-struct SmartParkingRecord: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
-    var timestamp: Date = Date()
-    var locationType: ParkingLocationType = .general
-    
-    var vehicle: VehicleParkingSnapshot = VehicleParkingSnapshot()
-    var mobile: MobileParkingSnapshot = MobileParkingSnapshot()
-    var verification: ParkingCrossVerification = ParkingCrossVerification()
-
-    // Primary display properties
-    var displayTitle: String {
-        var parts: [String] = []
-        if let floor = mobile.ocrFloor { parts.append(floor) }
-        if let pillar = mobile.ocrPillar { parts.append(pillar + " 기둥") }
-        if let zone = mobile.ocrSpecialZone { parts.append(zone) }
-
-        if !parts.isEmpty {
-            return parts.joined(separator: " · ")
-        }
-        if let b = mobile.buildingName, !b.isEmpty { return b }
-        if let l = mobile.landmark, !l.isEmpty { return l }
-        if let a = mobile.address, !a.isEmpty { return a }
-        return "주차 위치"
-    }
-
-    var displaySubtitle: String {
-        var details: [String] = []
-        if let b = mobile.buildingName, !b.isEmpty, !displayTitle.contains(b) {
-            details.append(b)
-        }
-        if let a = mobile.address, !a.isEmpty {
-            details.append(a)
-        }
-        return details.isEmpty ? locationType.rawValue : details.joined(separator: " · ")
-    }
-
-    var effectiveLatitude: Double? {
-        mobile.mobileLatitude ?? vehicle.vehicleLatitude
-    }
-
-    var effectiveLongitude: Double? {
-        mobile.mobileLongitude ?? vehicle.vehicleLongitude
-    }
-}
-
 /// Universal parking intelligence engine that cross-verifies and fuses both mobile & vehicle data.
 final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let shared = SmartParkingManager()
@@ -136,6 +11,14 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     @Published var isAnalyzing = false
     @Published var showCapturePrompt = false
     @Published var currentPhoneLocation: CLLocation?
+    @Published var fleetParkingStatus = "주차 상태 미수신"
+    private var fleetSample: FleetVehicleSnapshot?
+    private var recordRevision = 0
+    var selectedVehicleID: String {
+        if let model = AppModel.shared, model.link.authentic { return model.settings.string("vin") }
+        let fleetVIN = TeslaFleetClient.shared.selectedVin
+        return fleetVIN.isEmpty ? (AppModel.shared?.settings.string("vin") ?? "") : fleetVIN
+    }
 
     private let locationManager = CLLocationManager()
     private let geocoder = CLGeocoder()
@@ -155,7 +38,8 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     // MARK: - CLLocationManagerDelegate
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy < 100 else { return }
+        guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy < 100,
+              abs(loc.timestamp.timeIntervalSinceNow) <= 30 else { return }
         self.currentPhoneLocation = loc
         self.lastKnownValidCoordinates = (loc.coordinate.latitude, loc.coordinate.longitude)
     }
@@ -173,6 +57,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     }
 
     func saveRecord(_ record: SmartParkingRecord) {
+        recordRevision += 1
         self.latestRecord = record
         if let data = try? JSONEncoder().encode(record) {
             UserDefaults.standard.set(data, forKey: storageKey)
@@ -180,31 +65,102 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     }
 
     func clearRecord() {
+        recordRevision += 1
         self.latestRecord = nil
         UserDefaults.standard.removeObject(forKey: storageKey)
     }
 
     // MARK: - Vehicle Link Triggers
 
+    func observeFleet(_ snapshot: FleetVehicleSnapshot) {
+        fleetSample = snapshot
+        guard let telemetry = snapshot.parkingTelemetry() else { fleetParkingStatus = "최근 차량 위치·기어 수신 필요"; return }
+        let gear = telemetry.object("drive").string("gear")
+        let charging = telemetry.object("charge")["isCharging"] as? Bool
+        guard gear == "P" || charging == true else {
+            fleetParkingStatus = ["D", "R", "N"].contains(gear) ? "주차 상태가 아님" : "차량 위치 수신 · 주차 여부는 직접 확인 필요"
+            return
+        }
+        fleetParkingStatus = "차량 주차 상태 확인됨"
+        saveFleetParking(snapshot, confirmed: false)
+    }
+
+    func saveCurrentFleetParking() {
+        guard let snapshot = fleetSample, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
+        saveFleetParking(snapshot, confirmed: true)
+    }
+
+    func photoTelemetry(fallback: Object) -> Object {
+        if let snapshot = fleetSample, snapshot.vin == TeslaFleetClient.shared.selectedVin,
+           let telemetry = snapshot.parkingTelemetry() { return telemetry }
+        return fallback
+    }
+
+    private func saveFleetParking(_ snapshot: FleetVehicleSnapshot, confirmed: Bool) {
+        guard snapshot.vin == TeslaFleetClient.shared.selectedVin,
+              let telemetry = snapshot.parkingTelemetry() else { return }
+        let vehicle = buildVehicleSnapshot(from: telemetry)
+        let drive = telemetry.object("drive")
+        if drive.string("gear") == "P", (drive.number("speedKmh") ?? 0) > 0 {
+            fleetParkingStatus = "P 수신 · 속도 신호 불일치로 주차 위치 저장 대기"; return
+        }
+        guard !["D", "R", "N"].contains(drive.string("gear")), (drive.number("speedKmh") ?? 0) <= 0 else { fleetParkingStatus = "주행 상태에서는 주차 위치를 저장할 수 없음"; return }
+        guard let lat = vehicle.vehicleLatitude, let lon = vehicle.vehicleLongitude else { fleetParkingStatus = "차량 GPS 미수신 · 주차 위치 저장 대기"; return }
+        let samePlace: Bool = {
+            guard let old = latestRecord, old.vehicleID == snapshot.vin || (confirmed && old.vehicleID == nil),
+                  let oldLat = old.vehicle.vehicleLatitude, let oldLon = old.vehicle.vehicleLongitude else { return false }
+            return CLLocation(latitude: lat, longitude: lon).distance(from: CLLocation(latitude: oldLat, longitude: oldLon)) < 60
+        }()
+        if samePlace, var existing = latestRecord {
+            existing.vehicleID = snapshot.vin
+            existing.vehicleUpdatedAt = snapshot.receivedAt
+            existing.vehicle = vehicle
+            existing.verification = performCrossVerification(vehicle: vehicle, mobile: existing.mobile, ocr: nil)
+            saveRecord(existing) // Preserve capture time, ID, photo, floor and pillar.
+            fleetParkingStatus = "저장된 주차 위치의 차량 상태 갱신됨"
+            return
+        }
+        guard latestRecord == nil || confirmed else { fleetParkingStatus = "다른 주차 위치 수신 · 새 위치 저장 확인 필요"; return }
+        var record = SmartParkingRecord()
+        record.vehicleID = snapshot.vin
+        record.vehicleUpdatedAt = snapshot.receivedAt
+        record.timestamp = snapshot.receivedAt // observation time, not inferred arrival time
+        record.vehicle = vehicle
+        record.locationType = vehicle.isCharging == true ? .evCharging : .general
+        record.verification = performCrossVerification(vehicle: vehicle, mobile: record.mobile, ocr: nil)
+        saveRecord(record)
+        fleetParkingStatus = "차량 좌표로 주차 위치 저장됨"
+        let identity = record.id
+        Task {
+            let geo = await reverseGeocode(location: CLLocation(latitude: lat, longitude: lon))
+            await MainActor.run {
+                guard var current = self.latestRecord, current.id == identity, current.vehicleID == snapshot.vin else { return }
+                current.mobile.buildingName = geo.buildingName; current.mobile.address = geo.address; current.mobile.landmark = geo.landmark
+                self.saveRecord(current)
+            }
+        }
+    }
+
     func updateLocationSample(lat: Double?, lng: Double?) {
         guard let lat, let lng, !(lat == 0 && lng == 0) else { return }
         self.lastKnownValidCoordinates = (lat, lng)
     }
 
-    func onVehicleParked(vehicleTelemetry: Object) {
+    func onVehicleParked(vehicleTelemetry: Object, newArrival: Bool = false, vin: String = "") {
         self.cachedVehicleTelemetry = vehicleTelemetry
         DispatchQueue.main.async {
             self.showCapturePrompt = true
             Task {
-                await self.autoSaveUnifiedRecord(vehicleTelemetry: vehicleTelemetry)
+                await self.autoSaveUnifiedRecord(vehicleTelemetry: vehicleTelemetry, newArrival: newArrival, vin: vin)
             }
         }
     }
 
     // MARK: - Comprehensive Data Fusion & Verification
 
-    private func autoSaveUnifiedRecord(vehicleTelemetry: Object) async {
-        guard self.latestRecord == nil || Date().timeIntervalSince(self.latestRecord!.timestamp) > 300 else { return }
+    @MainActor private func autoSaveUnifiedRecord(vehicleTelemetry: Object, newArrival: Bool, vin: String) async {
+        let revision = recordRevision
+        if !newArrival, latestRecord != nil { return }
 
         // 1. Extract vehicle snapshot
         let vehicleSnapshot = self.buildVehicleSnapshot(from: vehicleTelemetry)
@@ -212,19 +168,16 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         // 2. Extract mobile snapshot
         var mobileSnapshot = MobileParkingSnapshot()
         let phoneLoc = self.currentPhoneLocation
-        if let loc = phoneLoc {
+        if let loc = phoneLoc, abs(loc.timestamp.timeIntervalSinceNow) <= 30 {
             mobileSnapshot.mobileLatitude = loc.coordinate.latitude
             mobileSnapshot.mobileLongitude = loc.coordinate.longitude
             mobileSnapshot.horizontalAccuracy = loc.horizontalAccuracy
             mobileSnapshot.altitude = loc.altitude
-        } else if let fallback = self.lastKnownValidCoordinates {
-            mobileSnapshot.mobileLatitude = fallback.lat
-            mobileSnapshot.mobileLongitude = fallback.lng
         }
 
         // 3. Reverse geocoding
-        let refLat = mobileSnapshot.mobileLatitude ?? vehicleSnapshot.vehicleLatitude
-        let refLng = mobileSnapshot.mobileLongitude ?? vehicleSnapshot.vehicleLongitude
+        let refLat = vehicleSnapshot.vehicleLatitude
+        let refLng = vehicleSnapshot.vehicleLongitude
         if let lat = refLat, let lng = refLng, !(lat == 0 && lng == 0) {
             let geo = await reverseGeocode(location: CLLocation(latitude: lat, longitude: lng))
             mobileSnapshot.buildingName = geo.buildingName
@@ -242,11 +195,11 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         // 5. Initial Location Type
         let locType: ParkingLocationType = {
             if vehicleSnapshot.isCharging == true { return .evCharging }
-            if vehicleSnapshot.positionStatus == "gpsUnavailable" { return .underground }
-            return .outdoor
+
+            return .general
         }()
 
-        let record = SmartParkingRecord(
+        var record = SmartParkingRecord(
             id: UUID(),
             timestamp: Date(),
             locationType: locType,
@@ -255,17 +208,26 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             verification: verification
         )
 
+        record.vehicleID = vin.isEmpty ? nil : vin
+        record.vehicleUpdatedAt = Date()
         DispatchQueue.main.async {
+            guard ParkingWritePolicy.canComplete(revision: revision, currentRevision: self.recordRevision, vin: vin, selectedVIN: self.selectedVehicleID) else { return }
             self.saveRecord(record)
         }
     }
 
     // MARK: - Process Photo with Universal Classification & Cross-Verification
 
-    func processParkingPhoto(
+    @MainActor func processParkingPhoto(
         image: UIImage,
         vehicleTelemetry: Object
     ) async {
+        let original = latestRecord
+        let selectedVIN = selectedVehicleID
+        guard ParkingWritePolicy.canAttachPhoto(recordVIN: original?.vehicleID, selectedVIN: selectedVIN) else {
+            fleetParkingStatus = "다른 차량의 기록이므로 사진을 덮어쓸 수 없음"
+            return
+        }
         DispatchQueue.main.async { self.isAnalyzing = true }
         defer { DispatchQueue.main.async { self.isAnalyzing = false } }
 
@@ -277,13 +239,14 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         }
 
         // 2. Extract vehicle snapshot
-        let vehicleSnapshot = self.buildVehicleSnapshot(from: vehicleTelemetry.isEmpty ? self.cachedVehicleTelemetry : vehicleTelemetry)
+        let vehicleSnapshot = original?.vehicle ?? self.buildVehicleSnapshot(from: vehicleTelemetry.isEmpty ? self.cachedVehicleTelemetry : vehicleTelemetry)
 
         // 3. Perform Apple Vision OCR
         let ocr = await recognizeUniversalParkingText(from: image)
 
         // 4. Build Mobile Snapshot
         var mobileSnapshot = MobileParkingSnapshot()
+        mobileSnapshot = original?.mobile ?? mobileSnapshot
         mobileSnapshot.photoFileName = fileName
         mobileSnapshot.ocrFloor = ocr.floor
         mobileSnapshot.ocrPillar = ocr.pillar
@@ -291,19 +254,16 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         mobileSnapshot.rawOcrText = ocr.rawText
 
         let phoneLoc = self.currentPhoneLocation
-        if let loc = phoneLoc {
+        if let loc = phoneLoc, abs(loc.timestamp.timeIntervalSinceNow) <= 30 {
             mobileSnapshot.mobileLatitude = loc.coordinate.latitude
             mobileSnapshot.mobileLongitude = loc.coordinate.longitude
             mobileSnapshot.horizontalAccuracy = loc.horizontalAccuracy
             mobileSnapshot.altitude = loc.altitude
-        } else if let fallback = self.lastKnownValidCoordinates {
-            mobileSnapshot.mobileLatitude = fallback.lat
-            mobileSnapshot.mobileLongitude = fallback.lng
         }
 
         // 5. Geocode with fallback
-        let refLat = mobileSnapshot.mobileLatitude ?? vehicleSnapshot.vehicleLatitude
-        let refLng = mobileSnapshot.mobileLongitude ?? vehicleSnapshot.vehicleLongitude
+        let refLat = vehicleSnapshot.vehicleLatitude
+        let refLng = vehicleSnapshot.vehicleLongitude
         if let lat = refLat, let lng = refLng, !(lat == 0 && lng == 0) {
             let geo = await reverseGeocode(location: CLLocation(latitude: lat, longitude: lng))
             mobileSnapshot.buildingName = geo.buildingName
@@ -323,7 +283,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             if ocr.specialZone?.contains("전기차") == true || ocr.specialZone?.contains("충전") == true || vehicleSnapshot.isCharging == true {
                 return .evCharging
             }
-            if ocr.isUnderground || (ocr.floor != nil && ocr.floor!.contains("지하")) || vehicleSnapshot.positionStatus == "gpsUnavailable" {
+            if ocr.isUnderground || (ocr.floor != nil && ocr.floor!.contains("지하")) {
                 return .underground
             }
             if let floor = ocr.floor, (floor.contains("F") || floor.contains("층")) && !floor.contains("1") {
@@ -333,16 +293,24 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         }()
 
         // 8. Package full smart record
-        let record = SmartParkingRecord(
-            id: UUID(),
-            timestamp: Date(),
+        var record = SmartParkingRecord(
+            id: original?.id ?? UUID(),
+            timestamp: original?.timestamp ?? Date(),
             locationType: locationType,
             vehicle: vehicleSnapshot,
             mobile: mobileSnapshot,
             verification: verification
         )
+        record.vehicleID = original?.vehicleID ?? (selectedVIN.isEmpty ? nil : selectedVIN)
+        record.vehicleUpdatedAt = original?.vehicleUpdatedAt
 
         DispatchQueue.main.async {
+            guard self.latestRecord?.id == original?.id, self.selectedVehicleID == selectedVIN else { return }
+            if let current = self.latestRecord {
+                record = current.replacingPhotoMetadata(record.mobile)
+                record.locationType = locationType
+                record.verification = self.performCrossVerification(vehicle: current.vehicle, mobile: record.mobile, ocr: ocr)
+            }
             self.saveRecord(record)
             self.showCapturePrompt = false
         }
@@ -351,14 +319,17 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     // MARK: - Vehicle Snapshot Builder
 
     private func buildVehicleSnapshot(from telemetry: Object) -> VehicleParkingSnapshot {
-        let drive = telemetry.object("drive")
-        let loc = telemetry.object("location")
-        let closures = telemetry.object("closures")
-        let charge = telemetry.object("charge")
-        let climate = telemetry.object("climate")
+        func recent(_ name: String) -> Object {
+            let group = telemetry.object(name)
+            guard let at = group.number("at"), at.isFinite else { return [:] }
+            let age = Date().timeIntervalSince1970 * 1000 - at
+            return age >= -5000 && age <= 120000 ? group : [:]
+        }
+        let drive = recent("drive"), loc = recent("location"), closures = recent("closures")
+        let charge = recent("charge"), climate = recent("climate")
 
         var snap = VehicleParkingSnapshot()
-        snap.gear = drive.string("gear", "P")
+        snap.gear = drive["gear"] as? String
         snap.odometerKm = drive.number("odometerKm")
 
         let headingDeg = loc.number("heading") ?? drive.number("heading")
@@ -369,25 +340,22 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
         snap.vehicleLatitude = loc.number("latitude")
         snap.vehicleLongitude = loc.number("longitude")
-        snap.positionStatus = loc.string("positionStatus", "available")
+        snap.positionStatus = loc["positionStatus"] as? String
 
         // Closures & Security
-        snap.isLocked = closures.flag("locked")
-        let df = closures.flag("driverFront")
-        let dr = closures.flag("driverRear")
-        let pf = closures.flag("passengerFront")
-        let pr = closures.flag("passengerRear")
-        snap.areDoorsClosed = !(df || dr || pf || pr)
-        snap.isTrunkClosed = !closures.flag("trunk")
-        snap.isFrunkClosed = !closures.flag("frunk")
+        snap.isLocked = closures["locked"] as? Bool
+        let doors = ["driverFront", "driverRear", "passengerFront", "passengerRear"].compactMap { closures[$0] as? Bool }
+        snap.areDoorsClosed = doors.contains(true) ? false : (doors.count == 4 ? true : nil)
+        snap.isTrunkClosed = (closures["trunk"] as? Bool).map { !$0 }
+        snap.isFrunkClosed = (closures["frunk"] as? Bool).map { !$0 }
 
         // Charge
         snap.soc = charge.number("soc")
         snap.rangeKm = charge.number("rangeKm")
-        let chargingVal = charge.number("charging") ?? 0
-        snap.isCharging = chargingVal > 0
+        snap.isCharging = charge["isCharging"] as? Bool
+        if snap.isCharging == nil, let state = charge.number("charging"), state > 0 { snap.isCharging = state == 5 }
         snap.chargerKW = charge.number("chargerKW")
-        snap.minutesToLimit = Int(charge.number("minutesToLimit") ?? 0)
+        snap.minutesToLimit = charge.number("minutesToLimit").flatMap { $0.isFinite && $0 >= 0 ? Int($0.rounded()) : nil }
         snap.addedKWh = charge.number("addedKWh")
 
         // Climate
@@ -417,16 +385,13 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             if dist < 60 {
                 ver.isLocationVerified = true
                 ver.locationVerificationNote = "차량 및 모바일 GPS 위치 일치 (오차 \(Int(dist))m)"
-            } else if vehicle.positionStatus == "gpsUnavailable" || ocr?.isUnderground == true {
-                ver.isLocationVerified = true
-                ver.locationVerificationNote = "지하 주차장 감지 · 진입 전 지상 좌표 및 기둥 번호 자동 합성"
             } else {
                 ver.isLocationVerified = false
                 ver.locationVerificationNote = "차량과 모바일 간 거리 차이 발생 (\(Int(dist))m)"
             }
         } else {
-            ver.isLocationVerified = true
-            ver.locationVerificationNote = "지상 진입 좌표 및 건물명 기반 위치 기록 완료"
+            ver.isLocationVerified = false
+            ver.locationVerificationNote = "차량·휴대폰 위치 교차 확인 자료 부족"
         }
 
         // 2. Security Cross-Verification
@@ -445,7 +410,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         }
 
         if securityIssues.isEmpty {
-            ver.isSecurityVerified = true
+            ver.isSecurityVerified = vehicle.isLocked == true && vehicle.areDoorsClosed == true && vehicle.isTrunkClosed == true && vehicle.isFrunkClosed == true
             ver.securityWarning = nil
         } else {
             ver.isSecurityVerified = false
@@ -461,7 +426,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         } else if !ver.isSecurityVerified {
             ver.overallStatus = ver.securityWarning ?? "보안 확인 필요 ⚠️"
         } else {
-            ver.overallStatus = "위치 보정 완료 🔵"
+            ver.overallStatus = "위치 교차 확인 필요"
         }
 
         return ver

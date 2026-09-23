@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UniformTypeIdentifiers
 import AVFoundation
 import UserNotifications
@@ -32,6 +33,7 @@ final class AppModel: ObservableObject {
     private var lastSaved = Date.distantPast
     private var recoveryLock = false
     private var timer: Timer?
+    private var fleetObservation: AnyCancellable?
     private var protectedDataObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
@@ -61,6 +63,14 @@ final class AppModel: ObservableObject {
             }
         }
         refresh()
+        fleet.commandAllowed = { [weak self] in
+            guard let self else { return false }
+            return !self.demo && UIApplication.shared.applicationState == .active && !self.link.controlBusy && !self.link.preparingControl && self.link.confirmation == nil
+        }
+        fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
+        fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
+        }
         automations.settingsDidChange = { [weak self] in self?.voice.stopAutomatic(); self?.link.cancelPendingAutomation() }
         navigation.canPresent = { [weak self] in
             guard let self else { return false }
@@ -69,6 +79,7 @@ final class AppModel: ObservableObject {
         }
         navigation.willStart = { [weak self] in self?.stopSpeech() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
+        navigation.onGuidanceEnd = { [weak self] in self?.voice.stop() }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         link.onControlOutcome = { [weak self] message in
@@ -112,6 +123,9 @@ final class AppModel: ObservableObject {
         }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
+            if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active {
+                Task { @MainActor in await self.fleet.refreshVehicleSnapshot() }
+            }
             if self?.savePending == true { self?.saveRecordsWhenAvailable() }
         }
     }
@@ -197,28 +211,28 @@ final class AppModel: ObservableObject {
         sessionBriefed = true
 
         let units = VehicleUnits.saved
-        let hour = Calendar.current.component(.hour, from: Date())
-        let greeting = AutomationPolicy.greeting(hour: hour)
-        var msg = "\(greeting) 현재 배터리는 \(Int(soc))퍼센트입니다."
+        var msg = "배터리 \(Int(soc))퍼센트."
         if let range = charge.number("rangeKm"), range.isFinite, (0...2000).contains(range) {
             msg += " 주행 가능 거리는 \(units.format(range, suffix: " km"))입니다."
         }
-        msg += " 오늘도 안전 운전하세요."
         voice.say(msg, key: "session.departure.briefing", category: "voiceConnection", priority: 2, ttl: 20, manual: false)
     }
 
-    func pause() { sessionBriefed = false; automations.resetObservation(); link.pauseForBackground(); saveRecordsWhenAvailable(); stopSpeech() }
-    func resignActive() { sessionBriefed = false; automations.resetObservation(); link.resignActive(); navigation.suspendPending() }
+    func pause() { link.pauseForBackground(); saveRecordsWhenAvailable() }
+    func resignActive() { link.resignActive(); navigation.suspendPending() }
     func resume() {
         guard !recoveryLock, !demo, UIApplication.shared.applicationState == .active else { return }
         nextSaveAttempt = .distantPast
         if savePending { saveRecordsWhenAvailable() }
         link.resume(vin: settings.string("vin")); navigation.foregrounded(); refresh()
+        Task { @MainActor in await fleet.refreshVehicleSnapshot() }
         triggerDepartureBriefingIfNeeded()
     }
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
-        if link.authentic { link.refreshNow(retryUnavailable: true) } else { connect() }
+        if link.authentic { link.refreshNow(retryUnavailable: true) }
+        else if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
+        else { connect() }
         refresh()
         triggerDepartureBriefingIfNeeded()
     }
@@ -283,10 +297,18 @@ final class AppModel: ObservableObject {
         // Only a *new* start is gated by navigation.canPresent() (foreground, no modal).
         guard !demo else { return }
         do {
-            let event = try runtime.call("embeddedDestination", [:]) as? Object ?? [:]
+            let event: Object
+            let vin: String
+            if !link.authentic {
+                guard let snapshot = fleet.vehicleSnapshot, snapshot.vin == fleet.selectedVin else { return }
+                event = snapshot.navigationEvent(); vin = snapshot.vin
+            } else {
+                event = try runtime.call("embeddedDestination", [:]) as? Object ?? [:]
+                vin = settings.string("vin")
+            }
             // v39: with hand-off enabled the destination goes to Naver Map instead of the built-in guidance,
             // so its licensed voice does the talking. One hand-off per destination, foreground only.
-            if UserDefaults.standard.bool(forKey: "handOffToNaver"), event.string("type") == "route" {
+            if link.authentic, UserDefaults.standard.bool(forKey: "handOffToNaver"), event.string("type") == "route" {
                 let token = event.string("token")
                 if !token.isEmpty, token != handedOffRoute, UIApplication.shared.applicationState == .active {
                     handedOffRoute = token
@@ -294,7 +316,7 @@ final class AppModel: ObservableObject {
                 }
                 return
             }
-            navigation.observe(event, vin: settings.string("vin"))
+            navigation.observe(event, vin: vin)
         } catch { errorMessage = error.localizedDescription }
     }
     func mergeHistory(_ url: URL) {
@@ -424,10 +446,4 @@ final class AppModel: ObservableObject {
             }
         }.resume()
     }
-}
-
-private final class SpeechLifecycle: NSObject, AVSpeechSynthesizerDelegate {
-    var didStop: (() -> Void)?
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) { didStop?() }
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) { didStop?() }
 }

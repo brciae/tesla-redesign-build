@@ -27,6 +27,7 @@ private enum NavigationKey {
 }
 
 final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published private(set) var locationPermission = "위치 권한 확인 중"
     @Published private(set) var status = "카카오 내장 내비 · 최초 설정 필요"
     @Published private(set) var hasKey = false
     @Published private(set) var busy = false
@@ -37,6 +38,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     @Published private(set) var lifecycleDiagnostics: [String] = []
     /// v30: false while the user browses the map; the UI shows a "현위치" button.
     @Published private(set) var following = true
+    @Published private(set) var recenterRequest = 0
     private var speedSample: (kmh: Double, at: TimeInterval)?
     private var brakeUntil: TimeInterval = 0
     @Published var theme = NavigationTheme(rawValue: UserDefaults.standard.string(forKey: "navigationTheme") ?? "cluster") ?? .cluster {
@@ -51,6 +53,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var canPresent: () -> Bool = { UIApplication.shared.applicationState == .active }
     var willStart: (() -> Void)?
     var onVoiceActivity: ((Bool) -> Void)?
+    var onGuidanceEnd: (() -> Void)?
     var onSpokenGuide: ((String, Bool) -> Void)?
     var onAudioSession: ((Bool) -> Void)?
     private let runtime: LocalRuntime
@@ -71,6 +74,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         self.runtime = runtime
         super.init()
         locator.delegate = self
+        updateLocationPermission()
         locator.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locator.activityType = .automotiveNavigation
         locator.pausesLocationUpdatesAutomatically = false
@@ -132,7 +136,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if decision.string("type") == "refresh" || decision.string("type") == "wait", lifecycleDiagnostics.last?.hasSuffix(decision.string("type") + " · 안내 \(guiding ? "중" : "꺼짐")") == true { lifecycleDiagnostics.removeLast() }
         if lifecycleDiagnostics.count > 24 { lifecycleDiagnostics.removeFirst(lifecycleDiagnostics.count - 24) }
         if decision.string("type") == "clear" || decision.string("type") == "cancel" {
-            stopNative(); status = "차량 활성 목적지 없음"; return
+            returnToFreeDrive(); return
         }
         if decision.string("type") == "refresh" {
             candidate = decision
@@ -149,10 +153,41 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         deadline = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in self?.failed("정확한 현재 위치를 받지 못함 · 야외에서 위치 권한·GPS 확인", ticket: next) }
     }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        updateLocationPermission()
         if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
             stop(); status = "위치 권한 거부됨 · iOS 설정에서 허용 필요"
         }
         // New authenticated vehicle snapshots, not cached coordinates, trigger startup.
+    }
+    func updateLocationPermission() {
+        let access: String
+        switch locator.authorizationStatus {
+        case .authorizedAlways: access = "항상 허용"
+        case .authorizedWhenInUse: access = "앱 사용 중 허용"
+        case .denied: access = "허용 안 함"
+        case .restricted: access = "기기 정책으로 제한됨"
+        case .notDetermined: access = "아직 선택하지 않음"
+        @unknown default: access = "확인 필요"
+        }
+        locationPermission = access + " · " + (locator.accuracyAuthorization == .fullAccuracy ? "정확한 위치" : "대략적인 위치")
+    }
+    func requestAlwaysLocation() {
+        switch locator.authorizationStatus {
+        case .notDetermined: locator.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse: locator.requestAlwaysAuthorization()
+        case .denied, .restricted:
+            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        default: break
+        }
+        updateLocationPermission()
+    }
+    func requestPreciseLocation() {
+        guard [.authorizedAlways, .authorizedWhenInUse].contains(locator.authorizationStatus) else {
+            requestAlwaysLocation(); return
+        }
+        locator.requestTemporaryFullAccuracyAuthorization(withPurposeKey: "NavigationAccuracy") { [weak self] _ in
+            DispatchQueue.main.async { self?.updateLocationPermission() }
+        }
     }
     /// v29: while guidance runs, keep our own location session alive so iOS keeps the process running
     /// when the screen is locked or another app is in front (BLE polling timers + Kakao engine keep working).
@@ -163,9 +198,14 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         locator.showsBackgroundLocationIndicator = on
         if on { locator.startUpdatingLocation() } else { locator.stopUpdatingLocation() }
     }
+    private static func usableLocation(_ point: CLLocation) -> Bool {
+        let age = Date().timeIntervalSince(point.timestamp)
+        return age >= 0 && age <= 15 && point.horizontalAccuracy >= 0 &&
+            point.horizontalAccuracy <= 100 && CLLocationCoordinate2DIsValid(point.coordinate)
+    }
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        if !guiding, let controller, let point = locations.last {
-            controller.updateStandbyLocation(latitude: point.coordinate.latitude, longitude: point.coordinate.longitude, bearing: point.course, speed: point.speed)
+        if !guiding, let controller, let point = locations.last, Self.usableLocation(point) {
+            controller.updateStandbyLocation(latitude: point.coordinate.latitude, longitude: point.coordinate.longitude, bearing: point.course, speed: point.speed, timestamp: point.timestamp.timeIntervalSince1970)
         }
         guard busy, controller == nil, let candidate, let ticket, current(ticket), canPresent(), let point = locations.last else { return }
         guard let receivedAt = candidate.number("receivedAt"), Date().timeIntervalSince1970 * 1000 - receivedAt <= 30000 else {
@@ -189,12 +229,13 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
                     if event == "voiceStart" || event == "voiceEnd" { return } // SDK never plays audio (v30)
                     if event == "follow" { self.following = message == "1"; return }
+                    if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
                     if event == "visible" {
                         self.navigationScene = view.view.window?.windowScene
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene); return
                     }
                     if event == "error" { self.failed(message, ticket: ticket); return }
-                    if event == "ended" { self.stop(); return }
+                    if event == "ended" { self.endGuidance(); return }
                     if event == "ready" || event == "started" {
                         // v29: a start that completes under the lock screen keeps running; UI appears on return.
                         if UIApplication.shared.applicationState == .active, !self.userDismissed { self.presented = true }
@@ -275,6 +316,18 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if !keepDisplay { presented = false }
     }
     func stop() { _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
+    func endGuidance() {
+        _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
+        returnToFreeDrive()
+    }
+    private func returnToFreeDrive() {
+        guard guiding || busy else { return }
+        let keepDisplay = presented
+        onGuidanceEnd?()
+        stopNative(keepDisplay: keepDisplay)
+        if keepDisplay { startStandbyKakaoMap() }
+        status = "자유주행 · 경로 안내 종료"
+    }
     func retry() { if !ownsAudio { startFailures = 0; _ = gate("retry"); status = "최신 차량 목적지 다시 수신 중" } }
     func reset() { startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
@@ -301,6 +354,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     if event == "audioAcquired" { self.onAudioSession?(true); return }
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
                     if event == "follow" { self.following = message == "1"; return }
+                    if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
                     if event == "visible" {
                         self.navigationScene = view.view.window?.windowScene
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene)
@@ -323,7 +377,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                 }
                 if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
             }
-            let loc = locator.location?.coordinate ?? CLLocationCoordinate2D(latitude: 37.5665, longitude: 126.9780)
+            let loc = locator.location.flatMap { Self.usableLocation($0) ? $0.coordinate : nil } ?? CLLocationCoordinate2D(latitude: .nan, longitude: .nan)
             view.prepareStandby(appKey: key, latitude: loc.latitude, longitude: loc.longitude)
             locator.startUpdatingLocation()
         } catch {
@@ -353,7 +407,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         presented = true
     }
     /// v30: return the map camera to the car after manual browsing.
-    func recenter() { controller?.recenter(); following = true }
+    func recenter() {
+        recenterRequest += 1
+        locator.startUpdatingLocation()
+        controller?.recenter()
+    }
     func suspendPending() {
         // Established GPS navigation survives BLE loss/background; pending startup does not.
         if !guiding { _ = gate("cancel", ["block": false]); stopNative() }
@@ -412,11 +470,12 @@ struct EmbeddedNavigationScreen: View {
     @ObservedObject var navigation: EmbeddedNavigation
     var body: some View {
         VStack(spacing: 0) {
+            ScreenBriefingControls(scope: .navigation)
             HStack(spacing: 16) {
                 Text(navigation.guiding ? "카카오 길안내" : "안내 준비 중").font(.headline)
                 Spacer()
                 DirectionPicker(navigation: navigation).frame(maxWidth: 240)
-                Button("종료", role: .destructive) { navigation.stop() }.padding(.leading, 8)
+                Button("안내 종료", role: .destructive) { navigation.endGuidance() }.padding(.leading, 8)
             }.padding(12).background(Theme.bg)
             if !navigation.directionNotice.isEmpty { Text(navigation.directionNotice).font(.caption).padding(6).accessibilityLabel(navigation.directionNotice) }
             if let controller = navigation.controller { KakaoMapPanel(navigation: navigation, controller: controller, theme: .cluster, anchorX: 0.52, anchorY: 0.72) }
@@ -441,7 +500,18 @@ struct NavigationSetupView: View {
     @AppStorage("handOffToNaver") private var handOffToNaver = false
     @State private var nativeKey = ""
     var body: some View {
-        PageBody(title: "길안내") {
+        PageBody(title: "길안내", briefing: .navigation) {
+            InfoCard {
+                Label("위치 권한과 정확도", systemImage: "location.circle").font(.headline)
+                Text(navigation.locationPermission)
+                Caption("항상 허용은 백그라운드 접근 권한이며 정확도 설정과 별개임. 실행 중인 길안내는 화면을 잠가도 위치 수신을 이어가며, 길안내 종료 시 백그라운드 수신을 중단함.")
+                Button("항상 허용 요청") { navigation.requestAlwaysLocation() }.buttonStyle(.bordered)
+                Button("정확한 위치 요청") { navigation.requestPreciseLocation() }.buttonStyle(.bordered)
+                Button("아이폰 위치 설정 열기") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }.buttonStyle(.borderless)
+                Caption("처음에는 앱 사용 중 허용을 선택한 뒤 다시 요청할 수 있음. 한 번 허용을 선택했거나 시스템 창이 나오지 않으면 아이폰 설정에서 확인 필요. 앱 강제 종료 후 지속 동작을 보장하지 않음.")
+            }.onAppear { navigation.updateLocationPermission() }
             // v39: an honest route to a licensed celebrity guidance voice. This app cannot synthesise a
             // real person's voice, but Naver Map already ships those voices, so the destination can be
             // handed to it and Naver speaks the turns.

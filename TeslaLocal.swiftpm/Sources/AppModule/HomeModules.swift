@@ -123,6 +123,7 @@ struct HomeLayoutEditor: View {
     var body: some View {
         NavigationStack {
             List {
+                LocalBriefingControls(title: "홈 메뉴 편집") { ["표시 순서: " + store.shown.map(\.title).joined(separator: ", ") + ".", "숨김 \(store.hidden.count)개입니다."] }
                 Section("홈에 표시") {
                     ForEach(store.shown) { module in
                         HStack {

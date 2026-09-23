@@ -3,13 +3,26 @@ import CoreLocation
 
 /// A sleek, high-density smart parking card synthesizing both vehicle telemetry and mobile sensor/vision data.
 struct SmartParkingCard: View {
+    @EnvironmentObject private var model: AppModel
     @ObservedObject var manager = SmartParkingManager.shared
     @ObservedObject var link: VehicleLink
     @State private var showCamera = false
     @State private var showFullPhoto = false
 
     var body: some View {
-        if let record = manager.latestRecord {
+        if model.fleet.isAuthenticated && !model.demo {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(manager.fleetParkingStatus).font(.subheadline)
+                Button("현재 차량 위치를 주차 위치로 저장") { manager.saveCurrentFleetParking() }
+                    .buttonStyle(.bordered)
+                    .disabled(model.fleet.vehicleSnapshot?.parkingTelemetry() == nil)
+                Caption("직접 저장한 시각을 기록함 · 실제 도착 시각은 차량에서 제공하지 않음")
+            }.padding()
+        }
+        if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
+            LocalBriefingControls(title: "주차 상태") {
+                record.briefingLines
+            }
             VStack(alignment: .leading, spacing: 14) {
                 // Header: Location Badge, Verification Status & Photo Thumbnail
                 HStack(alignment: .top) {
@@ -105,9 +118,9 @@ struct SmartParkingCard: View {
                     tileView(
                         icon: "clock.fill",
                         iconColor: .cyan,
-                        title: "주차 시간",
+                        title: "위치 기록 경과",
                         value: elapsedTimeString(since: record.timestamp),
-                        caption: formatTime(record.timestamp) + " 주차"
+                        caption: formatTime(record.timestamp) + " 기록"
                     )
 
                     // Tile 2: Vehicle Heading & Orientation
@@ -120,36 +133,30 @@ struct SmartParkingCard: View {
                     )
 
                     // Tile 3: Battery & Charging Status
-                    let currentSOC = (link.telemetryGroups.object("charge").number("soc")) ?? record.vehicle.soc ?? 0
-                    let startSOC = record.vehicle.soc ?? currentSOC
-                    let delta = currentSOC - startSOC
-                    let isCharging = (link.telemetryGroups.object("charge").number("charging") ?? 0) > 0 || record.vehicle.isCharging == true
-                    let chargerKW = link.telemetryGroups.object("charge").number("chargerKW") ?? record.vehicle.chargerKW ?? 0
+                    let isCharging = record.vehicle.isCharging == true
 
                     tileView(
                         icon: isCharging ? "bolt.car.fill" : "battery.100",
-                        iconColor: isCharging ? .green : (delta < 0 ? .orange : .white.opacity(0.7)),
-                        title: isCharging ? "충전 진행 중" : "배터리 소모량",
-                        value: isCharging ? "\(Int(currentSOC))% (\(Int(chargerKW))kW)" : "\(Int(currentSOC))% (\(String(format: "%+.1f%%p", delta)))",
-                        caption: isCharging ? "목표까지 충전 중" : "대기/센트리 소모"
+                        iconColor: isCharging ? .green : .white.opacity(0.7),
+                        title: "배터리 · 충전",
+                        value: record.vehicle.batteryText,
+                        caption: "마지막 저장 차량 응답"
                     )
 
                     // Tile 4: Vehicle Security & Closures
-                    let isLocked = link.telemetryGroups.object("closures").flag("locked")
-                    let areDoorsClosed = record.vehicle.areDoorsClosed ?? true
-                    let isSecure = isLocked && areDoorsClosed
+                    let isSecure = record.verification.isSecurityVerified
 
                     tileView(
                         icon: isSecure ? "lock.fill" : "lock.open.fill",
                         iconColor: isSecure ? .green : .orange,
                         title: "차량 보안 상태",
-                        value: isSecure ? "잠김 · 도어 닫힘" : (isLocked ? "도어/트렁크 열림" : "차량 미잠금"),
-                        caption: isSecure ? "보안 안전 확인됨" : "확인 및 원격 잠금 필요"
+                        value: record.vehicle.securityText,
+                        caption: "마지막 저장 차량 응답"
                     )
 
                     // Tile 5: Cabin & Exterior Temperatures
-                    let inTemp = link.telemetryGroups.object("climate").number("insideC") ?? record.vehicle.insideTempC
-                    let outTemp = link.telemetryGroups.object("climate").number("outsideC") ?? record.vehicle.outsideTempC
+                    let inTemp = record.vehicle.insideTempC
+                    let outTemp = record.vehicle.outsideTempC
                     let tempText: String = {
                         if let i = inTemp, let o = outTemp {
                             return "\(Int(i))°C / \(Int(o))°C"
@@ -265,7 +272,7 @@ struct SmartParkingCard: View {
                         Task {
                             await manager.processParkingPhoto(
                                 image: image,
-                                vehicleTelemetry: link.telemetryGroups
+                                vehicleTelemetry: manager.photoTelemetry(fallback: link.telemetryGroups)
                             )
                         }
                     }
@@ -282,6 +289,7 @@ struct SmartParkingCard: View {
                                 .scaledToFit()
                         }
                         .navigationTitle(record.displayTitle)
+                        .safeAreaInset(edge: .bottom) { LocalBriefingControls(title: "주차 사진") { [record.displayTitle] }.padding().background(.regularMaterial) }
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
@@ -335,7 +343,7 @@ struct SmartParkingCard: View {
                         Task {
                             await manager.processParkingPhoto(
                                 image: image,
-                                vehicleTelemetry: link.telemetryGroups
+                                vehicleTelemetry: manager.photoTelemetry(fallback: link.telemetryGroups)
                             )
                         }
                     }
@@ -411,7 +419,7 @@ struct SmartParkingCard: View {
 
     private func elapsedTimeString(since: Date) -> String {
         let minutes = Int(Date().timeIntervalSince(since) / 60)
-        if minutes < 1 { return "방금 주차" }
+        if minutes < 1 { return "방금 기록" }
         if minutes < 60 { return "\(minutes)분 경과" }
         let hours = minutes / 60
         let remMinutes = minutes % 60

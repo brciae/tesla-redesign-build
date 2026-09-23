@@ -1,10 +1,20 @@
 import SwiftUI
+import CryptoKit
 
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("reset-appearance-fixture") {
+            for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("appearance.v1.") {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+    }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
+            if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-gauge-probe") { BatteryGaugeProbe() }
             else { ProbeRoot() }
@@ -12,11 +22,81 @@ import SwiftUI
     } }
 }
 
+struct VoiceCacheProbe: View {
+    @State private var voice = "아엘"
+    @State private var files = 24
+    @State private var previews = 0
+    @State private var diskResult = "검사 중"
+    var body: some View {
+        Form {
+            VStack {
+                Button("음성 변경") { voice = voice == "아엘" ? "은경" : "아엘" }.buttonStyle(.plain)
+                Text(diskResult).accessibilityIdentifier("cache.disk")
+                Text(voice).accessibilityIdentifier("cache.voice")
+                Button("미리 듣기") { previews += 1 }.buttonStyle(.borderedProminent)
+                Text("\(files)").accessibilityIdentifier("cache.files")
+                VoiceCacheDeleteButton { files = 0 }
+            }
+        }
+        .task { await verifyDiskCache() }
+    }
+    @MainActor private func verifyDiskCache() async {
+        let client = TypecastClient.shared
+        let previous = client.selectedVoiceId
+        let text = "cache isolation fixture"
+        let voices = ["fixture-voice-a", "fixture-voice-b"]
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/TypecastAudioCache")
+        let urls = voices.map { voice in
+            let digest = SHA256.hash(data: Data("\(voice)_\(text)".utf8)).map { String(format: "%02x", $0) }.joined()
+            return dir.appendingPathComponent(digest + ".wav")
+        }
+        defer {
+            client.selectedVoiceId = previous
+            for url in urls { try? FileManager.default.removeItem(at: url) }
+        }
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for (index, url) in urls.enumerated() { try Data(repeating: UInt8(index + 1), count: 256).write(to: url) }
+            for index in [0, 1, 0] {
+                client.selectedVoiceId = voices[index]
+                guard client.cachedURL(for: text, voiceId: voices[index]) == urls[index] else { diskResult = "FAIL voice isolation"; return }
+                let reused = try await client.synthesize(text: text, voiceId: voices[index])
+                let bytes = try Data(contentsOf: reused)
+                guard reused == urls[index], bytes == Data(repeating: UInt8(index + 1), count: 256) else { diskResult = "FAIL reuse"; return }
+            }
+            guard urls.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }), client.cachedURL(for: text, voiceId: "fixture-voice-c") == nil else { diskResult = "FAIL preservation"; return }
+            diskResult = "PASS voice isolation and disk reuse"
+        } catch { diskResult = "FAIL disk fixture" }
+    }
+}
+
+struct TabBarProbe: View {
+    @State private var selection: AppTab = .home
+    @AppStorage("tabBarOpacity") private var opacity = 1.0
+    private var page: some View {
+        NavigationStack {
+            VStack {
+                Text("불투명도 \(Int(opacity * 100))%")
+                Button("불투명") { opacity = 1 }.accessibilityIdentifier("opacity.full")
+                Button("반투명") { opacity = 0.5 }.accessibilityIdentifier("opacity.half")
+                Spacer()
+                Button("하단 콘텐츠") {}.accessibilityIdentifier("content.bottom")
+            }.frame(maxWidth: .infinity).background(Color.red)
+        }
+    }
+    var body: some View {
+        Commercial5TabScaffold(selection: $selection) {
+            page
+        } controls: { page } energy: { page } drive: { page } menu: { page }
+    }
+}
+
 struct NavigationProbe: View {
     @State private var theme: NavigationTheme = .cluster
     @State private var blank = false
     @State private var bend = 0.0
     @State private var moving = false
+    @State private var routeStopped = false
     @StateObject private var model = AppModel()
     var body: some View {
         VStack(spacing: 0) {
@@ -32,6 +112,10 @@ struct NavigationProbe: View {
                     }
                 }.padding(.horizontal, 8)
             }.frame(height: 44)
+            if ProcessInfo.processInfo.arguments.contains("parked-route-probe") {
+                if routeStopped { Text("자유주행").accessibilityIdentifier("navigation.stopped") }
+                else { ParkedNavigationActions { routeStopped = true } }
+            }
             NavigationDashboard(theme: theme, data: sample) {
                 NavigationMapFixture()
             } car: {
@@ -149,6 +233,9 @@ struct ProbeRoot: View {
 
 // Fixture only: no BLE device, enrollment, navigation SDK, or real VIN.
 @MainActor final class AppModel: ObservableObject {
+    @Published var spokenSummary = ""
+    func speak(_ text: String) { spokenSummary = text }
+    func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
     var demo = true
