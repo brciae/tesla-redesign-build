@@ -91,3 +91,14 @@ assert(messy.supplyKWh === 12 && messy.ambiguous, 'cumulative line ignored, gues
 const derived = C.parseReceipt(['충전 32 kWh', '단가 300 원/kWh'].join('\n'));
 assert(derived.cost === 9600, 'cost derived from unit price');
 console.log('PASS: receipt parsing');
+
+{
+ const e=new C.Engine(),now=Date.now(),vin='5YJYGDEE0LF000001';
+ e.ingestFleetCharge({vin,at:now,charging:6,soc:80,addedKWh:30},now);
+ chargeAssert.equal(e.chargeSummary().rows.length,1,'finished session must appear even if app missed start');
+ chargeAssert.equal(e.chargeSummary().rows[0].collectedAfterEnd,true);
+ e.ingestFleetCharge({vin,at:now+1000,charging:6,soc:80,addedKWh:30},now+1000);
+ chargeAssert.equal(e.chargeSummary().rows.length,1,'repeated completed snapshot must not duplicate');
+ e.addCharge({at:now-86400000,source:'manual'});
+ chargeAssert.equal(e.chargeSummary().rows[0].at,now,'recent list must sort by event time, not insertion order');
+}

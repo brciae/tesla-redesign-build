@@ -12,7 +12,7 @@ struct FleetInsightsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 InfoCard {
-                    Text("내 차량 분석·관리").font(.headline)
+                    Text("내 차량").font(.headline)
                     NavigationLink("주행 습관·에너지·비용 비교") { DrivingInsightsView() }
                     NavigationLink("배터리 온도·전압·Telemetry 추이") { FleetTelemetryView(vin: fleet.selectedVin) }
                     NavigationLink("보증 기간·남은 거리") {
@@ -31,40 +31,22 @@ struct FleetInsightsView: View {
                 }
                 if let error = fleet.vehicleReadError { Text(error).foregroundStyle(.orange).font(.caption) }
                 if let snapshot {
-                    ForEach(snapshot.insightSections(), id: \.title) { section in
+                    ForEach(snapshot.insightSections().filter { $0.rows.contains { !$0.value.contains("미수신") } }, id: \.title) { section in
                         InfoCard {
                             Text(section.title).font(.headline)
                             Text(snapshot.sectionIsRecent(section.source) ? "최근 수신" : "마지막 수신 · 현재 상태와 다를 수 있음").font(.caption).foregroundStyle(Theme.muted)
-                            ForEach(section.rows, id: \.label) { row in
-                                HStack(alignment: .top) {
-                                    Text(row.label).foregroundStyle(Theme.muted)
-                                    Spacer(minLength: 12)
-                                    Text(row.value).multilineTextAlignment(.trailing)
-                                }.font(.subheadline)
-                            }
-                        }
-                    }
-                    InfoCard {
-                        Text("기록 기반 소비 분석").font(.headline)
-                        Text(model.screenBriefing(.battery, days: 30)).font(.subheadline).lineSpacing(5)
-                    }
-                    InfoCard {
-                        Text("수신 데이터 전체 보기").font(.headline)
-                        Caption("현재 응답에 포함된 필드만 표시합니다. 미수신·null은 0이나 꺼짐으로 해석하지 않습니다.")
-                        ForEach(snapshot.payload.keys.sorted(), id: \.self) { key in
-                            DisclosureGroup(key) {
-                                ForEach(snapshot.flattenedFields(section: key), id: \.label) { row in
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(row.label).font(.caption.monospaced()).foregroundStyle(Theme.muted)
-                                        Text(row.value).font(.caption).textSelection(.enabled)
-                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 16) {
+                                ForEach(section.rows.filter { !$0.value.contains("미수신") }, id: \.label) { row in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(row.label).font(.caption).foregroundStyle(Theme.muted)
+                                        Text(row.value).font(.title3.weight(.semibold)).minimumScaleFactor(0.7)
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }
                         }
                     }
-                    Caption("현재 화면은 Fleet 조회 응답입니다. 지속적인 Telemetry 수집 서버가 연결되지 않아 앱을 닫은 동안의 전체 주행·충전 이력을 자동 복원하지는 못합니다.")
                 } else { Text("Fleet 계정과 차량을 연결한 후 조회해 주세요.").foregroundStyle(Theme.muted) }
             }.padding(16)
-        }.background(Theme.bg).navigationTitle("차량 상세 데이터").navigationBarTitleDisplayMode(.inline)
+        }.background(Theme.bg).navigationTitle("차량 관리").navigationBarTitleDisplayMode(.inline)
     }
 }

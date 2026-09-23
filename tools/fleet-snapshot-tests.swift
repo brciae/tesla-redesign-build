@@ -7,8 +7,9 @@ import Foundation
         let snapshot = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: [
             "charge_state": ["battery_level": 72, "battery_range": 100, "charging_state": "Charging", "timestamp": ms],
             "climate_state": ["inside_temp": 0, "outside_temp": -5, "timestamp": ms],
-            "vehicle_state": ["locked": false, "timestamp": ms]
+            "vehicle_state": ["locked": false, "timestamp": ms, "odometer": 1000]
         ])
+        precondition(abs((snapshot.driveDisplay(now: now)["odometerKm"] as? Double ?? 0) - 1609.344) < 0.001)
         let sections = snapshot.insightSections()
         precondition(sections.count == 5)
         precondition(sections.first(where: { $0.title == "타이어 상태" })!.rows.first!.value == "미수신")

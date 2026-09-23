@@ -67,6 +67,7 @@ struct FleetVehicleSnapshot {
     func driveDisplay(now: Date = Date()) -> [String: Any] {
         var drive: [String: Any] = ["mode": sectionIsRecent("drive_state", now: now) ? "recent" : "cached", "receivedAt": receivedAt.timeIntervalSince1970 * 1000]
         drive["at"] = number("drive_state", "timestamp")
+        if let odo = number("vehicle_state", "odometer"), odo >= 0 { drive["odometerKm"] = odo * 1.609344 }
         if let gear = (payload["drive_state"] as? [String: Any])?["shift_state"] as? String, ["P", "D", "R", "N"].contains(gear) { drive["gear"] = gear }
         if let speed = number("drive_state", "speed"), speed >= 0 { drive["speedKmh"] = speed * 1.609344 }
         let raw = payload["drive_state"] as? [String: Any] ?? [:]

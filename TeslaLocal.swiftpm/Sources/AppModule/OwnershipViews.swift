@@ -27,7 +27,6 @@ struct DrivingInsightsView: View {
                         Spacer()
                         number("종합 전비", energy.number("overallKmPerKWh"), "km/kWh")
                     }
-                    Text(model.screenBriefing(.battery, days: days)).font(.subheadline).lineSpacing(5)
                     Caption("최근 \(days)일 · 기록 종료일 기준 · 같은 기간의 소비를 비교합니다.")
                 }
                 InfoCard {

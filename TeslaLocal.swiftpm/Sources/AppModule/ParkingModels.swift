@@ -106,6 +106,15 @@ struct SmartParkingRecord: Identifiable, Codable, Equatable {
     var mobile: MobileParkingSnapshot = MobileParkingSnapshot()
     var verification: ParkingCrossVerification = ParkingCrossVerification()
 
+    mutating func refreshLocationType() {
+        let photographedZone = mobile.ocrSpecialZone ?? ""
+        if vehicle.isCharging == true || photographedZone.contains("전기차") || photographedZone.contains("충전") {
+            locationType = .evCharging
+        } else if locationType == .evCharging, vehicle.isCharging == false {
+            locationType = .general
+        }
+    }
+
     // Primary display properties
     var displayTitle: String {
         var parts: [String] = []

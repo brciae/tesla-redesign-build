@@ -325,6 +325,15 @@
         if(num(g.addedKWh,0,300))c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);
         append(s.charges,c);s.activeCharge=null;
       }
+      // A first observation after charging finished still contains the vehicle's session energy.
+      // Preserve that session without inventing its start time or claiming a measured start SOC.
+      if(!s.activeCharge&&[6,7].includes(g.charging)&&num(g.addedKWh,0.01,300)&&num(g.soc,0,100)){
+        const duplicate=s.charges.some(c=>Math.abs((c.vehicleReportedKWh??-1)-g.addedKWh)<0.01&&Math.abs((c.endSOC??-1)-g.soc)<0.1&&g.at-(c.end??c.at)>=0&&g.at-(c.end??c.at)<48*3600000);
+        if(!duplicate){
+          const capacity=this.health().capacity??s.settings.assumedCapacityKWh??75;
+          append(s.charges,{id:id(),at:g.at,end:g.at,startSOC:round(Math.max(0,g.soc-g.addedKWh/capacity*100),1),startSOCEstimated:true,endSOC:g.soc,endSOCObserved:true,vehicleReportedKWh:g.addedKWh,complete:false,partial:true,collectedAfterEnd:true,source:g.source??'BLE',note:'종료 후 수집 · 표시 시각은 수집 시각 · 시작 잔량은 충전량으로 추정'});
+        }
+      }
       this.lastCharge=g;
     }
     addCharge(v){
@@ -485,7 +494,7 @@
     chargeSummary(){
       const s=this.state,rows=[...s.charges,...(s.activeCharge?[{...s.activeCharge,active:true,source:'충전 중'}]:[])];
       const total=key=>{const values=rows.map(c=>c[key]).filter(v=>num(v,0,key==='cost'?1e7:300));return values.length?round(values.reduce((a,b)=>a+b,0),2):null;};
-      return {rows:rows.slice().reverse(),count:rows.length,supplyKWh:total('supplyKWh'),vehicleReportedKWh:total('vehicleReportedKWh'),cost:total('cost'),active:!!s.activeCharge};
+      return {rows:rows.slice().sort((a,b)=>(b.end??b.lastAt??b.at)-(a.end??a.lastAt??a.at)),count:rows.length,supplyKWh:total('supplyKWh'),vehicleReportedKWh:total('vehicleReportedKWh'),cost:total('cost'),active:!!s.activeCharge};
     }
     batteryUsage(now=Date.now(),days=30){
       const s=this.state,since=now-days*DAY,inPeriod=t=>num(t,since,now);
