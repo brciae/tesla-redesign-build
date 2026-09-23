@@ -18,6 +18,8 @@ jobs:
       - name: Delivery and restart recovery
         working-directory: server
         run: |
+          curl --fail --silent http://127.0.0.1:8787/health
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8787/v1/telemetry)" = 401
           docker compose exec -T archive python - < integration.py
           docker compose restart archive kafka
           docker compose up --wait --wait-timeout 180

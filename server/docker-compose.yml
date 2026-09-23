@@ -80,7 +80,7 @@ services:
     ports: ["127.0.0.1:8787:8787"]
     volumes:
       - archive-data:/data
-    networks: [archive]
+    networks: [archive, ingress]
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health',timeout=5)"]
       interval: 60s
@@ -95,3 +95,5 @@ volumes:
 networks:
   archive:
     internal: true
+  ingress:
+    driver: bridge

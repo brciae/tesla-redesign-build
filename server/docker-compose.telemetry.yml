@@ -14,7 +14,7 @@ services:
     volumes:
       - ./telemetry-config.json:/config/config.json:ro
       - ./certs:/certs:ro
-    networks: [archive]
+    networks: [archive, ingress]
     depends_on:
       kafka:
         condition: service_healthy
