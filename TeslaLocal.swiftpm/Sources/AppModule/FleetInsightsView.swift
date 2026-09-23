@@ -10,6 +10,11 @@ struct FleetInsightsView: View {
         return value
     }
     private var charges: [Object] { Array(model.output.object("charging").rows("rows").prefix(14).reversed()) }
+    private var chartDayStride: Int {
+        let times = charges.compactMap { $0.number("at") }
+        guard let first = times.min(), let last = times.max() else { return 1 }
+        return max(1, Int(ceil((last - first) / 86_400_000 / 4)))
+    }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -87,7 +92,7 @@ struct FleetInsightsView: View {
                         BarMark(x: .value("날짜", Date(timeIntervalSince1970: at / 1000), unit: .day), y: .value("충전량", value)).foregroundStyle(.mint.gradient).cornerRadius(4)
                     }
                 }
-            }.frame(height: 155).accessibilityIdentifier("fleet.chargeChart").chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: .dateTime.month().day()) } }
+            }.frame(height: 155).accessibilityIdentifier("fleet.chargeChart").chartXAxis { AxisMarks(values: .stride(by: .day, count: chartDayStride)) { _ in AxisValueLabel(format: .dateTime.month().day()) } }
             HStack {
                 spec(model.output.object("charging").number("supplyKWh") ?? model.output.object("charging").number("vehicleReportedKWh"), unit: "kWh", label: "기록된 충전량")
                 Spacer()

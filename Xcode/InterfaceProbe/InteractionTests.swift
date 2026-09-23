@@ -47,6 +47,13 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(warranty.waitForExistence(timeout: 5)); warranty.tap()
         XCTAssertTrue(app.staticTexts["남은 거리"].firstMatch.waitForExistence(timeout: 5))
         shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Warranty remaining bars"; shot.lifetime = .keepAlways; add(shot)
+        app.navigationBars.buttons.firstMatch.tap()
+        let driving = app.buttons["주행·소비"]
+        XCTAssertTrue(driving.waitForExistence(timeout: 5)); driving.tap()
+        XCTAssertTrue(app.staticTexts["주행 전비"].waitForExistence(timeout: 5))
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Driving efficiency and consumption charts"; shot.lifetime = .keepAlways; add(shot)
+        app.swipeUp()
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Driving cost comparison chart"; shot.lifetime = .keepAlways; add(shot)
     }
 
     func testTabBarOpacityAndContentSeparation() {
