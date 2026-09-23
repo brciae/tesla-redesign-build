@@ -18,7 +18,7 @@ extension AppModel {
 
     private func energyInterpretation(_ energy: Object) -> [String] {
         guard let driving = energy.number("drivingKmPerKWh"), driving.isFinite, driving > 0 else {
-            return ["주행 에너지 자료가 충분하지 않아 전비와 소비 원인 분석은 보류합니다."]
+            return []
         }
         var result: [String] = []
         if let overall = energy.number("overallKmPerKWh"), overall.isFinite, overall > 0, overall <= driving {
@@ -27,10 +27,10 @@ extension AppModel {
             if gap >= 5 {
                 result.append(String(format: "같은 거리 기준으로 종합 전비가 약 %.0f퍼센트 낮아, 주행 외 소비가 효율 차이에 영향을 주고 있습니다.", gap))
                 if let parking = energy.number("parkingKWh"), parking.isFinite, parking > 0 {
-                    result.append(String(format: "주차 중 자연방전으로 집계한 소비가 약 %.1f킬로와트시입니다. 주차 중 감시 모드와 공조 유지 시간을 줄이면 종합 전비 개선에 도움이 될 수 있습니다.", parking))
+                    result.append(String(format: "주차 중 집계한 소비가 약 %.1f킬로와트시입니다. 주차 중 감시 모드와 공조 유지 시간을 줄이면 종합 전비 개선에 도움이 될 수 있습니다.", parking))
                 }
             } else { result.append("두 전비의 차이가 작아, 현재 기록에서는 주행 외 소비의 영향이 크지 않습니다.") }
-        } else { result.append(String(format: "주행 전비는 킬로와트시당 %.1f킬로미터로 추정되며, 종합 전비는 자료를 더 확인해야 합니다.", driving)) }
+        } else { result.append(String(format: "주행 전비는 킬로와트시당 %.1f킬로미터입니다.", driving)) }
         if energy.flag("capacityAssumed") { result.append("배터리 용량을 가정해 계산한 값이므로 절대 수치보다 같은 조건에서의 추세를 비교해 주세요.") }
         return result
     }

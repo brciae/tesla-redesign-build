@@ -4,9 +4,9 @@ struct DrivingInsightsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject private var telemetry = FleetTelemetryStore.shared
     @State private var days = 30
-    @State private var electricity = ""
-    @State private var gasoline = ""
-    @State private var gasolineEfficiency = ""
+    @AppStorage("cost.electricity") private var electricity = ""
+    @AppStorage("cost.gasoline") private var gasoline = ""
+    @AppStorage("cost.gasolineEfficiency") private var gasolineEfficiency = ""
     private var energy: Object { model.output.object("energyPeriods").object(String(days)) }
     private var usage: Object { model.output.object("battery").object(String(days)) }
     private var parking: [FleetParkingBucket] {
@@ -35,7 +35,7 @@ struct DrivingInsightsView: View {
                     number("기록 거리", energy.number("totalDistanceKm"), "km")
                     number("주행 소비", energy.number("drivingKWh"), "kWh")
                     HStack {
-                        number("주차 중 소비", energy.number("parkingKWh"), "kWh")
+                        number(parking.isEmpty ? "주차 중 자연방전" : "주차 중 소비", energy.number("parkingKWh"), "kWh")
                         InfoNote("주차 중 소비", "상태·시간 기록으로 확인되는 감시 모드·공조·대기는 세분해 표시합니다. 원인을 나눌 근거가 없는 주차 구간은 자연방전으로 묶습니다.")
                     }
                     number("전체 소비", energy.number("totalKWh"), "kWh")
@@ -66,11 +66,11 @@ struct DrivingInsightsView: View {
                         number("가솔린 비교 비용", comparison.gasoline, "원", digits: 0)
                         Text(String(format: "동일 거리 에너지 비용 차이 %.0f원", comparison.savings)).font(.headline).foregroundStyle(.mint)
                         Caption("양수는 전기 비용이 적다는 뜻입니다. 실제 결제액·전체 유지비가 아니며 충전 손실, 보험, 세금, 정비비는 포함하지 않습니다.")
-                    } else { Caption("세 비교 조건과 주행 기록이 있어야 계산합니다. 예시 화면의 가격·절감액을 내 차량 수치로 사용하지 않습니다.") }
+                    } else { Caption("자주 이용하는 충전 단가와 비교 차량 연비를 입력하면 같은 거리의 비용 차이를 계산합니다.") }
                 }
                 InfoCard {
                     Text("분석 가능한 운전 습관").font(.headline)
-                    Caption("현재 누적 기록으로 전비와 비주행 소비를 분석합니다. 급가속·급제동 빈도, 속도대별 전비, 외기·공조 영향은 시간에 맞춘 Telemetry 표본이 쌓인 뒤 비교할 수 있습니다. 소비량만으로 운전 습관이 나쁘다고 판정하지 않습니다.")
+                    Caption("주행 전비와 종합 전비의 차이가 크면 주차 중 소비부터 살펴보세요. 두 수치가 함께 낮아지는 날에는 짧은 이동, 외기 온도, 공조 사용량을 이전 주행과 비교하는 것이 도움이 됩니다.")
                 }
             }.padding(16)
         }.background(Theme.bg).navigationTitle("주행·소비 분석")
