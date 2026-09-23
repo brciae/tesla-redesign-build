@@ -38,7 +38,12 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastClient.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TeslaInteractiveClimateView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetInsightsView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefing.swift"
    ],
    "settings": {
     "base": {

@@ -1,6 +1,19 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testRestoredClimateAndFleetCards() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["climate-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["목표 실내 온도"].waitForExistence(timeout: 10))
+        let top = XCTAttachment(screenshot: app.screenshot()); top.name = "Restored climate top and cabin"; top.lifetime = .keepAlways; add(top)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["반려동물"].waitForExistence(timeout: 5))
+        let lower = XCTAttachment(screenshot: app.screenshot()); lower.name = "Restored climate seats and modes"; lower.lifetime = .keepAlways; add(lower)
+        app.terminate(); app.launchArguments = ["fleet-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["충전 진단"].waitForExistence(timeout: 10))
+        let fleet = XCTAttachment(screenshot: app.screenshot()); fleet.name = "Fleet detail cards"; fleet.lifetime = .keepAlways; add(fleet)
+    }
+
     func testTabBarOpacityAndContentSeparation() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["tabbar-probe"]; app.launch()

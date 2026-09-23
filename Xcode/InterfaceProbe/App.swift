@@ -12,7 +12,9 @@ import CryptoKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
+            if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
+            else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
@@ -238,10 +240,84 @@ struct ProbeRoot: View {
     func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
+    let fleet = TeslaFleetClient()
+    let link = VehicleLink()
+    let voice = ProbeVoice()
+    func requestVehicleControl(_ key: String, title: String, args: Object = [:]) { spokenSummary = title }
+    func screenBriefing(_ scope: BriefingScope, days: Int = 30) -> String { "검증용 브리핑입니다." }
     var demo = true
 }
 enum Theme {
     static let bg = Color(red: 23/255, green: 24/255, blue: 26/255)
     static let surface = Color(red: 34/255, green: 35/255, blue: 38/255)
     static let muted = Color(red: 174/255, green: 178/255, blue: 183/255)
+}
+
+struct InfoCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(white: 0.12).opacity(0.75))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            )
+    }
+}
+struct Caption: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View { Text(text).font(.system(size: 14)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true) }
+}
+
+struct MotionButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed && !reduced ? 0.94 : 1)
+            .animation(reduced ? nil : .spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
+    }
+}
+
+
+func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { value.map { String(format: "%.*f", digits, $0) + suffix } ?? "—" }
+func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object { ["climate": ["insideC": 25.0, "outsideC": 29.0, "targetC": 22.0, "isOn": false]] }
+final class VehicleLink: ObservableObject {
+    var controlBusy = false; var preparingControl = false; var confirmation: String?
+}
+struct ProbeVoice { func say(_ text: String, category: String, manual: Bool) {} }
+enum FleetCommandPolicy { static func failure(_ text: String) -> Error { NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) } }
+final class TeslaFleetClient: ObservableObject {
+    var isSendingCommand = false; var isAuthenticated = true; var isReadingVehicle = false
+    var commandStatus = "UI 검증용 · 실제 차량에 명령을 보내지 않음"
+    var vehicleReadStatus = "검증용 수신값"; var vehicleReadError: String?
+    var selectedVin = "UI-FIXTURE"
+    var vehicleSnapshot: FleetVehicleSnapshot? = FleetVehicleSnapshot(vin: "UI-FIXTURE", receivedAt: Date(), payload: [
+        "charge_state": ["battery_level": 90, "charger_power": 7, "charger_voltage": 220, "charger_actual_current": 32, "charge_energy_added": 12.4, "timestamp": Date().timeIntervalSince1970 * 1000],
+        "climate_state": ["seat_heater_left": 1, "seat_heater_right": 0, "seat_fan_front_left": 0, "seat_fan_front_right": 2, "timestamp": Date().timeIntervalSince1970 * 1000],
+        "vehicle_state": ["tpms_pressure_fl": 2.9, "tpms_pressure_fr": 2.8, "locked": true, "sentry_mode": false, "car_version": "fixture", "timestamp": Date().timeIntervalSince1970 * 1000]])
+    func refreshVehicleSnapshot(force: Bool = false) async {}
+    func setPreconditioningMax(on: Bool) async throws -> Bool { true }
+    func setSteeringWheelHeater(on: Bool) async throws -> Bool { true }
+    func setSeatCooler(seatPosition: Int, level: Int) async throws -> Bool { true }
+    func setSeatHeater(seatPosition: Int, level: Int) async throws -> Bool { true }
+    func setClimateKeeperMode(mode: Int) async throws -> Bool { true }
+}
+struct ClimateFleetProbe: View {
+    @StateObject private var model = AppModel()
+    var fleetScreen = false
+    var body: some View {
+        NavigationStack {
+            Group {
+                if fleetScreen { FleetInsightsView(fleet: model.fleet) }
+                else { TeslaInteractiveClimateView(link: model.link).navigationTitle("실내 공조") }
+            }.environmentObject(model)
+        }
+    }
 }
