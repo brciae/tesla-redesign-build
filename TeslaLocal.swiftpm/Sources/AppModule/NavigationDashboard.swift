@@ -179,7 +179,37 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         }
     }
 
+    @ViewBuilder
     private func layout(_ m: NavMetrics) -> some View {
+        if theme == .cluster || theme == .fleet {
+            navigationLayout(m)
+        } else {
+            modelingLayout(m)
+        }
+    }
+
+    private func modelingLayout(_ m: NavMetrics) -> some View {
+        let rect = mapRect(m)
+        return ZStack(alignment: .topLeading) {
+            theme.canvas.frame(width: m.w, height: m.h)
+            map()
+                .frame(width: rect.width, height: rect.height)
+                .background(NavInk.mapBase)
+                .mask { mapMask(rect: rect, m: m) }
+                .position(x: rect.midX, y: rect.midY)
+                .opacity(theme == .minimal ? 0 : 1)
+                .allowsHitTesting(theme != .minimal)
+                .accessibilityHidden(theme == .minimal)
+            overlay(m)
+        }
+        .frame(width: m.w, height: m.h, alignment: .topLeading)
+        .clipped()
+        .foregroundStyle(.white)
+        .environment(\.colorScheme, .dark)
+        .accessibilityIdentifier("navigation.modeling")
+    }
+
+    private func navigationLayout(_ m: NavMetrics) -> some View {
         let mediaHeight: CGFloat = data.showsMedia ? 48 : 0
         let footerHeight: CGFloat = 54 + mediaHeight
         let headerHeight: CGFloat = m.wide ? 0 : (data.laneCount > 0 ? 164 : 124)

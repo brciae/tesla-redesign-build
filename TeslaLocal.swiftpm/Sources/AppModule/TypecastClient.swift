@@ -382,8 +382,61 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // MARK: - API Speech Synthesis
 
-    /// Synthesizes speech via Typecast API or returns immediately from local disk cache.
+    @MainActor private var synthesisFlight: (id: UUID, task: Task<URL, Error>)?
+    private var previewTask: Task<Void, Never>?
+
+    private func pauseKey(_ key: String) -> String {
+        "typecastPaused." + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    var synthesisPaused: Bool { UserDefaults.standard.bool(forKey: pauseKey(activeApiKey)) }
+
+    func allowSynthesisAfterRestrictionResolved() {
+        UserDefaults.standard.removeObject(forKey: pauseKey(activeApiKey))
+        lastStatus = "재시도 허용됨 · 미리듣기를 누르면 합성을 요청합니다."
+    }
+
+    /// One network synthesis at a time. Playback cancellation never restarts an accepted request.
+    @MainActor
     func synthesize(text: String, voiceId: String? = nil) async throws -> URL {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedVoice = (voiceId ?? selectedVoiceId).trimmingCharacters(in: .whitespacesAndNewlines)
+        let voice = requestedVoice.isEmpty ? Self.defaultVoiceId : requestedVoice
+        let key = activeApiKey
+        while true {
+            try Task.checkCancellation()
+            if let cached = cachedURL(for: clean, voiceId: voice) { return cached }
+            if let flight = synthesisFlight {
+                _ = await flight.task.result
+                if synthesisFlight?.id == flight.id { synthesisFlight = nil }
+                continue
+            }
+            guard key == activeApiKey else { throw CancellationError() }
+            if UserDefaults.standard.bool(forKey: pauseKey(key)) {
+                throw NSError(domain: "Typecast", code: 403, userInfo: [NSLocalizedDescriptionKey:
+                    "이 키는 403 응답 이후 추가 합성을 중지했습니다. 저장된 음성은 계속 사용합니다. 이용 제한이 해제된 뒤 설정에서 재시도를 허용하세요."])
+            }
+            let id = UUID()
+            let task = Task { @MainActor in
+                do { return try await self.performSynthesis(text: clean, voiceId: voice) }
+                catch {
+                    if (error as NSError).code == 403 {
+                        UserDefaults.standard.set(true, forKey: self.pauseKey(key))
+                    }
+                    throw error
+                }
+            }
+            synthesisFlight = (id, task)
+            let result = await task.result
+            if synthesisFlight?.id == id { synthesisFlight = nil }
+            try Task.checkCancellation()
+            return try result.get()
+        }
+    }
+
+    /// Synthesizes speech via Typecast API or returns immediately from local disk cache.
+    @MainActor
+    private func performSynthesis(text: String, voiceId: String? = nil) async throws -> URL {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty else {
             throw NSError(domain: "Typecast", code: 400, userInfo: [NSLocalizedDescriptionKey: "음성 변환할 텍스트가 비어 있습니다."])
@@ -485,7 +538,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         testCompletion = completion
         lastStatus = "타입캐스트 음성 생성 중…"
 
-        Task {
+        previewTask = Task {
             do {
                 let audioURL = try await synthesize(text: text, voiceId: voiceId)
                 await MainActor.run {
@@ -506,6 +559,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     }
                 }
             } catch {
+                if error is CancellationError { return }
                 await MainActor.run {
                     self.lastStatus = "합성 실패: \(error.localizedDescription)"
                     completion?()
@@ -515,6 +569,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func stop() {
+        previewTask?.cancel()
+        previewTask = nil
         player?.stop()
         player = nil
         testCompletion?()

@@ -103,7 +103,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
-        // The navigation SDK owns announcement timing and frequency.
+        // Ignore duplicate SDK callbacks before cancelling current playback.
+        guard text != lastGuideText || now.timeIntervalSince(lastGuideAt) >= 2 else { return }
         lastGuideText = text
         lastGuideAt = now
 

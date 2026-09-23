@@ -377,6 +377,12 @@ struct TypecastSettingsSection: View {
             .tint(.blue)
             .disabled(typecast.isSynthesizing || !typecast.hasKey)
 
+            if typecast.synthesisPaused {
+                Button("이용 제한 해제 후 재시도 허용") {
+                    typecast.allowSynthesisAfterRestrictionResolved()
+                }.font(.footnote)
+            }
+
             if typecast.cacheFileCount > 0 {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("영구 보관 캐시: \(typecast.cacheFileCount)개 (\(String(format: "%.1f", typecast.cacheTotalSizeMB))MB)")

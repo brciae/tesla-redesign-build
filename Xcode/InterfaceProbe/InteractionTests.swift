@@ -105,10 +105,15 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["1.5 km"].firstMatch.isHittable, "turn distance covered: \(theme) \(orientation.rawValue)")
                 let media = app.staticTexts["navigation.media.title"]
                 XCTAssertTrue(media.exists, "media dock missing: \(theme)")
-                let map = app.otherElements["navigation.map"]
-                XCTAssertTrue(map.exists, "map must remain visible in every theme")
-                XCTAssertGreaterThan(map.frame.height, 120)
-                XCTAssertLessThanOrEqual(map.frame.maxY, media.frame.minY, "media must remain outside the map")
+                if theme == "클러스터" || theme == "관제" {
+                    let map = app.otherElements["navigation.map"]
+                    XCTAssertTrue(map.exists)
+                    XCTAssertGreaterThan(map.frame.height, 120)
+                    XCTAssertLessThanOrEqual(map.frame.maxY, media.frame.minY, "media must remain outside the map")
+                    XCTAssertFalse(app.otherElements["navigation.modeling"].exists)
+                } else {
+                    XCTAssertTrue(app.otherElements["navigation.modeling"].exists, "modeling layout must be preserved")
+                }
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Navigation \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }
