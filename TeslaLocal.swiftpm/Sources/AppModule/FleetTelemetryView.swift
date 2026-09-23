@@ -17,14 +17,14 @@ struct FleetTelemetryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                InfoCard {
+                DisclosureGroup("기록 가져오기·연결 상태") {
                     Text("배터리·차량 심층 분석").font(.headline)
                     Caption("수신된 배터리 온도·전기 상태와 변화 추이를 모아 봅니다. 차량 데이터 수집 서버를 연결하면 앱을 닫은 동안의 기록도 이어갈 수 있습니다.")
                     Text(store.status).font(.caption)
                     Button("Telemetry 기록 가져오기") { importing = true }.disabled(vin.isEmpty)
                     if !error.isEmpty { Caption(error) }
                 }
-                InfoCard {
+                DisclosureGroup("NAS 차량 기록 서버 설정") {
                     Text("NAS 차량 기록 서버").font(.headline)
                     TextField("https://차량서버주소", text: $serverAddress)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
@@ -66,8 +66,7 @@ struct FleetTelemetryView: View {
                         Caption("최근 유효 표본 최대 240개 · 미수신 구간은 연결하지 않습니다.")
                     } else { Caption("시계열 표본이 쌓이면 온도·잔량·충전 추이를 표시합니다.") }
                 }
-                InfoCard {
-                    Text("모든 수신 신호").font(.headline)
+                DisclosureGroup("연결 진단용 수신 신호") {
                     TextField("필드 이름 검색", text: $search).textFieldStyle(.roundedBorder)
                     ForEach(latest.keys.sorted().filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { field in
                         if let value = latest[field] {
@@ -81,7 +80,7 @@ struct FleetTelemetryView: View {
                     if latest.isEmpty { Caption("수신 기록 없음") }
                 }
             }.padding(16)
-        }.background(Theme.bg).navigationTitle("배터리·Telemetry")
+        }.background(Theme.bg).navigationTitle("배터리 추이")
         .task(id: vin) {
             serverAddress = archive.address
             await archive.sync(vin: vin)
