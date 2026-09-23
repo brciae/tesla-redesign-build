@@ -19,6 +19,7 @@
    "platform": "iOS",
    "sources": [
     "InterfaceProbe/App.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/DestinationSearchView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/AppInterface.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/LocalBriefingControls.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationDashboard.swift",

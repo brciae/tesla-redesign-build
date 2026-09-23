@@ -1,6 +1,15 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testDestinationSearchEntry() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["search-probe"]; app.launch()
+        XCTAssertTrue(app.textFields["장소·주소 검색"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["검색"].isEnabled)
+        XCTAssertTrue(app.buttons["집"].isHittable)
+        XCTAssertTrue(app.buttons["회사"].isHittable)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Destination search entry"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testRestoredClimateAndFleetCards() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["climate-probe"]; app.launch()

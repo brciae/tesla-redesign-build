@@ -1,5 +1,6 @@
 import SwiftUI
 import CryptoKit
+import MapKit
 
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
@@ -13,7 +14,8 @@ import CryptoKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
+            if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
             else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
             else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
@@ -325,4 +327,8 @@ struct ClimateFleetProbe: View {
             }.environmentObject(model)
         }
     }
+}
+
+@MainActor final class EmbeddedNavigation: ObservableObject {
+    func startManualDestination(name: String, coordinate: CLLocationCoordinate2D, vin: String) throws {}
 }
