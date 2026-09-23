@@ -222,6 +222,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["cache.files"].label, "24")
         app.buttons["voice.cache.delete"].tap()
         app.buttons["모든 음성 캐시 삭제"].tap()
+        let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == '0'"), object: app.staticTexts["cache.files"])
+        XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 3), .completed)
         XCTAssertEqual(app.staticTexts["cache.files"].label, "0")
     }
 }

@@ -136,8 +136,17 @@ def handler_for(archive, token, health):
 
 
 def consume(archive, health):
-    from confluent_kafka import Consumer, KafkaException
-    consumer = Consumer({"bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP", "kafka:9092"),
+    from confluent_kafka import Consumer, KafkaException, KafkaError
+    from confluent_kafka.admin import AdminClient, NewTopic
+    bootstrap = os.getenv("KAFKA_BOOTSTRAP", "kafka:9092")
+    admin = AdminClient({"bootstrap.servers": bootstrap})
+    for future in admin.create_topics([NewTopic(topic, num_partitions=1, replication_factor=1) for topic in TOPICS], request_timeout=15).values():
+        try:
+            future.result()
+        except KafkaException as error:
+            if error.args[0].code() != KafkaError.TOPIC_ALREADY_EXISTS:
+                raise
+    consumer = Consumer({"bootstrap.servers": bootstrap,
                          "group.id": "yl-sqlite-archive-v1", "auto.offset.reset": "earliest",
                          "enable.auto.commit": False, "enable.auto.offset.store": False,
                          "queued.max.messages.kbytes": 8192})
@@ -175,7 +184,8 @@ def main():
             except Exception as error:
                 health["ready"] = False
                 # No exception body: broker errors can contain vehicle data.
-                print("archive consumer retry:", type(error).__name__, flush=True)
+                code = error.args[0].code() if error.args and callable(getattr(error.args[0], "code", None)) else "local"
+                print("archive consumer retry:", type(error).__name__, code, flush=True)
                 time.sleep(10)
     threading.Thread(target=worker, daemon=True).start()
     HTTPServer(("0.0.0.0", 8787), handler_for(archive, token, health)).serve_forever()
