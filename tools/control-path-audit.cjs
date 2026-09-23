@@ -22,6 +22,11 @@ assert(read('AppModel').includes('navigation.onGuidanceEnd = { [weak self] in se
 const bridge = fs.readFileSync('TeslaLocal.swiftpm/Sources/KakaoNavigationBridge/YLKakaoController.m', 'utf8');
 assert(!bridge.includes('shouldSpeak:'), 'SDK voice timing must not be suppressed by app timers');
 assert(!bridge.includes('YLSpokenDistance'), 'No legacy recording distance buckets');
+assert(!bridge.includes('[@"spoken"]'), 'Voice must not reuse dashboard maneuver labels');
+assert(bridge.includes('YLNavigationSpeech(dir.rgCode, dir.nodeName, dir.directionNames, metres)'));
+assert(!bridge.includes('회전 교차로에서 첫 번째 출구'), 'Clock direction must not become ordinal exit');
+assert(!bridge.includes('졸음쉼터로 진입합니다'), 'Nearby rest area is not a route instruction');
+assert(!bridge.includes('구간 단속이 끝났습니다'), 'Upcoming endpoint is not completed section');
 assert(bridge.includes('directionFreqModeNormalWay = mode'));
 assert(!bridge.includes('if (self.guiding && self.locationGuide.location) return YES;'));
 assert(!bridge.includes('roadLaneSource'), 'Do not invent actual road lanes from road names');
