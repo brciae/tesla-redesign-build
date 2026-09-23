@@ -32,7 +32,7 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "roundabout-probe"]; app.launch()
         XCTAssertTrue(app.otherElements["회전교차로 9시 방향 출구"].waitForExistence(timeout: 8) || app.staticTexts["회전교차로"].exists)
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Roundabout exit nine"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Roundabout exit nine"; shot.lifetime = .keepAlways; add(shot)
         XCUIDevice.shared.orientation = .portrait
     }
     func testBatteryBaselineAndPeriods() {
@@ -105,7 +105,7 @@ final class InteractionTests: XCTestCase {
             XCTAssertTrue(stop.waitForExistence(timeout: 8))
             XCTAssertTrue(stop.isHittable)
             XCTAssertGreaterThanOrEqual(stop.frame.height, 44)
-            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Parked route stop \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Parked route stop \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
         }
         app.buttons["navigation.parked.stop"].tap()
         XCTAssertTrue(app.staticTexts["navigation.stopped"].waitForExistence(timeout: 3))
