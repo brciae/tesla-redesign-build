@@ -18,10 +18,23 @@ final class AppModel: ObservableObject {
     let aiRules = AutomationAI()
     let voice = VoiceCoordinator()
     @Published var output: Object = [:]
+    @Published private(set) var archiveReadings: [FleetTelemetryReading] = []
     @Published var errorMessage: String?
     @Published private(set) var storageStatus: String?
     @Published var demo = false
     @Published var sharedFile: URL?
+    var vehicleReference: Object {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        return UserDefaults.standard.dictionary(forKey: "vehicle.reference." + vin) ?? [:]
+    }
+    var displayOdometerKm: Double? {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        var values = [vehicleReference.number("odometerKm")]
+        if settings.string("vin") == vin { values.append(groups.object("drive").number("odometerKm")) }
+        if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin { values.append(snapshot.number("vehicle_state", "odometer").map { $0 * 1.609344 }) }
+        if !demo, let reading = FleetTelemetryData.latest(archiveReadings, vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
+        return values.compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max()
+    }
     var isSpeaking: Bool { voice.speaking }
     @Published var receiptDraft: Object = [:]
     @Published var receiptText = ""
@@ -34,6 +47,8 @@ final class AppModel: ObservableObject {
     private var recoveryLock = false
     private var timer: Timer?
     private var fleetObservation: AnyCancellable?
+    private var archiveObservation: AnyCancellable?
+    private var lastArchiveSync = Date.distantPast
     private var protectedDataObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
@@ -68,9 +83,30 @@ final class AppModel: ObservableObject {
             return !self.demo && UIApplication.shared.applicationState == .active && !self.link.controlBusy && !self.link.preparingControl && self.link.confirmation == nil
         }
         fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
+        fleet.onVehicleSnapshot = { [weak self] snapshot in
+            guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin else { return }
+            if !self.link.authentic, snapshot.sectionIsRecent("drive_state") {
+                let overlay = snapshot.homeOverlay()
+                let history: Object = ["vin": snapshot.vin, "drive": snapshot.driveDisplay(), "charge": overlay["charge"] ?? Object(), "location": overlay["location"] ?? Object()]
+                do { self.output = try self.runtime.call("ingestFleetDrive", history) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+                catch { self.storageStatus = "Fleet 운행 기록 저장: " + error.localizedDescription }
+            }
+            guard snapshot.sectionIsRecent("charge_state"),
+                  let charge = snapshot.payload["charge_state"] as? Object,
+                  let status = charge["charging_state"] as? String,
+                  let state = ["Disconnected": 2, "NoPower": 3, "Starting": 4, "Charging": 5, "Complete": 6, "Stopped": 7, "Calibrating": 8][status] else { return }
+            var input: Object = ["vin": snapshot.vin, "charging": state]
+            input["at"] = snapshot.number("charge_state", "timestamp")
+            input["soc"] = snapshot.soc; input["limit"] = snapshot.number("charge_state", "charge_limit_soc")
+            input["addedKWh"] = snapshot.number("charge_state", "charge_energy_added")
+            do { self.output = try self.runtime.call("ingestFleetCharge", input) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
+        }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
         }
+        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.archiveReadings = FleetTelemetryStore.shared.records } }
+        Task { @MainActor [weak self] in self?.archiveReadings = FleetTelemetryStore.shared.records }
         automations.settingsDidChange = { [weak self] in self?.voice.stopAutomatic(); self?.link.cancelPendingAutomation() }
         navigation.canPresent = { [weak self] in
             guard let self else { return false }
@@ -79,8 +115,13 @@ final class AppModel: ObservableObject {
         }
         navigation.willStart = { [weak self] in self?.stopSpeech() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
-        navigation.onGuidanceEnd = { [weak self] in self?.voice.stop() }
+        navigation.onGuidanceEnd = { [weak self] in
+            self?.voice.stop()
+            self?.voice.navigationGuide("경로 안내 종료.", safety: false)
+        }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
+        navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
+        voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         link.onControlOutcome = { [weak self] message in
             self?.voice.say(message, key: "controlOutcome:" + UUID().uuidString, category: "voiceControl", priority: 2)
@@ -91,6 +132,11 @@ final class AppModel: ObservableObject {
                 let previousCount = self.state.rows("trips").count
                 let previousCharges = self.state.rows("charges").count
                 self.output = try self.runtime.call("ingest", snapshot) as? Object ?? [:]
+                let charging = snapshot.object("groups").object("charge")
+                if let raw = charging.number("charging"), let status = ChargeEventPolicy.bleState(Int(raw)), let at = charging.number("at") {
+                    let observation = ChargeObservation(vin: self.settings.string("vin"), at: Date(timeIntervalSince1970: at / 1000), state: status, soc: charging.number("soc"), limit: charging.number("limit"))
+                    Task { @MainActor in ChargeNotificationManager.shared.observe(observation) }
+                }
                 if snapshot.object("groups")["drive"] != nil {
                     self.considerNavigation()
                     let d = snapshot.object("groups").object("drive")
@@ -123,6 +169,7 @@ final class AppModel: ObservableObject {
         }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
+            self?.syncArchiveIfNeeded()
             if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active {
                 Task { @MainActor in await self.fleet.refreshVehicleSnapshot() }
             }
@@ -132,6 +179,24 @@ final class AppModel: ObservableObject {
     deinit {
         timer?.invalidate()
         if let protectedDataObserver { NotificationCenter.default.removeObserver(protectedDataObserver) }
+    }
+    private func syncArchiveIfNeeded() {
+        Task { @MainActor in
+        guard !demo, UIApplication.shared.applicationState == .active,
+              Date().timeIntervalSince(lastArchiveSync) >= 30, !FleetArchiveClient.shared.address.isEmpty,
+              !fleet.selectedVin.isEmpty else { return }
+        lastArchiveSync = Date()
+        let vin = fleet.selectedVin
+            await FleetArchiveClient.shared.sync(vin: vin)
+            guard !self.demo, self.fleet.selectedVin == vin else { return }
+            let rows: [Object] = FleetTelemetryStore.shared.records.filter { $0.vin == vin }.map { r in
+                var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "field": r.field, "text": r.text, "invalid": r.invalid]
+                if let n = r.number { value["number"] = n }; return value
+            }
+            guard !rows.isEmpty else { return }
+            do { self.output = try self.runtime.call("ingestArchive", ["vin": vin, "rows": rows]) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "NAS 기록 통합: " + error.localizedDescription }
+        }
     }
     func refresh() {
         do { output = try runtime.call("view") as? Object ?? [:]; if !link.connected || !link.authentic { output["fresh"] = Object() } }
@@ -226,7 +291,6 @@ final class AppModel: ObservableObject {
         if savePending { saveRecordsWhenAvailable() }
         link.resume(vin: settings.string("vin")); navigation.foregrounded(); refresh()
         Task { @MainActor in await fleet.refreshVehicleSnapshot() }
-        triggerDepartureBriefingIfNeeded()
     }
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
@@ -234,7 +298,6 @@ final class AppModel: ObservableObject {
         else if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
         else { connect() }
         refresh()
-        triggerDepartureBriefingIfNeeded()
     }
     func speak(_ text: String? = nil) {
         let fresh = output.object("fresh")
@@ -329,6 +392,20 @@ final class AppModel: ObservableObject {
             guard root.string("kind") == "YLCompanionBackup", root.number("schema") == 1 else { throw LocalError.message("YL Companion JSON 백업만 지원함. Tesla·다른 앱의 내보내기 자료는 형식 확인 후 변환 필요.") }
             let counts = try runtime.call("mergeHistory", root.object("state")) as? Object ?? [:]
             try persist(); refresh()
+            let reference = root.object("vehicleReference")
+            let vin = root.object("state").object("settings").string("vin")
+            if !vin.isEmpty, reference.string("vin") == vin {
+                var checked: Object = [:]
+                for key in ["odometerKm", "nominalAh", "nominalVoltage", "nominalKWh", "basicWarrantyKm", "batteryWarrantyKm"] {
+                    if let value = reference.number(key), value.isFinite, value >= 0 { checked[key] = value }
+                }
+                for key in ["vin", "sourceDate", "source", "cellMaker", "cellShape", "chemistry", "basicWarrantyEnd", "batteryWarrantyEnd"] {
+                    let text = reference.string(key)
+                    if !text.isEmpty, text.count <= 200 { checked[key] = text }
+                }
+                UserDefaults.standard.set(checked, forKey: "vehicle.reference." + vin)
+                objectWillChange.send()
+            }
             errorMessage = "과거 운행 \(Int(counts.number("trips") ?? 0))건 · 충전 \(Int(counts.number("charges") ?? 0))건 추가 · 중복 \(Int(counts.number("duplicates") ?? 0))건 제외"
         } catch { errorMessage = error.localizedDescription }
     }

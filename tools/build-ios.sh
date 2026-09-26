@@ -32,8 +32,10 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-au
 Xcode/FleetAuthTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetCommandPolicy.swift tools/fleet-command-tests.swift -o Xcode/FleetCommandTests
 Xcode/FleetCommandTests
-swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/FleetSupplement.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
 Xcode/FleetSnapshotTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/FleetParkingAnalysis.swift TeslaLocal.swiftpm/Sources/AppModule/OwnershipAnalysis.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift tools/fleet-telemetry-tests.swift -o Xcode/FleetTelemetryTests
+Xcode/FleetTelemetryTests
 swift tools/prepare-icon.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-policy-tests.swift -o Xcode/NativePolicyTests
 Xcode/NativePolicyTests
@@ -43,7 +45,6 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swift
 Xcode/ScreenBriefingTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/ParkingModels.swift tools/parking-record-tests.swift -o Xcode/ParkingRecordTests
 Xcode/ParkingRecordTests
-bash tools/test-interface.sh
 xcodegen generate --spec Xcode/project.json --project Xcode
 xcodebuild -resolvePackageDependencies \
   -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
@@ -54,6 +55,8 @@ xcodebuild -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
   -clonedSourcePackagesDirPath Xcode/SourcePackages \
   -disableAutomaticPackageResolution \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
+
+bash tools/test-interface.sh
 
 app_path="$repo_root/Xcode/DerivedData/Build/Products/Release-iphoneos/YLCompanion.app"
 test -s "$app_path/YLCompanion"
@@ -66,7 +69,7 @@ ditto "$app_path" "$stage_dir/Payload/YLCompanion.app"
 mkdir -p "$repo_root/Xcode/BuildOutput"
 app_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app_path/Info.plist")
 app_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app_path/Info.plist")
-artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla ${app_version} Build${app_build} v01 Review.ipa"
+artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla-${app_version}-Build${app_build}-v01-Review.ipa"
 ditto -c -k --keepParent "$stage_dir/Payload" "$artifact_path"
 unzip -t "$artifact_path"
 shasum -a 256 "$artifact_path"

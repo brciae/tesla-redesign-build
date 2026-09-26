@@ -1,6 +1,62 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testNASConnectionFieldsVisible() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["archive-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["차량 → NAS → 앱"].waitForExistence(timeout: 10))
+        for _ in 0..<3 where !app.secureTextFields["archive.token"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.textFields["archive.address"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.secureTextFields["archive.token"].isHittable)
+        XCTAssertTrue(app.staticTexts["NAS 연결 키"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "NAS labeled connection fields"; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testDestinationSearchEntry() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["search-probe"]; app.launch()
+        XCTAssertTrue(app.textFields["destination.query"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["검색"].isEnabled)
+        XCTAssertTrue(app.buttons["집"].isHittable)
+        XCTAssertTrue(app.buttons["회사"].isHittable)
+        let field = app.textFields["destination.query"]
+        field.tap(); field.typeText("고등기술연구원")
+        XCTAssertTrue(app.buttons["검색"].isEnabled)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Destination search entry"; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testRestoredClimateAndFleetCards() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["climate-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["목표 실내 온도"].waitForExistence(timeout: 10))
+        let top = XCTAttachment(screenshot: app.screenshot()); top.name = "Restored climate top and cabin"; top.lifetime = .keepAlways; add(top)
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["반려동물"].waitForExistence(timeout: 5))
+        let lower = XCTAttachment(screenshot: app.screenshot()); lower.name = "Restored climate seats and modes"; lower.lifetime = .keepAlways; add(lower)
+        app.terminate(); app.launchArguments = ["fleet-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["내 차량"].waitForExistence(timeout: 10))
+        let fleet = XCTAttachment(screenshot: app.screenshot()); fleet.name = "Fleet detail cards"; fleet.lifetime = .keepAlways; add(fleet)
+    }
+
+    func testVisualFleetOverviewAndWarranty() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["fleet-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["내 차량"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["최근 충전"].exists)
+        XCTAssertTrue(app.buttons["타이어·정비"].exists)
+        var shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet visual charge overview"; shot.lifetime = .keepAlways; add(shot)
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet consolidated menu"; shot.lifetime = .keepAlways; add(shot)
+        let warranty = app.buttons["보증·관리"]
+        if !warranty.isHittable { app.swipeUp() }
+        XCTAssertTrue(warranty.waitForExistence(timeout: 5)); warranty.tap()
+        XCTAssertTrue(app.staticTexts["남은 거리"].firstMatch.waitForExistence(timeout: 5))
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Warranty remaining bars"; shot.lifetime = .keepAlways; add(shot)
+        app.navigationBars.buttons.firstMatch.tap()
+        let tires = app.buttons["타이어·정비"]
+        XCTAssertTrue(tires.waitForExistence(timeout: 5)); tires.tap()
+        for label in ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"] { XCTAssertTrue(app.staticTexts[label].waitForExistence(timeout: 5)) }
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Unified tire readings"; shot.lifetime = .keepAlways; add(shot)
+
+    }
+
     func testTabBarOpacityAndContentSeparation() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["tabbar-probe"]; app.launch()
@@ -81,10 +137,16 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["34"].waitForExistence(timeout: 8), "speed missing: \(theme) \(orientation.rawValue)")
                 XCTAssertTrue(app.staticTexts["1.5 km"].exists, "turn distance missing: \(theme) \(orientation.rawValue)")
                 XCTAssertTrue(app.staticTexts["1.5 km"].firstMatch.isHittable, "turn distance covered: \(theme) \(orientation.rawValue)")
-                if ["클러스터", "관제"].contains(theme) {
-                    let media = app.staticTexts["navigation.media.title"]
-                    XCTAssertTrue(media.exists, "media header missing")
-                    XCTAssertLessThanOrEqual(media.frame.maxY, app.staticTexts["1.5 km"].firstMatch.frame.minY, "media must stay above directions")
+                let media = app.staticTexts["navigation.media.title"]
+                XCTAssertTrue(media.exists, "media dock missing: \(theme)")
+                if theme == "클러스터" || theme == "관제" {
+                    let map = app.otherElements["navigation.map"]
+                    XCTAssertTrue(map.exists)
+                    XCTAssertGreaterThan(map.frame.height, 120)
+                    XCTAssertLessThanOrEqual(map.frame.maxY, media.frame.minY, "media must remain outside the map")
+                    XCTAssertFalse(app.otherElements["navigation.modeling"].exists)
+                } else {
+                    XCTAssertTrue(app.otherElements["navigation.modeling"].exists, "modeling layout must be preserved")
                 }
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Navigation \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
@@ -199,6 +261,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["cache.files"].label, "24")
         app.buttons["voice.cache.delete"].tap()
         app.buttons["모든 음성 캐시 삭제"].tap()
+        let cleared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == '0'"), object: app.staticTexts["cache.files"])
+        XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 3), .completed)
         XCTAssertEqual(app.staticTexts["cache.files"].label, "0")
     }
 }

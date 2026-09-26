@@ -24,6 +24,9 @@ struct TypecastPolicyTests {
         precondition(blocked.localizedDescription.contains("API 이용 제한"))
         precondition(blocked.localizedDescription.contains("UNUSUAL_ACTIVITY_DETECTED"))
         precondition(!blocked.localizedDescription.contains("raw account details"))
+        precondition(!blocked.localizedDescription.contains("IP당 무료 계정 제한"))
+        let stage = TypecastAPIPolicy.failure(status: 403, data: Data("forbidden".utf8), secrets: [], stage: "POST /v1/text-to-speech")
+        precondition(stage.localizedDescription.contains("POST /v1/text-to-speech"))
         precondition(!TypecastAPIPolicy.canTryNextAccount(blocked.code))
         print("PASS: Typecast error classification, account restriction stop, redaction and exact voice resolution")
     }

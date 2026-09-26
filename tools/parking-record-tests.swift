@@ -2,6 +2,15 @@ import Foundation
 
 @main struct ParkingRecordTests {
     static func main() throws {
+        var zoneRecord = SmartParkingRecord()
+        zoneRecord.locationType = .evCharging
+        zoneRecord.vehicle.isCharging = false
+        zoneRecord.refreshLocationType()
+        precondition(zoneRecord.locationType == .general)
+        zoneRecord.mobile.ocrSpecialZone = "전기차 충전구역"
+        zoneRecord.refreshLocationType()
+        precondition(zoneRecord.locationType == .evCharging)
+
         var original = SmartParkingRecord()
         original.vehicleID = "A"
         original.timestamp = Date(timeIntervalSince1970: 1000)

@@ -145,8 +145,8 @@ struct BatteryOverview: View {
             DisclosureGroup("자세한 수치") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        measure("주차 소비", usage.object("energy").number("parkingKWh"), "kWh")
-                        measure("미분류 소비", usage.object("energy").number("unclassifiedKWh"), "kWh")
+                        measure("주차 중 소비", usage.object("energy").number("parkingKWh"), "kWh")
+                        InfoNote("주차 중 소비", "확인되는 작동 기록에 따라 감시 모드·공조·대기를 나눕니다. 세분할 근거가 없는 주차 구간은 자연방전으로 묶습니다.")
                     }
                     if let forecast = index.number("forecastDegradation180") {
                         HStack { measure("180일 후 열화", forecast, "%"); measure("현재 관측 오차", index.number("uncertaintyPercent"), "%p") }

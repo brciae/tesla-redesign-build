@@ -1,0 +1,95 @@
+name: NAS archive validation
+on:
+  workflow_dispatch:
+    inputs:
+      probe_origin:
+        description: Optional HTTPS archive origin to check from outside the LAN
+        required: false
+        type: string
+      receiver_port:
+        description: Optional direct vehicle TLS port to verify with the same hostname
+        required: false
+        type: string
+  push:
+    paths: ['server/**', '.github/workflows/server-test.yml']
+jobs:
+  archive:
+    if: ${{ !inputs.probe_origin }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Storage regression tests
+        working-directory: server
+        run: python -m unittest -v test_store.py
+      - name: Start isolated NAS stack
+        working-directory: server
+        run: docker compose up --build --wait --wait-timeout 240
+      - name: Delivery and restart recovery
+        working-directory: server
+        run: |
+          curl --fail --silent http://127.0.0.1:8787/health
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8787/v1/telemetry)" = 401
+          docker compose exec -T archive python - < integration.py
+          docker compose restart archive kafka
+          docker compose up --wait --wait-timeout 180
+          docker compose exec -T archive python - < integration.py
+          docker stats --no-stream
+      - name: Official receiver startup with disposable TLS certificate
+        working-directory: server
+        run: |
+          mkdir -p certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout certs/privkey.pem -out certs/fullchain.pem
+          chmod 644 certs/privkey.pem
+          python check_receiver_tls.py certs/fullchain.pem certs/privkey.pem
+          cp telemetry-config.example.json telemetry-config.json
+          docker compose -f docker-compose.yml -f docker-compose.telemetry.yml up -d telemetry
+          sleep 15
+          id=$(docker compose -f docker-compose.yml -f docker-compose.telemetry.yml ps -q telemetry)
+          test -n "$id"
+          test "$(docker inspect --format '{{.State.Running}}:{{.RestartCount}}' "$id")" = true:0
+      - name: Diagnostics
+        if: failure()
+        working-directory: server
+        run: docker compose -f docker-compose.yml -f docker-compose.telemetry.yml ps -a && docker compose -f docker-compose.yml -f docker-compose.telemetry.yml logs --tail 50
+      - name: Clean up test volumes
+        if: always()
+        working-directory: server
+        run: docker compose -f docker-compose.yml -f docker-compose.telemetry.yml down -v
+  public-endpoint:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.probe_origin != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check TLS, readiness and authentication without credentials
+        env:
+          PROBE_ORIGIN: ${{ inputs.probe_origin }}
+          RECEIVER_PORT: ${{ inputs.receiver_port }}
+        run: |
+          python - <<'PY'
+          import os, urllib.request, urllib.error, urllib.parse, json
+          origin = os.environ['PROBE_ORIGIN'].rstrip('/')
+          url = urllib.parse.urlsplit(origin)
+          assert url.scheme == 'https' and url.hostname and not url.username and not url.password
+          assert not url.path and not url.query and not url.fragment
+          with urllib.request.urlopen(origin + '/health', timeout=15) as response:
+              result = json.load(response)
+              assert result.get('ready') is True
+          print('Public HTTPS readiness: PASS')
+          try:
+              urllib.request.urlopen(origin + '/v1/telemetry', timeout=15)
+          except urllib.error.HTTPError as error:
+              assert error.code == 401, error.code
+              print('Unauthenticated access denied: PASS')
+          else:
+              raise AssertionError('Unauthenticated request was not denied')
+          if os.environ.get('RECEIVER_PORT'):
+              import socket, ssl
+              port = int(os.environ['RECEIVER_PORT'])
+              assert 1 <= port <= 65535
+              context = ssl.create_default_context()
+              with socket.create_connection((url.hostname, port), timeout=15) as sock:
+                  with context.wrap_socket(sock, server_hostname=url.hostname) as secure:
+                      assert secure.getpeercert()
+                      print('Vehicle receiver public TLS and hostname: PASS')
+          PY

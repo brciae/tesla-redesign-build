@@ -20,6 +20,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)updateStandbyLocationWithLatitude:(double)latitude longitude:(double)longitude bearing:(double)bearing speed:(double)speed timestamp:(double)timestamp
     NS_SWIFT_NAME(updateStandbyLocation(latitude:longitude:bearing:speed:timestamp:));
 - (void)stopNavigation NS_SWIFT_NAME(stopNavigation());
+- (BOOL)isSpeechTargetAhead:(NSString *)identifier NS_SWIFT_NAME(isSpeechTargetAhead(_:));
 /// Resume camera tracking after manual map browsing.
 - (void)recenter NS_SWIFT_NAME(recenter());
 @end

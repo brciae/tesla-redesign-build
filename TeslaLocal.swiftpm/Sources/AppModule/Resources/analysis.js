@@ -187,10 +187,11 @@
     const clean=initial();for(const k of Object.keys(clean))if(k in s)clean[k]=JSON.parse(JSON.stringify(s[k]));
     if(s.batteryBaseline){const b=s.batteryBaseline;if(!num(b.at,0,1e14)||b.healthPercent!==100||b.source!=='assumedNew'||!optional(b.capacityKWh,20,200))throw Error('배터리 기준 형식 오류');clean.batteryBaseline={at:b.at,healthPercent:100,source:'assumedNew',capacityKWh:b.capacityKWh??null,referenceIds:[]};}
     if(s.activeTrip){const t=s.activeTrip;if(typeof t.id!=='string'||!t.id)t.id=id();if(typeof t.id!=='string'||!num(t.start,0,1e14)||!num(t.lastAt,t.start,1e14)||!optional(t.startSOC,0,100)||!optional(t.lastSOC,0,100)||!num(t.distanceKm,0,100000))throw Error('진행 중 운행 기록 오류');const resume=opts.resumeActive===true&&Date.now()-t.lastAt<=1800000&&num(t.lastOdo,0,1e7);if(resume)clean.activeTrip={...JSON.parse(JSON.stringify(t)),resumed:true,lastPowerKW:null,parkAt:t.parkAt??null,points:Array.isArray(t.points)?t.points.slice(-2000):[]};else if(!clean.trips.some(x=>x.id===t.id))append(clean.trips,{id:t.id,start:t.start,end:t.lastAt,startSOC:t.startSOC??null,endSOC:t.lastSOC??null,distanceKm:t.distanceKm,missing:true,points:[],recovered:true});}
-    if(s.activeCharge){const c={...s.activeCharge,source:'BLE 복구',complete:false,storedKWh:null,supplyKWh:null,cost:null};validateCharge(c);if(typeof c.id!=='string'||!c.id)c.id=id();if(!clean.charges.some(x=>x.id===c.id))append(clean.charges,c);}
+    let resumedCharge=null;
+    if(s.activeCharge){const c={...s.activeCharge,complete:false,storedKWh:null,supplyKWh:null,cost:null};validateCharge(c);if(typeof c.id!=='string'||!c.id)c.id=id();const age=Date.now()-(c.lastAt??c.at);if(opts.resumeActive===true&&age>=0&&age<=48*3600000){clean.activeCharge={...c,resumed:true};resumedCharge=clean.activeCharge;}else if(!clean.charges.some(x=>x.id===c.id))append(clean.charges,{...c,end:c.lastAt??c.at,source:c.source??'차량 복구',partial:true});}
     // v30: a trip interrupted by an app restart within 30 min continues (odometer continuity is re-checked on the next sample).
     if(!(opts.resumeActive===true&&clean.activeTrip&&s.activeTrip&&clean.activeTrip.id===s.activeTrip.id))clean.activeTrip=null;
-    clean.activeCharge=null;clean.navSent=null;clean.weather=null;
+    clean.activeCharge=resumedCharge;clean.navSent=null;clean.weather=null;
     return clean;
   }
   function validateCharge(c){
@@ -236,9 +237,9 @@
       }
       return this.view(now);
     }
-    drive(g,now){
+    drive(g,now,context=this.state.groups){
       if(!fresh(g,now)||this.lastDrive&&g.at<=this.lastDrive.at)return;
-      const s=this.state,prev=this.lastDrive,c=fresh(s.groups.charge,now,TTL.charge)?s.groups.charge:null;
+      const s=this.state,prev=this.lastDrive,c=fresh(context.charge,now,TTL.charge)?context.charge:null;
       // Resume after disconnect in P: close the previous trip before a new drive starts.
       if(s.activeTrip?.parkAt!=null&&g.at-s.activeTrip.parkAt>=45000)this.finish(s.activeTrip.parkAt,false);
       const moving=['D','R'].includes(g.gear)&&num(g.speedKmh,1,350);
@@ -272,7 +273,7 @@
         if(hasOdometers){if(validDistance)t.distanceKm+=dx;else t.missing=true;}
         else t.missing=true;
         t.lastAt=g.at;t.lastOdo=g.odometerKm;if(c)t.lastSOC=c.soc;
-        const loc=s.groups.location;if(freshLocation(loc,now)&&t.points.length<2000)t.points.push({at:g.at,lat:loc.latitude,lng:loc.longitude});
+        const loc=context.location;if(freshLocation(loc,now)&&t.points.length<2000)t.points.push({at:g.at,lat:loc.latitude,lng:loc.longitude});
         if(g.gear==='P'){if(t.parkAt==null)t.parkAt=g.at;if(g.at-t.parkAt>=45000)this.finish(g.at,false);}else t.parkAt=null;
       }
       this.lastDrive=g;
@@ -293,19 +294,52 @@
       s.lastBrief=`이번 운행 거리는 ${trip.distanceKm} km, 소요 시간은 ${Math.round((trip.end-trip.start)/60000)}분입니다. `+(delta==null?'배터리 사용량은 확인되지 않았습니다.':`배터리 잔량은 ${Math.abs(delta)} 퍼센트포인트 ${delta>=0?'감소':'증가'}했습니다.`)+(trip.missing?' 일부 구간은 확인되지 않아 추정값으로 안내합니다.':'');
       return trip;
     }
+    ingestFleetDrive(input,now=Date.now()){
+      if(typeof input.vin!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(input.vin))throw Error('Fleet 차량 식별값 오류');
+      if(this.state.settings.vin&&this.state.settings.vin!==input.vin)throw Error('기록 차량과 Fleet 차량이 다릅니다.');
+      if(!this.state.settings.vin){if(this.state.trips.length||this.state.charges.length)throw Error('기존 기록의 차량을 먼저 선택해 주세요.');this.state.settings.vin=input.vin;}
+      if(input.drive)this.drive(input.drive,now,{charge:input.charge,location:input.location});
+      return this.view(now);
+    }
+    ingestFleetCharge(input,now=Date.now()){
+      if(typeof input.vin!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(input.vin))throw Error('Fleet 차량 식별값 오류');
+      if(this.state.settings.vin&&this.state.settings.vin!==input.vin)throw Error('기록 차량과 Fleet 차량이 다릅니다.');
+      if(!this.state.settings.vin){if(this.state.trips.length||this.state.charges.length)throw Error('기존 기록의 차량을 먼저 선택해 주세요.');this.state.settings.vin=input.vin;}
+      this.charge({...input,source:'Fleet'},now);return this.view(now);
+    }
     charge(g,now){
       if(!fresh(g,now)||this.lastCharge&&g.at<=this.lastCharge.at)return;
+      if(this.state.activeCharge?.lastAt!=null&&g.at<=this.state.activeCharge.lastAt)return;
       const s=this.state,prev=this.lastCharge;
       if(s.activeCharge&&(!prev||g.at-prev.at>30000))s.activeCharge.partial=true;
       if(g.charging===5){
-        if(!s.activeCharge)s.activeCharge={id:id(),at:g.at,startSOC:g.soc,endSOC:g.soc,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!prev||prev.charging===5};
+        if(s.activeCharge&&num(g.addedKWh,0,300)&&num(s.activeCharge.lastAdded,0,300)&&g.addedKWh+0.5<s.activeCharge.lastAdded){const old=s.activeCharge;append(s.charges,{...old,end:old.lastAt??old.at,complete:false,partial:true});s.activeCharge=null;}
+        if(!s.activeCharge){
+          const boundary=!!prev&&[2,3,4,6,7].includes(prev.charging)&&g.at-prev.at<=120000;
+          const capacity=this.health().capacity??s.settings.assumedCapacityKWh??75;
+          const estimate=num(g.soc,0,100)&&num(g.addedKWh,0,300)?round(Math.max(0,g.soc-g.addedKWh/capacity*100),1):null;
+          const start=boundary?(num(prev.soc,0,100)?prev.soc:g.soc):estimate;
+          s.activeCharge={id:id(),at:boundary?prev.at:g.at,startSOC:num(start,0,100)?start:null,startSOCObserved:boundary&&num(start,0,100),startSOCEstimated:!boundary&&estimate!=null,endSOC:num(g.soc,0,100)?g.soc:null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
+        }
         const c=s.activeCharge;if(g.addedKWh!=null&&c.lastAdded!=null&&g.addedKWh<c.lastAdded)c.partial=true;
-        c.endSOC=g.soc??c.endSOC;c.lastAt=g.at;
+        c.endSOC=num(g.soc,0,100)?g.soc:c.endSOC;c.lastAt=g.at;
         if(num(g.addedKWh,0,300)){c.lastAdded=g.addedKWh;c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);}
       }else if(s.activeCharge&&[2,6,7].includes(g.charging)){
-        const c=s.activeCharge;c.endSOC=g.soc??c.endSOC;c.end=g.at;c.source='BLE';c.storedKWh=null;c.supplyKWh=null;c.cost=null;c.complete=!c.partial;
+        const c=s.activeCharge;const near=(g.at-(c.lastAt??c.at))<=120000;
+        const observedEnd=near&&num(g.soc,0,100)&&(c.startSOC==null||g.soc>=c.startSOC);
+        const estimatedEnd=!observedEnd&&g.charging===6&&num(g.limit,1,100)&&g.limit>=(c.endSOC??c.startSOC??0)?g.limit:null;
+        c.endSOC=observedEnd?g.soc:estimatedEnd??c.endSOC;c.endSOCObserved=observedEnd;c.endSOCEstimated=estimatedEnd!=null;c.endSOCLastObserved=!observedEnd&&estimatedEnd==null;c.end=near?g.at:c.lastAt??g.at;c.source=c.source===g.source||!g.source?c.source:[...new Set((c.source??'BLE').split('+').concat(g.source))].join('+');c.storedKWh=null;c.supplyKWh=null;c.cost=null;c.complete=c.startSOCObserved===true&&observedEnd;
         if(num(g.addedKWh,0,300))c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);
         append(s.charges,c);s.activeCharge=null;
+      }
+      // A first observation after charging finished still contains the vehicle's session energy.
+      // Preserve that session without inventing its start time or claiming a measured start SOC.
+      if(!s.activeCharge&&[6,7].includes(g.charging)&&num(g.addedKWh,0.01,300)&&num(g.soc,0,100)){
+        const duplicate=s.charges.some(c=>Math.abs((c.vehicleReportedKWh??-1)-g.addedKWh)<0.01&&Math.abs((c.endSOC??-1)-g.soc)<0.1&&g.at-(c.end??c.at)>=0&&g.at-(c.end??c.at)<48*3600000);
+        if(!duplicate){
+          const capacity=this.health().capacity??s.settings.assumedCapacityKWh??75;
+          append(s.charges,{id:id(),at:g.at,end:g.at,startSOC:round(Math.max(0,g.soc-g.addedKWh/capacity*100),1),startSOCEstimated:true,endSOC:g.soc,endSOCObserved:true,vehicleReportedKWh:g.addedKWh,complete:false,partial:true,collectedAfterEnd:true,source:g.source??'BLE',note:'종료 후 수집 · 표시 시각은 수집 시각 · 시작 잔량은 충전량으로 추정'});
+        }
       }
       this.lastCharge=g;
     }
@@ -375,6 +409,39 @@
         last.at=now;last.locationAt=l.at;last.latitude=l.latitude;last.longitude=l.longitude;last.visits=(last.visits||1)+1;return last;
       }
       append(this.state.parkingNotes,p);return p;
+    }
+    ingestArchive(input){
+      const vin=input.vin, rows=input.rows;
+      if(typeof vin!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)||!Array.isArray(rows)||rows.length>50000)throw Error('NAS 기록 형식 오류');
+      if(this.state.settings.vin&&this.state.settings.vin!==vin)throw Error('동일 차량의 NAS 기록만 합칠 수 있음');
+      if(!this.state.settings.vin){if(this.state.trips.length||this.state.charges.length)throw Error('기존 기록의 차량을 먼저 선택해 주세요.');this.state.settings.vin=vin;}
+      const replay=new Engine();replay.state.settings={...this.state.settings};
+      const latest={},byTime=new Map();
+      let chargeBegan=null,previousCharge=null;
+      for(const r of rows){if(!num(r.at,1,Date.now()+5000)||typeof r.field!=='string')continue;if(!byTime.has(r.at))byTime.set(r.at,[]);byTime.get(r.at).push(r);}
+      const scalar=field=>{const r=latest[field];if(!r||r.invalid)return null;if(Number.isFinite(r.number))return r.number;try{return Object.values(JSON.parse(r.text))[0];}catch{return null;}};
+      for(const at of [...byTime.keys()].sort((a,b)=>a-b)){
+        for(const row of byTime.get(at))latest[row.field]=row;
+        const soc=scalar('Soc')??scalar('BatteryLevel'),odo=scalar('Odometer'),speed=scalar('VehicleSpeed');
+        const gear=String(scalar('Gear')??'').replace('ShiftState','');
+        const detail=String(scalar('DetailedChargeState')??'').replace('DetailedChargeState','');
+        const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
+        if(charging===5&&previousCharge!==5)chargeBegan=at;
+        const added=chargeBegan!==null&&latest.DCChargingEnergyIn?.at>=chargeBegan?scalar('DCChargingEnergyIn'):null;
+        if(charging!==undefined){replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);previousCharge=charging;}
+        if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
+      }
+      for(const kind of ['trips','charges'])for(const source of replay.state[kind]){
+        const start=kind==='trips'?source.start:source.at,end=source.end??start;
+        const row={...source,id:'nas:'+vin+':'+kind+':'+start,source:'NAS'};
+        const list=this.state[kind],same=list.findIndex(x=>x.id===row.id);
+        if(same>=0){list[same]=row;continue;}
+        const overlaps=x=>{const a=kind==='trips'?x.start:x.at,b=x.end??x.lastAt??a;return Math.min(end,b)>=Math.max(start,a);};
+        // Prefer existing phone/manual records; never double-count one observed session.
+        if(list.some(overlaps)||(kind==='trips'?this.state.activeTrip:this.state.activeCharge)&&overlaps(kind==='trips'?this.state.activeTrip:this.state.activeCharge))continue;
+        append(list,row);list.sort((a,b)=>(a.start??a.at)-(b.start??b.at));
+      }
+      return this.view();
     }
     mergeHistory(value){
       const source=validateState(value),target=this.state;
@@ -467,14 +534,14 @@
     chargeSummary(){
       const s=this.state,rows=[...s.charges,...(s.activeCharge?[{...s.activeCharge,active:true,source:'충전 중'}]:[])];
       const total=key=>{const values=rows.map(c=>c[key]).filter(v=>num(v,0,key==='cost'?1e7:300));return values.length?round(values.reduce((a,b)=>a+b,0),2):null;};
-      return {rows:rows.slice().reverse(),count:rows.length,supplyKWh:total('supplyKWh'),vehicleReportedKWh:total('vehicleReportedKWh'),cost:total('cost'),active:!!s.activeCharge};
+      return {rows:rows.slice().sort((a,b)=>(b.end??b.lastAt??b.at)-(a.end??a.lastAt??a.at)),count:rows.length,supplyKWh:total('supplyKWh'),vehicleReportedKWh:total('vehicleReportedKWh'),cost:total('cost'),active:!!s.activeCharge};
     }
     batteryUsage(now=Date.now(),days=30){
       const s=this.state,since=now-days*DAY,inPeriod=t=>num(t,since,now);
       const trips=s.trips.filter(t=>inPeriod(t.end)),charges=[...s.charges,...(s.activeCharge?[{...s.activeCharge,end:s.activeCharge.lastAt??s.activeCharge.at,active:true}]:[])].filter(c=>inPeriod(c.end??c.at));
       // Endpoint changes remain observations even when intermediate packets are missing.
       const usable=trips.filter(t=>num(t.startSOC,0,100)&&num(t.endSOC,0,100)&&t.startSOC>t.endSOC&&t.distanceKm>0);
-      const chargeObserved=charges.filter(c=>num(c.startSOC,0,100)&&num(c.endSOC,c.startSOC,100));
+      const chargeObserved=charges.filter(c=>!c.active&&c.complete===true&&!c.startSOCEstimated&&!c.endSOCEstimated&&!c.endSOCLastObserved&&num(c.startSOC,0,100)&&num(c.endSOC,c.startSOC,100));
       const sum=(list,fn)=>list.reduce((n,v)=>n+fn(v),0),soc=t=>t.startSOC-t.endSOC;
       const rateTrips=usable.filter(t=>!t.missing),rateDistance=sum(rateTrips,t=>t.distanceKm),driveSOC=sum(usable,soc);
       const parking=s.parkingPeriods.filter(p=>inPeriod(p.end));
@@ -526,7 +593,7 @@
       const soc=(c&&fresh(c,now,TTL.charge)&&c.soc!=null)?c.soc:null;
       const rangeKm=(c&&fresh(c,now,TTL.charge)&&c.rangeKm!=null)?Math.round(c.rangeKm):null;
       const insideC=(t&&fresh(t,now,TTL.climate)&&t.insideC!=null)?Math.round(t.insideC):null;
-      const isChg=c&&(c.charging===1||(c.chargerKW||0)>0.5);
+      const isChg=c&&fresh(c,now,TTL.charge)&&(c.charging>0?c.charging===5:(c.chargerKW||0)>0.5);
 
       if(isChg){
         parts.push('충전 중입니다.');

@@ -77,6 +77,9 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         guard let telemetry = snapshot.parkingTelemetry() else { fleetParkingStatus = "최근 차량 위치·기어 수신 필요"; return }
         let gear = telemetry.object("drive").string("gear")
         let charging = telemetry.object("charge")["isCharging"] as? Bool
+        if ["D", "R", "N"].contains(gear) {
+            UserDefaults.standard.set(true, forKey: "parking.departed." + snapshot.vin)
+        }
         guard gear == "P" || charging == true else {
             fleetParkingStatus = ["D", "R", "N"].contains(gear) ? "주차 상태가 아님" : "차량 위치 수신 · 주차 여부는 직접 확인 필요"
             return
@@ -106,7 +109,9 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         }
         guard !["D", "R", "N"].contains(drive.string("gear")), (drive.number("speedKmh") ?? 0) <= 0 else { fleetParkingStatus = "주행 상태에서는 주차 위치를 저장할 수 없음"; return }
         guard let lat = vehicle.vehicleLatitude, let lon = vehicle.vehicleLongitude else { fleetParkingStatus = "차량 GPS 미수신 · 주차 위치 저장 대기"; return }
+        let departed = UserDefaults.standard.bool(forKey: "parking.departed." + snapshot.vin)
         let samePlace: Bool = {
+            guard !departed else { return false }
             guard let old = latestRecord, old.vehicleID == snapshot.vin || (confirmed && old.vehicleID == nil),
                   let oldLat = old.vehicle.vehicleLatitude, let oldLon = old.vehicle.vehicleLongitude else { return false }
             return CLLocation(latitude: lat, longitude: lon).distance(from: CLLocation(latitude: oldLat, longitude: oldLon)) < 60
@@ -115,12 +120,12 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             existing.vehicleID = snapshot.vin
             existing.vehicleUpdatedAt = snapshot.receivedAt
             existing.vehicle = vehicle
+            existing.refreshLocationType()
             existing.verification = performCrossVerification(vehicle: vehicle, mobile: existing.mobile, ocr: nil)
             saveRecord(existing) // Preserve capture time, ID, photo, floor and pillar.
             fleetParkingStatus = "저장된 주차 위치의 차량 상태 갱신됨"
             return
         }
-        guard latestRecord == nil || confirmed else { fleetParkingStatus = "다른 주차 위치 수신 · 새 위치 저장 확인 필요"; return }
         var record = SmartParkingRecord()
         record.vehicleID = snapshot.vin
         record.vehicleUpdatedAt = snapshot.receivedAt
@@ -129,6 +134,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         record.locationType = vehicle.isCharging == true ? .evCharging : .general
         record.verification = performCrossVerification(vehicle: vehicle, mobile: record.mobile, ocr: nil)
         saveRecord(record)
+        UserDefaults.standard.removeObject(forKey: "parking.departed." + snapshot.vin)
         fleetParkingStatus = "차량 좌표로 주차 위치 저장됨"
         let identity = record.id
         Task {

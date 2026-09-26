@@ -2,12 +2,37 @@ import Foundation
 
 @main struct NativePolicyTests {
     static func main() {
+        let tireNow = Date()
+        let olderTire = TirePressureSample(bar: 2.8, at: tireNow.addingTimeInterval(-60))
+        let currentTire = TirePressureSample(bar: 3.0, at: tireNow)
+        precondition(TirePressureSample.newest([currentTire, olderTire], now: tireNow)?.validBar == 3.0)
+        precondition(TirePressureSample.newest([olderTire, TirePressureSample(bar: nil, at: tireNow)], now: tireNow)?.validBar == nil)
+        precondition(TirePressureSample.newest([olderTire, TirePressureSample(bar: 4, at: tireNow.addingTimeInterval(300))], now: tireNow)?.validBar == 2.8)
+        precondition(TirePressureSample(bar: .nan, at: tireNow).validBar == nil)
+
+        let expired = Date(timeIntervalSince1970: 10)
+        let afterSynthesis = Date(timeIntervalSince1970: 45)
+        let cueTime = Date(timeIntervalSince1970: 100)
+        precondition(NavigationSpeechCue.parse(#"{"text":"약 백 미터 앞","validUntil":102,"targetID":"camera"}"#, now: cueTime)?.targetID == "camera")
+        precondition(NavigationSpeechCue.parse(#"{"text":"지난 단속","validUntil":99}"#, now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse(#"{"text":"잘못된 장기 안내","validUntil":108}"#, now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse("{}", now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse(#"{"text":"새로운 경로로 안내합니다.","validUntil":102,"stateChange":true}"#, now: cueTime)?.stateChange == true)
+        for key in ["manual", "preview", "climate.temp"] {
+            precondition(VoiceItem(key: key, text: "report", expires: expired, priority: 2, manual: true).canStartPlayback(at: afterSynthesis))
+        }
+        for key in ["navigation.turn", "navigation.safety", "dashboard.start"] {
+            precondition(!VoiceItem(key: key, text: "expired", expires: expired, priority: 4, manual: true).canStartPlayback(at: afterSynthesis))
+        }
+        precondition(!VoiceItem(key: "automatic", text: "expired", expires: expired, priority: 1, manual: false).canStartPlayback(at: afterSynthesis))
         let spokenUnits = ["실내 22°C": "실내 섭씨 이십이 도", "21.5 ° C": "섭씨 이십일 점 오 도", "-5℃": "섭씨 영하 오 도", "72°F": "화씨 칠십이 도", "80%": "팔십 퍼센트", "60 km/h": "시속 육십 킬로미터", "2.8 bar": "이 점 팔 바", "68도": "육십팔 도"]
         for (input, expected) in spokenUnits {
             precondition(SpeechText.prepare(input) == expected, "Speech unit: \(input)")
             precondition(SpeechText.prepare(SpeechText.prepare(input)) == expected)
         }
         precondition(SpeechText.prepare("MC 빌딩으로 안내를 시작합니다.") == "MC 빌딩으로 안내를 시작합니다.")
+        precondition(SpeechText.prepare("약 100미터 앞, 신호 과속 단속 구간입니다.") == "약 백 미터 앞, 신호 과속 단속 구간입니다.")
+        precondition(SpeechText.prepare("높이 제한, 3.0미터입니다. 중량 제한, 10.0톤입니다.") == "높이 제한, 삼 미터입니다. 중량 제한, 십 톤입니다.")
         precondition(SpeechText.prepare("온도22°C로 설정") == "온도섭씨 이십이 도로 설정")
         for (input, expected) in ["3.0m": "삼 미터", "3.00 미터": "삼 미터", "3.50km": "삼 점 오 킬로미터", "0.05m": "영 점 영 오 미터", "22.0°C": "섭씨 이십이 도", "80.0%": "팔십 퍼센트", "2.0kWh": "이 킬로와트시", "3.0 버전": "3.0 버전"] {
             precondition(SpeechText.prepare(input) == expected, "Speech decimal: \(input)")

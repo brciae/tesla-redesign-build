@@ -78,7 +78,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         defer { isCheckingConnection = false }
         connectionStatus = "\(identity) · API 목록 요청 중…"
         do {
-            let catalog = try await fetchVoiceCatalog(apiKey: key)
+            let catalog = try await fetchVoiceCatalog(apiKey: key, force: true)
             connectionStatus = "\(identity) · GET /v3/voices · HTTP 200 · 보이스 \(Set(catalog.values).count)개. 목록 인증만 확인됨. 음성 합성 권한은 별도 확인 필요."
         } catch {
             connectionStatus = "\(identity) · GET /v3/voices · \(error.localizedDescription)"
@@ -112,6 +112,11 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         ("한영", "한영", "표현력이 풍부하고 생생한 대화 톤")
     ]
 
+    // Validated metadata is scoped to the selected key and expires after 10 minutes.
+    private var catalogKeyFingerprint = ""
+    private var catalogFetchedAt = Date.distantPast
+    private var catalogRequest: Task<[String: String], Error>?
+    private var catalogRequestKey = ""
     private var player: AVAudioPlayer?
     private var testCompletion: (() -> Void)?
 
@@ -235,7 +240,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return result
     }
 
-    private func fetchVoiceCatalog(apiKey: String) async throws -> [String: String] {
+    @MainActor
+    private func fetchVoiceCatalog(apiKey: String, force: Bool = false) async throws -> [String: String] {
+        let fingerprint = SHA256.hash(data: Data(apiKey.utf8)).map { String(format: "%02x", $0) }.joined()
+        if !force, catalogKeyFingerprint == fingerprint, Date().timeIntervalSince(catalogFetchedAt) < 600, !voiceCatalog.isEmpty { return voiceCatalog }
+        if catalogRequestKey == fingerprint, let pending = catalogRequest { return try await pending.value }
+        let task = Task { try await self.requestVoiceCatalog(apiKey: apiKey) }
+        catalogRequest = task; catalogRequestKey = fingerprint
+        defer { if catalogRequestKey == fingerprint { catalogRequest = nil; catalogRequestKey = "" } }
+        let catalog = try await task.value
+        voiceCatalog = catalog; catalogKeyFingerprint = fingerprint; catalogFetchedAt = Date()
+        return catalog
+    }
+
+    private func requestVoiceCatalog(apiKey: String) async throws -> [String: String] {
         let url = URL(string: "https://api.typecast.ai/v3/voices?model=ssfm-v30")!
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
@@ -245,7 +263,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw URLError(.badServerResponse)
         }
         guard http.statusCode == 200 else {
-            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey])
+            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey], stage: "GET /v3/voices · model=ssfm-v30")
         }
         let catalog = parseVoices(from: data)
         guard !catalog.isEmpty else {
@@ -259,7 +277,6 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         do {
             let catalog = try await fetchVoiceCatalog(apiKey: activeApiKey)
             await MainActor.run {
-                self.voiceCatalog = catalog
                 self.lastStatus = "API 보이스 목록 동기화 완료"
             }
         } catch {
@@ -279,7 +296,6 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw NSError(domain: "Typecast", code: 404, userInfo: [NSLocalizedDescriptionKey:
                 "선택한 음성을 현재 계정의 ssfm-v30 API 목록에서 찾을 수 없음. API 지원 음성 확인 필요"])
         }
-        await MainActor.run { self.voiceCatalog = catalog }
         return id
     }
 
@@ -366,8 +382,62 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // MARK: - API Speech Synthesis
 
+    @MainActor private var synthesisFlight: (id: UUID, task: Task<URL, Error>)?
+    private var previewTask: Task<Void, Never>?
+
+    private func pauseKey(_ key: String) -> String {
+        "typecastPaused." + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    var synthesisPaused: Bool { UserDefaults.standard.bool(forKey: pauseKey(activeApiKey)) }
+
+    func allowSynthesisAfterRestrictionResolved() {
+        UserDefaults.standard.removeObject(forKey: pauseKey(activeApiKey))
+        lastStatus = "재시도 허용됨 · 미리듣기를 누르면 합성을 요청합니다."
+    }
+
+    /// One network synthesis at a time. Playback cancellation never restarts an accepted request.
+    @MainActor
+    func synthesize(text: String, voiceId: String? = nil, validUntil: Date? = nil) async throws -> URL {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedVoice = (voiceId ?? selectedVoiceId).trimmingCharacters(in: .whitespacesAndNewlines)
+        let voice = requestedVoice.isEmpty ? Self.defaultVoiceId : requestedVoice
+        let key = activeApiKey
+        while true {
+            try Task.checkCancellation()
+            if let validUntil, Date() >= validUntil { throw CancellationError() }
+            if let cached = cachedURL(for: clean, voiceId: voice) { return cached }
+            if let flight = synthesisFlight {
+                _ = await flight.task.result
+                if synthesisFlight?.id == flight.id { synthesisFlight = nil }
+                continue
+            }
+            guard key == activeApiKey else { throw CancellationError() }
+            if UserDefaults.standard.bool(forKey: pauseKey(key)) {
+                throw NSError(domain: "Typecast", code: 403, userInfo: [NSLocalizedDescriptionKey:
+                    "이 키는 403 응답 이후 추가 합성을 중지했습니다. 저장된 음성은 계속 사용합니다. 이용 제한이 해제된 뒤 설정에서 재시도를 허용하세요."])
+            }
+            let id = UUID()
+            let task = Task { @MainActor in
+                do { return try await self.performSynthesis(text: clean, voiceId: voice) }
+                catch {
+                    if (error as NSError).code == 403 {
+                        UserDefaults.standard.set(true, forKey: self.pauseKey(key))
+                    }
+                    throw error
+                }
+            }
+            synthesisFlight = (id, task)
+            let result = await task.result
+            if synthesisFlight?.id == id { synthesisFlight = nil }
+            try Task.checkCancellation()
+            return try result.get()
+        }
+    }
+
     /// Synthesizes speech via Typecast API or returns immediately from local disk cache.
-    func synthesize(text: String, voiceId: String? = nil) async throws -> URL {
+    @MainActor
+    private func performSynthesis(text: String, voiceId: String? = nil) async throws -> URL {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty else {
             throw NSError(domain: "Typecast", code: 400, userInfo: [NSLocalizedDescriptionKey: "음성 변환할 텍스트가 비어 있습니다."])
@@ -407,11 +477,12 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             do {
                 try Task.checkCancellation()
                 let resolvedVoice = try await resolveVoiceId(for: voiceInput, apiKey: key)
+                try Task.checkCancellation()
                 var request = URLRequest(url: apiURL)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.setValue(key, forHTTPHeaderField: "X-API-KEY")
-                request.timeoutInterval = 12.0
+                request.timeoutInterval = 60.0 // Full reports need more synthesis time; navigation retains its playback deadline.
 
                 let body: [String: Any] = [
                     "voice_id": resolvedVoice,
@@ -443,7 +514,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     return savedURL
                 }
 
-                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry)
+                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry, stage: "POST /v1/text-to-speech · model=ssfm-v30 · voice=\(resolvedVoice)")
             } catch {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 let failure = error as NSError
@@ -468,7 +539,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         testCompletion = completion
         lastStatus = "타입캐스트 음성 생성 중…"
 
-        Task {
+        previewTask = Task {
             do {
                 let audioURL = try await synthesize(text: text, voiceId: voiceId)
                 await MainActor.run {
@@ -489,6 +560,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     }
                 }
             } catch {
+                if error is CancellationError { return }
                 await MainActor.run {
                     self.lastStatus = "합성 실패: \(error.localizedDescription)"
                     completion?()
@@ -498,6 +570,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func stop() {
+        previewTask?.cancel()
+        previewTask = nil
         player?.stop()
         player = nil
         testCompletion?()

@@ -12,36 +12,11 @@ struct CareView: View {
     @State private var addMaintenance = false
     @State private var addParking = false
     var body: some View {
-        PageBody(title: "차량 관리", briefing: .care, briefingText: {
-            let manager = SmartParkingManager.shared
-            var text = model.screenBriefing(.care)
-            if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
-                text += " " + record.briefingLines.joined(separator: " ")
-            }
-            return text
-        }) {
-            SmartParkingCard(link: model.link)
-            ParkingSection(addParking: $addParking)
+        PageBody(title: "차량 관리", briefing: .care) {
             InfoCard {
-                CardTitle(title: "타이어 공기압", systemImage: "tirepressure",
-                          info: "차량이 보고한 값이며 개별 센서의 실제 측정 시각은 다를 수 있음. 냉간·열간을 구분하지 않으므로 주행 직후에는 높게 보임. 누설 진단이 아니고, 차량의 공기압 경고를 우선 확인해야 함. 차량 응답 \(dateText(model.groups.object("tire").number("at")))")
-                let tire = model.groups.object("tire"), pressures = tire["values"] as? [Any] ?? []
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
-                    ForEach(0..<4, id: \.self) { index in Metric(title: ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][index], value: pressures.indices.contains(index) ? (pressures[index] as? NSNumber)?.doubleValue : nil, digits: 2, suffix: " bar") }
-                }
+                TirePressureDiagram()
                 if !tirePoints.isEmpty {
                     Chart(tirePoints) { point in LineMark(x: .value("측정 시각", point.date), y: .value(units.pressure, units.pressureValue(point.pressure))).foregroundStyle(by: .value("타이어", point.sensor)) }.frame(height: 180)
-                }
-            }
-            InfoCard {
-                CardTitle(title: "주차 중 배터리 변화", systemImage: "parkingsign.circle",
-                          info: "완료된 운행 다음 이동 시점의 잔량을 비교해 기록함. 양 끝 자료가 모두 있어야 계산되며, 대기 전력·온도·충전 여부가 섞여 있어 손실 진단으로 쓸 수 없음.")
-                if model.state.rows("parkingPeriods").isEmpty { Text("기록 준비 중").foregroundStyle(Theme.muted) }
-                ForEach(Array(model.state.rows("parkingPeriods").suffix(3).reversed()), id: \.selfID) { p in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("SOC 차이 \(valueText(p.number("deltaSOC"), digits: 1))%p").font(.subheadline)
-                        Caption("\(dateText(p.number("start"))) → \(dateText(p.number("end")))")
-                    }
                 }
             }
             InfoCard {
@@ -67,13 +42,21 @@ struct CareView: View {
     }
     private var tirePoints: [TirePoint] {
         let resetAt = model.state.rows("maintenance").filter { $0.flag("tireReset") }.compactMap { $0.number("at") }.max() ?? 0
-        return model.state.rows("tires").suffix(200).flatMap { row -> [TirePoint] in
+        let ble = model.state.rows("tires").suffix(200).flatMap { row -> [TirePoint] in
             guard let at = row.number("at"), at >= resetAt, let values = row["values"] as? [Any] else { return [] }
             return (0..<min(4, values.count)).compactMap { i in
                 guard let p = values[i] as? NSNumber else { return nil }
                 return TirePoint(id: row.selfID + String(i), date: Date(timeIntervalSince1970: at/1000), pressure: p.doubleValue, sensor: ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][i])
             }
         }
+        let vin = model.fleet.selectedVin.isEmpty ? model.settings.string("vin") : model.fleet.selectedVin
+        let fields = ["TpmsPressureFl", "TpmsPressureFr", "TpmsPressureRl", "TpmsPressureRr"]
+        let nas: [TirePoint] = FleetTelemetryStore.shared.records.filter { $0.vin == vin && $0.at.timeIntervalSince1970 * 1000 >= resetAt && !$0.invalid && fields.contains($0.field) }.suffix(800).compactMap { r in
+            guard let value = r.number, value > 0, let index = fields.firstIndex(of: r.field) else { return nil }
+            return TirePoint(id: r.id, date: r.at, pressure: value, sensor: ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][index])
+        }
+        let matchingBLE = model.settings.string("vin") == vin ? ble : []
+        return Array(Dictionary((matchingBLE + nas).map { ($0.sensor + String($0.date.timeIntervalSince1970), $0) }, uniquingKeysWith: { _, new in new }).values).sorted { $0.date < $1.date }
     }
 }
 
@@ -354,30 +337,15 @@ final class ParkingLocator: NSObject, ObservableObject, CLLocationManagerDelegat
 struct AutomationUtilitiesView: View {
     var title = "자동화"
     @EnvironmentObject private var model: AppModel
-    @AppStorage("backgroundBLERead") private var backgroundRead = true
     @State private var time = Calendar.current.date(from: DateComponents(hour: 8, minute: 0)) ?? Date()
-    @State private var weatherConsent = false
     var body: some View {
-        PageBody(title: title, briefing: .schedule, briefingText: { await scheduleSummary() }) {
-            InfoCard {
-                Text("연속 상태 수집").font(.headline)
-                Toggle("앱 전환 후 BLE 조회 유지", isOn: $backgroundRead)
-            }
+        ScrollView {
             InfoCard {
                 Text("매일 출발 확인 알림").font(.headline)
                 DatePicker("시간", selection: $time, displayedComponents: .hourAndMinute)
                 HStack { Button("알림 설정") { let parts = Calendar.current.dateComponents([.hour, .minute], from: time); model.scheduleReminder(hour: parts.hour ?? 8, minute: parts.minute ?? 0) }; Spacer(); Button("해제") { model.removeReminder() } }
             }
-            InfoCard {
-                Text("날씨").font(.headline)
-                if !model.state.object("weather").isEmpty { let w = model.state.object("weather"); Text("기온 \(valueText(w.number("temperature_2m"), digits: 1))°C · 강수 \(valueText(w.number("precipitation"), digits: 1)) mm"); Caption("조회 \(dateText(w.number("receivedAt")))") }
-                Button("차량 위치로 날씨 조회") { weatherConsent = true }
-            }
-            InfoCard {
-                Text("iPhone 단축어").font(.headline)
-                Text("차량 오디오 Bluetooth 연결 → YL Companion 자동 실행").font(.subheadline).foregroundStyle(Theme.muted)
-            }
-        }.confirmationDialog("차량 위치를 기반으로 날씨를 조회합니다", isPresented: $weatherConsent) { Button("위치 전송 후 조회") { model.fetchWeather() } }
+        }.padding().navigationTitle("출발 알림")
     }
     private func scheduleSummary() async -> String {
         let center = UNUserNotificationCenter.current()
@@ -390,35 +358,59 @@ struct AutomationUtilitiesView: View {
         return "매일 \(hour)시 \(minute)분 출발 확인 알림이 등록되어 있습니다." + blocked
     }
 }
+enum ConnectionSection: String { case connection = "차량·NAS 연결", charging = "충전 계획·요금", records = "기록·백업" }
 struct ConnectionView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
+    var section: ConnectionSection = .connection
     @State private var vin = ""
     @State private var name = ""
     @State private var km = ""
     @State private var reserve = ""
     @State private var daily = ""
     @State private var tariff = ""
+    @AppStorage("cost.gasoline") private var gasoline = ""
+    @AppStorage("cost.gasolineEfficiency") private var gasolineEfficiency = ""
+    @State private var assumedCapacity = 75.0
     @State private var enroll = false
+    @State private var controlEnroll = false
+    @State private var fleetSetup = false
+    @AppStorage("backgroundBLERead") private var backgroundRead = true
     @State private var importer = false
     @State private var restoreURL: URL?
     @State private var historyImporter = false
     var body: some View {
         Form {
-            Section { LocalBriefingControls(title: "연결 상태") { [link.authentic ? "블루투스 인증 완료." : "블루투스 미연결.", "Fleet: \(model.fleet.vehicleDisplayStatus).", "저장된 운행 \(model.state.rows("trips").count)회, 충전 \(model.state.rows("charges").count)회입니다."] } }
+            if section == .connection {
+            Section("백그라운드 수집") { Toggle("앱 전환 후 BLE 조회 유지", isOn: $backgroundRead); Text("NAS는 앱을 닫아도 차량 기록을 수집합니다. 앱 화면은 실행 중 자동 동기화됩니다.").font(.caption) }
+            Section("Tesla 계정·차량") {
+                Button("Tesla 계정 로그인·차량 선택") { fleetSetup = true }
+                Text(model.fleet.vehicleDisplayStatus).font(.caption)
+            }
+            Section("인터넷 차량 기록") {
+                NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin, connectionSettings: true) } label: {
+                    Label("NAS 연결·차량 수집 설정", systemImage: "externaldrive.connected.to.line.below")
+                }
+                Text("블루투스 연결과 별도로 Tesla 가상 키·차량 스트리밍·NAS 기록 수신을 확인합니다.").font(.caption)
+            }
             Section {
-                NavigationLink("표시 단위·자동 음성 안내", value: Page.preferences)
                 TextField("표시 이름", text: $name)
                 TextField("VIN 17자리", text: $vin).textInputAutocapitalization(.characters).autocorrectionDisabled().font(.system(.body, design: .monospaced))
+                Button("차량 프로필 저장") { saveSettings() }
             } header: { Text("차량 프로필") }
-            Section("충전 계획") {
+            }
+            if section == .charging { Section("충전 계획") {
                 TextField("예정 거리 km", text: $km).keyboardType(.decimalPad)
                 TextField("여유 잔량 %", text: $reserve).keyboardType(.decimalPad)
                 TextField("차량이 안내하는 일상 충전 기준 %", text: $daily).keyboardType(.decimalPad)
                 TextField("참고 단가 원/kWh", text: $tariff).keyboardType(.decimalPad)
-                Button("프로필·계획 저장") { saveSettings() }
+                TextField("비교 휘발유 단가 원/L", text: $gasoline).keyboardType(.decimalPad)
+                TextField("비교 차량 연비 km/L", text: $gasolineEfficiency).keyboardType(.decimalPad)
+                Stepper("전비 추정용 가정 용량 \(Int(assumedCapacity)) kWh", value: $assumedCapacity, in: 20...200, step: 1)
+                Button("충전 계획 저장") { saveSettings() }
             }
-            Section {
+            }
+            if section == .connection { Section {
                 HStack(spacing: 10) {
                     Image(systemName: link.authentic ? "checkmark.shield.fill" : "antenna.radiowaves.left.and.right")
                         .foregroundStyle(link.authentic ? Theme.green : Theme.muted)
@@ -433,6 +425,8 @@ struct ConnectionView: View {
                 Button("차량 연결") { saveSettings(); if model.errorMessage == nil { model.connect() } }.disabled(model.demo || link.busy)
                 Button("지금 상태 최신화") { model.refreshVehicle() }.disabled(model.demo || link.controlBusy || link.confirmation != nil)
                 DisclosureGroup("키 등록·연결 해제") {
+                    Toggle("차량 제어 기능 활성화", isOn: Binding(get: { link.controlEnabled }, set: { link.enableControls($0) })).disabled(model.demo || link.controlBusy)
+                    Button("BLE 제어 키 등록 요청") { controlEnroll = true }.disabled(model.demo || !link.connected || link.controlBusy || link.confirmation != nil)
                     Button("조회 전용 키 등록 요청") { enroll = true }.disabled(!link.connected || model.demo)
                     Button("차량 승인 후 조회") { link.authenticate() }.disabled(!link.connected || model.demo)
                     Button("연결 해제") { link.disconnect() }
@@ -446,6 +440,8 @@ struct ConnectionView: View {
                     Text(model.navigation.lifecycleDiagnostics.joined(separator: "\n")).font(.caption).textSelection(.enabled)
                 }
             } header: { Text("연결") }
+            }
+            if section == .records {
             Section {
                 LabeledContent("저장된 기록", value: "운행 \(model.state.rows("trips").count)회 · 충전 \(model.state.rows("charges").count)회")
                 LabeledContent("자동 누적", value: link.authentic && !model.demo ? "수신 중" : "연결 대기")
@@ -459,15 +455,19 @@ struct ConnectionView: View {
             } header: {
                 HStack { Text("기록"); Spacer(); InfoNote("기록 백업", backupHelp) }
             }
-            Section {
+            }
+            if section == .connection { Section {
                 Button(model.demo ? "예시 모드 종료" : "예시 데이터로 화면 둘러보기") { if model.demo { model.exitDemo() } else { model.enterDemo() } }
             } header: {
                 HStack { Text("앱 정보"); Spacer(); InfoNote("구현 범위", scopeHelp) }
             } footer: {
                 Text("개인용 비공식 앱 · v" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"))
             }
-        }.scrollContentBackground(.hidden).background(Theme.bg).navigationTitle("연결 상태").navigationBarTitleDisplayMode(.inline).toolbar(.visible, for: .navigationBar)
+            }
+        }.scrollContentBackground(.hidden).background(Theme.bg).navigationTitle(section.rawValue).navigationBarTitleDisplayMode(.inline).toolbar(.visible, for: .navigationBar)
             .onAppear { populate() }
+            .sheet(isPresented: $fleetSetup) { TeslaFleetTokenSheet(fleet: model.fleet).environmentObject(model) }
+            .confirmationDialog("차량 제어 키 등록 요청", isPresented: $controlEnroll) { Button("제어 키 등록 요청") { link.enrollControlKey() } }
             .confirmationDialog("차량에 조회용 공개키 등록을 요청함. 차량에서 키카드 승인 필요.", isPresented: $enroll) { Button("조회 키 등록 요청") { link.enrollMonitorKey() } }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.json]) { result in
                 switch result { case .success(let url): restoreURL = url; case .failure(let error): model.errorMessage = error.localizedDescription }
@@ -487,12 +487,14 @@ struct ConnectionView: View {
         return text
     }
     private var scopeHelp: String {
-        "개인용 비공식 앱임. BloxBloger 3D 모델 CC BY-NC 4.0 · 정식 Tesla 자산 아님. 유료 Tesla API·서버는 사용하지 않고, AI 규칙 생성은 선택한 외부 앱에서만 실행됨. 자동 휴대폰 키·원격 시동은 지원하지 않음."
+        "개인용 비공식 앱임. BloxBloger 3D 모델 CC BY-NC 4.0 · 정식 Tesla 자산 아님. Tesla Fleet API와 개인 NAS 기록 서버를 사용하며, AI 규칙 생성은 선택한 외부 앱에서만 실행됨. 자동 휴대폰 키·원격 시동은 지원하지 않음."
     }
 
-    private func populate() { let s = model.settings; vin = s.string("vin"); name = s.string("name"); km = s.number("plannedKm").map { String($0) } ?? ""; reserve = s.number("reserveSOC").map { String($0) } ?? "20"; daily = s.number("dailyLimit").map { String($0) } ?? ""; tariff = s.number("tariff").map { String($0) } ?? "" }
+    private func populate() { let s = model.settings; assumedCapacity = s.number("assumedCapacityKWh") ?? 75; vin = s.string("vin"); name = s.string("name"); km = s.number("plannedKm").map { String($0) } ?? ""; reserve = s.number("reserveSOC").map { String($0) } ?? "20"; daily = s.number("dailyLimit").map { String($0) } ?? ""; tariff = s.number("tariff").map { String($0) } ?? UserDefaults.standard.string(forKey: "cost.electricity") ?? "" }
     private func saveSettings() {
-        do { model.errorMessage = nil; model.mutate("settings", ["name": name, "vin": vin.uppercased().trimmingCharacters(in: .whitespacesAndNewlines), "plannedKm": try jsonNumber(km), "reserveSOC": try jsonNumber(reserve), "dailyLimit": try jsonNumber(daily), "tariff": try jsonNumber(tariff)]) }
+        do { model.errorMessage = nil; if section == .charging {
+            model.mutate("settings", ["plannedKm": try jsonNumber(km), "reserveSOC": try jsonNumber(reserve), "dailyLimit": try jsonNumber(daily), "tariff": try jsonNumber(tariff), "assumedCapacityKWh": assumedCapacity])
+        } else { model.mutate("settings", ["name": name, "vin": vin.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)]) } }
         catch { model.errorMessage = error.localizedDescription }
     }
 }
@@ -506,4 +508,26 @@ struct VehicleShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: OpenVehicleAppIntent(), phrases: ["\(.applicationName) 열기"], shortTitle: "차량 앱 열기", systemImageName: "car.side")
     }
+}
+
+
+
+struct ParkingView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var addParking = false
+    var body: some View { PageBody(title: "주차 기록", briefing: .care) {
+        SmartParkingCard(link: model.link)
+        ParkingSection(addParking: $addParking)
+            InfoCard {
+                CardTitle(title: "주차 중 배터리 변화", systemImage: "parkingsign.circle",
+                          info: "완료된 운행 다음 이동 시점의 잔량을 비교해 기록함. 양 끝 자료가 모두 있어야 계산되며, 대기 전력·온도·충전 여부가 섞여 있어 손실 진단으로 쓸 수 없음.")
+                if model.state.rows("parkingPeriods").isEmpty { Text("기록 준비 중").foregroundStyle(Theme.muted) }
+                ForEach(Array(model.state.rows("parkingPeriods").suffix(3).reversed()), id: \.selfID) { p in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("SOC 차이 \(valueText(p.number("deltaSOC"), digits: 1))%p").font(.subheadline)
+                        Caption("\(dateText(p.number("start"))) → \(dateText(p.number("end")))")
+                    }
+                }
+            }
+    }.sheet(isPresented: $addParking) { ParkingForm() } }
 }

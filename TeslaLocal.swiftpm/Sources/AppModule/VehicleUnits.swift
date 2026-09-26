@@ -48,7 +48,8 @@ enum SpeechText {
             // v43: Korean unit words too, not only the Latin abbreviations. The recorded voice speaks a
             // number as its own clip, so "60킬로미터" has to become "육십 킬로미터" before it is matched.
             (#"킬로와트시"#, "", " 킬로와트시"), (#"킬로와트"#, "", " 킬로와트"),
-            (#"킬로미터"#, "", " 킬로미터"), (#"미터"#, "", " 미터"),
+              (#"킬로미터"#, "", " 킬로미터"), (#"미터"#, "", " 미터"),
+              (#"톤"#, "", " 톤"), (#"볼트"#, "", " 볼트"), (#"암페어"#, "", " 암페어"),
             (#"%|퍼센트"#, "", " 퍼센트"), (#"도"#, "", " 도")
         ]
         for (unit, prefix, suffix) in patterns {
@@ -134,12 +135,34 @@ enum VehicleReadPlan {
     }
 }
 
+struct NavigationSpeechCue: Decodable {
+    let text: String
+    let validUntil: Double
+    let targetID: String?
+    var stateChange: Bool? = nil
+    static func parse(_ message: String, now: Date) -> NavigationSpeechCue? {
+        if message.hasPrefix("{") {
+            guard let data = message.data(using: .utf8), let cue = try? JSONDecoder().decode(Self.self, from: data),
+                  cue.validUntil.isFinite, cue.validUntil > now.timeIntervalSince1970,
+                  cue.validUntil <= now.timeIntervalSince1970 + 2.1, !cue.text.isEmpty else { return nil }
+            return cue
+        }
+        return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 2, targetID: nil)
+    }
+}
+
 struct VoiceItem {
     let key: String
     let text: String
     let expires: Date
     let priority: Int
     let manual: Bool
+    var navigationID: String? = nil
+    // Manual reports may finish synthesis after their queue deadline. Maneuvers
+    // and automatic events retain their strict real-time playback deadline.
+    func canStartPlayback(at now: Date) -> Bool {
+        (manual && !key.hasPrefix("navigation.") && key != "dashboard.start") || now < expires
+    }
 }
 
 struct VoiceQueue {
@@ -168,4 +191,14 @@ struct VoiceQueue {
     static func quiet(hour: Int, start: Int, end: Int) -> Bool {
         start == end ? false : start < end ? hour >= start && hour < end : hour >= start || hour < end
     }
+}
+
+/// Newest timestamp wins per wheel; an explicit invalid reading clears older data.
+struct TirePressureSample {
+    let bar: Double?
+    let at: Date
+    static func newest(_ samples: [TirePressureSample], now: Date = Date()) -> TirePressureSample? {
+        samples.filter { $0.at <= now.addingTimeInterval(5) }.max { $0.at < $1.at }
+    }
+    var validBar: Double? { guard let bar, bar.isFinite, bar > 0 else { return nil }; return bar }
 }

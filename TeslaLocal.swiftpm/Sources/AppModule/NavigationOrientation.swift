@@ -25,6 +25,10 @@ enum NavigationOrientation {
     }
 }
 final class YLApplicationDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        _ = ChargeNotificationManager.shared
+        return true
+    }
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         if let scene = NavigationOrientation.scene, window?.windowScene === scene { return NavigationOrientation.mask }
         return .all

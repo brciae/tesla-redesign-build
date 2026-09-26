@@ -1,9 +1,11 @@
 import SwiftUI
 import CryptoKit
+import MapKit
 
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
     init() {
+        if ProcessInfo.processInfo.arguments.contains("climate-probe") { precondition(UIImage(named: "TeslaYLInterior") != nil, "Cabin fixture must include the production image asset") }
         if ProcessInfo.processInfo.arguments.contains("reset-appearance-fixture") {
             for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("appearance.v1.") {
                 UserDefaults.standard.removeObject(forKey: key)
@@ -12,7 +14,11 @@ import CryptoKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
+            if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
+            else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
@@ -238,6 +244,19 @@ struct ProbeRoot: View {
     func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
+    var output: Object = ["charging": ["rows": [
+        ["id": "fixture-charge-1", "at": Date().addingTimeInterval(-86400).timeIntervalSince1970 * 1000, "supplyKWh": 30.0, "cost": 9000],
+        ["id": "fixture-charge-2", "at": Date().addingTimeInterval(-172800).timeIntervalSince1970 * 1000, "supplyKWh": 50.0, "cost": 15000]], "supplyKWh": 80.0, "cost": 24000],
+        "energyPeriods": ["30": ["drivingKmPerKWh": 6.2, "overallKmPerKWh": 4.7, "drivingKWh": 100.0, "parkingKWh": 30.0, "totalKWh": 130.0, "totalDistanceKm": 620.0]]]
+    var state: Object { output.object("state") }
+    var groups: Object { state.object("groups") }
+    var vehicleReference: Object = ["sourceDate": "2026-09-24", "nominalKWh": 88.2, "chemistry": "NCM", "cellMaker": "검증용 제조사", "basicWarrantyEnd": "2030-09-10", "batteryWarrantyEnd": "2034-09-10"]
+    var displayOdometerKm: Double? { 1234 }
+    let fleet = TeslaFleetClient()
+    let link = VehicleLink()
+    let voice = ProbeVoice()
+    func requestVehicleControl(_ key: String, title: String, args: Object = [:]) { spokenSummary = title }
+    func screenBriefing(_ scope: BriefingScope, days: Int = 30) -> String { "검증용 브리핑입니다." }
     var demo = true
 }
 enum Theme {
@@ -245,3 +264,86 @@ enum Theme {
     static let surface = Color(red: 34/255, green: 35/255, blue: 38/255)
     static let muted = Color(red: 174/255, green: 178/255, blue: 183/255)
 }
+
+struct InfoCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(white: 0.12).opacity(0.75))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            )
+    }
+}
+struct Caption: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View { Text(text).font(.system(size: 14)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true) }
+}
+
+struct MotionButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed && !reduced ? 0.94 : 1)
+            .animation(reduced ? nil : .spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
+    }
+}
+
+
+func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { value.map { String(format: "%.*f", digits, $0) + suffix } ?? "—" }
+func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object { ["charge": ["soc": 90.0, "rangeKm": 451.0, "isCharging": false], "climate": ["insideC": 25.0, "outsideC": 29.0, "targetC": 22.0, "isOn": false]] }
+final class VehicleLink: ObservableObject {
+    var controlBusy = false; var preparingControl = false; var confirmation: String?
+}
+struct ProbeVoice { func say(_ text: String, category: String, manual: Bool) {} }
+enum FleetCommandPolicy { static func failure(_ text: String) -> Error { NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) } }
+final class TeslaFleetClient: ObservableObject {
+    var virtualKeyPairingURL: URL? { nil }
+    var isSendingCommand = false; var isAuthenticated = true; var isReadingVehicle = false
+    var commandStatus = "UI 검증용 · 실제 차량에 명령을 보내지 않음"
+    var vehicleReadStatus = "검증용 수신값"; var vehicleReadError: String?
+    var selectedVin = "UI-FIXTURE"
+    var vehicleSnapshot: FleetVehicleSnapshot? = FleetVehicleSnapshot(vin: "UI-FIXTURE", receivedAt: Date(), payload: [
+        "charge_state": ["battery_level": 90, "battery_range": 280, "charger_power": 7, "charger_voltage": 220, "charger_actual_current": 32, "charge_energy_added": 12.4, "timestamp": Date().timeIntervalSince1970 * 1000],
+        "climate_state": ["seat_heater_left": 1, "seat_heater_right": 0, "seat_fan_front_left": 0, "seat_fan_front_right": 2, "timestamp": Date().timeIntervalSince1970 * 1000],
+        "vehicle_state": ["tpms_pressure_fl": 2.9, "tpms_pressure_fr": 2.8, "tpms_pressure_rl": 2.9, "tpms_pressure_rr": 2.85, "locked": true, "sentry_mode": false, "car_version": "fixture", "timestamp": Date().timeIntervalSince1970 * 1000]])
+    func refreshVehicleSnapshot(force: Bool = false) async {}
+    func readSupplement(_ kind: FleetSupplement) async throws -> FleetSupplementResult {
+        FleetSupplementResult(vin: selectedVin, receivedAt: Date(), payload: ["fixture": true])
+    }
+    func setPreconditioningMax(on: Bool) async throws -> Bool { true }
+    func setSteeringWheelHeater(on: Bool) async throws -> Bool { true }
+    func setSeatCooler(seatPosition: Int, level: Int) async throws -> Bool { true }
+    func setSeatHeater(seatPosition: Int, level: Int) async throws -> Bool { true }
+    func setClimateKeeperMode(mode: Int) async throws -> Bool { true }
+}
+struct ClimateFleetProbe: View {
+    @StateObject private var model = AppModel()
+    var fleetScreen = false
+    var body: some View {
+        NavigationStack {
+            Group {
+                if fleetScreen { FleetInsightsView(fleet: model.fleet) }
+                else { TeslaInteractiveClimateView(link: model.link).navigationTitle("실내 공조") }
+            }
+        }.environmentObject(model)
+    }
+}
+
+@MainActor final class EmbeddedNavigation: ObservableObject {
+    func startManualDestination(name: String, coordinate: CLLocationCoordinate2D, vin: String) throws {}
+}
+
+private struct ProbeUnitsKey: EnvironmentKey { static let defaultValue = VehicleUnits() }
+extension EnvironmentValues { var vehicleUnits: VehicleUnits { get { self[ProbeUnitsKey.self] } set { self[ProbeUnitsKey.self] = newValue } } }
+struct CareView: View { var body: some View { ScrollView { TirePressureDiagram().padding() }.navigationTitle("타이어·정비") } }
+
+enum Page: Hashable { case chargingSettings }

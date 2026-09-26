@@ -19,6 +19,7 @@
    "platform": "iOS",
    "sources": [
     "InterfaceProbe/App.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/DestinationSearchView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/AppInterface.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/LocalBriefingControls.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationDashboard.swift",
@@ -38,7 +39,27 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastClient.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TeslaInteractiveClimateView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetInsightsView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryStore.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetArchiveClient.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetParkingAnalysis.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetSupplement.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetSupplementView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/OwnershipAnalysis.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/OwnershipViews.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendar.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefing.swift",
+    {
+     "path": "Assets.xcassets"
+    },
+    "../TeslaLocal.swiftpm/Sources/AppModule/TirePressureDiagram.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift"
    ],
    "settings": {
     "base": {

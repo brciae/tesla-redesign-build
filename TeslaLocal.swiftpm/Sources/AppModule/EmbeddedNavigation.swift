@@ -55,6 +55,8 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var onVoiceActivity: ((Bool) -> Void)?
     var onGuidanceEnd: (() -> Void)?
     var onSpokenGuide: ((String, Bool) -> Void)?
+    var onPrepareGuide: ((String) -> Void)?
+    func isSpeechTargetAhead(_ identifier: String) -> Bool { controller?.isSpeechTargetAhead(identifier) == true }
     var onAudioSession: ((Bool) -> Void)?
     private let runtime: LocalRuntime
     private let locator = CLLocationManager()
@@ -62,6 +64,9 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     private var candidate: Object?
     private var ticket: Double?
     private var vehicleIdentity = ""
+    private var manualRouteToken: String?
+    private var manualCoordinate: CLLocationCoordinate2D?
+    @Published private(set) var manualDestination = ""
     private var heldOrientation = false
     private var previousIdleTimer = false
     /// v29: transient Kakao/GPS failures retry automatically (bounded) instead of blocking the destination.
@@ -128,8 +133,9 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     }
     func observe(_ event: Object, vin: String) {
         if vehicleIdentity != vin { reset(); vehicleIdentity = vin }
+        if let manualRouteToken, event.string("token") != manualRouteToken { return }
         let auth = locator.authorizationStatus
-        let ready = enabled && consent && hasKey && (auth == .authorizedAlways || auth == .authorizedWhenInUse) && canPresent()
+        let ready = (enabled || manualRouteToken != nil) && consent && hasKey && (auth == .authorizedAlways || auth == .authorizedWhenInUse) && canPresent()
         guard let decision = gate("observe", ["event": event, "ready": ready, "guiding": guiding || busy]) as? Object else { return }
         let stamp = Date().formatted(date: .omitted, time: .standard)
         lifecycleDiagnostics.append("\(stamp) · 수신 \(event.string("type")) → \(decision.string("type")) · 안내 \(guiding ? "중" : "꺼짐")")
@@ -151,6 +157,21 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         willStart?()
         locator.startUpdatingLocation()
         deadline = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in self?.failed("정확한 현재 위치를 받지 못함 · 야외에서 위치 권한·GPS 확인", ticket: next) }
+    }
+    func startManualDestination(name: String, coordinate: CLLocationCoordinate2D, vin: String) throws {
+        guard CLLocationCoordinate2DIsValid(coordinate), !name.isEmpty else { throw LocalError.message("검색 결과의 위치를 확인해 주세요.") }
+        guard hasKey, consent else { throw LocalError.message("내비 설정에서 카카오 앱 키와 위치·목적지 전달 설정을 완료해 주세요.") }
+        guard [.authorizedAlways, .authorizedWhenInUse].contains(locator.authorizationStatus) else {
+            requestLocationPermission(); throw LocalError.message("위치 접근을 허용한 뒤 경로를 시작해 주세요.")
+        }
+        guard canPresent() else { throw LocalError.message("현재 작업을 마친 뒤 경로를 시작해 주세요.") }
+        _ = gate("reset"); stopNative(keepDisplay: true)
+        vehicleIdentity = vin; userDismissed = false; presented = true
+        let token = "manual:" + UUID().uuidString
+        manualRouteToken = token; manualDestination = name
+        manualCoordinate = coordinate
+        let now = Date().timeIntervalSince1970 * 1000
+        observe(["type": "route", "name": name, "latitude": coordinate.latitude, "longitude": coordinate.longitude, "at": now, "receivedAt": now, "token": token], vin: vin)
     }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         updateLocationPermission()
@@ -227,6 +248,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     guard let self, let view, self.controller === view, self.current(ticket) else { return }
                     if event == "audioAcquired" { self.onAudioSession?(true); return }
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
+                    if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
                     if event == "voiceStart" || event == "voiceEnd" { return } // SDK never plays audio (v30)
                     if event == "follow" { self.following = message == "1"; return }
                     if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
@@ -303,7 +325,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         } else {
             // Unblocked cancel: the next authenticated vehicle snapshot restarts guidance.
             _ = gate("cancel", ["block": false]); stopNative(keepDisplay: presented)
-            status = message + " · 다음 차량 수신 시 자동 재시도 (\(startFailures)/3)"
+            status = message + (manualRouteToken != nil ? " · 재시도를 눌러 선택한 목적지로 다시 안내" : " · 다음 차량 수신 시 자동 재시도 (\(startFailures)/3)")
         }
     }
     private func stopNative(keepDisplay: Bool = false) {
@@ -315,21 +337,29 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         busy = false; guiding = false; candidate = nil; ticket = nil
         if !keepDisplay { presented = false }
     }
-    func stop() { _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
+    func stop() { manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
     func endGuidance() {
+        manualRouteToken = nil; manualDestination = ""
         _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
         returnToFreeDrive()
     }
     private func returnToFreeDrive() {
         guard guiding || busy else { return }
         let keepDisplay = presented
-        onGuidanceEnd?()
         stopNative(keepDisplay: keepDisplay)
         if keepDisplay { startStandbyKakaoMap() }
         status = "자유주행 · 경로 안내 종료"
+        onGuidanceEnd?() // End announcement follows cleanup, so cleanup cannot cancel it.
     }
-    func retry() { if !ownsAudio { startFailures = 0; _ = gate("retry"); status = "최신 차량 목적지 다시 수신 중" } }
-    func reset() { startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
+    func retry() {
+        guard !ownsAudio else { return }
+        startFailures = 0
+        if manualRouteToken != nil, let coordinate = manualCoordinate {
+            do { try startManualDestination(name: manualDestination, coordinate: coordinate, vin: vehicleIdentity) }
+            catch { status = error.localizedDescription }
+        } else { _ = gate("retry"); status = "최신 차량 목적지 다시 수신 중" }
+    }
+    func reset() { manualRouteToken = nil; manualDestination = ""; startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
     func foregrounded() { if guiding, controller != nil, !userDismissed { presented = true } }
     func requestLocationPermission() {
@@ -353,6 +383,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     guard let self, let view, self.controller === view else { return }
                     if event == "audioAcquired" { self.onAudioSession?(true); return }
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
+                    if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
                     if event == "follow" { self.following = message == "1"; return }
                     if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
                     if event == "visible" {
@@ -547,11 +578,7 @@ struct NavigationSetupView: View {
                 }
                 .buttonStyle(.plain)
             }
-            InfoCard {
-                Text("화면 방향").font(.headline)
-                DirectionPicker(navigation: navigation)
-                if !navigation.directionNotice.isEmpty { Caption(navigation.directionNotice) }
-            }
+            InfoCard { NavigationDisplaySettings(navigation: navigation) }
             InfoCard {
                 Text("카카오 SDK 설정").font(.headline)
                 Text(navigation.bundleID).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)

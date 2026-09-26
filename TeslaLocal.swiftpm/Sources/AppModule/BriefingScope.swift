@@ -10,12 +10,20 @@ enum BriefingScope: String, CaseIterable {
     case care = "차량 관리", automation = "자동화", schedule = "일정 예약 설정"
     case preferences = "표시·음성 설정", menu = "메뉴 및 설정", daily = "오늘의 브리핑"
 
+    var supportsSpeech: Bool {
+        switch self {
+        case .preferences, .menu, .automation, .schedule, .vehicle3D, .controls, .navigation: return false
+        default: return true
+        }
+    }
+
     func text(_ details: [String], demo: Bool = false) -> String {
+        guard supportsSpeech else { return "" }
         var seen = Set<String>()
         let content = details.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && seen.insert($0).inserted }
         return ((demo ? ["예시 자료입니다."] : [])
-            + (content.isEmpty ? ["요약할 자료가 아직 없습니다."] : content)).joined(separator: " ")
+            + (content.isEmpty ? ["요약할 자료가 아직 없습니다."] : Array(content.prefix(3)))).joined(separator: " ")
     }
 
     static func tripSummary(_ distances: [Double?]) -> [String] {

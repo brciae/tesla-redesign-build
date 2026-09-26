@@ -1,20 +1,20 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const root = 'TeslaLocal.swiftpm/Sources/AppModule/';
-// Every app-owned destination, tab subsection and modal with its own content.
+// Existing bindings remain scoped; rendering is restricted by the shared opt-in policy.
 // OS camera, sharing, file/permission pickers are intentionally outside app narration.
 const screens = {
+  'FleetInsightsView.swift': ['FleetInsightsView'],
   'App.swift': ['DriveView','BriefingView','TripsView','TripListView','BatteryView','ChargeListView','ChargeForm'],
   'HomeViews.swift': ['HomeView','LocationStatusView','ChargeStatusView','SecurityStatusView','EnergyTabRootView','MenuTabRootView'],
-  'ManagementViews.swift': ['CareView','ParkingHistoryView','MaintenanceForm','ParkingForm','AutomationUtilitiesView','ConnectionView'],
+  'ManagementViews.swift': ['CareView','ParkingHistoryView','MaintenanceForm','ParkingForm'],
   'AutomationViews.swift': ['AutomationDashboard','AutomationRuleEditor','AutomationHistory','AutomationImportView','AutomationAIView'],
   'VehicleAppearanceView.swift': ['VehicleAppearanceView'],
   'TypecastCharacterPickerSheet.swift': ['TypecastCharacterPickerSheet'],
-  'TeslaInteractiveControlsView.swift': ['TeslaInteractiveControlsView','TeslaFleetTokenSheet'],
+  'TeslaInteractiveControlsView.swift': ['TeslaInteractiveControlsView'],
   'TeslaInteractiveClimateView.swift': ['TeslaInteractiveClimateView'],
   'ChargingWorkspace.swift': ['ChargingWorkspace'],
   'DrivingWorkspace.swift': ['DrivingWorkspace'],
-  'PreferencesView.swift': ['PreferencesView'],
   'EmbeddedNavigation.swift': ['EmbeddedNavigationScreen','NavigationSetupView'],
   'SmartParkingCard.swift': ['SmartParkingCard'],
   'HomeModules.swift': ['HomeLayoutEditor']
@@ -32,8 +32,6 @@ for (const [file, names] of Object.entries(screens)) {
   }
 }
 for (const [file, marker] of [
-  ['PreferencesView.swift','LocalBriefingControls(title: "음성 세부 설정")'],
-  ['DrivingWorkspace.swift','LocalBriefingControls(title: "운전 화면 설정")'],
   ['TeslaInteractiveControlsView.swift','LocalBriefingControls(title: "토큰 발급 안내")'],
   ['App.swift','PageBody(title: "차량 3D", briefing: .vehicle3D)']
 ]) assert(fs.readFileSync(root+file,'utf8').includes(marker), `Missing nested screen: ${marker}`);
@@ -50,3 +48,11 @@ for (const [state, expected] of [[5,true],[3,false],[0,null],[undefined,null]]) 
   assert.equal(home.presentation({groups:{charge:{charging:state}}}).charge.isCharging, expected, 'BLE charging enum must not be treated as Bool');
 }
 console.log(`PASS: ${count} view structures + 4 nested screens; explicit scoped bindings (source audit, not rendered UI QA)`);
+
+const scoped = fs.readFileSync(root+'ScreenBriefing.swift','utf8');
+assert(scoped.includes('if scope.supportsSpeech'), 'Settings/menu scopes must not render voice controls');
+const local = fs.readFileSync(root+'LocalBriefingControls.swift','utf8');
+assert(local.includes('].contains(title)'), 'Local editor voice controls must be opt-in');
+assert(!fs.readFileSync(root+'DrivingWorkspace.swift','utf8').includes('announceDashboardStart('), 'Opening a dashboard must be silent');
+assert(fs.readFileSync(root+'VoiceCoordinator.swift','utf8').includes('guard category != "voiceControl"'), 'Routine command/selection acknowledgements must stay visual');
+assert(!speech.includes('connectedFacts'), 'Do not mechanically join sentences');

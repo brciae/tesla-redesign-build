@@ -80,7 +80,7 @@ struct TeslaInteractiveControlsView: View {
                 secondaryControlsGrid
 
                 // Tesla Fleet Cloud & BLE Authentication Management
-                fleetAndBleManagementSection
+
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -102,7 +102,7 @@ struct TeslaInteractiveControlsView: View {
             Text("테슬라 공식 Fleet API(LTE)를 통해 차량 컴퓨터로 원격 시동 명령을 전송합니다. 승인 후 2분 이내에 브레이크를 밟고 기어를 변속하면 키 없이 주행할 수 있습니다.")
         }
         .sheet(isPresented: $tokenSheet) {
-            TeslaFleetTokenSheet(fleet: model.fleet)
+            NavigationStack { ConnectionView(link: link) }.environmentObject(model)
         }
     }
 
@@ -564,71 +564,6 @@ struct TeslaInteractiveControlsView: View {
 
     // MARK: - Fleet Cloud & BLE Authentication Section
 
-    private var fleetAndBleManagementSection: some View {
-        VStack(spacing: 12) {
-            // Tesla Fleet Cloud API Card
-            HStack(spacing: 12) {
-                Image(systemName: "bolt.horizontal.icloud.fill")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(model.fleet.isAuthenticated ? Color.cyan : Color.white.opacity(0.4))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("테슬라 Fleet 클라우드 (LTE 원격 제어)")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
-
-                    Text(model.fleet.isAuthenticated
-                        ? (model.fleet.selectedVin.isEmpty ? "토큰 등록됨 · 차량 선택 필요" : "연동 활성 · VIN: \(model.fleet.selectedVin)")
-                        : "계정 인증 후 서명 서버·차량 가상키 등록 필요"
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.white.opacity(0.6))
-                }
-                Spacer()
-
-                Button {
-                    tokenSheet = true
-                } label: {
-                    Text(model.fleet.isAuthenticated ? "설정 변경" : "토큰 등록")
-                        .font(.system(size: 12, weight: .bold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.cyan.opacity(0.2), in: Capsule())
-                        .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 1))
-                        .foregroundStyle(Color.cyan)
-                }
-            }
-            .padding(14)
-            .background(Color(white: 0.09).opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
-
-            // BLE Key Management Disclosure
-            DisclosureGroup("로컬 블루투스(BLE) 인증 관리") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Toggle("이 기기의 차량 제어 기능 활성화", isOn: Binding(
-                        get: { link.controlEnabled },
-                        set: { link.enableControls($0) }
-                    ))
-                    .disabled(model.demo || link.controlBusy)
-
-                    HStack(spacing: 10) {
-                        Button("BLE 제어 키 등록 요청") { enrollment = true }
-                            .disabled(model.demo || !link.connected || link.controlBusy || link.confirmation != nil)
-                            .buttonStyle(.bordered)
-
-                        Button("차량 승인 후 재개") { link.authenticate() }
-                            .disabled(model.demo || !link.connected || link.controlBusy)
-                            .buttonStyle(.bordered)
-                    }
-                }
-                .padding(.top, 8)
-            }
-            .font(.footnote)
-            .foregroundStyle(Theme.muted)
-            .padding(14)
-            .background(Color(white: 0.08).opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
-        }
-    }
-
     // MARK: - Smart Hybrid Action Dispatcher
 
     private func dispatchHybridAction(
@@ -727,7 +662,6 @@ struct TeslaFleetTokenSheet: View {
                         }
                     }.disabled(isLoading || !fleet.isAuthenticated)
                 }
-                Section { LocalBriefingControls(title: "테슬라 Fleet 연동") { [fleet.isAuthenticated ? "계정 인증 완료." : "계정 인증 필요.", fleet.selectedVin.isEmpty ? "차량 미선택." : "차량 선택됨.", "조회 상태: \(fleet.vehicleDisplayStatus).", isExchanging ? "인증 교환 중입니다." : ""] } }
                 // MARK: - Dual Connection Architecture Guide
                 Section {
                     VStack(alignment: .leading, spacing: 10) {

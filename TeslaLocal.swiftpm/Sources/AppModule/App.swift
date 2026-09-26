@@ -32,6 +32,11 @@ enum Page: String, Hashable {
     case automation = "자동화", connection = "연결 상태", briefing = "오늘의 브리핑", vehicle3D = "차량 3D"
     case navigation = "카카오 내장 내비", preferences = "표시·음성 설정"
     case appearance = "차꾸미기"
+    case fleetInsights = "차량 상세 데이터"
+    case notifications = "알림 설정"
+    case chargingSettings = "충전 계획·요금", recordSettings = "기록·백업"
+    case parking = "주차 기록"
+    case displaySettings = "화면·표시 단위"
 }
 func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { guard let value, value.isFinite else { return "—" }; return String(format: "%.*f", digits, value) + suffix }
 func dateText(_ ms: Double?, time: Bool = true) -> String { guard let ms else { return "미수신" }; let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = time ? "M월 d일 HH:mm" : "yyyy.MM.dd"; return f.string(from: Date(timeIntervalSince1970: ms/1000)) }
@@ -96,13 +101,15 @@ struct MainView: View {
 
     var body: some View {
         mainContent
+            .toggleStyle(CompanionToggleStyle())
             .environment(\.vehicleUnits, VehicleUnits(distance: distance, temperature: temperature, pressure: pressure))
             .animation(reduced ? nil : .easeInOut(duration: 0.25), value: navigation.presented)
             .tint(.white)
             .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
             .onOpenURL { url in model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
-            .task { if phase == .active { model.resume() } }
+            .task { if phase == .active { model.resume(); consumeNotificationRoute() } }
             .onChange(of: phase) { _, p in handlePhase(p) }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("YL.openChargingFromNotification"))) { _ in consumeNotificationRoute() }
             .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
             .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
             .onChange(of: selectedTab) { _, newTab in
@@ -131,9 +138,14 @@ struct MainView: View {
     }
 
     private func handlePhase(_ p: ScenePhase) {
-        if p == .active { model.resume() }
+        if p == .active { model.resume(); consumeNotificationRoute() }
         else if p == .background { model.pause() }
         else { model.resignActive() }
+    }
+    private func consumeNotificationRoute() {
+        guard UserDefaults.standard.bool(forKey: "YL.openChargingPending") else { return }
+        UserDefaults.standard.removeObject(forKey: "YL.openChargingPending")
+        selectedTab = .energy; energyPath = NavigationPath(); energyPath.append(Page.charging)
     }
 
 }
@@ -159,8 +171,14 @@ private struct AppDestinations: ViewModifier {
         case .security: SecurityStatusView(link: link)
         case .drive: DriveView()
         case .navigation: NavigationSetupView(navigation: navigation)
+        case .chargingSettings: ConnectionView(link: link, section: .charging)
+        case .recordSettings: ConnectionView(link: link, section: .records)
+        case .parking: ParkingView()
+        case .displaySettings: DisplaySettingsView()
         case .preferences: PreferencesView()
         case .appearance: VehicleAppearanceView()
+        case .fleetInsights: FleetInsightsView(fleet: model.fleet)
+        case .notifications: NotificationSettingsView()
         case .battery: BatteryView()
         case .trips: TripsView()
         case .care: CareView()
@@ -443,15 +461,8 @@ struct TripsView: View {
                     }
                 }
             }
-            InfoCard {
-                CardTitle(title: "전비 계산 설정", systemImage: "slider.horizontal.3")
-                Stepper("가정 용량 \(Int(assumedCapacity)) kWh", value: $assumedCapacity, in: 20...200, step: 1)
-                HStack {
-                    Button("적용") { model.mutate("settings", ["assumedCapacityKWh": assumedCapacity]) }.buttonStyle(.bordered)
-                    Spacer()
-                    Button("CSV 내보내기") { model.exportCSV() }.buttonStyle(.bordered)
-                }
-            }
+            NavigationLink("전비·비용 기준 설정", value: Page.chargingSettings)
+            NavigationLink("기록 내보내기", value: Page.recordSettings)
         }.onAppear { assumedCapacity = model.settings.number("assumedCapacityKWh") ?? 75 }
     }
 }
@@ -563,7 +574,7 @@ struct BatteryView: View {
                         Metric(title: "선별된 충전 회차", value: health.number("count"))
                     }
                 }
-                NavigationLink("예정 거리·여유 잔량 설정", value: Page.connection).frame(minHeight: 44)
+                NavigationLink("예정 거리·여유 잔량 설정", value: Page.chargingSettings).frame(minHeight: 44)
             }
             if charges.isEmpty {
                 ContentUnavailableView("충전 기록 없음", systemImage: "bolt.slash", description: Text("충전을 관측하거나 기록을 추가하면 여기에 쌓임."))
@@ -574,7 +585,7 @@ struct BatteryView: View {
                     ForEach(charges.prefix(3), id: \.selfID) { charge in
                         HStack(spacing: 4) {
                             ChargeRow(charge: charge)
-                            RecordActions(edit: { editing = charge }, delete: { model.mutate("deleteCharge", ["id": charge.selfID]) }, title: "충전 기록")
+                            if !charge.flag("active") { RecordActions(edit: { editing = charge }, delete: { model.mutate("deleteCharge", ["id": charge.selfID]) }, title: "충전 기록") }
                         }
                     }
                     if charges.count > 3 {
@@ -629,10 +640,11 @@ struct ChargeRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(dateText(charge.number("at"))).font(.subheadline.weight(.semibold))
-                Text("\(valueText(charge.number("startSOC")))% → \(valueText(charge.number("endSOC")))%")
+                Text(dateText(charge.number("at"), time: charge.string("atPrecision") != "day")).font(.subheadline.weight(.semibold))
+                Text("\(charge.flag("startSOCEstimated") ? "약 " : "")\(valueText(charge.number("startSOC")))% → \(charge.flag("endSOCEstimated") ? "약 " : "")\(valueText(charge.number("endSOC")))%")
                     .font(.caption2).foregroundStyle(Theme.muted).monospacedDigit()
             }
+            if charge.flag("collectedAfterEnd") { Text("종료 후 수집").font(.caption2).foregroundStyle(Theme.muted) }
             Spacer(minLength: 4)
             Text(valueText(charge.number("supplyKWh") ?? charge.number("vehicleReportedKWh"), digits: 1) + " kWh")
                 .font(.subheadline).monospacedDigit()
@@ -653,7 +665,7 @@ struct ChargeListView: View {
             ForEach(charges, id: \.selfID) { c in
                 InfoCard {
                     HStack {
-                        Label(dateText(c.number("at")), systemImage: "bolt.fill").font(.headline)
+                        Label(dateText(c.number("at"), time: c.string("atPrecision") != "day"), systemImage: "bolt.fill").font(.headline)
                         Spacer()
                         Caption(c.string("source"))
                         RecordActions(edit: { editing = c }, delete: { model.mutate("deleteCharge", ["id": c.selfID]) }, title: "충전 기록")
@@ -662,7 +674,10 @@ struct ChargeListView: View {
                         Metric(title: c.number("supplyKWh") != nil ? "영수증 공급" : "차량 보고", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh"), digits: 1, suffix: " kWh")
                         if let cost = c.number("cost") { Metric(title: "결제액", value: cost, suffix: "원") }
                     }
-                    Caption("\(valueText(c.number("startSOC")))% → \(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : c.flag("complete") ? "완료" : "부분 관측")")
+                    Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")
+                    if c.flag("startSOCEstimated") || c.flag("endSOCEstimated") { InfoNote("잔량 계산 근거", "충전 도중 연결된 경우 시작 잔량은 차량 충전량과 배터리 용량으로 계산합니다. 완료 신호를 늦게 받은 경우 종료 잔량은 차량 충전 한도를 참고합니다. 직접 수신한 시작·완료 잔량은 그대로 보존합니다.") }
+                    if c.flag("collectedAfterEnd") { Caption("종료 후 수집한 기록 · 표시 시각은 차량 자료 수집 시각") }
+                    if c.flag("endSOCLastObserved") { Caption("종료 잔량에는 충전 중 마지막으로 수신한 값을 보존했습니다.") }
                 }
             }
         }

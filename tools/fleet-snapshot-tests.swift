@@ -2,13 +2,31 @@ import Foundation
 
 @main struct FleetSnapshotTests {
     static func main() {
+        let absentStream = FleetStreamingStatus(payload: ["synced": true, "config": NSNull(), "key_paired": false])
+        precondition(!absentStream.configured && !absentStream.synced && absentStream.title == "차량 가상 키 등록 필요")
+        let waitingStream = FleetStreamingStatus(payload: ["synced": false, "config": ["hostname": "fixture.example"], "key_paired": true])
+        precondition(waitingStream.configured && !waitingStream.synced)
+        let activeStream = FleetStreamingStatus(payload: ["synced": true, "config": ["hostname": "fixture.example"], "key_paired": true])
+        precondition(activeStream.synced && activeStream.hostname == "fixture.example")
         let now = Date(timeIntervalSince1970: 1800000000)
         let ms = now.timeIntervalSince1970 * 1000
         let snapshot = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: [
             "charge_state": ["battery_level": 72, "battery_range": 100, "charging_state": "Charging", "timestamp": ms],
             "climate_state": ["inside_temp": 0, "outside_temp": -5, "timestamp": ms],
-            "vehicle_state": ["locked": false, "timestamp": ms]
+            "vehicle_state": ["locked": false, "timestamp": ms, "odometer": 1000]
         ])
+        precondition(abs((snapshot.driveDisplay(now: now)["odometerKm"] as? Double ?? 0) - 1609.344) < 0.001)
+        let supplement = FleetSupplementResult(vin: "TEST", receivedAt: now, payload: ["superchargers": [["name": "충전소 A", "available_stalls": 3, "total_stalls": 8, "internal_id": "hidden"]]])
+        precondition(supplement.cards.count == 1)
+        precondition(supplement.cards[0].rows.contains { $0.label == "사용 가능" && $0.value == "3" })
+        precondition(!supplement.cards[0].rows.contains { $0.value == "hidden" })
+        let sections = snapshot.insightSections()
+        precondition(sections.count == 5)
+        precondition(sections.first(where: { $0.title == "타이어 상태" })!.rows.first!.value == "미수신")
+        precondition(snapshot.flattenedFields(section: "charge_state").contains(where: { $0.label == "charge_state.battery_level" && $0.value == "72" }))
+        let nested = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["vehicle_state": ["software_update": ["status": "available"], "missing": NSNull()]])
+        precondition(nested.flattenedFields(section: "vehicle_state").count == 2)
+        precondition(nested.flattenedFields(section: "vehicle_state").contains(where: { $0.value == "미수신 (null)" }))
         precondition(snapshot.soc == 72 && abs(snapshot.rangeKm! - 160.9344) < 0.00001)
         precondition(snapshot.insideC == 0 && snapshot.outsideC == -5 && snapshot.locked == false)
         precondition(snapshot.charging && snapshot.hasMeasurements && snapshot.isRecent(now: now))

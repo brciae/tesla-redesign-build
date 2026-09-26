@@ -1,7 +1,19 @@
 import Foundation
 
 extension AppModel {
+    private func energyInterpretation(_ energy: Object) -> [String] {
+        guard let driving = energy.number("drivingKmPerKWh"), driving.isFinite, driving > 0 else { return [] }
+        let approximate = energy.flag("capacityAssumed") ? "추정 " : ""
+        if let overall = energy.number("overallKmPerKWh"), overall.isFinite, overall > 0, overall <= driving,
+           (1 - overall / driving) >= 0.05 {
+            return ["기록상 주차 중 소비가 전체 전비를 낮추고 있습니다.",
+                    "감시 모드나 주차 중 공조 사용 시간을 살펴보세요."]
+        }
+        return [String(format: "최근 %@주행 전비는 킬로와트시당 %.1f킬로미터입니다.", approximate, driving)]
+    }
+
     func screenBriefing(_ scope: BriefingScope, days: Int = 30, rows: [Object]? = nil, address: String = "") -> String {
+        guard scope.supportsSpeech else { return "" }
         let home = homePresentation(self, link)
         let charge = home.object("charge"), climate = home.object("climate")
         let fresh = output.object("fresh")
@@ -12,7 +24,7 @@ extension AppModel {
             guard let value = values.number(key), value.isFinite else { return "" }
             let mode = values.string("mode")
             guard demo || mode == "recent" || mode == "cached" else { return "" }
-            let age = mode == "cached" ? "마지막 수신값. " : ""
+            let age = mode == "cached" ? "마지막 확인된 " : ""
             return age + label + " \(Int(value.rounded()))" + unit + "입니다."
         }
         let connection = demo ? "예시 모드의 자료입니다." : (link.authentic ? "블루투스 연결됨." : "Fleet \(fleet.vehicleDisplayStatus)입니다.")
@@ -25,11 +37,11 @@ extension AppModel {
             if let last = automations.logs.first { details.append("최근 \(last.rule), \(last.status)입니다.") }
             else { details.append("아직 실행 기록이 없습니다.") }
         case .climate:
-            details = [inside, measurement(climate, key: "outsideC", label: "외부 온도", unit: "도")]
+            details = [inside]
             if climate.string("mode") == "recent", let on = climate["isOn"] as? Bool { details.insert(on ? "공조 작동 중입니다." : "공조 꺼짐.", at: 0) }
             details.append(measurement(climate, key: "targetC", label: "설정 온도", unit: "도"))
         case .charging:
-            details = [battery, measurement(charge, key: "chargerKW", label: "충전 전력", unit: "킬로와트"), measurement(charge, key: "limit", label: "충전 한도", unit: "퍼센트")]
+            details = [battery]
             if charge.string("mode") == "recent", let charging = charge["isCharging"] as? Bool { details.insert(charging ? "충전 중입니다." : "충전 중이 아닙니다.", at: 0) }
             if charge.flag("isCharging") { details.append(measurement(charge, key: "minutesToLimit", label: "목표까지 남은 시간", unit: "분")) }
         case .driving, .dashboard:
@@ -48,9 +60,9 @@ extension AppModel {
             let defaults = UserDefaults.standard
             details = [defaults.bool(forKey: "voiceEnabled") ? "음성 안내 켜짐." : "음성 안내 꺼짐.", "하단 메뉴 불투명도 \(Int((defaults.object(forKey: "tabBarOpacity") as? Double ?? 1) * 100))퍼센트입니다."]
         case .home:
-            details = [connection, battery, inside]
+            details = [battery, inside]
         case .controls, .security, .vehicle3D:
-            details = scope == .security ? [connection] : []
+            details = []
         case .trips, .allTrips:
             let selected = rows ?? output.object("energyPeriods").object(String(days)).rows("trips")
             details = BriefingScope.tripSummary(selected.map { $0.number("distanceKm") })
@@ -66,17 +78,23 @@ extension AppModel {
             if !costs.isEmpty { details.append("금액 확인 \(costs.count)회 합계는 \(Int(costs.reduce(0, +).rounded()))원입니다.") }
         case .battery, .batteryAndCharging:
             let usage = output.object("battery").object(String(days))
-            let index = output.object("healthIndex")
-            details = [days >= 36500 ? "전체 기록 기준입니다." : "최근 \(days)일 기록 기준입니다."]
-            if let distance = usage.number("distanceKm"), distance.isFinite { details.append(String(format: "기록 거리는 %.1f킬로미터입니다.", distance)) }
-            if let efficiency = usage.object("energy").number("drivingKmPerKWh"), efficiency.isFinite { details.append(String(format: "전비, 킬로와트시당 %.1f킬로미터입니다.", efficiency)) }
-            if index.flag("initial") { details.append("배터리 건강 지수 미측정.") }
-            else if let soh = index.number("soh"), soh.isFinite { details.append(String(format: "추정 배터리 건강 지수 %.1f퍼센트입니다.", soh)) }
-            if scope == .batteryAndCharging { details.append(battery) }
+            let energy = output.object("energyPeriods").object(String(days))
+            let estimates = energy.isEmpty ? usage.object("energy") : energy
+            details = scope == .batteryAndCharging ? [battery] : []
+            if charge.string("mode") == "recent", charge.flag("isCharging") {
+                if let minutes = charge.number("minutesToLimit"), minutes.isFinite, minutes >= 0 {
+                    details.append("충전 완료까지 약 \(Int(minutes.rounded()))분 남았습니다.")
+                } else { details.append("충전 중입니다.") }
+            }
+            if !charge.flag("isCharging") { details += energyInterpretation(estimates) }
+            if details.filter({ !$0.isEmpty }).isEmpty,
+               let distance = usage.number("distanceKm") ?? estimates.number("totalDistanceKm"), distance.isFinite {
+                details.append(String(format: "최근 \(days)일 주행 거리는 %.1f킬로미터입니다.", distance))
+            }
         case .location:
             let location = home.object("location")
             if location.flag("hasCoordinates"), let lat = location.number("latitude"), let lon = location.number("longitude"), lat.isFinite, lon.isFinite {
-                details = [address.isEmpty ? String(format: "마지막 위치 위도 %.4f, 경도 %.4f입니다.", lat, lon) : "마지막 위치 \(address)입니다.", "수신 \(dateText(location.number("gpsAt")))입니다."]
+                details = [address.isEmpty ? "마지막 확인 위치는 지도에서 볼 수 있습니다." : "마지막 위치 \(address)입니다.", "수신 \(dateText(location.number("gpsAt")))입니다."]
             } else { details = ["차량 위치를 아직 수신하지 못했습니다."] }
         case .care:
             details = ["정비 기록 \(state.rows("maintenance").count)건입니다."]

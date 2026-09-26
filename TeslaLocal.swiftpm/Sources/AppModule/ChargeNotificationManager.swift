@@ -1,95 +1,66 @@
 import Foundation
 import UserNotifications
+import Combine
 
-/// Manages local push notifications for vehicle charging events (start, complete, limit reached, interrupted).
-final class ChargeNotificationManager: NSObject, UNUserNotificationCenterDelegate {
+@MainActor final class ChargeNotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = ChargeNotificationManager()
-
-    private var previousChargingState: Int?
-    private var previousSOC: Double?
-    private var targetLimitNotified = false
-
+    @Published private(set) var status = "알림 권한 확인 중"
+    @Published private(set) var allowed = false
+    @Published private(set) var lastEvent = ""
+    private var previous: [String: ChargeObservation] = [:]
+    private let stateKey = "YL.charge.observations"
     override init() {
         super.init()
+        UserDefaults.standard.register(defaults: ["notify.charge.start": true, "notify.charge.complete": true, "notify.charge.limit": true, "notify.charge.stop": true])
+        if let data = UserDefaults.standard.data(forKey: stateKey), let saved = try? JSONDecoder().decode([String: ChargeObservation].self, from: data) { previous = saved }
         UNUserNotificationCenter.current().delegate = self
     }
-
-    /// Requests notification permissions from the user.
-    func requestAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-            if granted {
-                print("Notification permission granted")
-            }
-        }
+    func refreshAuthorization() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        allowed = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+        if allowed {
+            status = settings.alertSetting == .enabled ? "시스템 알림 허용" : "알림 허용 · 배너 표시 설정 확인"
+        } else { status = settings.authorizationStatus == .denied ? "iOS 설정에서 알림이 꺼져 있습니다" : "알림 받기를 켜 주세요" }
     }
-
-    /// Evaluates live charge updates and triggers push notifications on state changes.
-    func evaluateChargeUpdate(soc: Double?, limit: Double?, charging: Int?, minutesToLimit: Int?) {
-        guard let charging else { return }
-        let currentSOC = soc ?? 0
-        let target = limit ?? 80
-
-        // 1. Charging Started (0 -> 1)
-        if (previousChargingState == 0 || previousChargingState == nil) && charging == 1 {
-            let minutesText = (minutesToLimit != nil && (minutesToLimit ?? 0) > 0) ? " (완충까지 약 \(minutesToLimit!)분)" : ""
-            sendNotification(
-                title: "⚡️ 차량 충전 시작",
-                body: "배터리 잔량 \(Int(currentSOC))%\(minutesText). 충전이 정상적으로 시작되었습니다."
-            )
-            targetLimitNotified = false
-        }
-
-        // 2. Charging Completed (charging == 2, or SOC reached 100%)
-        if (previousChargingState == 1 && charging == 2) || (charging == 1 && currentSOC >= 100 && (previousSOC ?? 0) < 100) {
-            sendNotification(
-                title: "🔋 배터리 충전 완료",
-                body: "배터리 잔량 100%. 완충되었습니다."
-            )
-        }
-
-        // 3. Target Limit Reached (e.g. reached 80%)
-        if charging == 1 && currentSOC >= target && (previousSOC ?? 0) < target && !targetLimitNotified {
-            targetLimitNotified = true
-            sendNotification(
-                title: "🎯 목표 충전량 도달",
-                body: "설정한 충전 한도(\(Int(target))%)에 도달했습니다. 현재 배터리 \(Int(currentSOC))%."
-            )
-        }
-
-        // 4. Charging Interrupted (1 -> 3 or unexpected stop while below target)
-        if previousChargingState == 1 && charging == 3 {
-            sendNotification(
-                title: "⚠️ 충전 중단 경고",
-                body: "충전이 비정상적으로 중단되었습니다. 충전기 연결 및 차량 상태를 확인해 주세요."
-            )
-        }
-
-        previousChargingState = charging
-        previousSOC = currentSOC
+    func requestAuthorization() async {
+        do { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]); await refreshAuthorization() }
+        catch { status = "알림 권한 요청 실패: " + error.localizedDescription }
     }
-
-    private func sendNotification(title: String, body: String) {
+    func observe(_ current: ChargeObservation) {
+        let now = Date()
+        guard !current.vin.isEmpty, now.timeIntervalSince(current.at) >= -5, now.timeIntervalSince(current.at) <= 120,
+              previous[current.vin].map({ current.at > $0.at }) ?? true else { return }
+        let event = ChargeEventPolicy.event(previous: previous[current.vin], current: current, now: now)
+        previous[current.vin] = current
+        if previous.count > 5 { previous = Dictionary(uniqueKeysWithValues: previous.values.sorted { $0.at > $1.at }.prefix(5).map { ($0.vin, $0) }) }
+        if let data = try? JSONEncoder().encode(previous) { UserDefaults.standard.set(data, forKey: stateKey) }
+        guard let event, UserDefaults.standard.bool(forKey: "notify.charge." + event.kind) else { return }
+        Task { await deliver(event, id: "YL.charge.\(current.vin).\(event.kind).\(Int(current.at.timeIntervalSince1970))") }
+    }
+    private func deliver(_ event: ChargeEvent, id: String, delay: TimeInterval? = nil) async {
+        await refreshAuthorization()
+        guard allowed else { return }
         let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        content.badge = 1
-
-        let request = UNNotificationRequest(
-            identifier: "YL.ChargeNotification.\(UUID().uuidString)",
-            content: content,
-            trigger: nil // Deliver immediately
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error {
-                print("Failed to schedule notification: \(error)")
-            }
-        }
+        content.title = event.title; content.body = event.body; content.sound = .default
+        content.threadIdentifier = "YL.charging"
+        content.userInfo = ["destination": "charging"]
+        let trigger = delay.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
+        do {
+            try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+            lastEvent = event.title + " · 알림 센터에 전달됨"
+        } catch { status = "알림 등록 실패: " + error.localizedDescription }
     }
-
-    // Deliver notification even when app is in foreground
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound, .badge])
+    func testNotification() async {
+        await deliver(ChargeEvent(kind: "test", title: "알림 동작 확인", body: "이 알림은 시험용입니다. 앱 전환·화면 잠금 상태에서도 표시되는지 확인할 수 있습니다."), id: "YL.notification.test", delay: 10)
+    }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([.banner, .sound, .list]) }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        Task { @MainActor in
+            if response.notification.request.content.userInfo["destination"] as? String == "charging" {
+                UserDefaults.standard.set(true, forKey: "YL.openChargingPending")
+                NotificationCenter.default.post(name: Notification.Name("YL.openChargingFromNotification"), object: nil)
+            }
+            completionHandler()
+        }
     }
 }

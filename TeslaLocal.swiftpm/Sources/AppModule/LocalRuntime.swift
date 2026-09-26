@@ -10,6 +10,14 @@ extension Dictionary where Key == String, Value == Any {
     func string(_ key: String, _ fallback: String = "") -> String { self[key] as? String ?? fallback }
     func number(_ key: String) -> Double? { (self[key] as? NSNumber)?.doubleValue }
     func flag(_ key: String) -> Bool { self[key] as? Bool ?? false }
+    var chargingNow: Bool {
+        if let value = self["isCharging"] as? Bool { return value }
+        if let value = self["charging"] as? NSNumber {
+            if CFGetTypeID(value) == CFBooleanGetTypeID() { return value.boolValue }
+            if value.intValue > 0 { return value.intValue == 5 }
+        }
+        return (number("chargerKW") ?? 0) > 0.5 || flag("chargingActive")
+    }
 }
 enum LocalError: LocalizedError {
     case message(String)
