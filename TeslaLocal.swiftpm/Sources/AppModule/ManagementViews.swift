@@ -42,13 +42,21 @@ struct CareView: View {
     }
     private var tirePoints: [TirePoint] {
         let resetAt = model.state.rows("maintenance").filter { $0.flag("tireReset") }.compactMap { $0.number("at") }.max() ?? 0
-        return model.state.rows("tires").suffix(200).flatMap { row -> [TirePoint] in
+        let ble = model.state.rows("tires").suffix(200).flatMap { row -> [TirePoint] in
             guard let at = row.number("at"), at >= resetAt, let values = row["values"] as? [Any] else { return [] }
             return (0..<min(4, values.count)).compactMap { i in
                 guard let p = values[i] as? NSNumber else { return nil }
                 return TirePoint(id: row.selfID + String(i), date: Date(timeIntervalSince1970: at/1000), pressure: p.doubleValue, sensor: ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][i])
             }
         }
+        let vin = model.fleet.selectedVin.isEmpty ? model.settings.string("vin") : model.fleet.selectedVin
+        let fields = ["TpmsPressureFl", "TpmsPressureFr", "TpmsPressureRl", "TpmsPressureRr"]
+        let nas: [TirePoint] = FleetTelemetryStore.shared.records.filter { $0.vin == vin && $0.at.timeIntervalSince1970 * 1000 >= resetAt && !$0.invalid && fields.contains($0.field) }.suffix(800).compactMap { r in
+            guard let value = r.number, value > 0, let index = fields.firstIndex(of: r.field) else { return nil }
+            return TirePoint(id: r.id, date: r.at, pressure: value, sensor: ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][index])
+        }
+        let matchingBLE = model.settings.string("vin") == vin ? ble : []
+        return Array(Dictionary((matchingBLE + nas).map { ($0.sensor + String($0.date.timeIntervalSince1970), $0) }, uniquingKeysWith: { _, new in new }).values).sorted { $0.date < $1.date }
     }
 }
 

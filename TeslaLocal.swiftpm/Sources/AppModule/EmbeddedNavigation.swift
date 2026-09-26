@@ -578,11 +578,7 @@ struct NavigationSetupView: View {
                 }
                 .buttonStyle(.plain)
             }
-            InfoCard {
-                Text("화면 방향").font(.headline)
-                DirectionPicker(navigation: navigation)
-                if !navigation.directionNotice.isEmpty { Caption(navigation.directionNotice) }
-            }
+            InfoCard { NavigationDisplaySettings(navigation: navigation) }
             InfoCard {
                 Text("카카오 SDK 설정").font(.headline)
                 Text(navigation.bundleID).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)

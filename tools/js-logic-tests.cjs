@@ -111,3 +111,24 @@ console.log('PASS: receipt parsing');
  chargeAssert.equal(e.state.trips[0].distanceKm,0.7);
  chargeAssert.equal(e.state.groups.drive,undefined,'Fleet history must not authorize BLE automation');
 }
+
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000;
+ const rows=[]; const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc] of [[0,'Disconnected',40],[1000,'Charging',40],[60000,'Charging',50],[120000,'Complete',60]]){put(t,'Soc',soc);put(t,'DetailedChargeState','DetailedChargeState'+state);}
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].startSOC,40);chargeAssert.equal(e.state.charges[0].endSOC,60);
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,1,'NAS replay must be idempotent');
+ chargeAssert.equal(Object.keys(e.state.groups).length,0,'historical NAS packets must never authorize vehicle commands');
+ chargeAssert.throws(()=>e.ingestArchive({vin:'5YJYGDEE0LF000002',rows}));
+ const phone=new C.Engine();phone.state.settings.vin=vin;phone.state.charges=[{...e.state.charges[0],id:'phone',source:'BLE'}];phone.ingestArchive({vin,rows});chargeAssert.equal(phone.state.charges.length,1,'overlapping phone records must not be duplicated');
+ console.log('PASS: NAS charging reconstruction, VIN isolation and duplicate prevention');
+}
+
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000,rows=[];
+ const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,gear,speed,odo,soc] of [[0,'P',0,1000,70],[5000,'D',20,1000,70],[10000,'D',20,1000.1,69],[15000,'P',0,1000.2,69],[65000,'P',0,1000.2,69]]){for(const [f,v] of [['Gear','ShiftState'+gear],['VehicleSpeed',speed],['Odometer',odo],['Soc',soc]])put(t,f,v);}
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.trips.length,1);chargeAssert.ok(e.state.trips[0].distanceKm>0);
+ e.ingestArchive({vin,rows:[...rows].reverse()});chargeAssert.equal(e.state.trips.length,1,'reordered NAS history must not duplicate trips');
+ console.log('PASS: NAS trip reconstruction and reordered replay');
+}

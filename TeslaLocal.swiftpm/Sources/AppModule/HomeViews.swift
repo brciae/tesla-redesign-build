@@ -26,7 +26,7 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
         for (name, raw) in FleetTelemetryData.homeOverlay(FleetTelemetryStore.shared.records, vin: model.fleet.selectedVin) {
             guard let group = raw as? Object else { continue }
             let existing = result.object(name)
-            if existing.string("mode") != "recent" || (group.number("at") ?? 0) > (existing.number("at") ?? 0) { result[name] = group }
+            if existing.string("mode") == "missing" || (group.number("at") ?? 0) > (existing.number("at") ?? 0) { result[name] = group }
         }
     }
     return result

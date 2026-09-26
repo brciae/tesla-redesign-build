@@ -4,18 +4,14 @@ import Charts
 /// Visual overview of the selected vehicle; readings never authorize commands.
 struct FleetInsightsView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.vehicleUnits) private var units
     @ObservedObject var fleet: TeslaFleetClient
     private var snapshot: FleetVehicleSnapshot? {
         guard let value = fleet.vehicleSnapshot, value.vin == fleet.selectedVin else { return nil }
         return value
     }
-    private var charges: [Object] { Array(model.output.object("charging").rows("rows").prefix(14).reversed()) }
-    private var chartDayStride: Int {
-        let times = charges.compactMap { $0.number("at") }
-        guard let first = times.min(), let last = times.max() else { return 1 }
-        return max(1, Int(ceil((last - first) / 86_400_000 / 4)))
-    }
     var body: some View {
+        let charge = homePresentation(model, model.link).object("charge")
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
@@ -29,14 +25,14 @@ struct FleetInsightsView: View {
                 if let error = fleet.vehicleReadError { Text(error).font(.caption).foregroundStyle(.orange) }
                 InfoCard {
                     HStack(spacing: 28) {
-                        if let soc = snapshot?.soc {
+                        if let soc = charge.number("soc") {
                             Gauge(value: soc, in: 0...100) { Image(systemName: "bolt.fill") } currentValueLabel: { Text(String(format: "%.0f%%", soc)).font(.headline) }
                                 .gaugeStyle(.accessoryCircularCapacity).tint(.mint).scaleEffect(1.35).frame(width: 90, height: 100)
                         }
                         VStack(alignment: .leading, spacing: 9) {
-                            if let km = snapshot?.rangeKm { Text(String(format: "%.0f km", km)).font(.largeTitle.bold()); Text("주행 가능 거리").font(.caption).foregroundStyle(Theme.muted) }
+                            if let km = charge.number("rangeKm") { Text(units.format(km, suffix: " km")).font(.largeTitle.bold()); Text("주행 가능 거리").font(.caption).foregroundStyle(Theme.muted) }
                             if let odo = model.displayOdometerKm { Label(String(format: "누적 %.0f km", odo), systemImage: "speedometer").font(.subheadline) }
-                            if snapshot?.charging == true { Label("충전 중", systemImage: "bolt.fill").foregroundStyle(.mint) }
+                            if charge.chargingNow { Label("충전 중", systemImage: "bolt.fill").foregroundStyle(.mint) }
                         }
                         Spacer(minLength: 0)
                     }

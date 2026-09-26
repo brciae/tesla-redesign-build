@@ -82,6 +82,7 @@ struct FleetTelemetryView: View {
                 NavigationLink { FleetTelemetryView(vin: vin, connectionSettings: true) } label: { Label("기록 서버 연결 설정", systemImage: "externaldrive") }
                 if ["ModuleTempMin", "ModuleTempMax", "PackVoltage", "PackCurrent", "EnergyRemaining", "NominalFullPackEnergyKwh"].contains(where: { latest[$0]?.number != nil && latest[$0]?.invalid == false }) { InfoCard {
                     Text("배터리 열관리·전기 상태").font(.headline)
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                     measurement("최저 모듈 온도", field: "ModuleTempMin", unit: "°C")
                     measurement("최고 모듈 온도", field: "ModuleTempMax", unit: "°C")
                     difference("모듈 온도 편차", high: "ModuleTempMax", low: "ModuleTempMin", unit: "°C", scale: 1)
@@ -90,6 +91,7 @@ struct FleetTelemetryView: View {
                     measurement("배터리 팩 전류", field: "PackCurrent", unit: "A")
                     measurement("남은 에너지", field: "EnergyRemaining", unit: "kWh")
                     measurement("차량 보고 완충 에너지", field: "NominalFullPackEnergyKwh", unit: "kWh")
+                    }
                     Caption("온도·전압 편차는 2초 이내 같은 시각의 유효한 값끼리 비교합니다. 이 값만으로 배터리 결함이나 열화를 판정하지 않습니다.")
                 } }
                 InfoCard {
@@ -97,7 +99,11 @@ struct FleetTelemetryView: View {
                     Picker("추이 항목", selection: $selectedField) {
                         Text("최고 온도 °C").tag("ModuleTempMax")
                         Text("배터리 %").tag("Soc")
-                        Text("충전 전력 kW").tag("DCChargingPower")
+                        Text("급속 충전 kW").tag("DCChargingPower")
+                        Text("완속 충전 kW").tag("ACChargingPower")
+                        Text("남은 에너지 kWh").tag("EnergyRemaining")
+                        Text("팩 전압 V").tag("PackVoltage")
+                        Text("팩 전류 A").tag("PackCurrent")
                     }.pickerStyle(.menu)
                     if trend.count > 1 {
                         Chart(trend) { point in
@@ -140,7 +146,8 @@ struct FleetTelemetryView: View {
     @ViewBuilder private func measurement(_ title: String, field: String, unit: String) -> some View {
         if let value = latest[field], !value.invalid, let number = value.number {
             VStack(alignment: .leading, spacing: 3) {
-                HStack { Text(title); Spacer(); Text(String(format: "%.1f %@", number, unit)) }.font(.subheadline)
+                Text(title).font(.caption).foregroundStyle(Theme.muted)
+                Text(String(format: "%.1f %@", number, unit)).font(.title2.bold()).monospacedDigit()
                 Text(value.at.formatted(date: .abbreviated, time: .standard)).font(.caption2).foregroundStyle(Theme.muted)
             }
         }

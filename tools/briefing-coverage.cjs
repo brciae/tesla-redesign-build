@@ -32,7 +32,6 @@ for (const [file, names] of Object.entries(screens)) {
   }
 }
 for (const [file, marker] of [
-  ['DrivingWorkspace.swift','LocalBriefingControls(title: "운전 화면 설정")'],
   ['TeslaInteractiveControlsView.swift','LocalBriefingControls(title: "토큰 발급 안내")'],
   ['App.swift','PageBody(title: "차량 3D", briefing: .vehicle3D)']
 ]) assert(fs.readFileSync(root+file,'utf8').includes(marker), `Missing nested screen: ${marker}`);

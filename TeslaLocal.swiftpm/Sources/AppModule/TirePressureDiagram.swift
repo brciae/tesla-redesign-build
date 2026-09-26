@@ -45,7 +45,7 @@ struct TirePressureDiagram: View {
         return VStack(spacing: 4) {
             Text(["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][index]).font(.caption2)
             Text(units.format(reading?.validBar, suffix: " bar")).font(.subheadline.bold()).monospacedDigit()
-            if let at = reading?.at { Text(at, style: .time).font(.caption2).foregroundStyle(Theme.muted) }
+            if let at = reading?.at { Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(Theme.muted) }
         }.padding(9).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 }

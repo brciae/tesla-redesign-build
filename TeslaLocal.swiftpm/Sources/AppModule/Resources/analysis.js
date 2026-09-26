@@ -410,6 +410,36 @@
       }
       append(this.state.parkingNotes,p);return p;
     }
+    ingestArchive(input){
+      const vin=input.vin, rows=input.rows;
+      if(typeof vin!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)||!Array.isArray(rows)||rows.length>50000)throw Error('NAS 기록 형식 오류');
+      if(this.state.settings.vin&&this.state.settings.vin!==vin)throw Error('동일 차량의 NAS 기록만 합칠 수 있음');
+      if(!this.state.settings.vin){if(this.state.trips.length||this.state.charges.length)throw Error('기존 기록의 차량을 먼저 선택해 주세요.');this.state.settings.vin=vin;}
+      const replay=new Engine();replay.state.settings={...this.state.settings};
+      const latest={},byTime=new Map();
+      for(const r of rows){if(!num(r.at,1,Date.now()+5000)||typeof r.field!=='string')continue;if(!byTime.has(r.at))byTime.set(r.at,[]);byTime.get(r.at).push(r);}
+      const scalar=field=>{const r=latest[field];if(!r||r.invalid)return null;if(Number.isFinite(r.number))return r.number;try{return Object.values(JSON.parse(r.text))[0];}catch{return null;}};
+      for(const at of [...byTime.keys()].sort((a,b)=>a-b)){
+        for(const row of byTime.get(at))latest[row.field]=row;
+        const soc=scalar('Soc')??scalar('BatteryLevel'),odo=scalar('Odometer'),speed=scalar('VehicleSpeed');
+        const gear=String(scalar('Gear')??'').replace('ShiftState','');
+        const detail=String(scalar('DetailedChargeState')??'').replace('DetailedChargeState','');
+        const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
+        if(charging!==undefined)replay.charge({at,charging,soc,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);
+        if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
+      }
+      for(const kind of ['trips','charges'])for(const source of replay.state[kind]){
+        const start=kind==='trips'?source.start:source.at,end=source.end??start;
+        const row={...source,id:'nas:'+vin+':'+kind+':'+start,source:'NAS'};
+        const list=this.state[kind],same=list.findIndex(x=>x.id===row.id);
+        if(same>=0){list[same]=row;continue;}
+        const overlaps=x=>{const a=kind==='trips'?x.start:x.at,b=x.end??x.lastAt??a;return Math.min(end,b)>=Math.max(start,a);};
+        // Prefer existing phone/manual records; never double-count one observed session.
+        if(list.some(overlaps)||(kind==='trips'?this.state.activeTrip:this.state.activeCharge)&&overlaps(kind==='trips'?this.state.activeTrip:this.state.activeCharge))continue;
+        append(list,row);list.sort((a,b)=>(a.start??a.at)-(b.start??b.at));
+      }
+      return this.view();
+    }
     mergeHistory(value){
       const source=validateState(value),target=this.state;
       if(!target.settings.vin||source.settings.vin!==target.settings.vin)throw Error('동일 VIN의 기록만 합칠 수 있음');

@@ -61,25 +61,7 @@ struct DrivingWorkspace: View {
         .sheet(isPresented: $settings) {
             NavigationStack {
                 Form {
-                    Section { LocalBriefingControls(title: "운전 화면 설정") { ["지도는 \(preferredMapEngine == "kakao" ? "카카오" : "애플"), 테마는 \(navigation.theme.title)입니다."] } }
-                    Section("지도 표시") {
-                        Picker("기본 지도", selection: $preferredMapEngine) {
-                            Text("카카오 지도 (KNSDK)").tag("kakao")
-                            Text("애플 지도 (Apple Map)").tag("apple")
-                        }
-                        .pickerStyle(.segmented)
-                        .onChange(of: preferredMapEngine) { newEngine in
-                            if newEngine == "kakao" && navigation.controller == nil {
-                                navigation.startStandbyKakaoMap()
-                            }
-                        }
-                        Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Section("내비 화면") {
-                        Picker("테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
-                        DirectionPicker(navigation: navigation)
-                    }
-                    Section { NavigationLink("표시·음성 설정") { PreferencesView() } }
+                    NavigationDisplaySettings(navigation: navigation)
                 }.navigationTitle("운전 화면 설정").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { settings = false } } }
             }
         }
@@ -456,3 +438,28 @@ struct StandbyMKMapView: UIViewRepresentable {
     }
 }
 
+
+struct NavigationDisplaySettings: View {
+    @ObservedObject var navigation: EmbeddedNavigation
+    @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
+    var body: some View { Group {
+                    Section("지도 표시") {
+                        Picker("기본 지도", selection: $preferredMapEngine) {
+                            Text("카카오 지도 (KNSDK)").tag("kakao")
+                            Text("애플 지도 (Apple Map)").tag("apple")
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: preferredMapEngine) { newEngine in
+                            if newEngine == "kakao" && navigation.controller == nil {
+                                navigation.startStandbyKakaoMap()
+                            }
+                        }
+                        Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Section("내비 화면") {
+                        Picker("테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
+                        DirectionPicker(navigation: navigation)
+                    }
+                    Section { NavigationLink("음성·내비 안내") { PreferencesView() } }
+    } }
+}

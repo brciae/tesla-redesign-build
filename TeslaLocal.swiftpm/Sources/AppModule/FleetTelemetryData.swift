@@ -89,11 +89,11 @@ enum FleetTelemetryData {
             var stamps: [Date] = []
             for (field, key, scale) in fields {
                 guard let r = latest[field], !r.invalid, let n = r.number,
-                      now.timeIntervalSince(r.at) >= -5, now.timeIntervalSince(r.at) <= 120 else { continue }
+                      now.timeIntervalSince(r.at) >= -5 else { continue }
                 values[key] = n * scale; stamps.append(r.at)
             }
             if group == "charge", let r = latest["DetailedChargeState"], !r.invalid,
-               now.timeIntervalSince(r.at) >= -5, now.timeIntervalSince(r.at) <= 120,
+               now.timeIntervalSince(r.at) >= -5,
                let data = r.text.data(using: .utf8), let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let state = raw["detailedChargeStateValue"] as? String {
                 values["charging"] = state == "DetailedChargeStateCharging"
@@ -102,7 +102,8 @@ enum FleetTelemetryData {
             }
             if let oldest = stamps.min() {
                 values["at"] = oldest.timeIntervalSince1970 * 1000
-                values["mode"] = "recent"; values["label"] = "NAS 차량 수신"
+                values["mode"] = now.timeIntervalSince(oldest) <= 120 ? "recent" : "cached"
+                values["label"] = now.timeIntervalSince(oldest) <= 120 ? "NAS 차량 수신" : "NAS 마지막 측정"
                 result[group] = values
             }
         }

@@ -184,7 +184,17 @@ final class AppModel: ObservableObject {
               !fleet.selectedVin.isEmpty else { return }
         lastArchiveSync = Date()
         let vin = fleet.selectedVin
-        Task { await FleetArchiveClient.shared.sync(vin: vin) }
+        Task {
+            await FleetArchiveClient.shared.sync(vin: vin)
+            guard !self.demo, self.fleet.selectedVin == vin else { return }
+            let rows: [Object] = FleetTelemetryStore.shared.records.filter { $0.vin == vin }.map { r in
+                var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "field": r.field, "text": r.text, "invalid": r.invalid]
+                if let n = r.number { value["number"] = n }; return value
+            }
+            guard !rows.isEmpty else { return }
+            do { self.output = try self.runtime.call("ingestArchive", ["vin": vin, "rows": rows]) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "NAS 기록 통합: " + error.localizedDescription }
+        }
     }
     func refresh() {
         do { output = try runtime.call("view") as? Object ?? [:]; if !link.connected || !link.authentic { output["fresh"] = Object() } }
