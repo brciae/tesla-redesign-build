@@ -45,7 +45,6 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swift
 Xcode/ScreenBriefingTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/ParkingModels.swift tools/parking-record-tests.swift -o Xcode/ParkingRecordTests
 Xcode/ParkingRecordTests
-bash tools/test-interface.sh
 xcodegen generate --spec Xcode/project.json --project Xcode
 xcodebuild -resolvePackageDependencies \
   -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
@@ -56,6 +55,8 @@ xcodebuild -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
   -clonedSourcePackagesDirPath Xcode/SourcePackages \
   -disableAutomaticPackageResolution \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
+
+bash tools/test-interface.sh
 
 app_path="$repo_root/Xcode/DerivedData/Build/Products/Release-iphoneos/YLCompanion.app"
 test -s "$app_path/YLCompanion"

@@ -37,7 +37,7 @@ struct TirePressureDiagram: View {
                     HStack { wheel(2); Spacer(); wheel(3) }
                 }.padding(.vertical, 18)
             }.frame(height: 270).accessibilityIdentifier("fleet.tires")
-            Text("각 바퀴의 마지막 측정값 · 주행 직후에는 공기압이 높아질 수 있습니다.").font(.caption2).foregroundStyle(Theme.muted)
+            Text("각 바퀴의 마지막 수신값 · 주행 직후에는 공기압이 높아질 수 있습니다.").font(.caption2).foregroundStyle(Theme.muted)
         }
     }
     private func wheel(_ index: Int) -> some View {

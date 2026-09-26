@@ -52,7 +52,7 @@ final class InteractionTests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         let tires = app.buttons["타이어·정비"]
         XCTAssertTrue(tires.waitForExistence(timeout: 5)); tires.tap()
-        XCTAssertTrue(app.otherElements["fleet.tires"].waitForExistence(timeout: 5))
+        for label in ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"] { XCTAssertTrue(app.staticTexts[label].waitForExistence(timeout: 5)) }
         shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Unified tire readings"; shot.lifetime = .keepAlways; add(shot)
 
     }

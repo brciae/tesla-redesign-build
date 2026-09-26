@@ -417,6 +417,7 @@
       if(!this.state.settings.vin){if(this.state.trips.length||this.state.charges.length)throw Error('기존 기록의 차량을 먼저 선택해 주세요.');this.state.settings.vin=vin;}
       const replay=new Engine();replay.state.settings={...this.state.settings};
       const latest={},byTime=new Map();
+      let chargeBegan=null,previousCharge=null;
       for(const r of rows){if(!num(r.at,1,Date.now()+5000)||typeof r.field!=='string')continue;if(!byTime.has(r.at))byTime.set(r.at,[]);byTime.get(r.at).push(r);}
       const scalar=field=>{const r=latest[field];if(!r||r.invalid)return null;if(Number.isFinite(r.number))return r.number;try{return Object.values(JSON.parse(r.text))[0];}catch{return null;}};
       for(const at of [...byTime.keys()].sort((a,b)=>a-b)){
@@ -425,7 +426,9 @@
         const gear=String(scalar('Gear')??'').replace('ShiftState','');
         const detail=String(scalar('DetailedChargeState')??'').replace('DetailedChargeState','');
         const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
-        if(charging!==undefined)replay.charge({at,charging,soc,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);
+        if(charging===5&&previousCharge!==5)chargeBegan=at;
+        const added=chargeBegan!==null&&latest.DCChargingEnergyIn?.at>=chargeBegan?scalar('DCChargingEnergyIn'):null;
+        if(charging!==undefined){replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);previousCharge=charging;}
         if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
       }
       for(const kind of ['trips','charges'])for(const source of replay.state[kind]){
