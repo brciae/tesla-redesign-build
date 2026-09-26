@@ -110,6 +110,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         nativeActive = false
         _ = active
         if !active {
+            navigationPreparation?.cancel()
+            if navigationSpeaking { cancelCurrent() }
             queue.clearNavigation()
             lastGuideText = ""
             lastGuideAt = .distantPast
@@ -137,10 +139,11 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         lastGuideAt = now
 
         let priority = safety ? 5 : 4
-        queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn")
+        if cue.stateChange == true { queue.clearNavigation() }
+        else { queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn") }
 
         // Safety guidance interrupts regular chatter immediately
-        if safety || !navigationSpeaking {
+        if cue.stateChange == true || !navigationSpeaking || priority >= activePriority {
             cancelCurrent()
             quietUntil = .distantPast
         }

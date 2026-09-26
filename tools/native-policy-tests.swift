@@ -9,6 +9,7 @@ import Foundation
         precondition(NavigationSpeechCue.parse(#"{"text":"지난 단속","validUntil":99}"#, now: cueTime) == nil)
         precondition(NavigationSpeechCue.parse(#"{"text":"잘못된 장기 안내","validUntil":108}"#, now: cueTime) == nil)
         precondition(NavigationSpeechCue.parse("{}", now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse(#"{"text":"새로운 경로로 안내합니다.","validUntil":102,"stateChange":true}"#, now: cueTime)?.stateChange == true)
         for key in ["manual", "preview", "climate.temp"] {
             precondition(VoiceItem(key: key, text: "report", expires: expired, priority: 2, manual: true).canStartPlayback(at: afterSynthesis))
         }

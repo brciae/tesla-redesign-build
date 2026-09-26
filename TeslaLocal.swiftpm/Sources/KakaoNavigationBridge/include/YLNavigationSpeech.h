@@ -87,6 +87,8 @@ static inline NSString *YLNavigationAction(NSInteger code) {
 }
 
 static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArray<NSString *> *towards, NSInteger metres) {
+    if (metres == 0 && code == 101) return @"목적지에 도착했습니다.";
+    if (metres == 0 && code == 1000) return @"경유지에 도착했습니다.";
     NSString *action = YLNavigationAction(code);
     if (!action.length) return @"";
     NSMutableArray<NSString *> *names = [NSMutableArray array];

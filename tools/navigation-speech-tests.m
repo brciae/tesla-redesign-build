@@ -15,6 +15,8 @@ int main(void) { @autoreleasepool {
         check([YLNavigationAction(clock+69) containsString:expected], @"Roundabout code means clock, not ordinal exit");
     }
     check([YLNavigationSpeech(101,nil,nil,200) isEqual:@"약 200미터 앞, 목적지입니다."], @"Approaching destination is not arrival");
+    check([YLNavigationSpeech(101,nil,nil,0) isEqual:@"목적지에 도착했습니다."], @"Destination arrival must not say ahead");
+    check([YLNavigationSpeech(1000,nil,nil,0) isEqual:@"경유지에 도착했습니다."], @"Waypoint arrival is distinct from approach");
     check([YLNavigationDistancePrefix(112) isEqual:@"약 100미터 앞, "], @"Do not read raw meter precision");
     check([YLNavigationDistancePrefix(1381) isEqual:@"약 1킬로미터 앞, "], @"Long distance uses approximate kilometers");
     check([YLNavigationDistancePrefix(40) isEqual:@"잠시 후, "], @"Nearby event is imminent");

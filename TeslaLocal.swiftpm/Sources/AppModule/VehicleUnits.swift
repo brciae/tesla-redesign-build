@@ -139,6 +139,7 @@ struct NavigationSpeechCue: Decodable {
     let text: String
     let validUntil: Double
     let targetID: String?
+    var stateChange: Bool? = nil
     static func parse(_ message: String, now: Date) -> NavigationSpeechCue? {
         if message.hasPrefix("{") {
             guard let data = message.data(using: .utf8), let cue = try? JSONDecoder().decode(Self.self, from: data),
