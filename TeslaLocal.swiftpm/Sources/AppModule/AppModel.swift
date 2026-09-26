@@ -109,7 +109,10 @@ final class AppModel: ObservableObject {
         }
         navigation.willStart = { [weak self] in self?.stopSpeech() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
-        navigation.onGuidanceEnd = { [weak self] in self?.voice.stop() }
+        navigation.onGuidanceEnd = { [weak self] in
+            self?.voice.stop()
+            self?.voice.navigationGuide("경로 안내 종료.", safety: false)
+        }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
         navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
         voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }

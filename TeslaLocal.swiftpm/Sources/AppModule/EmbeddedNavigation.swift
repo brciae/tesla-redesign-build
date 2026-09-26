@@ -346,10 +346,10 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     private func returnToFreeDrive() {
         guard guiding || busy else { return }
         let keepDisplay = presented
-        onGuidanceEnd?()
         stopNative(keepDisplay: keepDisplay)
         if keepDisplay { startStandbyKakaoMap() }
         status = "자유주행 · 경로 안내 종료"
+        onGuidanceEnd?() // End announcement follows cleanup, so cleanup cannot cancel it.
     }
     func retry() {
         guard !ownsAudio else { return }
