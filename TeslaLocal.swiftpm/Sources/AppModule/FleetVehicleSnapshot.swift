@@ -178,6 +178,7 @@ extension FleetVehicleSnapshot {
         if lines.isEmpty, sectionIsRecent("vehicle_state"), flag("vehicle_state", "sentry_mode") == true {
             lines.append("감시 모드가 켜져 있습니다.")
         }
+        if !sectionIsRecent("vehicle_state") && !sectionIsRecent("drive_state") { return ["차량 정보를 새로 고친 뒤 다시 들어보세요."] }
         return lines.isEmpty ? ["지금 읽어드릴 주요 변경 사항이 없습니다."] : lines
     }
 
