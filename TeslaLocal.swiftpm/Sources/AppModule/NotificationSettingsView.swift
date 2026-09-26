@@ -15,6 +15,7 @@ struct NotificationSettingsView: View {
                     if !manager.allowed { Button("알림 받기") { Task { await manager.requestAuthorization() } } }
                     Button("iOS 알림 설정 열기") { if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) } }
                 }
+                NavigationLink { AutomationUtilitiesView(title: "출발 알림") } label: { Label("매일 출발 알림", systemImage: "clock") }
                 Text("충전 알림").font(.headline).foregroundStyle(.purple)
                 VStack(spacing: 20) {
                     Toggle(isOn: $start) { item("충전 시작", "차량이 충전을 시작했을 때") }

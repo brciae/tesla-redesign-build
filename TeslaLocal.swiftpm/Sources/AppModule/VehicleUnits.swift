@@ -192,3 +192,13 @@ struct VoiceQueue {
         start == end ? false : start < end ? hour >= start && hour < end : hour >= start || hour < end
     }
 }
+
+/// Newest timestamp wins per wheel; an explicit invalid reading clears older data.
+struct TirePressureSample {
+    let bar: Double?
+    let at: Date
+    static func newest(_ samples: [TirePressureSample], now: Date = Date()) -> TirePressureSample? {
+        samples.filter { $0.at <= now.addingTimeInterval(5) }.max { $0.at < $1.at }
+    }
+    var validBar: Double? { guard let bar, bar.isFinite, bar > 0 else { return nil }; return bar }
+}

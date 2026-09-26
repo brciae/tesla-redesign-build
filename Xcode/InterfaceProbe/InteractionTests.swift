@@ -40,22 +40,21 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["fleet-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["내 차량"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["최근 충전"].exists)
+        XCTAssertFalse(app.staticTexts["최근 충전"].exists)
+        XCTAssertTrue(app.buttons["타이어·정비"].exists)
         var shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet visual charge overview"; shot.lifetime = .keepAlways; add(shot)
-        app.swipeUp()
-        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet tire diagram and visual menu"; shot.lifetime = .keepAlways; add(shot)
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet consolidated menu"; shot.lifetime = .keepAlways; add(shot)
         let warranty = app.buttons["보증·관리"]
         if !warranty.isHittable { app.swipeUp() }
         XCTAssertTrue(warranty.waitForExistence(timeout: 5)); warranty.tap()
         XCTAssertTrue(app.staticTexts["남은 거리"].firstMatch.waitForExistence(timeout: 5))
         shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Warranty remaining bars"; shot.lifetime = .keepAlways; add(shot)
         app.navigationBars.buttons.firstMatch.tap()
-        let driving = app.buttons["주행·소비"]
-        XCTAssertTrue(driving.waitForExistence(timeout: 5)); driving.tap()
-        XCTAssertTrue(app.staticTexts["주행 전비"].waitForExistence(timeout: 5))
-        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Driving efficiency and consumption charts"; shot.lifetime = .keepAlways; add(shot)
-        app.swipeUp()
-        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Driving cost comparison chart"; shot.lifetime = .keepAlways; add(shot)
+        let tires = app.buttons["타이어·정비"]
+        XCTAssertTrue(tires.waitForExistence(timeout: 5)); tires.tap()
+        XCTAssertTrue(app.otherElements["fleet.tires"].waitForExistence(timeout: 5))
+        shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Unified tire readings"; shot.lifetime = .keepAlways; add(shot)
+
     }
 
     func testTabBarOpacityAndContentSeparation() {

@@ -34,6 +34,9 @@ enum Page: String, Hashable {
     case appearance = "차꾸미기"
     case fleetInsights = "차량 상세 데이터"
     case notifications = "알림 설정"
+    case chargingSettings = "충전 계획·요금", recordSettings = "기록·백업"
+    case parking = "주차 기록"
+    case displaySettings = "화면·표시 단위"
 }
 func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { guard let value, value.isFinite else { return "—" }; return String(format: "%.*f", digits, value) + suffix }
 func dateText(_ ms: Double?, time: Bool = true) -> String { guard let ms else { return "미수신" }; let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = time ? "M월 d일 HH:mm" : "yyyy.MM.dd"; return f.string(from: Date(timeIntervalSince1970: ms/1000)) }
@@ -168,6 +171,10 @@ private struct AppDestinations: ViewModifier {
         case .security: SecurityStatusView(link: link)
         case .drive: DriveView()
         case .navigation: NavigationSetupView(navigation: navigation)
+        case .chargingSettings: ConnectionView(link: link, section: .charging)
+        case .recordSettings: ConnectionView(link: link, section: .records)
+        case .parking: ParkingView()
+        case .displaySettings: DisplaySettingsView()
         case .preferences: PreferencesView()
         case .appearance: VehicleAppearanceView()
         case .fleetInsights: FleetInsightsView(fleet: model.fleet)
@@ -574,7 +581,7 @@ struct BatteryView: View {
                         Metric(title: "선별된 충전 회차", value: health.number("count"))
                     }
                 }
-                NavigationLink("예정 거리·여유 잔량 설정", value: Page.connection).frame(minHeight: 44)
+                NavigationLink("예정 거리·여유 잔량 설정", value: Page.chargingSettings).frame(minHeight: 44)
             }
             if charges.isEmpty {
                 ContentUnavailableView("충전 기록 없음", systemImage: "bolt.slash", description: Text("충전을 관측하거나 기록을 추가하면 여기에 쌓임."))

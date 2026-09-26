@@ -76,5 +76,37 @@ enum FleetTelemetryData {
               let high = first.number, let low = second.number, high >= low else { return nil }
         return high - low
     }
+    /// Display-only projection: never supplies evidence for vehicle commands.
+    static func homeOverlay(_ records: [FleetTelemetryReading], vin: String, now: Date = Date()) -> [String: Any] {
+        let latest = latest(records, vin: vin)
+        var result: [String: Any] = [:]
+        let maps: [(String, [(String, String, Double)])] = [
+            ("charge", [("Soc", "soc", 1), ("RatedRange", "rangeKm", 1.609344), ("ChargeLimitSoc", "limit", 1), ("TimeToFullCharge", "minutesToLimit", 60)]),
+            ("climate", [("InsideTemp", "insideC", 1), ("OutsideTemp", "outsideC", 1)])
+        ]
+        for (group, fields) in maps {
+            var values: [String: Any] = [:]
+            var stamps: [Date] = []
+            for (field, key, scale) in fields {
+                guard let r = latest[field], !r.invalid, let n = r.number,
+                      now.timeIntervalSince(r.at) >= -5, now.timeIntervalSince(r.at) <= 120 else { continue }
+                values[key] = n * scale; stamps.append(r.at)
+            }
+            if group == "charge", let r = latest["DetailedChargeState"], !r.invalid,
+               now.timeIntervalSince(r.at) >= -5, now.timeIntervalSince(r.at) <= 120,
+               let data = r.text.data(using: .utf8), let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let state = raw["detailedChargeStateValue"] as? String {
+                values["charging"] = state == "DetailedChargeStateCharging"
+                values["isCharging"] = state == "DetailedChargeStateCharging"
+                stamps.append(r.at)
+            }
+            if let oldest = stamps.min() {
+                values["at"] = oldest.timeIntervalSince1970 * 1000
+                values["mode"] = "recent"; values["label"] = "NAS 차량 수신"
+                result[group] = values
+            }
+        }
+        return result
+    }
     static func failure(_ text: String) -> NSError { NSError(domain: "FleetTelemetry", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
 }

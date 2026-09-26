@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
         var values = [vehicleReference.number("odometerKm")]
         if settings.string("vin") == vin { values.append(groups.object("drive").number("odometerKm")) }
         if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin { values.append(snapshot.number("vehicle_state", "odometer").map { $0 * 1.609344 }) }
+        if !demo, let reading = FleetTelemetryStore.shared.latest(vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
         return values.compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max()
     }
     var isSpeaking: Bool { voice.speaking }
@@ -45,6 +46,8 @@ final class AppModel: ObservableObject {
     private var recoveryLock = false
     private var timer: Timer?
     private var fleetObservation: AnyCancellable?
+    private var archiveObservation: AnyCancellable?
+    private var lastArchiveSync = Date.distantPast
     private var protectedDataObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
@@ -101,6 +104,7 @@ final class AppModel: ObservableObject {
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
         }
+        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.objectWillChange.send() } }
         automations.settingsDidChange = { [weak self] in self?.voice.stopAutomatic(); self?.link.cancelPendingAutomation() }
         navigation.canPresent = { [weak self] in
             guard let self else { return false }
@@ -163,6 +167,7 @@ final class AppModel: ObservableObject {
         }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
+            self?.syncArchiveIfNeeded()
             if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active {
                 Task { @MainActor in await self.fleet.refreshVehicleSnapshot() }
             }
@@ -172,6 +177,14 @@ final class AppModel: ObservableObject {
     deinit {
         timer?.invalidate()
         if let protectedDataObserver { NotificationCenter.default.removeObserver(protectedDataObserver) }
+    }
+    private func syncArchiveIfNeeded() {
+        guard !demo, UIApplication.shared.applicationState == .active,
+              Date().timeIntervalSince(lastArchiveSync) >= 30, !FleetArchiveClient.shared.address.isEmpty,
+              !fleet.selectedVin.isEmpty else { return }
+        lastArchiveSync = Date()
+        let vin = fleet.selectedVin
+        Task { await FleetArchiveClient.shared.sync(vin: vin) }
     }
     func refresh() {
         do { output = try runtime.call("view") as? Object ?? [:]; if !link.connected || !link.authentic { output["fresh"] = Object() } }

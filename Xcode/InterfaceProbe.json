@@ -57,7 +57,9 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefing.swift",
     {
      "path": "Assets.xcassets"
-    }
+    },
+    "../TeslaLocal.swiftpm/Sources/AppModule/TirePressureDiagram.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift"
    ],
    "settings": {
     "base": {

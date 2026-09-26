@@ -22,6 +22,13 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
             }
         }
     }
+    if !model.demo {
+        for (name, raw) in FleetTelemetryData.homeOverlay(FleetTelemetryStore.shared.records, vin: model.fleet.selectedVin) {
+            guard let group = raw as? Object else { continue }
+            let existing = result.object(name)
+            if existing.string("mode") != "recent" || (group.number("at") ?? 0) > (existing.number("at") ?? 0) { result[name] = group }
+        }
+    }
     return result
 }
 
@@ -611,7 +618,7 @@ struct LocationStatusView: View {
                             .padding(.vertical, 8)
                         }
                         Divider().background(Color.white.opacity(0.08))
-                        NavigationLink(value: Page.care) {
+                        NavigationLink(value: Page.parking) {
                             HStack {
                                 Image(systemName: "parkingsign.circle.fill")
                                     .foregroundStyle(Color.green)
@@ -1136,6 +1143,7 @@ struct EnergyTabRootView: View {
             } else {
                 ScrollView {
                     ScreenBriefingControls(scope: .battery, text: { model.screenBriefing(.battery, days: batteryDays) })
+                    NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin) } label: { Label("배터리 온도·수신 추이", systemImage: "waveform.path.ecg") }.padding()
                     BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(batteryDays)), days: $batteryDays)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -1166,7 +1174,7 @@ struct DriveTabRootView: View {
             .background(Theme.bg)
 
             if selectedSection == 0 {
-                NavigationSetupView(navigation: navigation)
+                NavigationLandingView(navigation: navigation)
             } else if selectedSection == 1 {
                 LocationStatusView(link: link)
             } else {
@@ -1196,24 +1204,28 @@ struct MenuTabRootView: View {
                         .padding(.leading, 6)
 
                     GlassMenuCard {
-                        glassMenuItem(.fleetInsights, "chart.bar.doc.horizontal", title: "차량 분석·관리", subtitle: "보증 · 경고 · 서비스 · 충전소 · 데이터", colors: [Color.cyan, Color.blue])
-                        glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "차량 관리 및 케어", subtitle: "타이어 공기압(TPMS) · 와이퍼 모드 · 서비스 점검", colors: [Color.orange, Color.yellow])
+                        glassMenuItem(.fleetInsights, "checkmark.shield", title: "차량 상태·보증", subtitle: "차량 사양 · 보증 · 경고 · 서비스", colors: [Color.cyan, Color.blue])
                         glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 알림 · 운전자 프로필", colors: [Color.blue, Color.cyan], isLast: true)
                     }
                 }
 
                 // Group 2: 스마트 기능 & 설정
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("스마트 기능 & 설정")
+                    Text("설정")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color.white.opacity(0.6))
                         .padding(.leading, 6)
 
                     GlassMenuCard {
+                        glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "차량·NAS 연결", subtitle: "Tesla 계정 · 블루투스 · 기록 서버", colors: [Color.cyan, Color.blue])
+                        glassMenuItem(.navigation, "map", title: "내비게이션 설정", subtitle: "지도 연동 · 위치 권한 · 하이패스 · 화면 방향", colors: [Color.blue, Color.cyan])
+                        glassMenuItem(.chargingSettings, "bolt.fill", title: "충전 계획·요금", subtitle: "일상 충전 기준 · 여유 잔량 · 전기 단가", colors: [Color.green, Color.mint])
+                        glassMenuItem(.recordSettings, "externaldrive", title: "기록·백업", subtitle: "내보내기 · 복원 · 과거 기록 합치기", colors: [Color.blue, Color.cyan])
                         glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내 디자인", colors: [Color.purple, Color.pink])
                         glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
                         glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 상태별 알림 · 권한 · 전달 시험", colors: [Color.purple, Color.blue])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 음성 · API 키 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
+                        glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "메뉴 배경 · 거리 · 온도 · 공기압 단위", colors: [Color.gray, Color.white])
+                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "타입캐스트 · 안내 빈도 · 음량", colors: [Color.gray, Color.white], isLast: true)
                     }
                 }
             }
@@ -1264,5 +1276,20 @@ struct MenuTabRootView: View {
                         .stroke(Color.white.opacity(0.1), lineWidth: 1)
                 )
         )
+    }
+}
+
+struct NavigationLandingView: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var navigation: EmbeddedNavigation
+    @State private var searching = false
+    var body: some View {
+        ScrollView { VStack(spacing: 18) {
+            Button { searching = true } label: { Label("어디로 갈까요? 목적지 검색", systemImage: "magnifyingglass").frame(maxWidth: .infinity, minHeight: 60) }.buttonStyle(.borderedProminent)
+            Button { navigation.activateWorkspace(model: model) } label: { Label(navigation.guiding ? "진행 중인 길안내 보기" : "운전 대시보드 열기", systemImage: "map").frame(maxWidth: .infinity, minHeight: 50) }.buttonStyle(.bordered)
+            HStack { Button("네이버 지도로 보내기") { model.openInNaverMap() }; Spacer(); Button("티맵으로 보내기") { model.openInTMap() } }.disabled(model.demo)
+            NavigationLink("내비게이션 설정", value: Page.navigation)
+        }.padding() }
+        .sheet(isPresented: $searching) { DestinationSearchView(navigation: navigation).environmentObject(model) }
     }
 }

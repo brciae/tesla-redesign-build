@@ -246,29 +246,6 @@ struct ControlPanel: View {
                 }
             }
 
-            // Driver Key & Permissions (Minimal & Clean)
-            DisclosureGroup("제어 키 관리") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Toggle("이 차량의 제어 기능 활성화", isOn: Binding(
-                        get: { link.controlEnabled },
-                        set: { link.enableControls($0) }
-                    ))
-                    .disabled(model.demo || link.controlBusy)
-
-                    HStack(spacing: 10) {
-                        Button("제어 키 등록 요청") { enrollment = true }
-                            .disabled(model.demo || !link.connected || link.controlBusy || link.confirmation != nil)
-                            .buttonStyle(.bordered)
-
-                        Button("차량 승인 후 재개") { link.authenticate() }
-                            .disabled(model.demo || !link.connected || link.controlBusy)
-                            .buttonStyle(.bordered)
-                    }
-                }
-                .padding(.top, 8)
-            }
-            .font(.footnote)
-            .foregroundStyle(Theme.muted)
         }
         .confirmationDialog("별도 제어 키 등록을 요청하시겠습니까?", isPresented: $enrollment, titleVisibility: .visible) {
             Button("등록 요청") { link.enrollControlKey() }

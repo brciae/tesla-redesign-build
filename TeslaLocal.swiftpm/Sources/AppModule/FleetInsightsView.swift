@@ -42,12 +42,9 @@ struct FleetInsightsView: View {
                     }
                     if !model.vehicleReference.isEmpty { Text("차량 사양·참고 기록 " + model.vehicleReference.string("sourceDate")).font(.caption2).foregroundStyle(Theme.muted) }
                 }
-                if !charges.isEmpty { chargingChart }
-                if let snapshot { tireDiagram(snapshot) }
+
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    NavigationLink { DrivingInsightsView() } label: { destination("주행·소비", "chart.bar.fill", .mint) }
-                    NavigationLink { EnergyCalendarView() } label: { destination("충전 달력", "calendar", .cyan) }
-                    NavigationLink { FleetTelemetryView(vin: fleet.selectedVin) } label: { destination("배터리 추이", "waveform.path.ecg", .orange) }
+                    NavigationLink { CareView() } label: { destination("타이어·정비", "tirepressure", .cyan) }
                     NavigationLink { WarrantyGuideView(vin: fleet.selectedVin, odometerKm: model.displayOdometerKm, vehicleReference: model.vehicleReference) } label: { destination("보증·관리", "checkmark.shield.fill", .purple) }
                 }.buttonStyle(.plain)
                 if !model.vehicleReference.isEmpty {
@@ -64,7 +61,7 @@ struct FleetInsightsView: View {
                 }
                 DisclosureGroup("차량 상태 상세") {
                     if let snapshot {
-                        ForEach(snapshot.insightSections(), id: \.title) { section in
+                        ForEach(snapshot.insightSections().filter { $0.title != "타이어 상태" }, id: \.title) { section in
                             let rows = section.rows.filter { !$0.value.contains("미수신") }
                             if !rows.isEmpty {
                                 InfoCard {
@@ -82,42 +79,6 @@ struct FleetInsightsView: View {
                 Text(fleet.vehicleReadStatus).font(.caption2).foregroundStyle(Theme.muted)
             }.padding(16)
         }.background(Theme.bg).navigationTitle("차량 관리").navigationBarTitleDisplayMode(.inline)
-    }
-    private var chargingChart: some View {
-        InfoCard {
-            HStack { Label("최근 충전", systemImage: "bolt.fill").font(.headline); Spacer(); Text("kWh").font(.caption).foregroundStyle(Theme.muted) }
-            Chart {
-                ForEach(Array(charges.enumerated()), id: \.offset) { _, row in
-                    if let at = row.number("at"), let value = row.number("supplyKWh") ?? row.number("vehicleReportedKWh") {
-                        BarMark(x: .value("날짜", Date(timeIntervalSince1970: at / 1000), unit: .day), y: .value("충전량", value)).foregroundStyle(.mint.gradient).cornerRadius(4)
-                    }
-                }
-            }.frame(height: 155).accessibilityIdentifier("fleet.chargeChart").chartXAxis { AxisMarks(values: .stride(by: .day, count: chartDayStride)) { _ in AxisValueLabel(format: .dateTime.month().day()) } }
-            HStack {
-                spec(model.output.object("charging").number("supplyKWh") ?? model.output.object("charging").number("vehicleReportedKWh"), unit: "kWh", label: "기록된 충전량")
-                Spacer()
-                spec(model.output.object("charging").number("cost"), unit: "원", label: "기록된 결제액")
-            }
-        }
-    }
-    private func tireDiagram(_ snapshot: FleetVehicleSnapshot) -> some View {
-        InfoCard {
-            Label("타이어 공기압", systemImage: "tirepressure").font(.headline)
-            ZStack {
-                Image("TeslaYLInterior").resizable().scaledToFit().frame(height: 270).accessibilityHidden(true)
-                VStack {
-                    HStack { tire(snapshot, "fl", "앞 왼쪽"); Spacer(); tire(snapshot, "fr", "앞 오른쪽") }
-                    Spacer()
-                    HStack { tire(snapshot, "rl", "뒤 왼쪽"); Spacer(); tire(snapshot, "rr", "뒤 오른쪽") }
-                }.padding(.vertical, 28)
-            }.frame(height: 270).accessibilityIdentifier("fleet.tires")
-        }
-    }
-    private func tire(_ snapshot: FleetVehicleSnapshot, _ position: String, _ label: String) -> some View {
-        VStack(spacing: 4) {
-            Text(label).font(.caption2).foregroundStyle(Theme.muted)
-            Text(snapshot.number("vehicle_state", "tpms_pressure_" + position).map { String(format: "%.1f psi", $0 * 14.5037738) } ?? "—").font(.subheadline.bold()).monospacedDigit()
-        }.padding(9).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
     private func destination(_ title: String, _ icon: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 12) { Image(systemName: icon).font(.title2).foregroundStyle(color); Text(title).font(.subheadline.bold()) }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(Theme.surface, in: RoundedRectangle(cornerRadius: 18))

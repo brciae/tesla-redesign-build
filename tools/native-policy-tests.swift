@@ -2,6 +2,14 @@ import Foundation
 
 @main struct NativePolicyTests {
     static func main() {
+        let tireNow = Date()
+        let olderTire = TirePressureSample(bar: 2.8, at: tireNow.addingTimeInterval(-60))
+        let currentTire = TirePressureSample(bar: 3.0, at: tireNow)
+        precondition(TirePressureSample.newest([currentTire, olderTire], now: tireNow)?.validBar == 3.0)
+        precondition(TirePressureSample.newest([olderTire, TirePressureSample(bar: nil, at: tireNow)], now: tireNow)?.validBar == nil)
+        precondition(TirePressureSample.newest([olderTire, TirePressureSample(bar: 4, at: tireNow.addingTimeInterval(300))], now: tireNow)?.validBar == 2.8)
+        precondition(TirePressureSample(bar: .nan, at: tireNow).validBar == nil)
+
         let expired = Date(timeIntervalSince1970: 10)
         let afterSynthesis = Date(timeIntervalSince1970: 45)
         let cueTime = Date(timeIntervalSince1970: 100)

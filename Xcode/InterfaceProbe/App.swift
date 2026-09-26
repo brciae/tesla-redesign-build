@@ -15,7 +15,7 @@ import MapKit
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
-            else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST") }.environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
             else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
             else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
@@ -249,6 +249,7 @@ struct ProbeRoot: View {
         ["id": "fixture-charge-2", "at": Date().addingTimeInterval(-172800).timeIntervalSince1970 * 1000, "supplyKWh": 50.0, "cost": 15000]], "supplyKWh": 80.0, "cost": 24000],
         "energyPeriods": ["30": ["drivingKmPerKWh": 6.2, "overallKmPerKWh": 4.7, "drivingKWh": 100.0, "parkingKWh": 30.0, "totalKWh": 130.0, "totalDistanceKm": 620.0]]]
     var state: Object { output.object("state") }
+    var groups: Object { state.object("groups") }
     var vehicleReference: Object = ["sourceDate": "2026-09-24", "nominalKWh": 88.2, "chemistry": "NCM", "cellMaker": "검증용 제조사", "basicWarrantyEnd": "2030-09-10", "batteryWarrantyEnd": "2034-09-10"]
     var displayOdometerKm: Double? { 1234 }
     let fleet = TeslaFleetClient()
@@ -340,3 +341,7 @@ struct ClimateFleetProbe: View {
 @MainActor final class EmbeddedNavigation: ObservableObject {
     func startManualDestination(name: String, coordinate: CLLocationCoordinate2D, vin: String) throws {}
 }
+
+private struct ProbeUnitsKey: EnvironmentKey { static let defaultValue = VehicleUnits() }
+extension EnvironmentValues { var vehicleUnits: VehicleUnits { get { self[ProbeUnitsKey.self] } set { self[ProbeUnitsKey.self] = newValue } } }
+struct CareView: View { var body: some View { ScrollView { TirePressureDiagram().padding() }.navigationTitle("타이어·정비") } }

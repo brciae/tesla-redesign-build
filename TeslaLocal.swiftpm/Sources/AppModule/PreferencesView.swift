@@ -8,10 +8,6 @@ extension EnvironmentValues {
 
 struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
-    @AppStorage("unitDistance") private var distance = "km"
-    @AppStorage("unitTemperature") private var temperature = "C"
-    @AppStorage("unitPressure") private var pressure = "bar"
-    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
     @AppStorage("voiceEnabled") private var enabled = true
     @AppStorage("voiceIdentifier") private var identifier = "typecast:은경"
     @AppStorage("voiceDeliveryStyle") private var deliveryStyle = "standard"
@@ -29,23 +25,6 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
-            Section { ScreenBriefingControls(scope: .preferences, text: {
-                let selected = identifier.replacingOccurrences(of: "typecast:", with: "")
-                let name = TypecastCatalog.find(selected)?.nameKo ?? selected
-                return "선택 음성 \(name). 안내 음량 \(Int(volume * 100))퍼센트. 길안내 음성 \(navVoice ? "켜짐" : "꺼짐"). 하단 메뉴 불투명도 \(Int(tabBarOpacity * 100))퍼센트입니다."
-            }) }
-            Section("하단 메뉴 표시") {
-                HStack {
-                    Text("배경 불투명도")
-                    Spacer()
-                    Text("\(Int(tabBarOpacity * 100))%").monospacedDigit()
-                }
-                Slider(value: $tabBarOpacity, in: 0.5...1, step: 0.05)
-                    .accessibilityLabel("하단 메뉴 배경 불투명도")
-                    .accessibilityIdentifier("tabbar.opacity")
-                Text("100%로 설정하면 하단 메뉴 뒤의 내용이 비치지 않습니다.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
@@ -73,16 +52,9 @@ struct PreferencesView: View {
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
                 InfoRow("안내 빈도", "간단: 교차로에 가까워졌을 때의 회전 안내와 실제 위험 구간만 안내함. 보통: 중간 거리 회전 안내와 경로 변경 안내를 추가함. 자세히: 카카오 내비가 제공하는 안내를 모두 읽음(버스전용차로·하이패스·직진 안내 포함).")
             }
-            Section("차량 표시 단위") {
-                Picker("거리·속도", selection: $distance) { Text("km · km/h").tag("km"); Text("mi · mph").tag("mi") }
-                Picker("온도", selection: $temperature) { Text("°C").tag("C"); Text("°F").tag("F") }
-                Picker("공기압", selection: $pressure) { Text("bar").tag("bar"); Text("psi").tag("psi"); Text("kPa").tag("kPa") }
-                InfoRow("표시 단위", "앱 화면 표시만 바뀜. 차량 내 설정과 지도 앱 단위는 그대로 유지됨.")
-            }
             Section("고급") {
                 NavigationLink("음성 세부 설정") {
                     Form {
-                        LocalBriefingControls(title: "음성 세부 설정") { ["안내 음량 \(Int(volume * 100))퍼센트.", duck ? "안내 중 음악 음량 줄임." : "음악 음량 유지.", quiet && quietStart != quietEnd ? "자동 브리핑 조용시간 \(quietStart)시부터 \(quietEnd)시까지입니다." : "조용시간 제한 없음."] }
                         Section("음성 조절") {
                             slider("속도", value: $rate, range: 0.3...0.6)
                             slider("안내 음량", value: $volume, range: 0...1)
@@ -106,7 +78,7 @@ struct PreferencesView: View {
                     }.navigationTitle("음성 세부 설정").navigationBarTitleDisplayMode(.inline)
                 }
             }
-        }.navigationTitle("표시·음성 설정").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle("음성·내비 안내").navigationBarTitleDisplayMode(.inline)
             .onChange(of: enabled) { _, value in if !value { model.stopSpeech() } }
             .onChange(of: identifier) { _, newId in
                 if newId.hasPrefix("typecast:") {
@@ -411,4 +383,31 @@ struct VoiceStatus: View {
         if !voice.lastText.isEmpty { Text(voice.playbackState + ": " + voice.lastText).font(.caption).foregroundStyle(Theme.muted) }
         if !voice.outputDescription.isEmpty { Text(voice.outputDescription).font(.caption).foregroundStyle(Theme.muted) }
     }
+}
+
+struct DisplaySettingsView: View {
+    @AppStorage("unitDistance") private var distance = "km"
+    @AppStorage("unitTemperature") private var temperature = "C"
+    @AppStorage("unitPressure") private var pressure = "bar"
+    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
+    var body: some View { Form {
+            Section("하단 메뉴 표시") {
+                HStack {
+                    Text("배경 불투명도")
+                    Spacer()
+                    Text("\(Int(tabBarOpacity * 100))%").monospacedDigit()
+                }
+                Slider(value: $tabBarOpacity, in: 0.5...1, step: 0.05)
+                    .accessibilityLabel("하단 메뉴 배경 불투명도")
+                    .accessibilityIdentifier("tabbar.opacity")
+                Text("100%로 설정하면 하단 메뉴 뒤의 내용이 비치지 않습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("차량 표시 단위") {
+                Picker("거리·속도", selection: $distance) { Text("km · km/h").tag("km"); Text("mi · mph").tag("mi") }
+                Picker("온도", selection: $temperature) { Text("°C").tag("C"); Text("°F").tag("F") }
+                Picker("공기압", selection: $pressure) { Text("bar").tag("bar"); Text("psi").tag("psi"); Text("kPa").tag("kPa") }
+                InfoRow("표시 단위", "앱 화면 표시만 바뀜. 차량 내 설정과 지도 앱 단위는 그대로 유지됨.")
+            }
+    }.navigationTitle("화면·표시 단위") }
 }

@@ -21,8 +21,8 @@ private struct AutomationDashboard: View {
                 CardTitle(title: "자동화 설정", systemImage: "gearshape",
                           info: "한 번 탑승 시 한 규칙의 명령 한 개만 전송함. 중복 제어는 건너뛰며 수신 불가·앱 종료·백그라운드에서는 실행하지 않음. 공조는 활성 규칙만 탑승당 1회 실행하고, 카메라·과속 안내는 카카오 내비 설정에서 변경함.")
                 Toggle("자동화 규칙의 음성 안내", isOn: $voiceEnabled)
-                Button("안내 음성 설정") { selectTab(.settings) }.buttonStyle(.plain)
-                NavigationLink("알림 일정·상태 수집", value: Page.schedule)
+                NavigationLink("안내 음성 설정", value: Page.preferences)
+                NavigationLink("알림 설정", value: Page.notifications)
             }
         }
         .toolbar { ToolbarItem(placement: .topBarTrailing) {

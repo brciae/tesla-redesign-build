@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct FleetTelemetryView: View {
     let vin: String
+    var connectionSettings = false
     @EnvironmentObject private var model: AppModel
     @ObservedObject private var store = FleetTelemetryStore.shared
     @ObservedObject private var archive = FleetArchiveClient.shared
@@ -22,6 +23,7 @@ struct FleetTelemetryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                if connectionSettings {
                 InfoCard {
                     Text("차량 → NAS → 앱").font(.headline)
                     Label(model.fleet.isAuthenticated ? "Tesla 계정 로그인됨" : "Tesla 계정 로그인 필요", systemImage: model.fleet.isAuthenticated ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
@@ -76,6 +78,8 @@ struct FleetTelemetryView: View {
                     Caption(archive.status)
                     Caption("QuickConnect 관리 화면과 별도의 차량 기록 서버 주소를 사용합니다. 연결 키는 기기의 보안 저장소에 보관됩니다.")
                 }
+                } else {
+                NavigationLink { FleetTelemetryView(vin: vin, connectionSettings: true) } label: { Label("기록 서버 연결 설정", systemImage: "externaldrive") }
                 if ["ModuleTempMin", "ModuleTempMax", "PackVoltage", "PackCurrent", "EnergyRemaining", "NominalFullPackEnergyKwh"].contains(where: { latest[$0]?.number != nil && latest[$0]?.invalid == false }) { InfoCard {
                     Text("배터리 열관리·전기 상태").font(.headline)
                     measurement("최저 모듈 온도", field: "ModuleTempMin", unit: "°C")
@@ -102,7 +106,8 @@ struct FleetTelemetryView: View {
                         Caption("최근 유효 표본 최대 240개 · 미수신 구간은 연결하지 않습니다.")
                     } else { Caption("시계열 표본이 쌓이면 온도·잔량·충전 추이를 표시합니다.") }
                 }
-                DisclosureGroup("연결 진단용 수신 신호") {
+                }
+                if connectionSettings { DisclosureGroup("연결 진단용 수신 신호") {
                     TextField("필드 이름 검색", text: $search).textFieldStyle(.roundedBorder)
                     ForEach(latest.keys.sorted().filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }, id: \.self) { field in
                         if let value = latest[field] {
@@ -114,9 +119,9 @@ struct FleetTelemetryView: View {
                         }
                     }
                     if latest.isEmpty { Caption("수신 기록 없음") }
-                }
+                } }
             }.padding(16)
-        }.background(Theme.bg).navigationTitle("배터리 추이")
+        }.background(Theme.bg).navigationTitle(connectionSettings ? "NAS 연결·수집 설정" : "배터리 추이")
         .task(id: vin) {
             serverAddress = archive.address
             serverExpanded = archive.address.isEmpty

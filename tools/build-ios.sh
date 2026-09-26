@@ -68,7 +68,7 @@ ditto "$app_path" "$stage_dir/Payload/YLCompanion.app"
 mkdir -p "$repo_root/Xcode/BuildOutput"
 app_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app_path/Info.plist")
 app_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app_path/Info.plist")
-artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla ${app_version} Build${app_build} v01 Review.ipa"
+artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla-${app_version}-Build${app_build}-v01-Review.ipa"
 ditto -c -k --keepParent "$stage_dir/Payload" "$artifact_path"
 unzip -t "$artifact_path"
 shasum -a 256 "$artifact_path"

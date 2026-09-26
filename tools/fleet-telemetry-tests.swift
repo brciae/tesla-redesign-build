@@ -2,6 +2,13 @@ import Foundation
 
 @main struct FleetTelemetryTests {
     static func main() throws {
+        let displayNow = Date(timeIntervalSince1970: 1_800_000_000)
+        let displayRecords = [FleetTelemetryReading(vin: "DISPLAY", field: "Soc", at: displayNow, number: 31, text: "", invalid: false), FleetTelemetryReading(vin: "OTHER", field: "Soc", at: displayNow, number: 90, text: "", invalid: false)]
+        let display = FleetTelemetryData.homeOverlay(displayRecords, vin: "DISPLAY", now: displayNow)
+        precondition((display["charge"] as? [String: Any])?["soc"] as? Double == 31)
+        precondition(FleetTelemetryData.homeOverlay(displayRecords, vin: "DISPLAY", now: displayNow.addingTimeInterval(121)).isEmpty)
+        precondition(FleetTelemetryData.homeOverlay(displayRecords, vin: "ABSENT", now: displayNow).isEmpty)
+
         let now = Date(timeIntervalSince1970: 1_800_000_100)
         precondition(ChargeEventPolicy.bleState(5) == "Charging" && ChargeEventPolicy.bleState(6) == "Complete")
         let previousCharge = ChargeObservation(vin: "A", at: now.addingTimeInterval(-30), state: "Charging", soc: 79, limit: 80)
