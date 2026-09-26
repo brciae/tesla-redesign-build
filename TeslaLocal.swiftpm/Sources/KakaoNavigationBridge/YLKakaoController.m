@@ -459,8 +459,7 @@ static NSArray *YLLifecycleObservers;
     if ([object isKindOfClass:KNSafety.class]) target = ((KNSafety *)object).location;
     if (target && [self locationIsFresh]) {
         SInt32 metres = [self.locationGuide.location distToLocation:target];
-        // Use the SDK route distance; do not round into legacy recording buckets.
-        if (metres > 0) prefix = [NSString stringWithFormat:@"%d미터 앞, ", (int)metres];
+        prefix = YLNavigationDistancePrefix(metres);
     }
     if ([object isKindOfClass:KNDirection.class]) {
         KNDirection *dir = (KNDirection *)object;
@@ -484,8 +483,8 @@ static NSArray *YLLifecycleObservers;
         if (!label.length) return @""; // Unknown hazards need a supported meaning, not a filler sentence.
         if ([point isKindOfClass:KNSafety_Caution.class]) {
             SInt32 limit = ((KNSafety_Caution *)point).limit;
-            if (limit > 0 && point.code == KNSafetyCode_HeightLimitPos) label = [label stringByAppendingFormat:@", %.1f미터", limit/100.0];
-            if (limit > 0 && point.code == KNSafetyCode_WeightLimitPos) label = [label stringByAppendingFormat:@", %.1f톤", limit/10.0];
+            if (limit > 0 && point.code == KNSafetyCode_HeightLimitPos) label = [label stringByAppendingFormat:@", %@미터", YLNavigationCompactNumber(limit/100.0)];
+            if (limit > 0 && point.code == KNSafetyCode_WeightLimitPos) label = [label stringByAppendingFormat:@", %@톤", YLNavigationCompactNumber(limit/10.0)];
         }
         return [[[prefix stringByAppendingString:label] stringByAppendingString:@"입니다."] stringByAppendingString:limitSentence];
     }

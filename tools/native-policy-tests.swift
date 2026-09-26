@@ -17,6 +17,8 @@ import Foundation
             precondition(SpeechText.prepare(SpeechText.prepare(input)) == expected)
         }
         precondition(SpeechText.prepare("MC 빌딩으로 안내를 시작합니다.") == "MC 빌딩으로 안내를 시작합니다.")
+        precondition(SpeechText.prepare("약 100미터 앞, 신호 과속 단속 구간입니다.") == "약 백 미터 앞, 신호 과속 단속 구간입니다.")
+        precondition(SpeechText.prepare("높이 제한, 3.0미터입니다. 중량 제한, 10.0톤입니다.") == "높이 제한, 삼 미터입니다. 중량 제한, 십 톤입니다.")
         precondition(SpeechText.prepare("온도22°C로 설정") == "온도섭씨 이십이 도로 설정")
         for (input, expected) in ["3.0m": "삼 미터", "3.00 미터": "삼 미터", "3.50km": "삼 점 오 킬로미터", "0.05m": "영 점 영 오 미터", "22.0°C": "섭씨 이십이 도", "80.0%": "팔십 퍼센트", "2.0kWh": "이 킬로와트시", "3.0 버전": "3.0 버전"] {
             precondition(SpeechText.prepare(input) == expected, "Speech decimal: \(input)")

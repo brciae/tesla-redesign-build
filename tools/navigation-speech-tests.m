@@ -5,16 +5,26 @@ static void check(BOOL value, NSString *message) {
     if (!value) { NSLog(@"FAIL: %@", message); exit(1); }
 }
 int main(void) { @autoreleasepool {
-    check([YLNavigationSpeech(14, nil, nil, 200) isEqual:@"200미터 앞, 고가도로로 진입하세요."], @"Overpass must not say generic proceed");
+    check([YLNavigationSpeech(14, nil, nil, 200) isEqual:@"약 200미터 앞, 고가도로로 진입하세요."], @"Overpass must not say generic proceed");
     check([YLNavigationSpeech(17, nil, nil, 200) containsString:@"지하차도 옆길"], @"Underpass side road differs from entering underpass");
-    check([YLNavigationSpeech(2, @"교차로", @[@"서울", @"서울", @"  "], 200) isEqual:@"200미터 앞, 서울 방면, 우회전하세요."], @"Use direction signs once without reading screen labels");
+    check([YLNavigationSpeech(2, @"교차로", @[@"서울", @"서울", @"  "], 200) isEqual:@"약 200미터 앞, 서울 방면, 우회전하세요."], @"Use direction signs once without reading screen labels");
     check([YLNavigationAction(63) containsString:@"비보호"], @"Unprotected left turn must retain restriction");
     for (NSInteger clock=1; clock<=12; clock++) {
         NSString *expected=[NSString stringWithFormat:@"%ld시 방향 출구", (long)clock];
         check([YLNavigationAction(clock+29) containsString:expected], @"Rotary code means clock, not ordinal exit");
         check([YLNavigationAction(clock+69) containsString:expected], @"Roundabout code means clock, not ordinal exit");
     }
-    check([YLNavigationSpeech(101,nil,nil,200) isEqual:@"200미터 앞, 목적지입니다."], @"Approaching destination is not arrival");
+    check([YLNavigationSpeech(101,nil,nil,200) isEqual:@"약 200미터 앞, 목적지입니다."], @"Approaching destination is not arrival");
+    check([YLNavigationDistancePrefix(112) isEqual:@"약 100미터 앞, "], @"Do not read raw meter precision");
+    check([YLNavigationDistancePrefix(1381) isEqual:@"약 1킬로미터 앞, "], @"Long distance uses approximate kilometers");
+    check([YLNavigationDistancePrefix(40) isEqual:@"잠시 후, "], @"Nearby event is imminent");
+    check([YLNavigationDistancePrefix(0) isEqual:@"잠시 후, "], @"Zero is not zero meters ahead");
+    check([YLNavigationDistancePrefix(-1) isEqual:@""], @"Missing distance is not imminent");
+    check([YLNavigationDistancePrefix(75) isEqual:@"약 100미터 앞, "], @"Near distance boundary");
+    check([YLNavigationDistancePrefix(950) isEqual:@"약 1킬로미터 앞, "], @"Kilometer boundary");
+    check([YLNavigationCompactNumber(3.0) isEqual:@"3"], @"No meaningless decimal zero");
+    check([YLNavigationCompactNumber(3.5) isEqual:@"3.5"], @"Retain real clearance fraction");
+    check([YLNavigationCompactNumber(3.25) isEqual:@"3.25"], @"Do not round legal clearance up");
     check([YLNavigationSpeech(777,@"무시",@[@"무시"],200) length]==0, @"Unknown code must not invent movement");
     check([YLNavigationSpeech(100,nil,nil,200) length]==0, @"Start marker must not generate proceed");
     check(![YLNavigationSpeech(2,nil,nil,-1) containsString:@"미터"], @"Invalid distance must not be voiced");

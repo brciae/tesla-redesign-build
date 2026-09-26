@@ -117,7 +117,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             quietUntil = .distantPast
         }
 
-        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: text.trimmingCharacters(in: .whitespacesAndNewlines), expires: now.addingTimeInterval(8), priority: priority, manual: true), now: now)
+        // Normalize unit pronunciation only; do not rewrite the provider's maneuver.
+        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines), expires: now.addingTimeInterval(8), priority: priority, manual: true), now: now)
         drain()
     }
 

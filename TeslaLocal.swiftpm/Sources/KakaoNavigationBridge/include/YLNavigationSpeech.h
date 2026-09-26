@@ -1,5 +1,22 @@
 #import <Foundation/Foundation.h>
 
+// Voice uses approximate distance bands; the map retains the SDK's exact distance.
+// Negative means no fresh distance. Never turn it into an imminent maneuver.
+static inline NSString *YLNavigationDistancePrefix(NSInteger metres) {
+    if (metres < 0) return @"";
+    if (metres < 75) return @"잠시 후, ";
+    if (metres < 950) return [NSString stringWithFormat:@"약 %ld미터 앞, ", (long)(((metres + 50) / 100) * 100)];
+    return [NSString stringWithFormat:@"약 %ld킬로미터 앞, ", (long)((metres + 500) / 1000)];
+}
+
+static inline NSString *YLNavigationCompactNumber(double value) {
+    // Keep meaningful precision for clearance/weight restrictions, not trailing .0.
+    NSString *text = [NSString stringWithFormat:@"%.2f", value];
+    while ([text hasSuffix:@"0"]) text = [text substringToIndex:text.length - 1];
+    if ([text hasSuffix:@"."]) text = [text substringToIndex:text.length - 1];
+    return text;
+}
+
 // Speech is independent of dashboard labels. Numeric IDs are the pinned
 // KNSDK 1.12.19 KNRGCode contract; the build audit checks every named SDK value.
 static inline NSString *YLNavigationAction(NSInteger code) {
@@ -84,6 +101,6 @@ static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArr
         if (names.count) context = [NSString stringWithFormat:@"%@ 방면, ", [names componentsJoinedByString:@", "]];
         else if (node.length) context = [NSString stringWithFormat:@"%@, ", node];
     }
-    NSString *prefix = metres > 0 ? [NSString stringWithFormat:@"%ld미터 앞, ", (long)metres] : @"";
+    NSString *prefix = YLNavigationDistancePrefix(metres);
     return [NSString stringWithFormat:@"%@%@%@", prefix, context, action];
 }

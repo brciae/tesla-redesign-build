@@ -48,7 +48,8 @@ enum SpeechText {
             // v43: Korean unit words too, not only the Latin abbreviations. The recorded voice speaks a
             // number as its own clip, so "60킬로미터" has to become "육십 킬로미터" before it is matched.
             (#"킬로와트시"#, "", " 킬로와트시"), (#"킬로와트"#, "", " 킬로와트"),
-            (#"킬로미터"#, "", " 킬로미터"), (#"미터"#, "", " 미터"),
+              (#"킬로미터"#, "", " 킬로미터"), (#"미터"#, "", " 미터"),
+              (#"톤"#, "", " 톤"), (#"볼트"#, "", " 볼트"), (#"암페어"#, "", " 암페어"),
             (#"%|퍼센트"#, "", " 퍼센트"), (#"도"#, "", " 도")
         ]
         for (unit, prefix, suffix) in patterns {
