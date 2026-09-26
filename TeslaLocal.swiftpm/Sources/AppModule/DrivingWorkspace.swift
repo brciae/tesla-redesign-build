@@ -86,7 +86,6 @@ struct DrivingWorkspace: View {
         .sheet(isPresented: $destinationSearch) { DestinationSearchView(navigation: navigation, canEdit: readout.gear != "D" && readout.gear != "R" && readout.speedKmh <= 5).environmentObject(model) }
         .onAppear {
             navigation.screenAppeared()
-            model.voice.announceDashboardStart(destination: readout.destination)
             if preferredMapEngine == "kakao" && navigation.controller == nil {
                 navigation.startStandbyKakaoMap()
             }

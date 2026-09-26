@@ -167,19 +167,18 @@ extension FleetVehicleSnapshot {
     }
 
     func insightSummary() -> [String] {
-        var lines = ["Fleet 차량 상세 자료를 살펴보겠습니다."]
-        if !isRecent() { lines.append("일부 값은 마지막 수신 자료이므로 현재 상태와 다를 수 있습니다.") }
+        var lines: [String] = []
         if sectionIsRecent("vehicle_state") {
             let open = ["df", "pf", "dr", "pr", "ft", "rt"].compactMap { number("vehicle_state", $0) }.filter { $0 > 0 }.count
-            if open > 0 { lines.append("문이나 트렁크가 \(open)곳 열려 있으므로, 차량을 떠나기 전 확인해 주세요.") }
-            if flag("vehicle_state", "sentry_mode") == true { lines.append("감시 모드가 켜져 있습니다. 주차 소비량이 늘었다면 감시 모드 사용 시간도 함께 비교해 보세요.") }
+            if open > 0 { lines.append("문이나 트렁크가 \(open)곳 열려 있습니다. 출발 전에 확인하세요.") }
         }
-        if sectionIsRecent("drive_state"), let arrival = number("drive_state", "active_route_energy_at_arrival"), (0...100).contains(arrival) {
-            lines.append(String(format: "차량이 예상한 도착 배터리는 %.0f퍼센트이며, 속도와 날씨에 따라 달라질 수 있습니다.", arrival))
-            if arrival < 15 { lines.append("도착 여유가 적으므로 경로상의 충전 가능 지점을 미리 확인하는 편이 좋겠습니다.") }
+        if sectionIsRecent("drive_state"), let arrival = number("drive_state", "active_route_energy_at_arrival"), (0...100).contains(arrival), arrival < 15 {
+            lines.append(String(format: "도착 예상 잔량이 %.0f퍼센트로 적습니다. 경로에서 충전할 곳을 확인하세요.", arrival))
         }
-        if lines.count == 1 { lines.append("항목별 수신 상태는 아래 카드에서 확인할 수 있습니다.") }
-        return lines
+        if lines.isEmpty, sectionIsRecent("vehicle_state"), flag("vehicle_state", "sentry_mode") == true {
+            lines.append("감시 모드가 켜져 있습니다.")
+        }
+        return lines.isEmpty ? ["지금 읽어드릴 주요 변경 사항이 없습니다."] : lines
     }
 
     /// Recursively enumerate every returned field, including nested update data.

@@ -175,6 +175,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     /// Speaks an announcement with instant button preemption (cancels previous speech immediately with 0ms delay).
     func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true) {
+        guard category != "voiceControl" else { return } // Routine UI/command acknowledgements stay visual.
         let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
         guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { return }

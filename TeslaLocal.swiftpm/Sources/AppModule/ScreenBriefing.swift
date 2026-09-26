@@ -8,6 +8,7 @@ struct ScreenBriefingControls: View {
     var text: (() async -> String)? = nil
     @State private var pending: Task<Void, Never>?
     var body: some View {
+        if scope.supportsSpeech {
         HStack(spacing: 8) {
             Button {
                 pending?.cancel()
@@ -32,5 +33,6 @@ struct ScreenBriefingControls: View {
         .font(.subheadline.weight(.semibold))
         .lineLimit(1).fixedSize(horizontal: true, vertical: false)
         .onDisappear { pending?.cancel() }
+        }
     }
 }

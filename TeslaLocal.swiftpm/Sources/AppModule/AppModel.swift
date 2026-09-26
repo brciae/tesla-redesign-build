@@ -266,7 +266,6 @@ final class AppModel: ObservableObject {
         if savePending { saveRecordsWhenAvailable() }
         link.resume(vin: settings.string("vin")); navigation.foregrounded(); refresh()
         Task { @MainActor in await fleet.refreshVehicleSnapshot() }
-        triggerDepartureBriefingIfNeeded()
     }
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
@@ -274,7 +273,6 @@ final class AppModel: ObservableObject {
         else if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
         else { connect() }
         refresh()
-        triggerDepartureBriefingIfNeeded()
     }
     func speak(_ text: String? = nil) {
         let fresh = output.object("fresh")

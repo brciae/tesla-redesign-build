@@ -29,18 +29,19 @@ func dateText(_ value: Double?) -> String { value == nil ? "미확인" : "기록
         m.home = ["charge": ["mode": "recent", "soc": 67, "chargerKW": 7, "limit": 80], "climate": ["mode": "recent", "insideC": 23, "outsideC": 9], "location": ["hasCoordinates": true, "latitude": 37.5, "longitude": 127.1]]
         m.groups = ["drive": ["speedKmh": 42, "destination": "DESTINATION_SENTINEL"], "closures": ["locked": true]]
         m.output = ["fresh": ["drive": true, "closures": true], "briefing": "DAILY_SENTINEL", "energyPeriods": ["7": ["trips": [["distanceKm": 12.5]]], "30": ["trips": [["distanceKm": 100], ["distanceKm": 200]]]], "battery": ["7": ["distanceKm": 12.5], "30": ["distanceKm": 300]], "healthIndex": ["initial": true]]
-        let fleetScopes: Set<BriefingScope> = [.home, .security, .menu]
+        let fleetScopes: Set<BriefingScope> = [.security]
         let batteryScopes: Set<BriefingScope> = [.home, .charging, .batteryAndCharging]
         let temperatureScopes: Set<BriefingScope> = [.home, .climate]
         for scope in BriefingScope.allCases {
             let text = m.screenBriefing(scope)
+            if !scope.supportsSpeech { precondition(text.isEmpty); continue }
             precondition(!text.contains("요약입니다"), "Unnecessary screen introduction: \(scope)")
             precondition(text.contains("FLEET_SENTINEL") == fleetScopes.contains(scope), "Connection leaked into \(scope)")
             precondition(text.contains("배터리 잔량") == batteryScopes.contains(scope), "Battery leaked into \(scope)")
             precondition(text.contains("실내 온도") == temperatureScopes.contains(scope), "Climate leaked into \(scope)")
             precondition(text.contains("DAILY_SENTINEL") == (scope == .daily), "Global briefing leaked into \(scope)")
             precondition(text.contains("DESTINATION_SENTINEL") == ([BriefingScope.driving, .dashboard].contains(scope)), "Destination leaked into \(scope)")
-            precondition(text.contains("AUTOMATION_SENTINEL") == (scope == .automation), "Automation leaked into \(scope)")
+            precondition(!text.contains("AUTOMATION_SENTINEL"), "Automation leaked into \(scope)")
         }
         precondition(m.screenBriefing(.trips, days: 7).contains("12.5"))
         precondition(!m.screenBriefing(.trips, days: 7).contains("300.0"))
@@ -52,10 +53,16 @@ func dateText(_ value: Double?) -> String { value == nil ? "미확인" : "기록
         precondition(m.screenBriefing(.location, address: "ADDRESS_SENTINEL").contains("ADDRESS_SENTINEL"))
         m.output["energyPeriods"] = ["30": ["drivingKmPerKWh": 6.2, "overallKmPerKWh": 4.7, "parkingKWh": 3.2, "unclassifiedKWh": 0.8, "capacityAssumed": true]]
         let analysis = m.screenBriefing(.batteryAndCharging)
-        precondition(analysis.contains("6.2") && analysis.contains("4.7") && analysis.contains("24퍼센트"))
-        precondition(analysis.contains("주차 중 집계한 소비") && analysis.contains("가정"))
-        precondition(!analysis.contains("분류되지 않은") && !analysis.contains("구분할 수 없습니다"))
-        precondition(analysis.contains("초기 기준값"))
+        precondition(analysis.contains("주차 중 소비") && analysis.contains("살펴보세요"))
+        precondition(!analysis.contains("6.2") && !analysis.contains("4.7") && !analysis.contains("초기 기준값"))
+        precondition(analysis.count < 110 && !analysis.contains("이며,"))
+        precondition(BriefingScope.home.text(["하나.", "둘.", "셋.", "넷."]) == "하나. 둘. 셋.")
+        for scope in [BriefingScope.preferences, .menu, .automation, .schedule, .vehicle3D, .controls, .navigation] {
+            precondition(!scope.supportsSpeech && m.screenBriefing(scope).isEmpty)
+        }
+        m.home["charge"] = ["mode": "recent", "soc": 67, "isCharging": true, "minutesToLimit": 40]
+        let charging = m.screenBriefing(.batteryAndCharging)
+        precondition(charging.contains("40분") && !charging.contains("주차 중 소비"))
         m.home = [:]; m.groups = [:]; m.output = [:]
         for scope in BriefingScope.allCases {
             let text = m.screenBriefing(scope)
