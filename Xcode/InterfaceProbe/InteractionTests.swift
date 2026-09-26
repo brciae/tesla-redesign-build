@@ -4,6 +4,8 @@ final class InteractionTests: XCTestCase {
     func testNASConnectionFieldsVisible() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["archive-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["차량 → NAS → 앱"].waitForExistence(timeout: 10))
+        for _ in 0..<3 where !app.secureTextFields["archive.token"].isHittable { app.swipeUp() }
         XCTAssertTrue(app.textFields["archive.address"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.secureTextFields["archive.token"].isHittable)
         XCTAssertTrue(app.staticTexts["NAS 연결 키"].exists)
