@@ -35,14 +35,27 @@ jobs:
           docker compose up --wait --wait-timeout 180
           docker compose exec -T archive python - < integration.py
           docker stats --no-stream
+      - name: Official receiver startup with disposable TLS certificate
+        working-directory: server
+        run: |
+          mkdir -p certs
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout certs/privkey.pem -out certs/fullchain.pem
+          chmod 644 certs/privkey.pem
+          python check_receiver_tls.py certs/fullchain.pem certs/privkey.pem
+          cp telemetry-config.example.json telemetry-config.json
+          docker compose -f docker-compose.yml -f docker-compose.telemetry.yml up -d telemetry
+          sleep 15
+          id=$(docker compose -f docker-compose.yml -f docker-compose.telemetry.yml ps -q telemetry)
+          test -n "$id"
+          test "$(docker inspect --format '{{.State.Running}}:{{.RestartCount}}' "$id")" = true:0
       - name: Diagnostics
         if: failure()
         working-directory: server
-        run: docker compose ps -a && docker compose logs --tail 50
+        run: docker compose -f docker-compose.yml -f docker-compose.telemetry.yml ps -a && docker compose -f docker-compose.yml -f docker-compose.telemetry.yml logs --tail 50
       - name: Clean up test volumes
         if: always()
         working-directory: server
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.telemetry.yml down -v
   public-endpoint:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.probe_origin != '' }}
     runs-on: ubuntu-latest
