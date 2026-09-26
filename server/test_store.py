@@ -18,6 +18,12 @@ def payload(vin=VIN, value=40):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_receiver_ack_types_match_tesla_protocol(self):
+        config = json.loads((Path(__file__).parent / "telemetry-config.example.json").read_text())
+        self.assertIn("connectivity", config["records"])
+        self.assertNotIn("connectivity", config["reliable_ack_sources"])
+        self.assertEqual(set(config["reliable_ack_sources"]), {"V", "alerts", "errors"})
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "test.sqlite3"
@@ -59,6 +65,15 @@ class ArchiveTests(unittest.TestCase):
         self.assertFalse(third["more"])
         self.assertEqual(sum(len(p["payloads"]) for p in (first, second, third)), 105)
 
+    def test_status_distinguishes_empty_archive_and_vehicle_delivery(self):
+        self.assertEqual(self.archive.status(VIN)["measurement_packets"], 0)
+        self.assertIsNone(self.archive.status(VIN)["last_vehicle_received_at"])
+        self.archive.ingest("tesla_V", 0, 0, VIN.encode(), payload())
+        self.archive.ingest("tesla_V", 0, 1, VIN.encode(), b"not-json")
+        self.assertEqual(self.archive.status(VIN)["measurement_packets"], 1)
+        self.assertIsNotNone(self.archive.status(VIN)["last_vehicle_received_at"])
+        self.assertEqual(self.archive.status(OTHER)["measurement_packets"], 0)
+
     def test_api_requires_token_and_rejects_bad_cursor(self):
         token = "fixture-archive-token-that-is-not-a-real-secret"
         server = HTTPServer(("127.0.0.1", 0), handler_for(self.archive, token, {"ready": True}))
@@ -70,6 +85,16 @@ class ArchiveTests(unittest.TestCase):
                 urllib.request.urlopen(base + "/v1/telemetry?vin=" + VIN)
             self.assertEqual(denied.exception.code, 401)
             denied.exception.close()
+            with self.assertRaises(urllib.error.HTTPError) as denied_status:
+                urllib.request.urlopen(base + "/v1/status?vin=" + VIN)
+            self.assertEqual(denied_status.exception.code, 401)
+            denied_status.exception.close()
+            request = urllib.request.Request(base + "/v1/status?vin=" + VIN,
+                                             headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(request) as response:
+                status = json.load(response)
+                self.assertTrue(status["archive_ready"])
+                self.assertEqual(status["measurement_packets"], 0)
             request = urllib.request.Request(base + "/v1/telemetry?vin=" + VIN + "&after=-1",
                                              headers={"Authorization": "Bearer " + token})
             with self.assertRaises(urllib.error.HTTPError) as invalid:

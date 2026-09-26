@@ -305,6 +305,7 @@ final class VehicleLink: ObservableObject {
 struct ProbeVoice { func say(_ text: String, category: String, manual: Bool) {} }
 enum FleetCommandPolicy { static func failure(_ text: String) -> Error { NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) } }
 final class TeslaFleetClient: ObservableObject {
+    var virtualKeyPairingURL: URL? { nil }
     var isSendingCommand = false; var isAuthenticated = true; var isReadingVehicle = false
     var commandStatus = "UI 검증용 · 실제 차량에 명령을 보내지 않음"
     var vehicleReadStatus = "검증용 수신값"; var vehicleReadError: String?

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct FleetTelemetryView: View {
     let vin: String
+    @EnvironmentObject private var model: AppModel
     @ObservedObject private var store = FleetTelemetryStore.shared
     @ObservedObject private var archive = FleetArchiveClient.shared
     @State private var serverAddress = ""
@@ -13,11 +14,41 @@ struct FleetTelemetryView: View {
     @State private var search = ""
     @State private var selectedField = "ModuleTempMax"
     @State private var serverExpanded = true
+    @State private var streaming: FleetStreamingStatus?
+    @State private var checking = false
+    @State private var connectionError = ""
     private var latest: [String: FleetTelemetryReading] { store.latest(vin: vin) }
     private var trend: [FleetTelemetryReading] { Array(store.records.filter { $0.vin == vin && $0.field == selectedField && !$0.invalid && $0.number != nil }.suffix(240)) }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                InfoCard {
+                    Text("차량 → NAS → 앱").font(.headline)
+                    Label(model.fleet.isAuthenticated ? "Tesla 계정 로그인됨" : "Tesla 계정 로그인 필요", systemImage: model.fleet.isAuthenticated ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
+                    if let streaming {
+                        Label(streaming.title, systemImage: streaming.synced ? "checkmark.circle.fill" : "wrench.and.screwdriver")
+                        Caption(streaming.detail)
+                        if let hostname = streaming.hostname { Text(hostname).font(.caption.monospaced()) }
+                    }
+                    Label(archive.connected ? "NAS 조회·키 인증 완료" : "NAS 연결 검사 필요", systemImage: archive.connected ? "checkmark.circle.fill" : "externaldrive.badge.questionmark")
+                    if let count = archive.packetCount { LabeledContent("차량 수신 기록", value: "\(count)건") }
+                    if let at = archive.lastVehicleReceivedAt { LabeledContent("NAS 마지막 수신", value: at.formatted(date: .abbreviated, time: .shortened)).font(.caption) }
+                    Button(checking ? "차량 설정 확인 중…" : "차량 수집 상태 확인") {
+                        checking = true; connectionError = ""
+                        Task { @MainActor in
+                            defer { checking = false }
+                            do {
+                                let result = try await model.fleet.readSupplement(.telemetryConfig)
+                                guard result.vin == vin else { return }
+                                streaming = FleetStreamingStatus(payload: result.payload)
+                            } catch { connectionError = error.localizedDescription }
+                        }
+                    }.disabled(checking || vin.isEmpty || !model.fleet.isAuthenticated)
+                    if let url = model.fleet.virtualKeyPairingURL {
+                        Link("Tesla 앱에서 차량 가상 키 등록", destination: url)
+                    }
+                    if !connectionError.isEmpty { Caption(connectionError) }
+                }
                 DisclosureGroup("기록 가져오기·연결 상태") {
                     Text("배터리·차량 심층 분석").font(.headline)
                     Caption("수신된 배터리 온도·전기 상태와 변화 추이를 모아 봅니다. 차량 데이터 수집 서버를 연결하면 앱을 닫은 동안의 기록도 이어갈 수 있습니다.")

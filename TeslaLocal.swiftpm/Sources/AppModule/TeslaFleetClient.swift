@@ -87,6 +87,15 @@ final class TeslaFleetClient: ObservableObject {
     static let defaultClientId = "c469b20e-546a-452e-a151-58768a89ac7c"
     static let defaultRedirectUri = "https://brciae.github.io/callback"
 
+    var virtualKeyPairingURL: URL? {
+        guard let redirect = URLComponents(string: getRedirectUri()), redirect.scheme == "https",
+              let host = redirect.host, !host.isEmpty else { return nil }
+        var link = URLComponents(string: "https://tesla.com")!
+        link.path = "/_ak/" + host
+        if !selectedVin.isEmpty { link.queryItems = [URLQueryItem(name: "vin", value: selectedVin)] }
+        return link.url
+    }
+
     private let clientIdKey = "TeslaFleetClient.ClientId"
     private let redirectUriKey = "TeslaFleetClient.RedirectUri"
     private let clientSecretKey = "TeslaFleetClient.ClientSecret"

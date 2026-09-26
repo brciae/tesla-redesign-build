@@ -77,6 +77,18 @@ class Archive:
             db.execute("INSERT INTO offsets VALUES(?,?,?) ON CONFLICT(topic,partition) DO UPDATE SET offset=max(offset,excluded.offset)",
                        (topic, partition, offset))
 
+    def status(self, vin):
+        if not VIN.fullmatch(vin):
+            raise ValueError("invalid vehicle")
+        with self.connect() as db:
+            rows = db.execute("SELECT kind,count(*),max(received) FROM events WHERE vin=? AND valid=1 GROUP BY kind", (vin,)).fetchall()
+        counts = {kind: count for kind, count, _ in rows}
+        last = next((stamp for kind, _, stamp in rows if kind == "tesla_V"), None)
+        return {"measurement_packets": counts.get("tesla_V", 0),
+                "last_vehicle_received_at": last,
+                "connectivity_events": counts.get("tesla_connectivity", 0),
+                "error_events": counts.get("tesla_errors", 0)}
+
     def page(self, vin, after, limit=40):
         if not VIN.fullmatch(vin) or after < 0 or not 1 <= limit <= 40:
             raise ValueError("invalid request")
@@ -122,10 +134,14 @@ def handler_for(archive, token, health):
             auth = self.headers.get("Authorization", "")
             if not hmac.compare_digest(auth.encode(), ("Bearer " + token).encode()):
                 return self.reply(401, {"error": "authentication_required"})
-            if route.path != "/v1/telemetry":
+            if route.path not in ("/v1/telemetry", "/v1/status"):
                 return self.reply(404, {"error": "not_found"})
             try:
                 args = parse_qs(route.query, max_num_fields=4)
+                if route.path == "/v1/status":
+                    result = archive.status(args.get("vin", [""])[0])
+                    result["archive_ready"] = health["ready"]
+                    return self.reply(200, result)
                 page = archive.page(args.get("vin", [""])[0], int(args.get("after", ["0"])[0]))
                 return self.reply(200, page)
             except (ValueError, TypeError):

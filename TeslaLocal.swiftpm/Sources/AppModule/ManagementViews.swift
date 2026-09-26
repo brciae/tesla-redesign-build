@@ -406,6 +406,12 @@ struct ConnectionView: View {
     var body: some View {
         Form {
             Section { LocalBriefingControls(title: "연결 상태") { [link.authentic ? "블루투스 인증 완료." : "블루투스 미연결.", "Fleet: \(model.fleet.vehicleDisplayStatus).", "저장된 운행 \(model.state.rows("trips").count)회, 충전 \(model.state.rows("charges").count)회입니다."] } }
+            Section("인터넷 차량 기록") {
+                NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin) } label: {
+                    Label("NAS 연결·차량 수집 설정", systemImage: "externaldrive.connected.to.line.below")
+                }
+                Text("블루투스 연결과 별도로 Tesla 가상 키·차량 스트리밍·NAS 기록 수신을 확인합니다.").font(.caption)
+            }
             Section {
                 NavigationLink("표시 단위·자동 음성 안내", value: Page.preferences)
                 TextField("표시 이름", text: $name)

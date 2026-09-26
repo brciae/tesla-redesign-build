@@ -6,6 +6,10 @@ on:
         description: Optional HTTPS archive origin to check from outside the LAN
         required: false
         type: string
+      receiver_port:
+        description: Optional direct vehicle TLS port to verify with the same hostname
+        required: false
+        type: string
   push:
     paths: ['server/**', '.github/workflows/server-test.yml']
 jobs:
@@ -47,6 +51,7 @@ jobs:
       - name: Check TLS, readiness and authentication without credentials
         env:
           PROBE_ORIGIN: ${{ inputs.probe_origin }}
+          RECEIVER_PORT: ${{ inputs.receiver_port }}
         run: |
           python - <<'PY'
           import os, urllib.request, urllib.error, urllib.parse, json
@@ -65,4 +70,13 @@ jobs:
               print('Unauthenticated access denied: PASS')
           else:
               raise AssertionError('Unauthenticated request was not denied')
+          if os.environ.get('RECEIVER_PORT'):
+              import socket, ssl
+              port = int(os.environ['RECEIVER_PORT'])
+              assert 1 <= port <= 65535
+              context = ssl.create_default_context()
+              with socket.create_connection((url.hostname, port), timeout=15) as sock:
+                  with context.wrap_socket(sock, server_hostname=url.hostname) as secure:
+                      assert secure.getpeercert()
+                      print('Vehicle receiver public TLS and hostname: PASS')
           PY

@@ -2,6 +2,12 @@ import Foundation
 
 @main struct FleetSnapshotTests {
     static func main() {
+        let absentStream = FleetStreamingStatus(payload: ["synced": true, "config": NSNull(), "key_paired": false])
+        precondition(!absentStream.configured && !absentStream.synced && absentStream.title == "차량 가상 키 등록 필요")
+        let waitingStream = FleetStreamingStatus(payload: ["synced": false, "config": ["hostname": "fixture.example"], "key_paired": true])
+        precondition(waitingStream.configured && !waitingStream.synced)
+        let activeStream = FleetStreamingStatus(payload: ["synced": true, "config": ["hostname": "fixture.example"], "key_paired": true])
+        precondition(activeStream.synced && activeStream.hostname == "fixture.example")
         let now = Date(timeIntervalSince1970: 1800000000)
         let ms = now.timeIntervalSince1970 * 1000
         let snapshot = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: [

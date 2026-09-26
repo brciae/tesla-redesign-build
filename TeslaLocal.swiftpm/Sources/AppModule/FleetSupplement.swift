@@ -55,6 +55,33 @@ struct FleetSupplementResult {
     }
 }
 
+struct FleetStreamingStatus {
+    let keyPaired: Bool?
+    let configured: Bool
+    let synced: Bool
+    let limitReached: Bool
+    let hostname: String?
+    init(payload: Any) {
+        let object = payload as? [String: Any] ?? [:]
+        let config = object["config"] as? [String: Any]
+        keyPaired = object["key_paired"] as? Bool
+        configured = config?.isEmpty == false
+        synced = configured && (object["synced"] as? Bool == true)
+        limitReached = object["limit_reached"] as? Bool == true
+        hostname = config?["hostname"] as? String
+    }
+    var title: String {
+        if keyPaired == false { return "차량 가상 키 등록 필요" }
+        if !configured { return limitReached ? "차량의 스트리밍 연결 한도 도달" : "차량 수집 설정 필요" }
+        return synced ? "차량에 수집 설정 적용됨" : "차량의 수집 설정 적용 대기"
+    }
+    var detail: String {
+        if keyPaired == false { return "Tesla 앱에서 이 앱의 가상 키를 차량에 추가하세요." }
+        if !configured { return limitReached ? "기존 연결을 확인하세요. 다른 앱의 설정을 자동 삭제하지 않습니다." : "서명 서버를 통해 NAS 수신 주소와 수집 항목을 차량에 등록해야 합니다." }
+        return synced ? "NAS에 실제 기록이 도착했는지도 아래에서 확인하세요." : "차량이 온라인으로 연결되면 설정을 적용합니다. 반복해서 차량을 깨우지 않습니다."
+    }
+}
+
 struct FleetSupplementCard: Identifiable {
     let id: String
     let title: String

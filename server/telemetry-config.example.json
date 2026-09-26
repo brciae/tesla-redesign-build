@@ -14,6 +14,6 @@
     "queue.buffering.max.kbytes": 8192
   },
   "records": {"V": ["kafka"], "alerts": ["kafka"], "errors": ["kafka"], "connectivity": ["kafka"]},
-  "reliable_ack_sources": {"V": "kafka", "alerts": "kafka", "errors": "kafka", "connectivity": "kafka"},
+  "reliable_ack_sources": {"V": "kafka", "alerts": "kafka", "errors": "kafka"},
   "tls": {"server_cert": "/certs/fullchain.pem", "server_key": "/certs/privkey.pem"}
 }
