@@ -14,7 +14,7 @@ struct DrivingInsightsView: View {
         FleetParkingAnalysis.buckets(telemetry.records, vin: model.fleet.selectedVin, from: Date().addingTimeInterval(-Double(days) * 86400), to: Date())
     }
     private var comparison: OwnershipAnalysis.CostComparison? {
-        OwnershipAnalysis.cost(distanceKm: energy.number("totalDistanceKm"), energyKWh: energy.number("totalKWh"), electricity: Double(electricity), gasoline: Double(gasoline), gasolineEfficiency: Double(gasolineEfficiency))
+        OwnershipAnalysis.cost(distanceKm: energy.number("totalDistanceKm"), energyKWh: energy.number("totalKWh"), electricity: model.settings.number("tariff") ?? Double(electricity), gasoline: Double(gasoline), gasolineEfficiency: Double(gasolineEfficiency))
     }
     var body: some View {
         ScrollView {
@@ -68,9 +68,7 @@ struct DrivingInsightsView: View {
                 }
                 InfoCard {
                     Text("같은 거리를 달렸을 때의 비용").font(.headline)
-                    input("충전 단가 · 원/kWh", text: $electricity)
-                    input("휘발유 가격 · 원/L", text: $gasoline)
-                    input("비교 차량 연비 · km/L", text: $gasolineEfficiency)
+                    NavigationLink("비용 비교 기준 설정", value: Page.chargingSettings)
                     if let comparison {
                         Chart {
                             BarMark(x: .value("차량", "전기차"), y: .value("비용", comparison.electric)).foregroundStyle(.mint.gradient).cornerRadius(6)

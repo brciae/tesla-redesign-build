@@ -369,6 +369,9 @@ struct ConnectionView: View {
     @State private var reserve = ""
     @State private var daily = ""
     @State private var tariff = ""
+    @AppStorage("cost.gasoline") private var gasoline = ""
+    @AppStorage("cost.gasolineEfficiency") private var gasolineEfficiency = ""
+    @State private var assumedCapacity = 75.0
     @State private var enroll = false
     @State private var controlEnroll = false
     @State private var fleetSetup = false
@@ -401,6 +404,9 @@ struct ConnectionView: View {
                 TextField("여유 잔량 %", text: $reserve).keyboardType(.decimalPad)
                 TextField("차량이 안내하는 일상 충전 기준 %", text: $daily).keyboardType(.decimalPad)
                 TextField("참고 단가 원/kWh", text: $tariff).keyboardType(.decimalPad)
+                TextField("비교 휘발유 단가 원/L", text: $gasoline).keyboardType(.decimalPad)
+                TextField("비교 차량 연비 km/L", text: $gasolineEfficiency).keyboardType(.decimalPad)
+                Stepper("전비 추정용 가정 용량 \(Int(assumedCapacity)) kWh", value: $assumedCapacity, in: 20...200, step: 1)
                 Button("충전 계획 저장") { saveSettings() }
             }
             }
@@ -484,10 +490,10 @@ struct ConnectionView: View {
         "개인용 비공식 앱임. BloxBloger 3D 모델 CC BY-NC 4.0 · 정식 Tesla 자산 아님. Tesla Fleet API와 개인 NAS 기록 서버를 사용하며, AI 규칙 생성은 선택한 외부 앱에서만 실행됨. 자동 휴대폰 키·원격 시동은 지원하지 않음."
     }
 
-    private func populate() { let s = model.settings; vin = s.string("vin"); name = s.string("name"); km = s.number("plannedKm").map { String($0) } ?? ""; reserve = s.number("reserveSOC").map { String($0) } ?? "20"; daily = s.number("dailyLimit").map { String($0) } ?? ""; tariff = s.number("tariff").map { String($0) } ?? "" }
+    private func populate() { let s = model.settings; assumedCapacity = s.number("assumedCapacityKWh") ?? 75; vin = s.string("vin"); name = s.string("name"); km = s.number("plannedKm").map { String($0) } ?? ""; reserve = s.number("reserveSOC").map { String($0) } ?? "20"; daily = s.number("dailyLimit").map { String($0) } ?? ""; tariff = s.number("tariff").map { String($0) } ?? UserDefaults.standard.string(forKey: "cost.electricity") ?? "" }
     private func saveSettings() {
         do { model.errorMessage = nil; if section == .charging {
-            model.mutate("settings", ["plannedKm": try jsonNumber(km), "reserveSOC": try jsonNumber(reserve), "dailyLimit": try jsonNumber(daily), "tariff": try jsonNumber(tariff)])
+            model.mutate("settings", ["plannedKm": try jsonNumber(km), "reserveSOC": try jsonNumber(reserve), "dailyLimit": try jsonNumber(daily), "tariff": try jsonNumber(tariff), "assumedCapacityKWh": assumedCapacity])
         } else { model.mutate("settings", ["name": name, "vin": vin.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)]) } }
         catch { model.errorMessage = error.localizedDescription }
     }

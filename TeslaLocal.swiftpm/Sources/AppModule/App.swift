@@ -461,15 +461,8 @@ struct TripsView: View {
                     }
                 }
             }
-            InfoCard {
-                CardTitle(title: "전비 계산 설정", systemImage: "slider.horizontal.3")
-                Stepper("가정 용량 \(Int(assumedCapacity)) kWh", value: $assumedCapacity, in: 20...200, step: 1)
-                HStack {
-                    Button("적용") { model.mutate("settings", ["assumedCapacityKWh": assumedCapacity]) }.buttonStyle(.bordered)
-                    Spacer()
-                    Button("CSV 내보내기") { model.exportCSV() }.buttonStyle(.bordered)
-                }
-            }
+            NavigationLink("전비·비용 기준 설정", value: Page.chargingSettings)
+            NavigationLink("기록 내보내기", value: Page.recordSettings)
         }.onAppear { assumedCapacity = model.settings.number("assumedCapacityKWh") ?? 75 }
     }
 }

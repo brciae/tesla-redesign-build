@@ -55,21 +55,8 @@ struct FleetInsightsView: View {
                         Text("명목 사양 · 사용 가능 용량과 구분").font(.caption2).foregroundStyle(Theme.muted)
                     }
                 }
-                DisclosureGroup("차량 상태 상세") {
-                    if let snapshot {
-                        ForEach(snapshot.insightSections().filter { $0.title != "타이어 상태" }, id: \.title) { section in
-                            let rows = section.rows.filter { !$0.value.contains("미수신") }
-                            if !rows.isEmpty {
-                                InfoCard {
-                                    Text(section.title).font(.headline)
-                                    ForEach(rows, id: \.label) { row in HStack { Text(row.label).foregroundStyle(Theme.muted); Spacer(); Text(row.value) }.font(.subheadline) }
-                                }
-                            }
-                        }
-                    }
-                }
-                DisclosureGroup("충전소·서비스·업데이트") {
-                    ForEach(FleetSupplement.allCases.filter { $0 != .telemetryConfig && $0 != .telemetryErrors }) { kind in NavigationLink(kind.title) { FleetSupplementView(fleet: fleet, kind: kind) }.padding(.vertical, 8) }
+                DisclosureGroup("경고·서비스·업데이트") {
+                    ForEach([FleetSupplement.alerts, .service, .releaseNotes]) { kind in NavigationLink(kind.title) { FleetSupplementView(fleet: fleet, kind: kind) }.padding(.vertical, 8) }
                 }
                 LocalBriefingControls(title: "차량 상태", summary: { snapshot?.insightSummary() ?? [] })
                 Text(fleet.vehicleReadStatus).font(.caption2).foregroundStyle(Theme.muted)

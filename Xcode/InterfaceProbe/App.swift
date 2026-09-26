@@ -345,3 +345,5 @@ struct ClimateFleetProbe: View {
 private struct ProbeUnitsKey: EnvironmentKey { static let defaultValue = VehicleUnits() }
 extension EnvironmentValues { var vehicleUnits: VehicleUnits { get { self[ProbeUnitsKey.self] } set { self[ProbeUnitsKey.self] = newValue } } }
 struct CareView: View { var body: some View { ScrollView { TirePressureDiagram().padding() }.navigationTitle("타이어·정비") } }
+
+enum Page: Hashable { case chargingSettings }

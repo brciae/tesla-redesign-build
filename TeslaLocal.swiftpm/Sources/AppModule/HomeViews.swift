@@ -649,6 +649,7 @@ struct ChargeStatusView: View {
         let isCharging = c.chargingNow
         let isPlugged = isCharging || c.flag("plugged")
         PageBody(title: "충전", briefing: .charging) {
+            NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .chargingHistory) } label: { Label("Tesla 충전 이력", systemImage: "bolt.fill") }
             VStack(spacing: 16) {
                 // 3D Charging Vehicle (only connects cable/energy when plugged/charging)
                 Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
@@ -715,6 +716,7 @@ struct SecurityStatusView: View {
     @ObservedObject var link: VehicleLink
     var body: some View {
         PageBody(title: "보안 및 잠금", briefing: .security) {
+            NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .drivers) } label: { Label("차량 접근 운전자", systemImage: "person.2") }
             VStack(spacing: 16) {
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -1288,6 +1290,7 @@ struct NavigationLandingView: View {
             Button { searching = true } label: { Label("어디로 갈까요? 목적지 검색", systemImage: "magnifyingglass").frame(maxWidth: .infinity, minHeight: 60) }.buttonStyle(.borderedProminent)
             Button { navigation.activateWorkspace(model: model) } label: { Label(navigation.guiding ? "진행 중인 길안내 보기" : "운전 대시보드 열기", systemImage: "map").frame(maxWidth: .infinity, minHeight: 50) }.buttonStyle(.bordered)
             HStack { Button("네이버 지도로 보내기") { model.openInNaverMap() }; Spacer(); Button("티맵으로 보내기") { model.openInTMap() } }.disabled(model.demo)
+            NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging) } label: { Label("주변 충전소", systemImage: "bolt.car") }
             NavigationLink("내비게이션 설정", value: Page.navigation)
         }.padding() }
         .sheet(isPresented: $searching) { DestinationSearchView(navigation: navigation).environmentObject(model) }
