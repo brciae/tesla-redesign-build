@@ -30,6 +30,32 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var lastGuideAt = Date.distantPast
     private var navigationSpeaking = false
     private var activePriority = 0
+    var navigationTargetIsAhead: ((String) -> Bool)?
+    private var navigationPreparation: Task<Void, Never>?
+    private var navigationPreparationTimes: [Date] = []
+
+    func prepareNavigation(_ message: String) {
+        let tc = TypecastClient.shared, d = UserDefaults.standard
+        guard navigationPreparation == nil, !navigationSpeaking, tc.isEnabled, !tc.synthesisPaused,
+              d.bool(forKey: "voiceEnabled"), d.double(forKey: "voiceVolume") > 0, let data = message.data(using: .utf8),
+              let phrases = try? JSONDecoder().decode([String].self, from: data) else { return }
+        let selected = d.string(forKey: "voiceIdentifier") ?? ""
+        let voice = selected.hasPrefix("typecast:") ? String(selected.dropFirst(9)) : tc.selectedVoiceId
+        navigationPreparation = Task { @MainActor in
+            defer { self.navigationPreparation = nil }
+            for raw in phrases.prefix(3) {
+                if Task.isCancelled || self.navigationSpeaking || tc.synthesisPaused { break }
+                let text = SpeechText.prepare(raw)
+                if tc.cachedURL(for: text, voiceId: voice) != nil { continue }
+                let now = Date()
+                self.navigationPreparationTimes.removeAll { now.timeIntervalSince($0) >= 60 }
+                guard self.navigationPreparationTimes.count < 6 else { break }
+                self.navigationPreparationTimes.append(now)
+                do { _ = try await tc.synthesize(text: text, voiceId: voice) }
+                catch { break } // No repeated request or alternate account on failure.
+            }
+        }
+    }
 
     override init() {
         super.init()
@@ -102,6 +128,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
+        guard let cue = NavigationSpeechCue.parse(text, now: now) else { return }
+        let text = cue.text
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
         // Ignore duplicate SDK callbacks before cancelling current playback.
         guard text != lastGuideText || now.timeIntervalSince(lastGuideAt) >= 2 else { return }
@@ -118,7 +146,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
 
         // Normalize unit pronunciation only; do not rewrite the provider's maneuver.
-        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines), expires: now.addingTimeInterval(8), priority: priority, manual: true), now: now)
+        navigationPreparation?.cancel()
+        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines), expires: Date(timeIntervalSince1970: cue.validUntil), priority: priority, manual: true, navigationID: cue.targetID), now: now)
         drain()
     }
 
@@ -219,7 +248,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             playbackState = "음량 0"
             return true
         }
-        guard item.canStartPlayback(at: Date()) else {
+        guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             playbackState = "안내 기한 만료"
             drain()
             return true
@@ -244,7 +273,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         playbackState = "타입캐스트 음성 생성 중…"
         synthesisTask = Task {
             do {
-                let audioURL = try await tc.synthesize(text: item.text, voiceId: resolvedTarget)
+                let audioURL = try await tc.synthesize(text: item.text, voiceId: resolvedTarget, validUntil: item.key.hasPrefix("navigation.") ? item.expires : nil)
                 await MainActor.run {
                     guard self.activeTicket == ticket else { return }
                     self.playTypecastAudio(audioURL, ticket: ticket, item: item, defaults: defaults)
@@ -256,8 +285,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                     self.speaking = false
                     self.navigationSpeaking = false
                     self.activePriority = 0
-                    self.notice = "타입캐스트 안내 실패: \(error.localizedDescription)"
-                    self.playbackState = "합성 실패"
+                    let expired = !item.canStartPlayback(at: Date()) || error is CancellationError
+                    self.notice = expired ? "" : "타입캐스트 안내 실패: \(error.localizedDescription)"
+                    self.playbackState = expired ? "지난 안내 건너뜀" : "합성 실패"
                     self.drain()
                 }
             }
@@ -269,7 +299,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         guard activeTicket == ticket else { return }
         // Network synthesis can finish after the maneuver has already expired.
         // Keep the generated cache, but never play an out-of-date instruction.
-        guard item.canStartPlayback(at: Date()) else {
+        guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             activeTicket = nil
             activeManual = false
             speaking = false
@@ -331,6 +361,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func stop() {
+        navigationPreparation?.cancel()
         queue.clear()
         cancelCurrent()
         playbackState = "중지됨"

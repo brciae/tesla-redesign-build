@@ -4,6 +4,11 @@ import Foundation
     static func main() {
         let expired = Date(timeIntervalSince1970: 10)
         let afterSynthesis = Date(timeIntervalSince1970: 45)
+        let cueTime = Date(timeIntervalSince1970: 100)
+        precondition(NavigationSpeechCue.parse(#"{"text":"약 백 미터 앞","validUntil":102,"targetID":"camera"}"#, now: cueTime)?.targetID == "camera")
+        precondition(NavigationSpeechCue.parse(#"{"text":"지난 단속","validUntil":99}"#, now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse(#"{"text":"잘못된 장기 안내","validUntil":108}"#, now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse("{}", now: cueTime) == nil)
         for key in ["manual", "preview", "climate.temp"] {
             precondition(VoiceItem(key: key, text: "report", expires: expired, priority: 2, manual: true).canStartPlayback(at: afterSynthesis))
         }

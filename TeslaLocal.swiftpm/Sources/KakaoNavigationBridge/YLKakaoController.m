@@ -121,6 +121,8 @@ static NSArray *YLLifecycleObservers;
 @property(nonatomic, strong) KNGuide_Route *routeGuide;
 @property(nonatomic, strong) KNGuide_Location *locationGuide;
 @property(nonatomic, strong) KNGuide_Safety *safetyGuide;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *speechTargets;
+@property(nonatomic, strong) NSMutableSet<NSString *> *preparedSpeechPoints;
 @property(nonatomic) FloatPoint mapAnchor;
 @property(nonatomic) BOOL cameraReady;
 @property(nonatomic) float trustedBearing;
@@ -417,6 +419,7 @@ static NSArray *YLLifecycleObservers;
     self.map.viewEventListener = nil;
     self.map.paused = YES; [self.map removeRoutesAll]; [self.map removeMarkersAll]; [self.map removeFromSuperview];
     self.map = nil; self.routeStyle = nil; self.guidance = nil; self.locationGuide = nil; self.routeGuide = nil; self.safetyGuide = nil; self.cameraReady = NO;
+    [self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects];
     if (self.telemetryHandler) self.telemetryHandler(@{});
 }
 
@@ -435,7 +438,7 @@ static NSArray *YLLifecycleObservers;
 - (void)guidanceGuideEnded:(KNGuidance *)guidance {
     YL_FORWARD(self.guiding = NO; self.routeGuide = nil; self.safetyGuide = nil; [self.map removeRoutesAll]; [self publishTelemetry]; [self emit:@"ended" message:@"길안내 종료됨"]);
 }
-- (void)guidance:(KNGuidance *)guidance didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { YL_FORWARD(if (routes.count) [self.map setRoutes:routes]; else [self.map removeRoutesAll]); }
+- (void)guidance:(KNGuidance *)guidance didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { YL_FORWARD([self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects]; if (routes.count) [self.map setRoutes:routes]; else [self.map removeRoutesAll]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateIndoorRoute:(KNRoute *)route { if (route) YL_FORWARD([self.map setRoute:route]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate]; [self updateMap]; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateRouteGuide:(KNGuide_Route *)route { YL_FORWARD(self.routeGuide = route; [self publishTelemetry]); }
@@ -448,9 +451,71 @@ static NSArray *YLLifecycleObservers;
     // SDK supplies timing and guide objects only. All speech uses the app's selected voice.
     KNVoiceCode code = voice.voiceCode;
     id object = voice.guideObj;
-    YL_FORWARD(NSString *text = [self spokenTextForCode:code object:object];
-               if (text.length) [self emit:safety ? @"spokenSafety" : @"spokenGuide" message:text]);
+    YL_FORWARD([self emitTimedSpeech:code object:object safety:safety]);
     return NO;
+}
+- (KNLocation *)speechLocation:(id)object {
+    if ([object isKindOfClass:KNDirection.class]) return ((KNDirection *)object).location;
+    if ([object isKindOfClass:KNSafety.class]) return ((KNSafety *)object).location;
+    return nil;
+}
+- (BOOL)isSpeechTargetAhead:(NSString *)identifier {
+    NSDictionary *record = self.speechTargets[identifier];
+    if (!record || ![self locationIsFresh] || YLGuidanceOwner != self) return NO;
+    if (-self.locationGuide.gpsMatched.timestamp.timeIntervalSinceNow > 2.5) return NO;
+    SInt32 distance = [self.locationGuide.location distToLocation:record[@"target"]];
+    return distance > 0 && distance <= [record[@"distance"] intValue] + 10;
+}
+- (void)emitTimedSpeech:(KNVoiceCode)code object:(id)object safety:(BOOL)safety {
+    NSString *text = [self spokenTextForCode:code object:object];
+    if (!text.length) return;
+    NSMutableDictionary *message = [@{@"text":text, @"validUntil":@(NSDate.date.timeIntervalSince1970 + 2)} mutableCopy];
+    KNLocation *target = [self speechLocation:object];
+    if (target) {
+        if (![self locationIsFresh]) return;
+        SInt32 distance = [self.locationGuide.location distToLocation:target];
+        if (distance <= 0) return;
+        NSString *identifier = NSUUID.UUID.UUIDString;
+        if (!self.speechTargets) self.speechTargets = [NSMutableDictionary dictionary];
+        if (self.speechTargets.count >= 16) [self.speechTargets removeAllObjects];
+        self.speechTargets[identifier] = @{@"target":target, @"distance":@(distance)};
+        message[@"targetID"] = identifier;
+        KNGPSData *gps = self.locationGuide.gpsMatched;
+        double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
+        double lifetime = speed > 1 ? fmin(2, fmax(0, distance / speed - 0.5)) : 2;
+        if (lifetime <= 0) return;
+        message[@"validUntil"] = @(NSDate.date.timeIntervalSince1970 + lifetime);
+    }
+    NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
+    if (data) [self emit:safety ? @"spokenSafety" : @"spokenGuide" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
+}
+- (void)prepareUpcomingSpeech {
+    if (![self locationIsFresh] || (!self.voiceEnabled && !self.safetyVoiceEnabled)) return;
+    NSMutableArray *objects = [NSMutableArray array];
+    if (self.voiceEnabled && self.routeGuide.curDirection) [objects addObject:self.routeGuide.curDirection];
+    if (self.safetyVoiceEnabled && self.safetyGuide.safetiesOnGuide.count) [objects addObjectsFromArray:self.safetyGuide.safetiesOnGuide];
+    id nearest = nil; SInt32 nearestDistance = 2001;
+    for (id object in objects) {
+        KNLocation *target = [self speechLocation:object];
+        if (!target) continue;
+        SInt32 distance = [self.locationGuide.location distToLocation:target];
+        if (distance >= 150 && distance < nearestDistance) { nearest = object; nearestDistance = distance; }
+    }
+    if (!nearest) return;
+    NSString *text = [self spokenTextForCode:KNVoiceCode_Safety object:nearest];
+    NSString *prefix = YLNavigationDistancePrefix(nearestDistance);
+    if (!text.length || ![text hasPrefix:prefix]) return;
+    NSString *body = [text substringFromIndex:prefix.length];
+    if (!self.preparedSpeechPoints) self.preparedSpeechPoints = [NSMutableSet set];
+    if ([self.preparedSpeechPoints containsObject:body]) return;
+    if (self.preparedSpeechPoints.count >= 128) [self.preparedSpeechPoints removeAllObjects];
+    [self.preparedSpeechPoints addObject:body];
+    NSMutableArray *phrases = [NSMutableArray array];
+    for (NSNumber *distance in @[@300, @100, @0]) {
+        if (distance.intValue < nearestDistance) [phrases addObject:[YLNavigationDistancePrefix(distance.intValue) stringByAppendingString:body]];
+    }
+    NSData *data = [NSJSONSerialization dataWithJSONObject:phrases options:0 error:nil];
+    if (data) [self emit:@"prepareSpeech" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
 }
 - (NSString *)spokenTextForCode:(KNVoiceCode)code object:(id)object {
     NSString *prefix = @"";
@@ -778,5 +843,6 @@ static NSArray *YLLifecycleObservers;
         }
     }
     self.telemetryHandler(s);
+    [self prepareUpcomingSpeech];
 }
 @end

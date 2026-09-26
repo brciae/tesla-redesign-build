@@ -55,6 +55,8 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var onVoiceActivity: ((Bool) -> Void)?
     var onGuidanceEnd: (() -> Void)?
     var onSpokenGuide: ((String, Bool) -> Void)?
+    var onPrepareGuide: ((String) -> Void)?
+    func isSpeechTargetAhead(_ identifier: String) -> Bool { controller?.isSpeechTargetAhead(identifier) == true }
     var onAudioSession: ((Bool) -> Void)?
     private let runtime: LocalRuntime
     private let locator = CLLocationManager()
@@ -246,6 +248,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     guard let self, let view, self.controller === view, self.current(ticket) else { return }
                     if event == "audioAcquired" { self.onAudioSession?(true); return }
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
+                    if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
                     if event == "voiceStart" || event == "voiceEnd" { return } // SDK never plays audio (v30)
                     if event == "follow" { self.following = message == "1"; return }
                     if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
@@ -380,6 +383,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     guard let self, let view, self.controller === view else { return }
                     if event == "audioAcquired" { self.onAudioSession?(true); return }
                     if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
+                    if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
                     if event == "follow" { self.following = message == "1"; return }
                     if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
                     if event == "visible" {

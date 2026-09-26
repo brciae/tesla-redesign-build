@@ -135,12 +135,28 @@ enum VehicleReadPlan {
     }
 }
 
+struct NavigationSpeechCue: Decodable {
+    let text: String
+    let validUntil: Double
+    let targetID: String?
+    static func parse(_ message: String, now: Date) -> NavigationSpeechCue? {
+        if message.hasPrefix("{") {
+            guard let data = message.data(using: .utf8), let cue = try? JSONDecoder().decode(Self.self, from: data),
+                  cue.validUntil.isFinite, cue.validUntil > now.timeIntervalSince1970,
+                  cue.validUntil <= now.timeIntervalSince1970 + 2.1, !cue.text.isEmpty else { return nil }
+            return cue
+        }
+        return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 2, targetID: nil)
+    }
+}
+
 struct VoiceItem {
     let key: String
     let text: String
     let expires: Date
     let priority: Int
     let manual: Bool
+    var navigationID: String? = nil
     // Manual reports may finish synthesis after their queue deadline. Maneuvers
     // and automatic events retain their strict real-time playback deadline.
     func canStartPlayback(at now: Date) -> Bool {

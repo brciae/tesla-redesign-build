@@ -111,6 +111,8 @@ final class AppModel: ObservableObject {
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
         navigation.onGuidanceEnd = { [weak self] in self?.voice.stop() }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
+        navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
+        voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         link.onControlOutcome = { [weak self] message in
             self?.voice.say(message, key: "controlOutcome:" + UUID().uuidString, category: "voiceControl", priority: 2)

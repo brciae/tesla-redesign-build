@@ -398,13 +398,14 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     /// One network synthesis at a time. Playback cancellation never restarts an accepted request.
     @MainActor
-    func synthesize(text: String, voiceId: String? = nil) async throws -> URL {
+    func synthesize(text: String, voiceId: String? = nil, validUntil: Date? = nil) async throws -> URL {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let requestedVoice = (voiceId ?? selectedVoiceId).trimmingCharacters(in: .whitespacesAndNewlines)
         let voice = requestedVoice.isEmpty ? Self.defaultVoiceId : requestedVoice
         let key = activeApiKey
         while true {
             try Task.checkCancellation()
+            if let validUntil, Date() >= validUntil { throw CancellationError() }
             if let cached = cachedURL(for: clean, voiceId: voice) { return cached }
             if let flight = synthesisFlight {
                 _ = await flight.task.result
