@@ -25,11 +25,14 @@ enum Theme {
     static let muted = Color(red: 174/255, green: 178/255, blue: 183/255)
     static let green = Color(red: 93/255, green: 205/255, blue: 144/255)
 }
+/// v90: one route per screen. Cases the 5-tab layout reaches through its own
+/// segments (위치, 운행 기록, 주행 정보, 일정 예약, 차량 3D) are no longer Pages,
+/// so a screen cannot be entered from two places at once.
 enum Page: String, Hashable {
-    case controls = "컨트롤", climate = "실내 온도", location = "위치", charging = "충전"
-    case schedule = "일정 예약 설정", security = "보안 및 운전자"
-    case drive = "주행·내비", battery = "충전·배터리", trips = "운행 기록", care = "차량 관리"
-    case automation = "자동화", connection = "연결 상태", briefing = "오늘의 브리핑", vehicle3D = "차량 3D"
+    case controls = "컨트롤", climate = "실내 온도", charging = "충전"
+    case security = "보안 및 운전자"
+    case care = "차량 관리"
+    case automation = "자동화", connection = "연결 상태", briefing = "오늘의 브리핑"
     case navigation = "카카오 내장 내비", preferences = "표시·음성 설정"
     case appearance = "차꾸미기"
     case fleetInsights = "차량 상세 데이터"
@@ -165,11 +168,8 @@ private struct AppDestinations: ViewModifier {
         switch page {
         case .controls: ControlsView(link: link)
         case .climate: ClimateStatusView(link: link)
-        case .location: LocationStatusView(link: link)
         case .charging: ChargeStatusView(link: link)
-        case .schedule: AutomationUtilitiesView(title: "일정 예약 설정")
         case .security: SecurityStatusView(link: link)
-        case .drive: DriveView()
         case .navigation: NavigationSetupView(navigation: navigation)
         case .chargingSettings: ConnectionView(link: link, section: .charging)
         case .recordSettings: ConnectionView(link: link, section: .records)
@@ -179,13 +179,10 @@ private struct AppDestinations: ViewModifier {
         case .appearance: VehicleAppearanceView()
         case .fleetInsights: FleetInsightsView(fleet: model.fleet)
         case .notifications: NotificationSettingsView()
-        case .battery: BatteryView()
-        case .trips: TripsView()
         case .care: CareView()
         case .automation: AutomationView()
         case .connection: ConnectionView(link: link)
         case .briefing: BriefingView()
-        case .vehicle3D: PageBody(title: "차량 3D", briefing: .vehicle3D) { Vehicle3DPanel(link: link) }
         }
     }
 }
@@ -250,46 +247,6 @@ struct Metric: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
-struct DriveView: View {
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.vehicleUnits) private var units
-    @AppStorage("keepDriveDisplayOn") private var keepDisplay = true
-    @State private var confirmEnd = false
-    var body: some View {
-        let d = model.groups.object("drive"), c = model.groups.object("charge")
-        PageBody(title: "주행 정보", briefing: .driving) {
-            VStack(spacing: 8) {
-                Text(model.output.object("fresh").flag("drive") ? valueText(d.number("speedKmh").map { units.distanceValue($0) }) : "—").font(.system(size: 88, weight: .light, design: .rounded)).monospacedDigit()
-                Caption(units.speedLabel); Text(model.output.object("fresh").flag("drive") ? d.string("gear", "—") : "—").font(.system(size: 28, weight: .medium))
-                Caption("마지막 수신 \(dateText(d.number("at")))")
-                if !model.output.object("fresh").flag("drive") { Caption("최신 주행 정보 미확인 · 저장값 표시") }
-            }.frame(maxWidth: .infinity).padding(.vertical, 20)
-            HStack { Metric(title: "배터리", value: c.number("soc"), suffix: "%", animated: false); Metric(title: "표시 주행 가능 거리", value: c.number("rangeKm"), suffix: " km", animated: false) }
-            InfoCard {
-                CardTitle(title: "테슬라 목적지", systemImage: "location.north.fill",
-                          info: "차량이 보고한 목적지임. 새 목적지를 수신하면 카카오 길안내로 연결함. 예상 도착과 도착 잔량은 Tesla 경로 기준 값이라 실제 주행·공조 사용에 따라 달라짐.")
-                Text(d.string("destination", "목적지 미수신")).font(.title3)
-                HStack { Metric(title: "예상 도착", value: d.number("arrivalMinutes"), suffix: "분", animated: false); Metric(title: "Tesla 경로 도착 잔량", value: d.number("arrivalSOC"), suffix: "%", animated: false) }
-                NavigationLink("길안내 설정 · 네이버 지도로 넘기기", value: Page.navigation)
-                HStack(spacing: 10) {
-                    Button("운전 대시보드") { model.navigation.presented = true }.buttonStyle(.bordered)
-                    Button("네이버 지도로 안내") { model.openInNaverMap() }.buttonStyle(.bordered).disabled(model.demo)
-                }
-                Toggle("이 화면에서 자동 잠금 방지", isOn: $keepDisplay)
-            }
-            if !model.state.object("activeTrip").isEmpty {
-                InfoCard {
-                    CardTitle(title: "운행 기록 중", systemImage: "record.circle",
-                              info: "P 상태가 45초 유지되면 회차를 잠정 종료함. 실제 하차를 감지하는 것은 아니므로 필요하면 수동으로 종료할 수 있음.")
-                    Button("회차 수동 종료") { confirmEnd = true }
-                }
-            }
-        }.confirmationDialog("저장된 마지막 값으로 회차를 종료함", isPresented: $confirmEnd) { Button("수동 종료") { model.mutate("finish") } }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = keepDisplay }
-        .onChange(of: keepDisplay) { _, value in UIApplication.shared.isIdleTimerDisabled = value }
-        .onDisappear { if !model.navigation.presented { UIApplication.shared.isIdleTimerDisabled = false } }
-    }
-}
 struct BriefingView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
@@ -308,6 +265,7 @@ struct TripsView: View {
     @Environment(\.vehicleUnits) private var units
     @State private var period = 30
     @State private var assumedCapacity = 75.0
+    @State private var confirmEnd = false
 
     private static let shortMonthDayFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -349,6 +307,16 @@ struct TripsView: View {
                             Caption(model.screenBriefing(.trips, days: period))
                         }
                     }
+                }
+            }
+
+            // v90: 회차 수동 종료 moved here from the retired 주행 정보 page — the
+            // action belongs next to the records it closes, and this is its only home.
+            if !model.state.object("activeTrip").isEmpty {
+                InfoCard {
+                    CardTitle(title: "운행 기록 중", systemImage: "record.circle",
+                              info: "P 상태가 45초 유지되면 회차를 잠정 종료함. 실제 하차를 감지하는 것은 아니므로 필요하면 수동으로 종료할 수 있음.")
+                    Button("회차 수동 종료") { confirmEnd = true }
                 }
             }
 
@@ -464,6 +432,7 @@ struct TripsView: View {
             NavigationLink("전비·비용 기준 설정", value: Page.chargingSettings)
             NavigationLink("기록 내보내기", value: Page.recordSettings)
         }.onAppear { assumedCapacity = model.settings.number("assumedCapacityKWh") ?? 75 }
+        .confirmationDialog("저장된 마지막 값으로 회차를 종료함", isPresented: $confirmEnd) { Button("수동 종료") { model.mutate("finish") } }
     }
 }
 
@@ -549,6 +518,7 @@ struct BatteryView: View {
         let health = model.output.object("health"), target = model.output.object("target")
         let charges = model.output.object("charging").rows("rows")
         PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }) {
+            NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin) } label: { Label("배터리 온도·수신 추이", systemImage: "waveform.path.ecg") }
             BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days)
             InfoCard {
                 CardTitle(title: "충전 요약", systemImage: "bolt.fill",

@@ -233,8 +233,9 @@ struct HomeView: View {
 
             HStack(spacing: 8) {
 
-            // Live Connection Status Badge
-            NavigationLink(value: Page.connection) {
+            // Live Connection Status Badge — v90: display only. The vehicle
+            // profile pill above is the single route to 연결 상태.
+            Group {
                 HStack(spacing: 6) {
                     Circle()
                         .fill(link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray))
@@ -257,27 +258,11 @@ struct HomeView: View {
                 )
                 .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
             }
-            .buttonStyle(MotionButtonStyle())
+            .accessibilityElement(children: .combine)
 
-            // Briefing button
+            // v90: the gear shortcut is gone — 설정 is the 메뉴 tab's job.
             Spacer(minLength: 8)
             ScreenBriefingControls(scope: .home, compact: true)
-
-            // Settings button
-            NavigationLink(value: Page.preferences) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle()
-                            .fill(Color(white: 0.14).opacity(0.8))
-                            .background(.ultraThinMaterial, in: Circle())
-                    )
-                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
-            }
-            .buttonStyle(MotionButtonStyle())
-            .accessibilityLabel("설정")
             }
         }
     }
@@ -381,26 +366,6 @@ struct HomeView: View {
                 }.transition(.opacity.combined(with: .move(edge: .top)))
             }
         }.sensoryFeedback(.selection, trigger: summaryOpen).padding(.bottom, 12)
-    }
-
-    private func moduleColors(_ module: HomeModule) -> [Color] {
-        switch module {
-        case .controls: return [Color(red: 0.15, green: 0.45, blue: 0.95), Color(red: 0.25, green: 0.65, blue: 1.0)]
-        case .climate: return [Color(red: 0.05, green: 0.70, blue: 0.85), Color(red: 0.20, green: 0.85, blue: 0.95)]
-        case .charging: return [Color(red: 0.15, green: 0.75, blue: 0.35), Color(red: 0.30, green: 0.90, blue: 0.50)]
-        case .location: return [Color(red: 0.95, green: 0.45, blue: 0.15), Color(red: 1.0, green: 0.65, blue: 0.25)]
-        case .security: return [Color(red: 0.90, green: 0.25, blue: 0.30), Color(red: 1.0, green: 0.45, blue: 0.45)]
-        case .trips: return [Color(red: 0.40, green: 0.30, blue: 0.90), Color(red: 0.55, green: 0.45, blue: 1.0)]
-        case .battery: return [Color(red: 0.10, green: 0.65, blue: 0.55), Color(red: 0.25, green: 0.85, blue: 0.75)]
-        case .care: return [Color(red: 0.35, green: 0.40, blue: 0.50), Color(red: 0.50, green: 0.55, blue: 0.65)]
-        case .appearance: return [Color(red: 0.85, green: 0.25, blue: 0.65), Color(red: 0.95, green: 0.45, blue: 0.80)]
-        case .automation: return [Color(red: 0.55, green: 0.25, blue: 0.85), Color(red: 0.70, green: 0.40, blue: 0.95)]
-        case .preferences: return [Color(red: 0.40, green: 0.45, blue: 0.50), Color(red: 0.55, green: 0.60, blue: 0.65)]
-        case .connection: return [Color(red: 0.15, green: 0.60, blue: 0.70), Color(red: 0.30, green: 0.75, blue: 0.85)]
-        case .schedule: return [Color(red: 0.80, green: 0.50, blue: 0.10), Color(red: 0.95, green: 0.65, blue: 0.25)]
-        case .drive: return [Color(red: 0.20, green: 0.50, blue: 0.85), Color(red: 0.35, green: 0.65, blue: 0.95)]
-        case .navigation: return [Color(red: 0.10, green: 0.70, blue: 0.60), Color(red: 0.25, green: 0.85, blue: 0.75)]
-        }
     }
 }
 
@@ -602,22 +567,8 @@ struct LocationStatusView: View {
 
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        CardTitle(title: "길안내 및 주차", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                        NavigationLink(value: Page.navigation) {
-                            HStack {
-                                Image(systemName: "safari.fill")
-                                    .foregroundStyle(Color.blue)
-                                Text("내장 내비게이션 시작")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.35))
-                            }
-                            .padding(.vertical, 8)
-                        }
-                        Divider().background(Color.white.opacity(0.08))
+                        // v90: 길안내 lives in this tab's first segment, so only 주차 기록 remains here.
+                        CardTitle(title: "주차 기록", systemImage: "parkingsign.circle.fill")
                         NavigationLink(value: Page.parking) {
                             HStack {
                                 Image(systemName: "parkingsign.circle.fill")
@@ -678,21 +629,6 @@ struct ChargeStatusView: View {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundStyle(Color.green)
                                 Text("충전 기록 및 영수증 추가")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.35))
-                            }
-                            .padding(.vertical, 8)
-                        }
-                        Divider().background(Color.white.opacity(0.08))
-                        NavigationLink(value: Page.battery) {
-                            HStack {
-                                Image(systemName: "waveform.path.ecg")
-                                    .foregroundStyle(Color.orange)
-                                Text("충전 이력 및 배터리 분석")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(.white)
                                 Spacer()
@@ -1121,7 +1057,6 @@ struct EnergyTabRootView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @State private var selectedSection = 0
-    @State private var batteryDays = 30
     var body: some View {
         VStack(spacing: 0) {
             Picker("에너지 구분", selection: $selectedSection) {
@@ -1143,14 +1078,9 @@ struct EnergyTabRootView: View {
             } else if selectedSection == 3 {
                 EnergyCalendarView()
             } else {
-                ScrollView {
-                    ScreenBriefingControls(scope: .battery, text: { model.screenBriefing(.battery, days: batteryDays) })
-                    NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin) } label: { Label("배터리 온도·수신 추이", systemImage: "waveform.path.ecg") }.padding()
-                    BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(batteryDays)), days: $batteryDays)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                }
-                .background(Theme.bg)
+                // v90: this segment used to be a thinner copy of BatteryView.
+                // It now shows the real screen, so the analysis exists once.
+                BatteryView()
             }
         }
         .background(Theme.bg)
@@ -1206,8 +1136,9 @@ struct MenuTabRootView: View {
                         .padding(.leading, 6)
 
                     GlassMenuCard {
-                        glassMenuItem(.fleetInsights, "checkmark.shield", title: "차량 상태·보증", subtitle: "차량 사양 · 보증 · 경고 · 서비스", colors: [Color.cyan, Color.blue])
-                        glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 알림 · 운전자 프로필", colors: [Color.blue, Color.cyan], isLast: true)
+                        glassMenuItem(.fleetInsights, "checkmark.shield", title: "차량 상태·보증", subtitle: "사양 · 보증 · 경고", colors: [Color.cyan, Color.blue])
+                        glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "타이어·정비", subtitle: "공기압 · 소모품 주기", colors: [Color.orange, Color.yellow])
+                        glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 운전자", colors: [Color.blue, Color.cyan], isLast: true)
                     }
                 }
 
@@ -1219,15 +1150,15 @@ struct MenuTabRootView: View {
                         .padding(.leading, 6)
 
                     GlassMenuCard {
-                        glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "차량·NAS 연결", subtitle: "Tesla 계정 · 블루투스 · 기록 서버", colors: [Color.cyan, Color.blue])
-                        glassMenuItem(.navigation, "map", title: "내비게이션 설정", subtitle: "지도 연동 · 위치 권한 · 하이패스 · 화면 방향", colors: [Color.blue, Color.cyan])
-                        glassMenuItem(.chargingSettings, "bolt.fill", title: "충전 계획·요금", subtitle: "일상 충전 기준 · 여유 잔량 · 전기 단가", colors: [Color.green, Color.mint])
-                        glassMenuItem(.recordSettings, "externaldrive", title: "기록·백업", subtitle: "내보내기 · 복원 · 과거 기록 합치기", colors: [Color.blue, Color.cyan])
-                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내 디자인", colors: [Color.purple, Color.pink])
-                        glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
-                        glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 상태별 알림 · 권한 · 전달 시험", colors: [Color.purple, Color.blue])
-                        glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "메뉴 배경 · 거리 · 온도 · 공기압 단위", colors: [Color.gray, Color.white])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "타입캐스트 · 안내 빈도 · 음량", colors: [Color.gray, Color.white], isLast: true)
+                        glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "차량·NAS 연결", subtitle: "계정 · 블루투스 · 서버", colors: [Color.cyan, Color.blue])
+                        glassMenuItem(.navigation, "map", title: "내비게이션", subtitle: "지도 · 위치 권한 · 하이패스", colors: [Color.blue, Color.cyan])
+                        glassMenuItem(.chargingSettings, "bolt.fill", title: "충전 계획·요금", subtitle: "충전 기준 · 전기 단가", colors: [Color.green, Color.mint])
+                        glassMenuItem(.recordSettings, "externaldrive", title: "기록·백업", subtitle: "내보내기 · 복원", colors: [Color.blue, Color.cyan])
+                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내", colors: [Color.purple, Color.pink])
+                        glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "상황별 음성 안내 · 자동 제어", colors: [Color.green, Color.mint])
+                        glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 알림 · 권한", colors: [Color.purple, Color.blue])
+                        glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "배경 · 거리 · 온도 단위", colors: [Color.gray, Color.white])
+                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color.white], isLast: true)
                     }
                 }
             }
@@ -1291,7 +1222,6 @@ struct NavigationLandingView: View {
             Button { navigation.activateWorkspace(model: model) } label: { Label(navigation.guiding ? "진행 중인 길안내 보기" : "운전 대시보드 열기", systemImage: "map").frame(maxWidth: .infinity, minHeight: 50) }.buttonStyle(.bordered)
             HStack { Button("네이버 지도로 보내기") { model.openInNaverMap() }; Spacer(); Button("티맵으로 보내기") { model.openInTMap() } }.disabled(model.demo)
             NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging) } label: { Label("주변 충전소", systemImage: "bolt.car") }
-            NavigationLink("내비게이션 설정", value: Page.navigation)
         }.padding() }
         .sheet(isPresented: $searching) { DestinationSearchView(navigation: navigation).environmentObject(model) }
     }

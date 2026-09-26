@@ -382,7 +382,7 @@ struct ConnectionView: View {
     var body: some View {
         Form {
             if section == .connection {
-            Section("백그라운드 수집") { Toggle("앱 전환 후 BLE 조회 유지", isOn: $backgroundRead); Text("NAS는 앱을 닫아도 차량 기록을 수집합니다. 앱 화면은 실행 중 자동 동기화됩니다.").font(.caption) }
+            Section("백그라운드 수집") { Toggle("앱 전환 후 BLE 조회 유지", isOn: $backgroundRead) }
             Section("Tesla 계정·차량") {
                 Button("Tesla 계정 로그인·차량 선택") { fleetSetup = true }
                 Text(model.fleet.vehicleDisplayStatus).font(.caption)
@@ -391,7 +391,6 @@ struct ConnectionView: View {
                 NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin, connectionSettings: true) } label: {
                     Label("NAS 연결·차량 수집 설정", systemImage: "externaldrive.connected.to.line.below")
                 }
-                Text("블루투스 연결과 별도로 Tesla 가상 키·차량 스트리밍·NAS 기록 수신을 확인합니다.").font(.caption)
             }
             Section {
                 TextField("표시 이름", text: $name)
@@ -417,7 +416,6 @@ struct ConnectionView: View {
                     Text(link.status).lineLimit(2)
                     Spacer(minLength: 4)
                     if link.busy { ProgressView() }
-                    InfoNote("연결·수집", connectionHelp)
                 }
                 if !link.deferredGroups.isEmpty { Text("조회 거절로 보류: \(link.deferredGroups.sorted().joined(separator: ", ")) · 약 2분 후 자동 재조회").font(.caption).foregroundStyle(.orange) }
                 if !link.timedOutGroups.isEmpty { Text("응답 지연으로 보류: \(link.timedOutGroups.sorted().joined(separator: ", ")) · 약 1분 후 자동 재조회").font(.caption).foregroundStyle(.orange) }
@@ -453,13 +451,13 @@ struct ConnectionView: View {
                     Link("Tesla 개인정보 사본 요청 안내", destination: URL(string: "https://www.tesla.com/support/privacy")!)
                 }
             } header: {
-                HStack { Text("기록"); Spacer(); InfoNote("기록 백업", backupHelp) }
+                Text("기록")
             }
             }
             if section == .connection { Section {
                 Button(model.demo ? "예시 모드 종료" : "예시 데이터로 화면 둘러보기") { if model.demo { model.exitDemo() } else { model.enterDemo() } }
             } header: {
-                HStack { Text("앱 정보"); Spacer(); InfoNote("구현 범위", scopeHelp) }
+                Text("앱 정보")
             } footer: {
                 Text("개인용 비공식 앱 · v" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"))
             }
@@ -477,19 +475,6 @@ struct ConnectionView: View {
             }
             .confirmationDialog("현재 기록을 선택한 백업으로 교체함. 먼저 현재 자료 백업 필요.", isPresented: Binding(get: { restoreURL != nil }, set: { if !$0 { restoreURL = nil } })) { Button("검사 후 복원", role: .destructive) { if let url = restoreURL { model.restore(url) }; restoreURL = nil; populate() } }
     }
-    private var connectionHelp: String {
-        (link.supportsBackgroundRead ? "백그라운드 BLE로 연결을 유지하지만 실기 지속 수집은 검증 전임. " : "이 기기에서는 백그라운드 BLE 지원이 확인되지 않음. ")
-        + "차량이 조회를 거절하거나 응답이 늦으면 해당 항목만 보류하고 1~2분 뒤 자동으로 다시 조회함. 상태 값은 차량이 마지막으로 보고한 값이라 주차 중에는 갱신이 느릴 수 있음."
-    }
-    private var backupHelp: String {
-        var text = "연결 중에만 자동 저장되고, 연결하지 않은 기간의 이력은 복원되지 않음. 백업 JSON에는 위치·개인 기록·사진이 포함되고 차량 키는 제외되므로 재설치 전 별도 보관 필요. 기록 합치기는 동일 차량의 앱 JSON 백업만 지원함."
-        if let first = model.state.rows("trips").compactMap({ $0.number("start") }).min() { text += " 가장 이른 저장 운행: \(dateText(first))." }
-        return text
-    }
-    private var scopeHelp: String {
-        "개인용 비공식 앱임. BloxBloger 3D 모델 CC BY-NC 4.0 · 정식 Tesla 자산 아님. Tesla Fleet API와 개인 NAS 기록 서버를 사용하며, AI 규칙 생성은 선택한 외부 앱에서만 실행됨. 자동 휴대폰 키·원격 시동은 지원하지 않음."
-    }
-
     private func populate() { let s = model.settings; assumedCapacity = s.number("assumedCapacityKWh") ?? 75; vin = s.string("vin"); name = s.string("name"); km = s.number("plannedKm").map { String($0) } ?? ""; reserve = s.number("reserveSOC").map { String($0) } ?? "20"; daily = s.number("dailyLimit").map { String($0) } ?? ""; tariff = s.number("tariff").map { String($0) } ?? UserDefaults.standard.string(forKey: "cost.electricity") ?? "" }
     private func saveSettings() {
         do { model.errorMessage = nil; if section == .charging {

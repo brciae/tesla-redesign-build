@@ -92,7 +92,7 @@ struct BatteryOverview: View {
                                 x: .value("시각", Date(timeIntervalSince1970: at)),
                                 y: .value("잔량", soc)
                             )
-                            .interpolationMethod(.linear)
+                            .interpolationMethod(.catmullRom)
                             .foregroundStyle(
                                 LinearGradient(
                                     colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.04)],
@@ -105,27 +105,42 @@ struct BatteryOverview: View {
                                 x: .value("시각", Date(timeIntervalSince1970: at)),
                                 y: .value("잔량", soc)
                             )
-                            .interpolationMethod(.linear)
+                            .interpolationMethod(.catmullRom)
                             .foregroundStyle(Color.cyan)
                             .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                         }
+                        // v90: a filled dot marks where the trace ends, so the
+                        // current level reads without chasing the line's tip.
+                        if let last = cleanedTrend.last, let at = last.number("at"), let soc = last.number("soc") {
+                            PointMark(
+                                x: .value("시각", Date(timeIntervalSince1970: at / 1000)),
+                                y: .value("잔량", min(100.0, max(0.0, soc)))
+                            )
+                            .symbolSize(60)
+                            .foregroundStyle(Color.cyan)
+                        }
                     }
                     .chartYScale(domain: 0...100)
+                    // v90: 100 / 50 / 0 on both edges and no gridlines — the
+                    // reference reading, where the shape carries the meaning.
                     .chartYAxis {
-                        AxisMarks(values: [0, 25, 50, 75, 100]) { value in
-                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
-                                .foregroundStyle(Color.white.opacity(0.12))
+                        AxisMarks(position: .leading, values: [0, 50, 100]) { value in
                             AxisValueLabel {
                                 if let intVal = value.as(Int.self) {
-                                    Text("\(intVal)%").font(.caption2).foregroundStyle(Color.white.opacity(0.55))
+                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.45))
+                                }
+                            }
+                        }
+                        AxisMarks(position: .trailing, values: [0, 50, 100]) { value in
+                            AxisValueLabel {
+                                if let intVal = value.as(Int.self) {
+                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.45))
                                 }
                             }
                         }
                     }
                     .chartXAxis {
                         AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
-                                .foregroundStyle(Color.white.opacity(0.08))
                             AxisValueLabel {
                                 if let date = value.as(Date.self) {
                                     Text(Self.batteryChartDateFormatter.string(from: date))

@@ -1,6 +1,12 @@
 import SwiftUI
 
 /// A single pressure presentation for BLE, Fleet snapshots and the NAS archive.
+///
+/// v90: the 270pt interior photo and the four per-wheel timestamps are gone. A
+/// tyre card is read at a glance — four numbers on a car outline — so the photo
+/// was carrying no information the numbers did not already carry, and repeating
+/// the same reception time four times pushed the values apart for nothing. The
+/// newest of the four timestamps is now one caption on the title row.
 struct TirePressureDiagram: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.vehicleUnits) private var units
@@ -26,26 +32,60 @@ struct TirePressureDiagram: View {
         }
         return TirePressureSample.newest(candidates)
     }
+
+    /// The single time the card reports: the newest reading behind any wheel.
+    private var receivedAt: Date? { (0..<4).compactMap { sample($0)?.at }.max() }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("타이어 공기압", systemImage: "tirepressure").font(.headline)
-            ZStack {
-                Image("TeslaYLInterior").resizable().scaledToFit().frame(height: 270).accessibilityHidden(true)
-                VStack {
-                    HStack { wheel(0); Spacer(); wheel(1) }
-                    Spacer()
-                    HStack { wheel(2); Spacer(); wheel(3) }
-                }.padding(.vertical, 18)
-            }.frame(height: 270).accessibilityIdentifier("fleet.tires")
-            Text("각 바퀴의 마지막 수신값 · 주행 직후에는 공기압이 높아질 수 있습니다.").font(.caption2).foregroundStyle(Theme.muted)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("타이어 공기압").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                Spacer()
+                Text(receivedAt.map { $0.formatted(date: .omitted, time: .shortened) } ?? "미수신")
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted).monospacedDigit()
+            }
+            HStack(spacing: 14) {
+                VStack(spacing: 26) { wheel(0); wheel(2) }
+                CarOutline().stroke(Color.white.opacity(0.22), lineWidth: 1.2).frame(width: 56, height: 108)
+                VStack(spacing: 26) { wheel(1); wheel(3) }
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("fleet.tires")
+            Text("주행 직후에는 공기압이 높게 나올 수 있음").font(.caption2).foregroundStyle(Theme.muted)
         }
     }
+
+    /// Value on top, corner label under it — the number is what the eye needs first.
     private func wheel(_ index: Int) -> some View {
         let reading = sample(index)
-        return VStack(spacing: 4) {
-            Text(["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][index]).font(.caption2)
-            Text(units.format(reading?.validBar, suffix: " bar")).font(.subheadline.bold()).monospacedDigit()
-            if let at = reading?.at { Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(Theme.muted) }
-        }.padding(9).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        let parts = units.displayParts(reading?.validBar, suffix: "bar")
+        return VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(parts.0)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(reading?.validBar == nil ? Theme.muted : .white)
+                Text(parts.1.trimmingCharacters(in: .whitespaces))
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted)
+            }
+            Text(["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"][index])
+                .font(.system(size: 11)).foregroundStyle(Theme.muted)
+        }
+        .frame(width: 72)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A plain top-down car silhouette: body, windscreen, rear screen. Enough to say
+/// which number belongs to which corner without carrying a photograph.
+private struct CarOutline: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addRoundedRect(in: rect, cornerSize: CGSize(width: rect.width * 0.34, height: rect.width * 0.34))
+        let inset = rect.width * 0.17
+        path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + rect.height * 0.26))
+        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY + rect.height * 0.26))
+        path.move(to: CGPoint(x: rect.minX + inset, y: rect.maxY - rect.height * 0.26))
+        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - rect.height * 0.26))
+        return path
     }
 }
