@@ -62,7 +62,7 @@ extension AppModel {
         case .home:
             details = [battery, inside]
         case .controls, .security, .vehicle3D:
-            details = scope == .security ? [connection] : []
+            details = []
         case .trips, .allTrips:
             let selected = rows ?? output.object("energyPeriods").object(String(days)).rows("trips")
             details = BriefingScope.tripSummary(selected.map { $0.number("distanceKm") })
@@ -94,7 +94,7 @@ extension AppModel {
         case .location:
             let location = home.object("location")
             if location.flag("hasCoordinates"), let lat = location.number("latitude"), let lon = location.number("longitude"), lat.isFinite, lon.isFinite {
-                details = [address.isEmpty ? String(format: "마지막 위치 위도 %.4f, 경도 %.4f입니다.", lat, lon) : "마지막 위치 \(address)입니다.", "수신 \(dateText(location.number("gpsAt")))입니다."]
+                details = [address.isEmpty ? "마지막 확인 위치는 지도에서 볼 수 있습니다." : "마지막 위치 \(address)입니다.", "수신 \(dateText(location.number("gpsAt")))입니다."]
             } else { details = ["차량 위치를 아직 수신하지 못했습니다."] }
         case .care:
             details = ["정비 기록 \(state.rows("maintenance").count)건입니다."]
