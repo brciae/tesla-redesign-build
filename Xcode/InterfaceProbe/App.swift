@@ -299,7 +299,7 @@ struct MotionButtonStyle: ButtonStyle {
 
 
 func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { value.map { String(format: "%.*f", digits, $0) + suffix } ?? "—" }
-func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object { ["climate": ["insideC": 25.0, "outsideC": 29.0, "targetC": 22.0, "isOn": false]] }
+func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object { ["charge": ["soc": 90.0, "rangeKm": 451.0, "isCharging": false], "climate": ["insideC": 25.0, "outsideC": 29.0, "targetC": 22.0, "isOn": false]] }
 final class VehicleLink: ObservableObject {
     var controlBusy = false; var preparingControl = false; var confirmation: String?
 }

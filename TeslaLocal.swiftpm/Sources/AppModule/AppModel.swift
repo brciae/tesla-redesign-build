@@ -18,6 +18,7 @@ final class AppModel: ObservableObject {
     let aiRules = AutomationAI()
     let voice = VoiceCoordinator()
     @Published var output: Object = [:]
+    @Published private(set) var archiveReadings: [FleetTelemetryReading] = []
     @Published var errorMessage: String?
     @Published private(set) var storageStatus: String?
     @Published var demo = false
@@ -31,7 +32,7 @@ final class AppModel: ObservableObject {
         var values = [vehicleReference.number("odometerKm")]
         if settings.string("vin") == vin { values.append(groups.object("drive").number("odometerKm")) }
         if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin { values.append(snapshot.number("vehicle_state", "odometer").map { $0 * 1.609344 }) }
-        if !demo, let reading = FleetTelemetryStore.shared.latest(vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
+        if !demo, let reading = FleetTelemetryData.latest(archiveReadings, vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
         return values.compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max()
     }
     var isSpeaking: Bool { voice.speaking }
@@ -104,7 +105,8 @@ final class AppModel: ObservableObject {
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
         }
-        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.objectWillChange.send() } }
+        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.archiveReadings = FleetTelemetryStore.shared.records } }
+        Task { @MainActor [weak self] in self?.archiveReadings = FleetTelemetryStore.shared.records }
         automations.settingsDidChange = { [weak self] in self?.voice.stopAutomatic(); self?.link.cancelPendingAutomation() }
         navigation.canPresent = { [weak self] in
             guard let self else { return false }
@@ -179,12 +181,12 @@ final class AppModel: ObservableObject {
         if let protectedDataObserver { NotificationCenter.default.removeObserver(protectedDataObserver) }
     }
     private func syncArchiveIfNeeded() {
+        Task { @MainActor in
         guard !demo, UIApplication.shared.applicationState == .active,
               Date().timeIntervalSince(lastArchiveSync) >= 30, !FleetArchiveClient.shared.address.isEmpty,
               !fleet.selectedVin.isEmpty else { return }
         lastArchiveSync = Date()
         let vin = fleet.selectedVin
-        Task {
             await FleetArchiveClient.shared.sync(vin: vin)
             guard !self.demo, self.fleet.selectedVin == vin else { return }
             let rows: [Object] = FleetTelemetryStore.shared.records.filter { $0.vin == vin }.map { r in
