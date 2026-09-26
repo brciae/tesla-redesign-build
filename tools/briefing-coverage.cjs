@@ -7,15 +7,14 @@ const screens = {
   'FleetInsightsView.swift': ['FleetInsightsView'],
   'App.swift': ['DriveView','BriefingView','TripsView','TripListView','BatteryView','ChargeListView','ChargeForm'],
   'HomeViews.swift': ['HomeView','LocationStatusView','ChargeStatusView','SecurityStatusView','EnergyTabRootView','MenuTabRootView'],
-  'ManagementViews.swift': ['CareView','ParkingHistoryView','MaintenanceForm','ParkingForm','AutomationUtilitiesView','ConnectionView'],
+  'ManagementViews.swift': ['CareView','ParkingHistoryView','MaintenanceForm','ParkingForm'],
   'AutomationViews.swift': ['AutomationDashboard','AutomationRuleEditor','AutomationHistory','AutomationImportView','AutomationAIView'],
   'VehicleAppearanceView.swift': ['VehicleAppearanceView'],
   'TypecastCharacterPickerSheet.swift': ['TypecastCharacterPickerSheet'],
-  'TeslaInteractiveControlsView.swift': ['TeslaInteractiveControlsView','TeslaFleetTokenSheet'],
+  'TeslaInteractiveControlsView.swift': ['TeslaInteractiveControlsView'],
   'TeslaInteractiveClimateView.swift': ['TeslaInteractiveClimateView'],
   'ChargingWorkspace.swift': ['ChargingWorkspace'],
   'DrivingWorkspace.swift': ['DrivingWorkspace'],
-  'PreferencesView.swift': ['PreferencesView'],
   'EmbeddedNavigation.swift': ['EmbeddedNavigationScreen','NavigationSetupView'],
   'SmartParkingCard.swift': ['SmartParkingCard'],
   'HomeModules.swift': ['HomeLayoutEditor']
@@ -33,7 +32,6 @@ for (const [file, names] of Object.entries(screens)) {
   }
 }
 for (const [file, marker] of [
-  ['PreferencesView.swift','LocalBriefingControls(title: "음성 세부 설정")'],
   ['DrivingWorkspace.swift','LocalBriefingControls(title: "운전 화면 설정")'],
   ['TeslaInteractiveControlsView.swift','LocalBriefingControls(title: "토큰 발급 안내")'],
   ['App.swift','PageBody(title: "차량 3D", briefing: .vehicle3D)']

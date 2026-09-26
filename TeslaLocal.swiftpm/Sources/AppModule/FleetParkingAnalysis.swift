@@ -47,7 +47,8 @@ enum FleetParkingAnalysis {
             let charging = scalar(current("ChargeState", at: date))
             let detail = scalar(current("DetailedChargeState", at: date))
             guard charging == "stopped" || charging == "complete" || charging == "disconnected" || charging == "nopower" || detail?.hasSuffix("stopped") == true || detail?.hasSuffix("complete") == true || detail?.hasSuffix("disconnected") == true else { previous = nil; continue }
-            let sentry = state(current("SentryMode", at: date)), climate = state(current("HvacPower", at: date))
+            let sentry = state(current("SentryMode", at: date))
+            let climate = state(current("HvacPower", at: date)) ?? current("HvacFanStatus", at: date)?.number.map { $0 > 0 }
             let category: String
             switch (sentry, climate) {
             case (true?, true?): category = "combined"
