@@ -5,8 +5,10 @@ const root = 'TeslaLocal.swiftpm/Sources/AppModule/';
 // OS camera, sharing, file/permission pickers are intentionally outside app narration.
 const screens = {
   'FleetInsightsView.swift': ['FleetInsightsView'],
-  'App.swift': ['DriveView','BriefingView','TripsView','TripListView','BatteryView','ChargeListView','ChargeForm'],
-  'HomeViews.swift': ['HomeView','LocationStatusView','ChargeStatusView','SecurityStatusView','EnergyTabRootView','MenuTabRootView'],
+  'App.swift': ['BriefingView','TripsView','TripListView','BatteryView','ChargeListView','ChargeForm'],
+  // v90: EnergyTabRootView is a plain segment container now — its 배터리 분석
+  // segment shows BatteryView, which carries the .batteryAndCharging briefing.
+  'HomeViews.swift': ['HomeView','LocationStatusView','ChargeStatusView','SecurityStatusView','MenuTabRootView'],
   'ManagementViews.swift': ['CareView','ParkingHistoryView','MaintenanceForm','ParkingForm'],
   'AutomationViews.swift': ['AutomationDashboard','AutomationRuleEditor','AutomationHistory','AutomationImportView','AutomationAIView'],
   'VehicleAppearanceView.swift': ['VehicleAppearanceView'],
@@ -16,8 +18,7 @@ const screens = {
   'ChargingWorkspace.swift': ['ChargingWorkspace'],
   'DrivingWorkspace.swift': ['DrivingWorkspace'],
   'EmbeddedNavigation.swift': ['EmbeddedNavigationScreen','NavigationSetupView'],
-  'SmartParkingCard.swift': ['SmartParkingCard'],
-  'HomeModules.swift': ['HomeLayoutEditor']
+  'SmartParkingCard.swift': ['SmartParkingCard']
 };
 let count = 0;
 for (const [file, names] of Object.entries(screens)) {
@@ -32,9 +33,39 @@ for (const [file, names] of Object.entries(screens)) {
   }
 }
 for (const [file, marker] of [
-  ['TeslaInteractiveControlsView.swift','LocalBriefingControls(title: "토큰 발급 안내")'],
-  ['App.swift','PageBody(title: "차량 3D", briefing: .vehicle3D)']
+  ['TeslaInteractiveControlsView.swift','LocalBriefingControls(title: "토큰 발급 안내")']
 ]) assert(fs.readFileSync(root+file,'utf8').includes(marker), `Missing nested screen: ${marker}`);
+
+// v90: the duplicate-entry-point audit, kept as a check so the menus cannot grow
+// a second door to the same screen again. Every Page must be routed exactly once
+// in destinationView, listed at most once in the 메뉴 tab, and reachable at all.
+{
+  const app = fs.readFileSync(root + 'App.swift', 'utf8');
+  const enumBody = app.slice(app.indexOf('enum Page: String, Hashable {'), app.indexOf('func valueText('));
+  const cases = [...enumBody.matchAll(/case ([A-Za-z0-9]+) =/g)].map(m => m[1])
+    .concat([...enumBody.matchAll(/, ([A-Za-z0-9]+) =/g)].map(m => m[1]));
+  const pages = [...new Set(cases)];
+  assert(pages.length > 0, 'Page enum not found');
+  const router = app.slice(app.indexOf('private func destinationView(for page: Page)'), app.indexOf('struct PageBody<Content: View>'));
+  assert(router.length > 0, 'destinationView not found');
+  const sources = fs.readdirSync(root).filter(x => x.endsWith('.swift'))
+    .map(f => fs.readFileSync(root + f, 'utf8')).join('\n');
+  for (const page of pages) {
+    const routed = [...router.matchAll(new RegExp(`case \\.${page}:`, 'g'))].length;
+    assert.equal(routed, 1, `Page.${page} must be routed exactly once in destinationView`);
+    const menuRows = [...sources.matchAll(new RegExp(`glassMenuItem\\(\\.${page},`, 'g'))].length;
+    assert(menuRows <= 1, `Page.${page} appears ${menuRows} times in the 메뉴 list`);
+    // The home quick-action row and the 메뉴 index are different surfaces, so a
+    // page may hold one of each — but never two rows on the same surface.
+    const tiles = [...sources.matchAll(new RegExp(`quickControlTile\\(\\s*\\.${page},`, 'g'))].length;
+    assert(tiles <= 1, `Page.${page} appears ${tiles} times in the home quick-action row`);
+    const links = [...sources.matchAll(new RegExp(`(?:value: )?Page\\.${page}\\b`, 'g'))].length + menuRows + tiles;
+    assert(links > 0, `Page.${page} is unreachable — delete the case or give it an entry point`);
+  }
+  assert(!sources.includes('struct DriveView'), 'DriveView was folded into the 운행 tab; do not reintroduce it');
+  assert(!fs.existsSync(root + 'HomeModules.swift'), 'HomeModules.swift was a dead second menu system');
+  assert(sources.includes('Button("회차 수동 종료")'), '회차 수동 종료 must survive the DriveView removal');
+}
 for (const file of fs.readdirSync(root).filter(x=>x.endsWith('.swift'))) {
   const source = fs.readFileSync(root+file,'utf8');
   assert(!source.includes('ScreenBriefingControls(screen:'), `${file}: title-based dispatch returned`);
@@ -47,7 +78,7 @@ const home = require('../'+root+'Resources/home.js');
 for (const [state, expected] of [[5,true],[3,false],[0,null],[undefined,null]]) {
   assert.equal(home.presentation({groups:{charge:{charging:state}}}).charge.isCharging, expected, 'BLE charging enum must not be treated as Bool');
 }
-console.log(`PASS: ${count} view structures + 4 nested screens; explicit scoped bindings (source audit, not rendered UI QA)`);
+console.log(`PASS: ${count} view structures + 1 nested screen; explicit scoped bindings (source audit, not rendered UI QA)`);
 
 const scoped = fs.readFileSync(root+'ScreenBriefing.swift','utf8');
 assert(scoped.includes('if scope.supportsSpeech'), 'Settings/menu scopes must not render voice controls');
