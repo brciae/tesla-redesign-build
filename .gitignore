@@ -10,3 +10,4 @@ test_voice.py
 __pycache__/
 server/certs/
 server/telemetry-config.json
+server/signing/
