@@ -427,7 +427,13 @@
         const detail=String(scalar('DetailedChargeState')??'').replace('DetailedChargeState','');
         const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
         if(charging===5&&previousCharge!==5)chargeBegan=at;
-        const added=chargeBegan!==null&&latest.DCChargingEnergyIn?.at>=chargeBegan?scalar('DCChargingEnergyIn'):null;
+        // v91: only DC was read, so every home charge stored addedKWh:null - for a
+        // car charged on AC that is every session. The two counters never run at
+        // once, so whichever one this session moved is the session's energy.
+        const energyField=chargeBegan===null?null:
+          latest.DCChargingEnergyIn?.at>=chargeBegan?'DCChargingEnergyIn':
+          latest.ACChargingEnergyIn?.at>=chargeBegan?'ACChargingEnergyIn':null;
+        const added=energyField?scalar(energyField):null;
         if(charging!==undefined){replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);previousCharge=charging;}
         if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
       }
