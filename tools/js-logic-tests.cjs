@@ -216,5 +216,7 @@ console.log('PASS: receipt parsing');
  e.ingestArchive({vin,rows});
  chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].supplyKWh,16);chargeAssert.equal(e.state.charges[0].vehicleReportedKWh,14);
  chargeAssert.equal(e.state.charges[0].startSOC,40);chargeAssert.equal(e.state.charges[0].endSOC,60);
+ e.state.charges[0].cost=5000;e.state.charges[0].place='Verified receipt';
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges[0].cost,5000);chargeAssert.equal(e.state.charges[0].place,'Verified receipt');
  console.log('PASS: simultaneous grid/battery counters kept separate without double counting');
 }

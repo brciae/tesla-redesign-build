@@ -451,7 +451,18 @@
         const start=kind==='trips'?source.start:source.at,end=source.end??start;
         const row={...source,id:'nas:'+vin+':'+kind+':'+start,source:'NAS'};
         const list=this.state[kind],same=list.findIndex(x=>x.id===row.id);
-        if(same>=0){list[same]=row;continue;}
+        if(same>=0){
+          const old=list[same];
+          if(kind==='charges'){
+            // Replaying the archive must not erase receipt/manual additions or earlier evidence.
+            const merged={...row,...old};
+            for(const key of ['startSOC','endSOC','vehicleReportedKWh','supplyKWh'])if(merged[key]==null&&row[key]!=null)merged[key]=row[key];
+            if(!old.startSOCObserved&&row.startSOCObserved){merged.startSOC=row.startSOC;merged.startSOCObserved=true;merged.startSOCEstimated=false;}
+            if(!old.endSOCObserved&&row.endSOCObserved){merged.endSOC=row.endSOC;merged.endSOCObserved=true;merged.endSOCEstimated=false;}
+            list[same]=merged;
+          }else list[same]=row;
+          continue;
+        }
         const overlaps=x=>{const a=kind==='trips'?x.start:x.at,b=x.end??x.lastAt??a;return Math.min(end,b)>=Math.max(start,a);};
         // Prefer existing phone/manual records; never double-count one observed session.
         const existing=list.find(overlaps);
