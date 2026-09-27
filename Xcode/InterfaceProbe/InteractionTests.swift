@@ -140,8 +140,9 @@ final class InteractionTests: XCTestCase {
                 let media = app.staticTexts["navigation.media.title"]
                 XCTAssertTrue(media.exists, "media dock missing: \(theme)")
                 XCTAssertTrue(app.otherElements["navigation.modeling"].exists, "theme composition must be preserved")
-                let identifiers = ["클러스터": "cluster", "투어링": "touring", "미니멀": "minimal", "파노라마": "panorama", "포커스": "focus", "관제": "fleet"]
-                XCTAssertTrue(app.otherElements["navigation.theme." + identifiers[theme]!].exists)
+                XCTAssertTrue(button.isSelected, "selected theme must match the visible composition")
+                if theme == "투어링" { XCTAssertTrue(app.staticTexts["실내"].exists && app.staticTexts["외기"].exists) }
+                if theme == "관제" { XCTAssertTrue(app.staticTexts["경로 진행"].exists && app.staticTexts["남은 거리"].exists) }
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Navigation \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }

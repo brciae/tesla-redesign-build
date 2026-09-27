@@ -197,7 +197,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .opacity(theme == .minimal ? 0 : 1)
                 .allowsHitTesting(theme != .minimal)
                 .accessibilityHidden(theme == .minimal)
-            overlay(m).accessibilityElement(children: .contain).accessibilityIdentifier("navigation.theme." + theme.rawValue)
+            overlay(m)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
         .clipped()
