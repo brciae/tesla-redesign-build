@@ -135,10 +135,12 @@ final class AppModel: ObservableObject {
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
         }
+        Task { @MainActor [weak self] in
         FleetArchiveClient.shared.onPageSaved = { [weak self] vin in
             guard let self, !self.demo, self.fleet.selectedVin == vin else { throw CancellationError() }
             try self.mergeArchiveHistory(vin: vin)
             try self.persist()
+        }
         }
         archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.archiveReadings = FleetTelemetryStore.shared.records } }
         Task { @MainActor [weak self] in self?.archiveReadings = FleetTelemetryStore.shared.records }
@@ -229,7 +231,7 @@ final class AppModel: ObservableObject {
             catch { self.storageStatus = "NAS 기록 통합: " + error.localizedDescription }
         }
     }
-    private func mergeArchiveHistory(vin: String) throws {
+    @MainActor private func mergeArchiveHistory(vin: String) throws {
         let rows: [Object] = FleetTelemetryStore.shared.records.filter { $0.vin == vin }.map { r in
             var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "field": r.field, "text": r.text, "invalid": r.invalid]
             if let n = r.number { value["number"] = n }; return value
