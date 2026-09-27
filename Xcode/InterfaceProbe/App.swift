@@ -259,10 +259,14 @@ struct ProbeRoot: View {
     func screenBriefing(_ scope: BriefingScope, days: Int = 30) -> String { "검증용 브리핑입니다." }
     var demo = true
 }
+// The fixture's Theme must carry every member the app's Theme carries, or a
+// shared source file compiles in the app and fails only here. It drifted once
+// already; briefing-coverage.cjs now compares the two member lists.
 enum Theme {
     static let bg = Color(red: 23/255, green: 24/255, blue: 26/255)
     static let surface = Color(red: 34/255, green: 35/255, blue: 38/255)
     static let muted = Color(red: 174/255, green: 178/255, blue: 183/255)
+    static let green = Color(red: 93/255, green: 205/255, blue: 144/255)
 }
 
 struct InfoCard<Content: View>: View {
