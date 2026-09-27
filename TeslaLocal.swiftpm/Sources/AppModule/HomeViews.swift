@@ -17,7 +17,21 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
     // Use Fleet for a display group that BLE has not delivered. Never inject it into BLE command evidence.
     if !model.demo, link.authentic, let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
         for (name, value) in snapshot.homeOverlay() {
-            if result.object(name).string("mode") != "recent", let group = value as? Object, group.string("mode") == "recent" {
+            guard let group = value as? Object else { continue }
+            let existing = result.object(name)
+            if existing.string("mode") != "recent", group.string("mode") == "recent" {
+                result[name] = group
+            } else if name == "location", !existing.flag("hasCoordinates"), group.flag("hasCoordinates") {
+                // v91: a parked car's fix is old by definition — drive_state stops
+                // ticking the moment it parks, so the Fleet location group is never
+                // "recent" again and this loop used to drop it. BLE carries no usable
+                // position while the car sleeps, so the app showed 위치 미수신 while
+                // holding a perfectly good coordinate. The stored fix is the answer to
+                // "where is it"; it keeps Fleet's own mode and timestamp, so the screen
+                // still says how old it is rather than claiming it is live.
+                result[name] = group
+            } else if name == "drive", existing.string("gear").isEmpty, !group.string("gear").isEmpty {
+                // Same for the gear behind 주차 중 / 정차 중.
                 result[name] = group
             }
         }
@@ -28,6 +42,16 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
             let existing = result.object(name)
             if existing.string("mode") == "missing" || (group.number("at") ?? 0) > (existing.number("at") ?? 0) { result[name] = group }
         }
+    }
+    // v91: whichever drive group won above may have come from Fleet or the NAS
+    // archive, which carry gear and speed but not the 주차 중 / 정차 중 wording.
+    // Running the winner back through the one rule in home.js keeps a
+    // Fleet-sourced state from drifting away from a BLE-sourced one.
+    let drive = result.object("drive")
+    if !drive.isEmpty, let fields = (try? model.runtime.call("homeMotion", drive)) as? Object {
+        var merged = drive
+        for (key, value) in fields { merged[key] = value }
+        result["drive"] = merged
     }
     return result
 }
@@ -230,6 +254,8 @@ struct HomeView: View {
             }
             .buttonStyle(MotionButtonStyle())
             .accessibilityLabel("차량 프로필 및 연결 설정")
+
+            VehicleMotionBadge(drive: p.object("drive"), compact: true)
 
             HStack(spacing: 8) {
 
@@ -455,6 +481,43 @@ struct ClimateStatusView: View {
     }
 }
 
+/// v91: 주차 중 / 정차 중 / 주행 중, with how old the reading is. Other Tesla
+/// apps lead with this and the app already had the gear and speed in hand; it
+/// simply never rendered them, so the car's state read 상태 미수신 even when a
+/// good response had just arrived.
+struct VehicleMotionBadge: View {
+    let drive: Object
+    var compact = false
+    private var motion: String { drive.string("motion") }
+    private var icon: String {
+        switch motion {
+        case "parked": return "parkingsign.circle.fill"
+        case "driving": return "steeringwheel"
+        case "stopped": return "pause.circle.fill"
+        default: return "questionmark.circle"
+        }
+    }
+    private var tint: Color {
+        switch motion {
+        case "parked": return Theme.green
+        case "driving": return Color(red: 0.35, green: 0.65, blue: 1.0)
+        case "stopped": return Color.orange
+        default: return Theme.muted
+        }
+    }
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: compact ? 11 : 13, weight: .semibold))
+            Text(drive.string("motionLabel", "상태 미수신")).font(.system(size: compact ? 12 : 14, weight: .semibold))
+            if let at = drive.number("at") {
+                Text(dateText(at)).font(.system(size: compact ? 11 : 12)).foregroundStyle(Theme.muted).monospacedDigit()
+            }
+        }
+        .foregroundStyle(tint)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct LocationStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
@@ -469,6 +532,7 @@ struct LocationStatusView: View {
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 14) {
                         CardTitle(title: "마지막 수신 위치", systemImage: "location.north.circle.fill")
+                        VehicleMotionBadge(drive: homePresentation(model, link).object("drive"))
                         if hasCoords, let lat = lat, let lng = lng {
                             VStack(alignment: .leading, spacing: 8) {
                                 // Prominent Korean address
