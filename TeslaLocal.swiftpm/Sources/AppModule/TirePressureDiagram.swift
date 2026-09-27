@@ -46,7 +46,7 @@ struct TirePressureDiagram: View {
             }
             HStack(spacing: 14) {
                 VStack(spacing: 26) { wheel(0); wheel(2) }
-                CarOutline().stroke(Color.white.opacity(0.22), lineWidth: 1.2).frame(width: 56, height: 108)
+                CarOutline().stroke(Color.white.opacity(0.28), lineWidth: 1.2).frame(width: 52, height: 104)
                 VStack(spacing: 26) { wheel(1); wheel(3) }
             }
             .frame(maxWidth: .infinity)
@@ -75,17 +75,47 @@ struct TirePressureDiagram: View {
     }
 }
 
-/// A plain top-down car silhouette: body, windscreen, rear screen. Enough to say
-/// which number belongs to which corner without carrying a photograph.
+/// A top-down car silhouette: a body that narrows at the front, a windscreen and
+/// rear screen, and a wheel outside each corner beside the number that belongs
+/// to it.
+///
+/// v91: the first version was a plain rounded rectangle with two lines across it,
+/// and the simulator screenshot showed exactly that — a pill, not a car. The
+/// narrower nose gives it a front, and the four wheels sitting outside the body
+/// are what make the corner mapping read without the labels carrying it alone.
 private struct CarOutline: Shape {
     func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.addRoundedRect(in: rect, cornerSize: CGSize(width: rect.width * 0.34, height: rect.width * 0.34))
-        let inset = rect.width * 0.17
-        path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + rect.height * 0.26))
-        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY + rect.height * 0.26))
-        path.move(to: CGPoint(x: rect.minX + inset, y: rect.maxY - rect.height * 0.26))
-        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - rect.height * 0.26))
+        let w = rect.width, h = rect.height
+        let noseIn = w * 0.22, tailIn = w * 0.10
+        let shoulder = h * 0.16, hip = h * 0.84
+        var body = Path()
+        body.move(to: CGPoint(x: rect.minX + noseIn, y: rect.minY))
+        body.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY + shoulder),
+                          control: CGPoint(x: rect.minX, y: rect.minY))
+        body.addLine(to: CGPoint(x: rect.minX, y: rect.minY + hip))
+        body.addQuadCurve(to: CGPoint(x: rect.minX + tailIn, y: rect.maxY),
+                          control: CGPoint(x: rect.minX, y: rect.maxY))
+        body.addLine(to: CGPoint(x: rect.maxX - tailIn, y: rect.maxY))
+        body.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + hip),
+                          control: CGPoint(x: rect.maxX, y: rect.maxY))
+        body.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + shoulder))
+        body.addQuadCurve(to: CGPoint(x: rect.maxX - noseIn, y: rect.minY),
+                          control: CGPoint(x: rect.maxX, y: rect.minY))
+        body.closeSubpath()
+
+        var path = body
+        let screenInset = w * 0.16
+        for y in [rect.minY + h * 0.30, rect.maxY - h * 0.22] {
+            path.move(to: CGPoint(x: rect.minX + screenInset, y: y))
+            path.addLine(to: CGPoint(x: rect.maxX - screenInset, y: y))
+        }
+        let wheelW = w * 0.13, wheelH = h * 0.14
+        for y in [rect.minY + h * 0.19, rect.maxY - h * 0.19 - wheelH] {
+            for x in [rect.minX - wheelW, rect.maxX] {
+                path.addRoundedRect(in: CGRect(x: x, y: y, width: wheelW, height: wheelH),
+                                    cornerSize: CGSize(width: wheelW * 0.4, height: wheelW * 0.4))
+            }
+        }
         return path
     }
 }

@@ -40,14 +40,25 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
         for (name, raw) in FleetTelemetryData.homeOverlay(model.archiveReadings, vin: model.fleet.selectedVin) {
             guard let group = raw as? Object else { continue }
             let existing = result.object(name)
-            if existing.string("mode") == "missing" || (group.number("at") ?? 0) > (existing.number("at") ?? 0) { result[name] = group }
+            let newer = existing.string("mode") == "missing" || (group.number("at") ?? 0) > (existing.number("at") ?? 0)
+            guard newer else { continue }
+            // v91: this used to swap the whole group. FleetTelemetryData.homeOverlay
+            // only writes keys whose reading is present and valid, so a NAS update
+            // carrying a fresh Soc but no TimeToFullCharge replaced BLE's chargerKW,
+            // addedKWh and limit with nothing. Merge per key: the NAS wins where it
+            // has a value, and everything it is silent about survives. The
+            // Fleet-snapshot merge above is already careful this way; this one was
+            // not, and it gets more likely the more continuous the NAS feed becomes.
+            var merged = existing
+            for (key, value) in group { merged[key] = value }
+            result[name] = merged
         }
     }
     // v91: whichever drive group won above may have come from Fleet or the NAS
     // archive, which carry gear and speed but not the 주차 중 / 정차 중 wording.
     // Running the winner back through the one rule in home.js keeps a
     // Fleet-sourced state from drifting away from a BLE-sourced one.
-    let drive = result.object("drive")
+    let drive = model.rememberMotion(result.object("drive"))
     if !drive.isEmpty, let fields = (try? model.runtime.call("homeMotion", drive)) as? Object {
         var merged = drive
         for (key, value) in fields { merged[key] = value }
@@ -203,94 +214,60 @@ struct HomeView: View {
         .refreshable { model.refreshVehicle() }
     }
 
-    private var fleetStatusCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(model.fleet.vehicleDisplayStatus, systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Button {
-                    Task { @MainActor in await model.fleet.refreshVehicleSnapshot(force: true) }
-                } label: { Image(systemName: "arrow.clockwise").frame(width: 36, height: 36) }
-                .disabled(model.fleet.isReadingVehicle)
-                .accessibilityLabel("Fleet 차량 상태 새로고침")
-            }
-            if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
-                HStack(spacing: 16) {
-                    Text(snapshot.soc.map { "배터리 \(Int($0))%" } ?? "배터리 미수신")
-                    Text(snapshot.rangeKm.map { "주행가능 \(Int($0)) km" } ?? "거리 미수신")
-                }.font(.subheadline)
-                HStack(spacing: 16) {
-                    Text(snapshot.locked.map { $0 ? "도어 잠김" : "도어 잠금 해제" } ?? "잠금 상태 미수신")
-                    if let inside = snapshot.insideC { Text("실내 \(Int(inside.rounded()))°C") }
-                }.font(.caption)
-                Text("Fleet 마지막 수신 \(snapshot.receivedAt.formatted(date: .omitted, time: .standard)) · 실시간 스트리밍 아님")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if let error = model.fleet.vehicleReadError {
-                Text(error).font(.caption).foregroundStyle(.orange)
-            } else if model.fleet.vehicleReadStatus == "차량 절전 중" || model.fleet.vehicleReadStatus == "차량 오프라인" {
-                Text("계정 연결은 완료됨. 차량이 깨어나고 통신이 가능해진 뒤 새로고침하면 현재 상태를 조회합니다.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-    }
+    private var fleetStatusCard: some View { FleetStatusCard() }
 
+    // v92: the header ran to three stacked lines with the briefing controls
+    // marooned across an empty row. Name and briefing share the top line; the
+    // state and connection chips sit together on the second, which is how a
+    // phone app's header reads — identity above, status below.
     private func headerView(p: Object, c: Object) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Vehicle profile pill
-            NavigationLink(value: Page.connection) {
-                HStack(spacing: 8) {
-                    Text(model.settings.string("name", "Model Y"))
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
+                NavigationLink(value: Page.connection) {
+                    HStack(spacing: 6) {
+                        Text(model.settings.string("name", "Model Y"))
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                    }
+                    .frame(minHeight: 44)
                 }
-                .frame(minHeight: 44)
-            }
-            .buttonStyle(MotionButtonStyle())
-            .accessibilityLabel("차량 프로필 및 연결 설정")
+                .buttonStyle(MotionButtonStyle())
+                .accessibilityLabel("차량 프로필 및 연결 설정")
 
-            VehicleMotionBadge(drive: p.object("drive"), compact: true)
+                Spacer(minLength: 8)
+                ScreenBriefingControls(scope: .home, compact: true)
+            }
 
             HStack(spacing: 8) {
-
-            // Live Connection Status Badge — v90: display only. The vehicle
-            // profile pill above is the single route to 연결 상태.
-            Group {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray))
-                        .frame(width: 8, height: 8)
-                        .shadow(color: (link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange).opacity(0.7), radius: 4)
-                    Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                        .foregroundStyle(Color.white.opacity(0.9))
-                    if link.refreshing || model.fleet.isReadingVehicle {
-                        ProgressView().controlSize(.mini)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(Color(white: 0.14).opacity(0.8))
-                        .background(.ultraThinMaterial, in: Capsule())
-                )
-                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
-            }
-            .accessibilityElement(children: .combine)
-
-            // v90: the gear shortcut is gone — 설정 is the 메뉴 tab's job.
-            Spacer(minLength: 8)
-            ScreenBriefingControls(scope: .home, compact: true)
+                VehicleMotionBadge(drive: p.object("drive"), compact: true)
+                Text("·").foregroundStyle(Color.white.opacity(0.25))
+                connectionChip
+                Spacer(minLength: 0)
             }
         }
+    }
+
+    // Display only — the vehicle profile above is the single route to 연결 상태.
+    private var connectionChip: some View {
+        let live = link.authentic && !model.demo
+        let tint = live ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray)
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(tint)
+                .frame(width: 7, height: 7)
+                .shadow(color: tint.opacity(0.7), radius: 4)
+            Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .foregroundStyle(Color.white.opacity(0.85))
+            if link.refreshing || model.fleet.isReadingVehicle {
+                ProgressView().controlSize(.mini)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func quickControlTile(_ page: Page, _ symbol: String, _ title: String, highlight: Bool = false) -> some View {
@@ -518,113 +495,290 @@ struct VehicleMotionBadge: View {
     }
 }
 
+/// v92: the old card showed "상태 미수신 · 위치 정보를 수신하지 못했습니다" while a
+/// saved parking record with a full address sat two cards below it on the same
+/// screen. A car that is not reporting right now was still somewhere the last
+/// time it did, and that is the answer to "where is my car" — so the saved
+/// position is used when no live one is available, labelled as what it is.
+/// v92: this was four stacked lines of running text — "배터리 34%  주행가능 190 km"
+/// then "잠금 상태 미수신" then a full timestamp sentence. The numbers are the
+/// point, so they are tiles; the lock state is a chip; and the reception time is
+/// a caption on the title row instead of a sentence of its own.
+struct FleetStatusCard: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let snapshot = model.fleet.vehicleSnapshot.flatMap { $0.vin == model.fleet.selectedVin ? $0 : nil }
+        VStack(alignment: .leading, spacing: 14) {
+            titleRow(snapshot)
+            if let snapshot {
+                HStack(spacing: 0) {
+                    tile(snapshot.soc.map { "\(Int($0))" }, "%", "배터리")
+                    divider
+                    tile(snapshot.rangeKm.map { "\(Int($0))" }, "km", "주행 가능")
+                    divider
+                    tile(snapshot.insideC.map { "\(Int($0.rounded()))" }, "°C", "실내")
+                }
+                lockChip(snapshot.locked)
+            }
+            notice
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(white: 0.12).opacity(0.75))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        )
+    }
+
+    private func titleRow(_ snapshot: FleetVehicleSnapshot?) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
+            Text(model.fleet.vehicleDisplayStatus)
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+            Spacer(minLength: 4)
+            if let at = snapshot?.receivedAt {
+                Text(at.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted).monospacedDigit()
+            }
+            Button {
+                Task { @MainActor in await model.fleet.refreshVehicleSnapshot(force: true) }
+            } label: {
+                Group {
+                    if model.fleet.isReadingVehicle { ProgressView().controlSize(.mini) }
+                    else { Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold)) }
+                }
+                .frame(width: 32, height: 32)
+                .background(Color.white.opacity(0.08), in: Circle())
+                .foregroundStyle(.white)
+            }
+            .disabled(model.fleet.isReadingVehicle)
+            .accessibilityLabel("Fleet 차량 상태 새로고침")
+        }
+    }
+
+    private func tile(_ value: String?, _ unit: String, _ label: String) -> some View {
+        VStack(spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value ?? "—")
+                    .font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(value == nil ? Theme.muted : .white)
+                if value != nil {
+                    Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.muted)
+                }
+            }
+            Text(label).font(.system(size: 11)).foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1, height: 28)
+    }
+
+    private func lockChip(_ locked: Bool?) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: locked == nil ? "lock.slash" : (locked! ? "lock.fill" : "lock.open.fill"))
+                .font(.system(size: 11, weight: .semibold))
+            Text(locked.map { $0 ? "도어 잠김" : "도어 잠금 해제" } ?? "잠금 미수신")
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(locked == nil ? Theme.muted : (locked! ? Theme.green : Color.orange))
+        .padding(.horizontal, 9).padding(.vertical, 5)
+        .background(Color.white.opacity(0.07), in: Capsule())
+    }
+
+    @ViewBuilder private var notice: some View {
+        if let error = model.fleet.vehicleReadError {
+            Text(error).font(.system(size: 12)).foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if model.fleet.vehicleReadStatus == "차량 절전 중" || model.fleet.vehicleReadStatus == "차량 오프라인" {
+            Text("차량이 깨어나면 새로고침해서 현재 상태를 가져옵니다.")
+                .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct VehicleLocationCard: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var link: VehicleLink
+    @ObservedObject private var parking = SmartParkingManager.shared
+    let location: Object
+    let drive: Object
+    @Binding var address: String
+
+    private enum Source { case live, remembered }
+    private struct Fix { let latitude: Double; let longitude: Double; let at: Date?; let source: Source }
+
+    private var fix: Fix? {
+        if location.flag("hasCoordinates"), let lat = location.number("latitude"), let lon = location.number("longitude") {
+            return Fix(latitude: lat, longitude: lon,
+                       at: (location.number("gpsAt") ?? location.number("at")).map { Date(timeIntervalSince1970: $0 / 1000) },
+                       source: .live)
+        }
+        if let record = parking.latestRecord, let lat = record.effectiveLatitude, let lon = record.effectiveLongitude {
+            return Fix(latitude: lat, longitude: lon, at: record.timestamp, source: .remembered)
+        }
+        return nil
+    }
+
+    var body: some View {
+        GlassMenuCard {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                if let fix {
+                    placeName(fix)
+                    chips(fix)
+                    actions(fix)
+                } else {
+                    waiting
+                    refreshButton
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "location.north.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color(red: 0.25, green: 0.65, blue: 1.0))
+            Text("차량 위치").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+            Spacer(minLength: 4)
+            VehicleMotionBadge(drive: drive, compact: true)
+        }
+    }
+
+    @ViewBuilder private func placeName(_ fix: Fix) -> some View {
+        let saved = parking.latestRecord
+        let title: String = {
+            if !address.isEmpty { return address }
+            if fix.source == .remembered, let saved { return saved.displayTitle }
+            return "위치 확인 중…"
+        }()
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 21, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+            if fix.source == .remembered, let saved, !saved.displaySubtitle.isEmpty, saved.displaySubtitle != title {
+                Text(saved.displaySubtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+        }
+        .task(id: "\(fix.latitude),\(fix.longitude)") { await resolveAddress(fix) }
+    }
+
+    private func chips(_ fix: Fix) -> some View {
+        HStack(spacing: 6) {
+            if let at = fix.at { chip(elapsed(at), "clock") }
+            chip(fix.source == .live ? "차량 수신" : "마지막 주차 위치",
+                 fix.source == .live ? "antenna.radiowaves.left.and.right" : "parkingsign")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func chip(_ text: String, _ icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+            Text(text).font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(Color.white.opacity(0.72))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color.white.opacity(0.08), in: Capsule())
+    }
+
+    private func actions(_ fix: Fix) -> some View {
+        HStack(spacing: 10) {
+            if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(fix.latitude),\(fix.longitude)") {
+                Link(destination: url) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "map.fill")
+                        Text("지도 보기")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(.white)
+                }
+            }
+            refreshButton.frame(width: 56)
+        }
+    }
+
+    private var refreshButton: some View {
+        Button {
+            if link.authentic { link.refreshNow(retryUnavailable: true) }
+            else { Task { await model.fleet.refreshVehicleSnapshot(force: true) } }
+        } label: {
+            Group {
+                if link.refreshing || model.fleet.isReadingVehicle {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 15, weight: .semibold))
+                }
+            }
+            .frame(maxWidth: .infinity).frame(height: 44)
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundStyle(.white)
+        }
+        .disabled(model.demo || (!link.authentic && !model.fleet.isAuthenticated) || link.refreshing)
+        .accessibilityLabel("위치 정보 새로고침")
+    }
+
+    /// Name what is actually missing rather than "수신하지 못했습니다".
+    private var waiting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(location.string("diagnostic").isEmpty ? "차량이 아직 좌표를 보고하지 않음" : location.string("diagnostic"))
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+            Text(link.authentic || model.fleet.isAuthenticated
+                 ? "저장된 주차 기록도 아직 없습니다. 차량이 깨어나 좌표를 보고하면 여기에 표시됩니다."
+                 : "차량 계정 또는 블루투스를 먼저 연결해 주세요.")
+                .font(.system(size: 13)).foregroundStyle(Color.white.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func elapsed(_ at: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(at))
+        if seconds < 60 { return "방금" }
+        if seconds < 3600 { return "\(seconds / 60)분 전" }
+        if seconds < 86400 { return "\(seconds / 3600)시간 전" }
+        return dateText(at.timeIntervalSince1970 * 1000, time: false)
+    }
+
+    private func resolveAddress(_ fix: Fix) async {
+        let point = CLLocation(latitude: fix.latitude, longitude: fix.longitude)
+        if let marks = try? await CLGeocoder().reverseGeocodeLocation(point, preferredLocale: Locale(identifier: "ko_KR")),
+           let mark = marks.first {
+            let parts = [mark.administrativeArea, mark.locality, mark.subLocality, mark.thoroughfare, mark.subThoroughfare]
+                .compactMap { $0 }.filter { !$0.isEmpty }
+            let joined = parts.joined(separator: " ")
+            if !joined.isEmpty { address = joined; return }
+            if let name = mark.name, !name.isEmpty { address = name; return }
+        }
+        address = String(format: "%.4f, %.4f", fix.latitude, fix.longitude)
+    }
+}
+
 struct LocationStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @State private var roadAddress: String = ""
     var body: some View {
-        let l = homePresentation(model, link).object("location")
-        let hasCoords = l.flag("hasCoordinates")
-        let lat = l.number("latitude")
-        let lng = l.number("longitude")
+        let p = homePresentation(model, link)
         PageBody(title: "차량 위치", briefing: .location, briefingText: { model.screenBriefing(.location, address: roadAddress) }) {
             VStack(spacing: 16) {
-                GlassMenuCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CardTitle(title: "마지막 수신 위치", systemImage: "location.north.circle.fill")
-                        VehicleMotionBadge(drive: homePresentation(model, link).object("drive"))
-                        if hasCoords, let lat = lat, let lng = lng {
-                            VStack(alignment: .leading, spacing: 8) {
-                                // Prominent Korean address
-                                HStack(alignment: .firstTextBaseline) {
-                                    Image(systemName: "mappin.and.ellipse")
-                                        .foregroundStyle(Color(red: 0.25, green: 0.65, blue: 1.0))
-                                        .font(.system(size: 16, weight: .semibold))
-                                    Text(roadAddress.isEmpty ? "위치 확인 중..." : roadAddress)
-                                        .font(.system(size: 19, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .lineLimit(2)
-                                }
-
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("\(String(format: "%.5f", lat)), \(String(format: "%.5f", lng))")
-                                            .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(Color.white.opacity(0.6))
-                                        if let gpsAt = l.number("gpsAt") {
-                                            Text("GPS 측정: \(dateText(gpsAt))")
-                                                .font(.caption2)
-                                                .foregroundStyle(Color.white.opacity(0.45))
-                                        }
-                                    }
-                                    Spacer()
-                                    if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(lat),\(lng)") {
-                                        Link(destination: url) {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "map.fill")
-                                                Text("지도 보기")
-                                            }
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                            .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: Capsule())
-                                            .foregroundStyle(.white)
-                                        }
-                                    }
-                                }
-                            }
-                            .task(id: "\(lat),\(lng)") {
-                                let geocoder = CLGeocoder()
-                                let location = CLLocation(latitude: lat, longitude: lng)
-                                if let placemarks = try? await geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ko_KR")),
-                                   let p = placemarks.first {
-                                    let admin = p.administrativeArea ?? ""
-                                    let locality = p.locality ?? ""
-                                    let subLoc = p.subLocality ?? ""
-                                    let thoroughfare = p.thoroughfare ?? ""
-                                    let subThoroughfare = p.subThoroughfare ?? ""
-                                    let name = p.name ?? ""
-                                    let parts = [admin, locality, subLoc, thoroughfare, subThoroughfare].filter { !$0.isEmpty }
-                                    let full = parts.joined(separator: " ")
-                                    if !full.isEmpty {
-                                        roadAddress = full
-                                    } else if !name.isEmpty {
-                                        roadAddress = name
-                                    } else {
-                                        roadAddress = "\(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))"
-                                    }
-                                } else {
-                                    if abs(lat - 37.17) < 0.05 && abs(lng - 127.36) < 0.05 {
-                                        roadAddress = "경기도 용인시 처인구 남사읍"
-                                    } else {
-                                        roadAddress = "\(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))"
-                                    }
-                                }
-                            }
-                        } else {
-                            Text("위치 정보를 수신하지 못했습니다")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.white.opacity(0.6))
-                        }
-
-                        Button {
-                            if link.authentic { link.refreshNow(retryUnavailable: true) }
-                            else { Task { await model.fleet.refreshVehicleSnapshot(force: true) } }
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("위치 정보 새로고침")
-                            }
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                            .foregroundStyle(.white)
-                        }
-                        .disabled(model.demo || (!link.authentic && !model.fleet.isAuthenticated) || link.refreshing)
-                    }
-                    .padding(16)
-                }
+                VehicleLocationCard(link: link, location: p.object("location"), drive: p.object("drive"), address: $roadAddress)
 
                 // Smart Parking Card (Floor, Pillar, Photo, Memo)
                 SmartParkingCard(link: link)

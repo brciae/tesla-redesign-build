@@ -33,7 +33,9 @@ struct CareView: View {
                         Caption("\(dateText(m.number("at"), time: false)) · \(units.format(m.number("odometerKm"), suffix: " km")) · \(valueText(m.number("cost")))원")
                         if let next = m.number("nextKm") {
                             Text("다음 확인 \(units.format(next, suffix: " km"))").font(.caption)
-                                .foregroundStyle((model.groups.object("drive").number("odometerKm") ?? -1) >= next ? .orange : Theme.muted)
+                                // v91: was the BLE-only odometer, so a threshold the NAS
+                                // had already seen passed never turned orange.
+                                .foregroundStyle((model.displayOdometerKm ?? -1) >= next ? .orange : Theme.muted)
                         }
                     }
                 }
@@ -442,7 +444,10 @@ struct ConnectionView: View {
             if section == .records {
             Section {
                 LabeledContent("저장된 기록", value: "운행 \(model.state.rows("trips").count)회 · 충전 \(model.state.rows("charges").count)회")
-                LabeledContent("자동 누적", value: link.authentic && !model.demo ? "수신 중" : "연결 대기")
+                // v91: this read "연결 대기" whenever BLE was down, directly under a
+                // record count the NAS sync was incrementing every 30 seconds. Name
+                // whichever source is actually collecting.
+                LabeledContent("자동 누적", value: autoCollectionStatus)
                 DisclosureGroup("내보내기·복원") {
                     Button("사진 포함 JSON 백업") { model.exportBackup() }
                     Button("운행·충전 CSV 내보내기") { model.exportCSV() }
@@ -474,6 +479,12 @@ struct ConnectionView: View {
                 switch result { case .success(let url): model.mergeHistory(url); case .failure(let error): model.errorMessage = error.localizedDescription }
             }
             .confirmationDialog("현재 기록을 선택한 백업으로 교체함. 먼저 현재 자료 백업 필요.", isPresented: Binding(get: { restoreURL != nil }, set: { if !$0 { restoreURL = nil } })) { Button("검사 후 복원", role: .destructive) { if let url = restoreURL { model.restore(url) }; restoreURL = nil; populate() } }
+    }
+    private var autoCollectionStatus: String {
+        if model.demo { return "예시 모드" }
+        if link.authentic { return "BLE 수신 중" }
+        if model.fleet.isAuthenticated { return "서버 수집 중" }
+        return "연결 대기"
     }
     private func populate() { let s = model.settings; assumedCapacity = s.number("assumedCapacityKWh") ?? 75; vin = s.string("vin"); name = s.string("name"); km = s.number("plannedKm").map { String($0) } ?? ""; reserve = s.number("reserveSOC").map { String($0) } ?? "20"; daily = s.number("dailyLimit").map { String($0) } ?? ""; tariff = s.number("tariff").map { String($0) } ?? UserDefaults.standard.string(forKey: "cost.electricity") ?? "" }
     private func saveSettings() {

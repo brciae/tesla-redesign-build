@@ -81,7 +81,10 @@ enum FleetTelemetryData {
         let latest = latest(records, vin: vin)
         var result: [String: Any] = [:]
         let maps: [(String, [(String, String, Double)])] = [
-            ("charge", [("Soc", "soc", 1), ("RatedRange", "rangeKm", 1.609344), ("ChargeLimitSoc", "limit", 1), ("TimeToFullCharge", "minutesToLimit", 60)]),
+            // v91: ChargerVoltage and ChargeAmps were ingested and then had no
+            // consumer, so the charging card rendered "요청 32 A · — V" forever.
+            ("charge", [("Soc", "soc", 1), ("RatedRange", "rangeKm", 1.609344), ("ChargeLimitSoc", "limit", 1), ("TimeToFullCharge", "minutesToLimit", 60),
+                        ("ChargerVoltage", "chargerVoltage", 1), ("ChargeAmps", "chargerAmps", 1)]),
             ("climate", [("InsideTemp", "insideC", 1), ("OutsideTemp", "outsideC", 1)])
         ]
         for (group, fields) in maps {
@@ -107,7 +110,77 @@ enum FleetTelemetryData {
                 result[group] = values
             }
         }
+
+        // v91: Location arrives as a nested object, so the generic decoder leaves
+        // `number` nil and keeps only the text — and nothing ever looked it up.
+        // That is why the NAS could know exactly where the car parked while the
+        // app said 위치 미수신. A parked car's fix is old by definition, so age
+        // marks it cached rather than discarding it.
+        if let r = latest["Location"], !r.invalid, now.timeIntervalSince(r.at) >= -5,
+           let point = coordinate(r) {
+            let stamp = r.at.timeIntervalSince1970 * 1000
+            let fresh = now.timeIntervalSince(r.at) <= 120
+            result["location"] = [
+                "latitude": point.latitude, "longitude": point.longitude, "hasCoordinates": true,
+                "gpsAt": stamp, "at": stamp,
+                "mode": fresh ? "recent" : "cached",
+                "label": fresh ? "NAS 차량 수신" : "NAS 마지막 측정",
+                "subtitle": fresh ? "NAS 차량 수신 · 좌표 확인" : "NAS 마지막 측정 · 좌표 확인"
+            ]
+        }
+
+        // The gear and speed behind 주차 중 / 정차 중 / 주행 중. The wording itself
+        // stays in home.js; this only supplies the raw values it reads.
+        var drive: [String: Any] = [:]
+        var driveStamps: [Date] = []
+        if let r = latest["Gear"], !r.invalid, now.timeIntervalSince(r.at) >= -5,
+           let raw = firstStringValue(r)?.replacingOccurrences(of: "ShiftState", with: ""),
+           ["P", "D", "R", "N"].contains(raw) {
+            drive["gear"] = raw; driveStamps.append(r.at)
+        }
+        for (field, key) in [("VehicleSpeed", "speedKmh"), ("Odometer", "odometerKm")] {
+            guard let r = latest[field], !r.invalid, let n = r.number, n >= 0,
+                  now.timeIntervalSince(r.at) >= -5 else { continue }
+            drive[key] = n * 1.609344; driveStamps.append(r.at)
+        }
+        if let oldest = driveStamps.min() {
+            drive["at"] = oldest.timeIntervalSince1970 * 1000
+            let fresh = now.timeIntervalSince(oldest) <= 120
+            drive["mode"] = fresh ? "recent" : "cached"
+            drive["label"] = fresh ? "NAS 차량 수신" : "NAS 마지막 측정"
+            result["drive"] = drive
+        }
         return result
+    }
+
+    /// Tesla sends Location as {"locationValue":{"latitude":…,"longitude":…}}.
+    /// Nothing else in the payload is a coordinate pair, so a reading that does
+    /// not carry both finite values in range is simply not a position.
+    static func coordinate(_ reading: FleetTelemetryReading) -> (latitude: Double, longitude: Double)? {
+        guard let data = reading.text.data(using: .utf8),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let point = raw["locationValue"] as? [String: Any] else { return nil }
+        func value(_ keys: [String]) -> Double? {
+            for key in keys {
+                if let n = point[key] as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite { return n.doubleValue }
+                if let text = point[key] as? String, let parsed = Double(text), parsed.isFinite { return parsed }
+            }
+            return nil
+        }
+        guard let lat = value(["latitude", "lat"]), let lon = value(["longitude", "lon", "lng"]),
+              (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) else { return nil }
+        return (lat, lon)
+    }
+
+    /// The enum wrapper key differs per field (shiftStateValue, stringValue, …),
+    /// so take the payload's single string value rather than guessing its name.
+    static func firstStringValue(_ reading: FleetTelemetryReading) -> String? {
+        guard let data = reading.text.data(using: .utf8),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        for (key, value) in raw where key != "invalid" {
+            if let text = value as? String, !text.isEmpty { return text }
+        }
+        return nil
     }
     static func failure(_ text: String) -> NSError { NSError(domain: "FleetTelemetry", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
 }

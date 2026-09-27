@@ -106,10 +106,21 @@ struct FleetVehicleSnapshot {
     }
 
     /// Read-only translation. A missing Fleet shift_state is not proof of P.
-    func parkingTelemetry(now: Date = Date()) -> [String: Any]? {
-        guard sectionIsRecent("drive_state", now: now), let driveAt = number("drive_state", "timestamp"),
-              driveAt <= now.timeIntervalSince1970 * 1000 + 5000,
-              now.timeIntervalSince1970 * 1000 - driveAt <= 120000 else { return nil }
+    /// v92: `requireRecent` used to be unconditional, and it is why a parked car
+    /// never got a parking record. drive_state stops ticking the moment the car
+    /// parks, so two minutes later this returned nil forever and
+    /// SmartParkingManager.saveFleetParking bailed on its very first guard —
+    /// silently, without even updating its status text. A car that last reported
+    /// P at a standstill is still parked three hours later; the report being old
+    /// is the normal case, not a reason to disbelieve it. Callers that genuinely
+    /// need a live reading keep the default.
+    func parkingTelemetry(now: Date = Date(), requireRecent: Bool = true) -> [String: Any]? {
+        guard let driveAt = number("drive_state", "timestamp"),
+              driveAt <= now.timeIntervalSince1970 * 1000 + 5000 else { return nil }
+        if requireRecent {
+            guard sectionIsRecent("drive_state", now: now),
+                  now.timeIntervalSince1970 * 1000 - driveAt <= 120000 else { return nil }
+        }
         let stamp = receivedAt.timeIntervalSince1970 * 1000
         var drive: [String: Any] = ["at": driveAt, "receivedAt": stamp]
         if let gear = (payload["drive_state"] as? [String: Any])?["shift_state"] as? String, ["P", "D", "R", "N"].contains(gear) { drive["gear"] = gear }

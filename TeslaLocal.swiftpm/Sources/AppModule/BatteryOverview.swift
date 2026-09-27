@@ -120,8 +120,12 @@ struct BatteryOverview: View {
                     .chartPlotStyle { plotArea in
                         plotArea.clipped()
                     }
+                    // v91: the simulator screenshot showed the top "100" sliced in
+                    // half — it sits on the plot's top edge, and the frame had no
+                    // room above it. The plot is still clipped; only the labels
+                    // needed the headroom, so the outer clip is gone.
                     .frame(height: 155)
-                    .clipped()
+                    .padding(.vertical, 8)
                 }
             }
             DisclosureGroup("자세한 수치") {
@@ -225,8 +229,10 @@ private extension BatteryOverview {
                             )
                             .interpolationMethod(.catmullRom)
                             .foregroundStyle(
+                                // v91: lighter, so the fill reads as shading under
+                                // the line rather than a solid slab under a tall plot.
                                 LinearGradient(
-                                    colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.04)],
+                                    colors: [Color.cyan.opacity(0.22), Color.cyan.opacity(0.0)],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )

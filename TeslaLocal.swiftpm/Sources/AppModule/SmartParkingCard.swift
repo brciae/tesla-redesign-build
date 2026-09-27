@@ -11,13 +11,35 @@ struct SmartParkingCard: View {
 
     var body: some View {
         if model.fleet.isAuthenticated && !model.demo {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(manager.fleetParkingStatus).font(.subheadline)
-                Button("현재 차량 위치를 주차 위치로 저장") { manager.saveCurrentFleetParking() }
-                    .buttonStyle(.bordered)
-                    .disabled(model.fleet.vehicleSnapshot?.parkingTelemetry() == nil)
-                Caption("직접 저장한 시각을 기록함 · 실제 도착 시각은 차량에서 제공하지 않음")
-            }.padding()
+            // v92: the disable condition carried the same 120-second gate as
+            // parkingTelemetry itself — the fourth place it has caused this bug.
+            // A parked car stops updating drive_state, so the button greyed out
+            // exactly when the owner most wanted it. What it actually needs is a
+            // position, not a fresh one.
+            let ready = model.fleet.vehicleSnapshot?.parkingTelemetry(requireRecent: false) != nil
+            VStack(alignment: .leading, spacing: 10) {
+                Text(manager.fleetParkingStatus)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { manager.saveCurrentFleetParking() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "mappin.and.ellipse").font(.system(size: 14, weight: .semibold))
+                        Text("현재 차량 위치를 주차 위치로 저장").font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 46)
+                    .background(ready ? Color(red: 0.18, green: 0.50, blue: 0.95) : Color.white.opacity(0.07),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(ready ? .white : Color.white.opacity(0.35))
+                }
+                .disabled(!ready)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(white: 0.12).opacity(0.75))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            )
         }
         if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
             LocalBriefingControls(title: "주차 상태") {

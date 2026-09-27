@@ -35,6 +35,35 @@ final class AppModel: ObservableObject {
         if !demo, let reading = FleetTelemetryData.latest(archiveReadings, vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
         return values.compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max()
     }
+    /// v92: the 주차 중 / 정차 중 badge flickered to 상태 미수신 between polls.
+    /// A parked car does not change state while nothing is reporting, so the last
+    /// observed gear is kept and handed back when no current source carries one.
+    /// It is a cache of something the vehicle said, not an inference: the reading
+    /// keeps the timestamp it was observed at, so the screen still shows its age,
+    /// and it is cleared whenever a source does report a gear.
+    func rememberMotion(_ drive: Object) -> Object {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        guard !vin.isEmpty, !demo else { return drive }
+        let key = "motion.last." + vin
+        if !drive.string("gear").isEmpty, let at = drive.number("at") {
+            let stored: [String: Any] = ["gear": drive.string("gear"), "at": at,
+                                         "speedKmh": drive.number("speedKmh") ?? 0]
+            if (UserDefaults.standard.dictionary(forKey: key)?["at"] as? Double) != at {
+                UserDefaults.standard.set(stored, forKey: key)
+            }
+            return drive
+        }
+        guard let remembered = UserDefaults.standard.dictionary(forKey: key),
+              let at = remembered["at"] as? Double, let gear = remembered["gear"] as? String else { return drive }
+        // Only fill the gap: anything the live group did carry stays untouched.
+        var merged = drive
+        merged["gear"] = gear
+        if merged.number("speedKmh") == nil { merged["speedKmh"] = remembered["speedKmh"] as? Double ?? 0 }
+        if merged.number("at") == nil { merged["at"] = at }
+        merged["mode"] = "cached"
+        merged["motionFromMemory"] = true
+        return merged
+    }
     var isSpeaking: Bool { voice.speaking }
     @Published var receiptDraft: Object = [:]
     @Published var receiptText = ""
