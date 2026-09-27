@@ -23,6 +23,7 @@ function hostCall(op,json){
       case 'view':value=engine.view(now);break;
       case 'vehicle3D':value=YL3D.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
       case 'vehicleCamera':value=YL3D.fitCamera(a);break;
+      case 'homeMotion':value=YLHome.motion(a);break;
       case 'home':value=YLHome.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
       case 'load':value=engine.load(a.state??a,{resumeActive:a.resume===true});clearLive();navigationGate.reset();break;
       case 'validate':value=YLCore.validateState(a);break;
