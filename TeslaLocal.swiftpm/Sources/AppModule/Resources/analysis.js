@@ -428,15 +428,23 @@
         const detail=String(scalar(stateFields[0])??'').replace('DetailedChargeState','');
         const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
         if(charging===5&&previousCharge!==5)chargeBegan=at;
-        // v91: only DC was read, so every home charge stored addedKWh:null - for a
-        // car charged on AC that is every session. The two counters never run at
-        // once, so whichever one this session moved is the session's energy.
-        // Ignore an unchanged counter from another session; keep completion-only packets too.
-        const energyCandidates=['DCChargingEnergyIn','ACChargingEnergyIn','ChargeEnergyAdded']
-          .filter(k=>latest[k]&&!latest[k].invalid&&num(scalar(k),0,300)&&latest[k].at>=(chargeBegan??at-120000))
-          .sort((a,b)=>(scalar(b)>0)-(scalar(a)>0)||latest[b].at-latest[a].at);
-        const energyField=energyCandidates[0],added=energyField?scalar(energyField):null;
-        if(charging!==undefined){replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);previousCharge=charging;}
+        // DCChargingEnergyIn measures battery input on both AC and DC charging.
+        // ACChargingEnergyIn is grid-side supply: retain it separately, never add counters.
+        const validEnergy=k=>latest[k]&&!latest[k].invalid&&num(scalar(k),0,300)&&latest[k].at>=(chargeBegan??at-120000);
+        const energyField=['DCChargingEnergyIn','ChargeEnergyAdded'].find(validEnergy);
+        const added=energyField?scalar(energyField):null;
+        const supply=validEnergy('ACChargingEnergyIn')?scalar('ACChargingEnergyIn'):null;
+        if(charging!==undefined){
+          replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);
+          if(!replay.state.activeCharge&&[6,7].includes(charging)&&added==null&&supply>0&&num(soc,0,100)&&!replay.state.charges.some(c=>c.end===at)){
+            // A completion-only AC packet still proves supplied energy, but not starting SOC.
+            const duplicate=replay.state.charges.some(c=>c.supplyKWh===supply&&c.endSOC===soc&&at-c.end<48*3600000);
+            if(!duplicate)append(replay.state.charges,{id:id(),at,end:at,startSOC:null,endSOC:soc,endSOCObserved:true,supplyKWh:supply,complete:false,partial:true,collectedAfterEnd:true,source:'NAS'});
+          }
+          const current=replay.state.activeCharge??replay.state.charges.findLast(c=>c.end===at);
+          if(current&&supply!=null)current.supplyKWh=supply;
+          previousCharge=charging;
+        }
         if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
       }
       for(const kind of ['trips','charges'])for(const source of replay.state[kind]){
@@ -449,7 +457,7 @@
         const existing=list.find(overlaps);
         if(existing){
           if(kind==='charges'){
-            for(const key of ['startSOC','endSOC','vehicleReportedKWh'])if(existing[key]==null&&row[key]!=null){
+            for(const key of ['startSOC','endSOC','vehicleReportedKWh','supplyKWh'])if(existing[key]==null&&row[key]!=null){
               existing[key]=row[key];
               if(key==='startSOC'){existing.startSOCObserved=row.startSOCObserved===true;existing.startSOCEstimated=row.startSOCEstimated===true;}
               if(key==='endSOC'){existing.endSOCObserved=row.endSOCObserved===true;existing.endSOCEstimated=row.endSOCEstimated===true;}

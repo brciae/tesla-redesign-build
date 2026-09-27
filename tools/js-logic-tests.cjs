@@ -177,8 +177,8 @@ console.log('PASS: receipt parsing');
  }
  e.ingestArchive({vin,rows});
  chargeAssert.equal(e.state.charges.length,1);
- chargeAssert.ok(e.state.charges[0].vehicleReportedKWh>0,'an AC session must record its energy, not null');
- chargeAssert.equal(e.state.charges[0].vehicleReportedKWh,14.5);
+ chargeAssert.ok(e.state.charges[0].supplyKWh>0,'an AC session must retain measured supply energy');
+ chargeAssert.equal(e.state.charges[0].supplyKWh,14.5);
 
  // DC still wins when it is the counter that moved.
  const dc=new C.Engine(),dcRows=[];
@@ -197,11 +197,24 @@ console.log('PASS: receipt parsing');
  const row=(field,value)=>({at,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
  const rows=[row('ChargeState','Complete'),row('Soc',80),row('ACChargingEnergyIn',18.5)];
  e.ingestArchive({vin,rows});
- chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].vehicleReportedKWh,18.5);
+ chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].supplyKWh,18.5);
  e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,1);
  const phone=new C.Engine();phone.state.settings.vin=vin;
  phone.state.charges.push({id:'phone',at:at-60000,end:at,startSOC:50,endSOC:80,vehicleReportedKWh:null,cost:1234,complete:false});
  phone.ingestArchive({vin,rows});chargeAssert.equal(phone.state.charges.length,1);
- chargeAssert.equal(phone.state.charges[0].vehicleReportedKWh,18.5);chargeAssert.equal(phone.state.charges[0].cost,1234);
+ chargeAssert.equal(phone.state.charges[0].supplyKWh,18.5);chargeAssert.equal(phone.state.charges[0].cost,1234);
  console.log('PASS: completion-only archive recovery, overlap enrichment, reimport idempotency');
+}
+
+// Grid input and battery input can both increase during AC charging.
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000,rows=[];
+ const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc,ac,dc] of [[0,'Disconnected',40,0,0],[1000,'Charging',40,0,0],[60000,'Charging',50,8,7],[120000,'Complete',60,16,14]]){
+  put(t,'Soc',soc);put(t,'DetailedChargeState','DetailedChargeState'+state);put(t,'ACChargingEnergyIn',ac);put(t,'DCChargingEnergyIn',dc);
+ }
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].supplyKWh,16);chargeAssert.equal(e.state.charges[0].vehicleReportedKWh,14);
+ chargeAssert.equal(e.state.charges[0].startSOC,40);chargeAssert.equal(e.state.charges[0].endSOC,60);
+ console.log('PASS: simultaneous grid/battery counters kept separate without double counting');
 }

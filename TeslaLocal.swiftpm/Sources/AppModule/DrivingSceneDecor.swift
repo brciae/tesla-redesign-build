@@ -372,20 +372,20 @@ final class DrivingSceneDecor {
         let red = UIColor(red: 1, green: 0.12, blue: 0.08, alpha: 1)
         let white = UIColor(red: 0.92, green: 0.97, blue: 1, alpha: 1)
 
-        // Left & right taillights (Model Y signature C-shape cluster)
-        let clusterMesh = MeshResource.generatePlane(width: 0.30, height: 0.075)
-        for x: Float in [-0.60, 0.60] {
-            let sprite = LevelSprite(parent: lightRig, mesh: clusterMesh) { barMaterial(red, $0 * 0.65) }
-            sprite.root.position = [x, 1.05, -2.27]
-            sprite.root.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
+        // Reuse the model's actual rear lamp meshes, including the trunk hinge.
+        // Free-floating planes protruded beyond the curved body in oblique views.
+        let rearLampNames = ["import-19-body", "import-24-trunk", "import-29-trunk", "import-31-trunk", "import-32-trunk"]
+        for name in rearLampNames {
+            guard let lamp = vehicle.findEntity(named: name) as? ModelEntity, let mesh = lamp.model?.mesh else { continue }
+            let sprite = LevelSprite(parent: lamp, mesh: mesh) { intensity in
+                var material = UnlitMaterial(color: red)
+                material.blending = .transparent(opacity: .init(floatLiteral: intensity * 0.65))
+                return material
+            }
+            // Millimetre separation avoids z-fighting without changing the lamp silhouette.
+            sprite.root.position.z = -0.001
             tailGlows.append(sprite)
         }
-        // Center high-mount brake light
-        let highMountMesh = MeshResource.generatePlane(width: 0.42, height: 0.035)
-        let highMount = LevelSprite(parent: lightRig, mesh: highMountMesh) { barMaterial(red, $0 * 0.65) }
-        highMount.root.position = [0, 1.34, -2.12]
-        highMount.root.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
-        tailGlows.append(highMount)
 
         // Front corner headlight accents
         let headMesh = MeshResource.generatePlane(width: 0.58, height: 0.14)
@@ -443,7 +443,7 @@ final class DrivingSceneDecor {
 
     private func applyLights() {
         guard lightsBuilt else { return }
-        let red = max(tail * 0.6, brake)
+        let red = lightRig.isEnabled ? max(tail * 0.6, brake) : 0
         tailGlows.forEach { $0.set(red) }
         brakePool?.set(brake)
         headGlows.forEach { $0.set(head) }

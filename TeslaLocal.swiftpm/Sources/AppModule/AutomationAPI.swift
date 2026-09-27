@@ -73,6 +73,9 @@ enum AutomationAPI {
         }
         var data = Data()
         for try await byte in bytes { data.append(byte); guard data.count <= 262144 else { throw failure("AI 응답이 너무 큽니다.") } }
+        return try decodeResponse(data, provider: provider)
+    }
+    static func decodeResponse(_ data: Data, provider: AutomationAPIProvider) throws -> String {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw failure("AI 응답 형식 오류") }
         let texts: [String]
         switch provider {

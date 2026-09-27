@@ -17,6 +17,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
     @Published private(set) var lastVehicleReceivedAt: Date?
     @Published private(set) var status = "NAS 연결 주소를 등록하면 저장된 차량 기록을 가져옵니다."
     var address: String { UserDefaults.standard.string(forKey: "fleet.archive.address") ?? "" }
+    var onPageSaved: ((String) throws -> Void)?
     private let redirectGuard = ArchiveRedirectGuard()
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -91,6 +92,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
                 connected = true
                 if !payloads.isEmpty {
                     try FleetTelemetryStore.shared.ingest(JSONSerialization.data(withJSONObject: payloads), vin: vin)
+                    try onPageSaved?(vin)
                     total += payloads.count
                 }
                 // Persist progress only after the archive page has been saved on the phone.

@@ -41,6 +41,8 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-poli
 Xcode/NativePolicyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationTransfer.swift tools/automation-policy-tests.swift -o Xcode/AutomationPolicyTests
 Xcode/AutomationPolicyTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationAPI.swift tools/automation-api-tests.swift -o Xcode/AutomationAPITests
+Xcode/AutomationAPITests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests
 Xcode/ScreenBriefingTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/ParkingModels.swift tools/parking-record-tests.swift -o Xcode/ParkingRecordTests

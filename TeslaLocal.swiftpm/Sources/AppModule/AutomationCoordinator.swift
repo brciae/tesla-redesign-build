@@ -94,7 +94,11 @@ final class AutomationCoordinator: ObservableObject {
         let defaults = UserDefaults.standard
         for rule in rules where rule.enabled && rule.trigger == .chargingLocked {
             let latch = "automation.chargeLocked." + snapshot.vin + "." + rule.id
-            if !qualifies { defaults.removeObject(forKey: latch); continue }
+            if !snapshot.charging { defaults.removeObject(forKey: latch); continue }
+            guard qualifies else { continue }
+            let now = Date().timeIntervalSince1970
+            let firedKey = snapshot.vin + ":" + rule.id
+            if let fired = policy.document.lastFired[firedKey], now - fired < Double(rule.cooldownMinutes * 60) { continue }
             guard !defaults.bool(forKey: latch), AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: Date())), (try? rule.validate()) != nil else { continue }
             guard rule.action == .speech || (rule.vehicle == snapshot.vin && rule.action == .sentryOn) else { continue }
             if rule.cabinCondition != "always" {
@@ -102,6 +106,7 @@ final class AutomationCoordinator: ObservableObject {
                       rule.cabinCondition == "above" ? temperature >= rule.cabinThresholdC : temperature <= rule.cabinThresholdC else { continue }
             }
             let id = UUID().uuidString
+            policy.document.lastFired[firedKey] = now
             policy.document.logs.insert(AutomationLog(id: id, at: Date().timeIntervalSince1970, rule: rule.name, message: "충전 중 · 차량 잠김", status: "조건 확인 · 실행 준비"), at: 0)
             policy.document.logs = Array(policy.document.logs.prefix(80))
             do { try persist(); publish() } catch { blocked = true; status = "실행 기록 저장 실패"; return }
@@ -116,6 +121,10 @@ final class AutomationCoordinator: ObservableObject {
                         guard let self, self.rules.contains(rule), UIApplication.shared.applicationState == .active,
                               let current = TeslaFleetClient.shared.vehicleSnapshot, current.vin == rule.vehicle,
                               current.sectionIsRecent("charge_state"), current.sectionIsRecent("vehicle_state"), current.charging, current.locked == true else { return false }
+                        if rule.cabinCondition != "always" {
+                            guard current.sectionIsRecent("climate_state"), let temperature = current.insideC,
+                                  rule.cabinCondition == "above" ? temperature >= rule.cabinThresholdC : temperature <= rule.cabinThresholdC else { return false }
+                        }
                         return AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: Date()))
                     }
                     guard valid() else { self.report(id, "조건 변경 · 실행 취소"); return }

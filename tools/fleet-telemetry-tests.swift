@@ -9,6 +9,10 @@ import Foundation
         precondition((FleetTelemetryData.homeOverlay(displayRecords, vin: "DISPLAY", now: displayNow.addingTimeInterval(121))["charge"] as? [String: Any])?["mode"] as? String == "cached")
         precondition(FleetTelemetryData.homeOverlay(displayRecords, vin: "ABSENT", now: displayNow).isEmpty)
 
+        let stalePower = FleetTelemetryReading(vin: "DISPLAY", field: "DCChargingPower", at: displayNow.addingTimeInterval(-3600), number: 100, text: "", invalid: false)
+        let staleETA = FleetTelemetryReading(vin: "DISPLAY", field: "TimeToFullCharge", at: displayNow.addingTimeInterval(-3600), number: 1, text: "", invalid: false)
+        let chargeDisplay = FleetTelemetryData.homeOverlay(displayRecords + [stalePower, staleETA], vin: "DISPLAY", now: displayNow)["charge"] as! [String: Any]
+        precondition(chargeDisplay["chargerKW"] == nil && chargeDisplay["minutesToLimit"] == nil)
         let now = Date(timeIntervalSince1970: 1_800_000_100)
         precondition(ChargeEventPolicy.remainingMinutes(reported: nil, soc: 50, limit: 80, powerKW: 7.5, capacityKWh: 75)?.minutes == 180)
         precondition(ChargeEventPolicy.remainingMinutes(reported: 42, soc: 50, limit: 80, powerKW: 7.5, capacityKWh: 75)?.estimated == false)

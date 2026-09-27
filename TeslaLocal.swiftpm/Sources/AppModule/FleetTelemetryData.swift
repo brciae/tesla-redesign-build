@@ -72,7 +72,7 @@ enum FleetTelemetryData {
     }
     static func chargeObservation(_ records: [FleetTelemetryReading], vin: String, now: Date = Date()) -> ChargeObservation? {
         let fields = latest(records, vin: vin)
-        guard let state = fields["DetailedChargeState"] ?? fields["ChargeState"], !state.invalid,
+        guard let state = [fields["DetailedChargeState"], fields["ChargeState"]].compactMap({ $0 }).filter({ !$0.invalid }).max(by: { $0.at < $1.at }),
               now.timeIntervalSince(state.at) >= -5, now.timeIntervalSince(state.at) <= 120,
               let value = firstStringValue(state) else { return nil }
         let name = value.replacingOccurrences(of: "DetailedChargeState", with: "")
@@ -97,7 +97,7 @@ enum FleetTelemetryData {
             // v91: ChargerVoltage and ChargeAmps were ingested and then had no
             // consumer, so the charging card rendered "요청 32 A · — V" forever.
             ("charge", [("Soc", "soc", 1), ("RatedRange", "rangeKm", 1.609344), ("ChargeLimitSoc", "limit", 1), ("TimeToFullCharge", "minutesToLimit", 60),
-                        ("ChargerVoltage", "chargerVoltage", 1), ("ChargeAmps", "chargerAmps", 1), ("ACChargingPower", "chargerKW", 1), ("ChargePower", "chargerKW", 1)]),
+                        ("ChargerVoltage", "chargerVoltage", 1), ("ChargeAmps", "chargerAmps", 1), ("ACChargingPower", "chargerKW", 1), ("DCChargingPower", "chargerKW", 1), ("ChargePower", "chargerKW", 1)]),
             ("climate", [("InsideTemp", "insideC", 1), ("OutsideTemp", "outsideC", 1)])
         ]
         for (group, fields) in maps {
@@ -106,6 +106,7 @@ enum FleetTelemetryData {
             for (field, key, scale) in fields {
                 guard let r = latest[field], !r.invalid, let n = r.number,
                       now.timeIntervalSince(r.at) >= -5 else { continue }
+                if ["minutesToLimit", "chargerKW", "chargerVoltage", "chargerAmps"].contains(key), now.timeIntervalSince(r.at) > 120 { continue }
                 values[key] = n * scale; stamps.append(r.at)
             }
             if group == "charge", let r = latest["DetailedChargeState"], !r.invalid,

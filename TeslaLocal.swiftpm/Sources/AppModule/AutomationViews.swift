@@ -234,23 +234,25 @@ final class AutomationAI: ObservableObject {
     @Published var status = ""
     @Published var busy = false
     private var task: Task<Void, Never>?
-    func cancel() { task?.cancel(); task = nil; busy = false }
+    private var generation = UUID()
+    func cancel() { generation = UUID(); task?.cancel(); task = nil; busy = false; status = "생성 취소됨" }
     func receive(_ url: URL, vehicle: String) { status = "외부 AI 연결은 API 등록 방식으로 변경되었습니다." }
     func generate(provider: AutomationAPIProvider, model: String, request: String, vehicle: String) {
         guard !busy else { return }
+        let token = UUID(); generation = token
         busy = true; status = "규칙 생성 중…"
         task = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.busy = false }
+            defer { if self.generation == token { self.busy = false } }
             do {
                 let prompt = try AutomationTransfer.prompt(request)
                 let result = try await AutomationAPI.generate(provider: provider, model: model, prompt: prompt)
                 try Task.checkCancellation()
-                guard vehicle == TeslaFleetClient.shared.selectedVin || (TeslaFleetClient.shared.selectedVin.isEmpty && vehicle == UserDefaults.standard.string(forKey: "vin")) else { throw AutomationAPI.failure("차량이 변경되었습니다. 다시 생성해 주세요.") }
+                guard vehicle == TeslaFleetClient.shared.selectedVin || (TeslaFleetClient.shared.selectedVin.isEmpty && vehicle == (UserDefaults.standard.string(forKey: "vin") ?? "")) else { throw AutomationAPI.failure("차량이 변경되었습니다. 다시 생성해 주세요.") }
                 self.draft = try AutomationTransfer.decode(result, vehicle: vehicle)
                 self.status = "생성 완료 · 조건과 동작을 검토한 후 저장하세요."
-            } catch is CancellationError { self.status = "생성 취소됨" }
-            catch { self.status = error.localizedDescription }
+            } catch is CancellationError { if self.generation == token { self.status = "생성 취소됨" } }
+            catch { if self.generation == token { self.status = error.localizedDescription } }
         }
     }
 }
