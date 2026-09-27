@@ -166,3 +166,27 @@ console.log('PASS: receipt parsing');
  chargeAssert.equal(parked.location.latitude,37.5);
  console.log('PASS: parked/stopped/driving state and stored-fix retention');
 }
+
+// v91: AC charging energy. Only DCChargingEnergyIn was read, so a car charged at
+// home recorded every session with addedKWh: null.
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000,rows=[];
+ const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc,ac] of [[0,'Disconnected',40,0],[1000,'Charging',40,0],[60000,'Charging',50,7.2],[120000,'Complete',60,14.5]]){
+   put(t,'Soc',soc); put(t,'DetailedChargeState','DetailedChargeState'+state); put(t,'ACChargingEnergyIn',ac);
+ }
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,1);
+ chargeAssert.ok(e.state.charges[0].vehicleReportedKWh>0,'an AC session must record its energy, not null');
+ chargeAssert.equal(e.state.charges[0].vehicleReportedKWh,14.5);
+
+ // DC still wins when it is the counter that moved.
+ const dc=new C.Engine(),dcRows=[];
+ const putDC=(t,field,value)=>dcRows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc,v] of [[0,'Disconnected',20,0],[1000,'Charging',20,0],[60000,'Charging',45,22.0],[120000,'Complete',70,41.0]]){
+   putDC(t,'Soc',soc); putDC(t,'DetailedChargeState','DetailedChargeState'+state); putDC(t,'DCChargingEnergyIn',v);
+ }
+ dc.ingestArchive({vin,rows:dcRows});
+ chargeAssert.equal(dc.state.charges[0].vehicleReportedKWh,41.0);
+ console.log('PASS: AC and DC charge energy both recorded');
+}
