@@ -181,7 +181,16 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
 
     @ViewBuilder
     private func layout(_ m: NavMetrics) -> some View {
-        if theme == .cluster || theme == .fleet {
+        // v93: 클러스터 was routed here to navigationLayout, which is why its
+        // landscape look disappeared. clusterLayer — the large SpeedRing on the
+        // left with the map fading out from behind it — has been present and
+        // byte-identical this whole time, but nothing reached it: only
+        // modelingLayout calls overlay(m), and cluster never got there. It was
+        // the one theme whose own layer existed and went unused.
+        //
+        // 관제 stays on navigationLayout: it is a monitoring readout, and its
+        // fleetLayer is not the cockpit this restores.
+        if theme == .fleet {
             navigationLayout(m)
         } else {
             modelingLayout(m)
@@ -304,12 +313,20 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.7), .init(color: .clear, location: 1)],
                            startPoint: m.wide ? .leading : .bottom, endPoint: m.wide ? .trailing : .top)
         case .cluster:
-            LinearGradient(stops: [
-                .init(color: .black, location: 0),
-                .init(color: .black, location: 0.72),
-                .init(color: .black.opacity(0.55), location: 0.88),
-                .init(color: .clear, location: 1.0)
-            ], startPoint: .top, endPoint: .bottom)
+            // Portrait fades the map out under the bottom panel. Landscape must
+            // not: there the cluster sits on the left and its own scrim does the
+            // blending horizontally, so a top-to-bottom mask would cut the map
+            // across the wrong axis.
+            if m.wide {
+                Rectangle()
+            } else {
+                LinearGradient(stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: 0.72),
+                    .init(color: .black.opacity(0.55), location: 0.88),
+                    .init(color: .clear, location: 1.0)
+                ], startPoint: .top, endPoint: .bottom)
+            }
         default:
             Rectangle()
         }
