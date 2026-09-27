@@ -139,7 +139,12 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["1.5 km"].firstMatch.isHittable, "turn distance covered: \(theme) \(orientation.rawValue)")
                 let media = app.staticTexts["navigation.media.title"]
                 XCTAssertTrue(media.exists, "media dock missing: \(theme)")
-                if theme == "클러스터" || theme == "관제" {
+                // v93: 클러스터 moved back to the modeling layout, where its own
+                // clusterLayer draws the gauge over a full-bleed map and docks the
+                // media inside that overlay. The bounded-map and media-outside-map
+                // assertions below describe navigationLayout, which only 관제 uses
+                // now, so applying them to 클러스터 asserted the regression.
+                if theme == "관제" {
                     let map = app.otherElements["navigation.map"]
                     XCTAssertTrue(map.exists)
                     XCTAssertGreaterThan(map.frame.height, 120)
