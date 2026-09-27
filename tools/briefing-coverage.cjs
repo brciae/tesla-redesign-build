@@ -62,6 +62,19 @@ for (const [file, marker] of [
     const links = [...sources.matchAll(new RegExp(`(?:value: )?Page\\.${page}\\b`, 'g'))].length + menuRows + tiles;
     assert(links > 0, `Page.${page} is unreachable — delete the case or give it an entry point`);
   }
+  // v91: EnergyCalendar.swift is compiled into both the app and the probe. The
+  // probe's Theme was missing `green`, so the build passed every local check and
+  // failed six minutes in, inside the simulator target. Compare the two lists.
+  const members = (src) => {
+    const body = src.slice(src.indexOf('enum Theme {'));
+    return [...body.slice(0, body.indexOf('\n}')).matchAll(/static let (\w+)/g)].map(m => m[1]).sort();
+  };
+  const appTheme = members(fs.readFileSync(root + 'App.swift', 'utf8'));
+  const probeTheme = members(fs.readFileSync('Xcode/InterfaceProbe/App.swift', 'utf8'));
+  assert(appTheme.length > 0 && probeTheme.length > 0, 'Theme not found in one of the two targets');
+  const missing = appTheme.filter(x => !probeTheme.includes(x));
+  assert.equal(missing.length, 0, `InterfaceProbe's Theme is missing: ${missing.join(', ')}`);
+
   assert(!sources.includes('struct DriveView'), 'DriveView was folded into the 운행 tab; do not reintroduce it');
   assert(!fs.existsSync(root + 'HomeModules.swift'), 'HomeModules.swift was a dead second menu system');
   assert(sources.includes('Button("회차 수동 종료")'), '회차 수동 종료 must survive the DriveView removal');

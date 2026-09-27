@@ -132,3 +132,37 @@ console.log('PASS: receipt parsing');
  e.ingestArchive({vin,rows:[...rows].reverse()});chargeAssert.equal(e.state.trips.length,1,'reordered NAS history must not duplicate trips');
  console.log('PASS: NAS trip reconstruction and reordered replay');
 }
+
+// v91: 주차 중 / 정차 중 / 주행 중. The app held gear and speed from both BLE and
+// Fleet and rendered neither, so a parked car read '상태 미수신'. One rule, used
+// by the presentation and by the Swift side for a Fleet-sourced group.
+{
+ const home=require('../TeslaLocal.swiftpm/Sources/AppModule/Resources/home.js');
+ const label=(d)=>home.motion(d).motionLabel;
+ chargeAssert.equal(label({gear:'P',speedKmh:0}),'주차 중');
+ chargeAssert.equal(label({gear:'P',speedKmh:4}),'주차 중','P is parked whatever the speed field claims');
+ chargeAssert.equal(label({gear:'D',speedKmh:47}),'주행 중');
+ chargeAssert.equal(label({gear:'D',speedKmh:0}),'정차 중','in gear and not moving is stopped, not parked');
+ chargeAssert.equal(label({gear:'N',speedKmh:0}),'정차 중');
+ chargeAssert.equal(label({speedKmh:0}),'정차 중','speed alone still answers the question');
+ chargeAssert.equal(label({}),'상태 미수신','no gear and no speed must not guess a state');
+ chargeAssert.equal(label({gear:'X',speedKmh:0}),'정차 중','an unknown gear string is not a gear');
+ chargeAssert.equal(home.motion({gear:'P',mode:'recent'}).motionIsStale,false);
+ chargeAssert.equal(home.motion({gear:'P',mode:'cached'}).motionIsStale,true,'a stored state must be marked stored');
+ chargeAssert.equal(home.motion({}).hasMotion,false);
+
+ // The presentation must expose the drive group at all — it did not before, which
+ // is why no screen could show the state.
+ const now=Date.now();
+ const p=home.presentation({groups:{drive:{at:now,receivedAt:now,gear:'P',speedKmh:0}},connected:true,authenticated:true,sessionStartedAt:now-1000},now);
+ chargeAssert.ok(p.drive,'presentation must return a drive group');
+ chargeAssert.equal(p.drive.motionLabel,'주차 중');
+ chargeAssert.equal(p.drive.mode,'recent');
+
+ // A parked car's fix is hours old; the coordinate must survive that, because
+ // '마지막 수신 위치' is old by definition.
+ const parked=home.presentation({groups:{location:{at:now-3*3600e3,receivedAt:now-3*3600e3,latitude:37.5,longitude:127.03,positionStatus:'available'}}},now);
+ chargeAssert.equal(parked.location.hasCoordinates,true,'an old fix is still a fix');
+ chargeAssert.equal(parked.location.latitude,37.5);
+ console.log('PASS: parked/stopped/driving state and stored-fix retention');
+}
