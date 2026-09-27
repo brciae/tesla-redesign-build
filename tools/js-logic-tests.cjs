@@ -190,3 +190,18 @@ console.log('PASS: receipt parsing');
  chargeAssert.equal(dc.state.charges[0].vehicleReportedKWh,41.0);
  console.log('PASS: AC and DC charge energy both recorded');
 }
+
+// Completion-only NAS data and incomplete phone records must not discard energy.
+{
+ const vin='5YJYGDEE0LF000001',at=Date.now()-300000,e=new C.Engine();
+ const row=(field,value)=>({at,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ const rows=[row('ChargeState','Complete'),row('Soc',80),row('ACChargingEnergyIn',18.5)];
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].vehicleReportedKWh,18.5);
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,1);
+ const phone=new C.Engine();phone.state.settings.vin=vin;
+ phone.state.charges.push({id:'phone',at:at-60000,end:at,startSOC:50,endSOC:80,vehicleReportedKWh:null,cost:1234,complete:false});
+ phone.ingestArchive({vin,rows});chargeAssert.equal(phone.state.charges.length,1);
+ chargeAssert.equal(phone.state.charges[0].vehicleReportedKWh,18.5);chargeAssert.equal(phone.state.charges[0].cost,1234);
+ console.log('PASS: completion-only archive recovery, overlap enrichment, reimport idempotency');
+}

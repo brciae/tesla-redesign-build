@@ -16,13 +16,20 @@ enum ChargeEventPolicy {
     static func bleState(_ value: Int) -> String? {
         [2: "Disconnected", 3: "NoPower", 4: "Starting", 5: "Charging", 6: "Complete", 7: "Stopped", 8: "Calibrating"][value]
     }
+    static func remainingMinutes(reported: Double?, soc: Double?, limit: Double?, powerKW: Double?, capacityKWh: Double?) -> (minutes: Double, estimated: Bool)? {
+        if let reported, reported.isFinite, reported > 0, reported <= 10080 { return (reported, false) }
+        guard let soc, let limit, soc.isFinite, limit.isFinite, (0...100).contains(soc), (1...100).contains(limit) else { return nil }
+        if soc >= limit { return (0, false) }
+        guard let powerKW, let capacityKWh, powerKW.isFinite, capacityKWh.isFinite, powerKW > 0.1, powerKW <= 500, (20...200).contains(capacityKWh) else { return nil }
+        return (min(10080, ceil((limit - soc) / 100 * capacityKWh / powerKW * 60)), true)
+    }
     static func event(previous: ChargeObservation?, current: ChargeObservation, now: Date = Date()) -> ChargeEvent? {
         guard now.timeIntervalSince(current.at) >= -5, now.timeIntervalSince(current.at) <= 120,
               let previous, previous.vin == current.vin, current.at > previous.at,
-              current.at.timeIntervalSince(previous.at) <= 300 else { return nil }
+              current.at.timeIntervalSince(previous.at) <= 86400 else { return nil }
         let soc = current.soc.flatMap { $0.isFinite && (0...100).contains($0) ? $0 : nil }
         let level = soc.map { String(format: "현재 배터리 %.0f%%. ", $0) } ?? ""
-        if previous.state != "Charging", current.state == "Charging" {
+        if current.at.timeIntervalSince(previous.at) <= 300, previous.state != "Charging", current.state == "Charging" {
             return ChargeEvent(kind: "start", title: "충전 시작", body: level + "차량이 충전 중 상태를 보고했습니다.")
         }
         if previous.state == "Charging", current.state == "Complete" {

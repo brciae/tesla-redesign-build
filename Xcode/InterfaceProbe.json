@@ -43,6 +43,7 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/TeslaInteractiveClimateView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetInsightsView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryStore.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetArchiveClient.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryView.swift",

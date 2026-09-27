@@ -25,7 +25,7 @@ import CoreFoundation
     func latest(vin: String) -> [String: FleetTelemetryReading] { FleetTelemetryData.latest(records, vin: vin) }
     func observe(_ snapshot: FleetVehicleSnapshot) {
         let mappings: [(String, [(String, String)])] = [
-            ("charge_state", [("battery_level", "BatteryLevel"), ("charging_state", "ChargeState"), ("charge_limit_soc", "ChargeLimitSoc"), ("charger_voltage", "ChargerVoltage"), ("charger_actual_current", "ChargeAmps")]),
+            ("charge_state", [("battery_level", "BatteryLevel"), ("charging_state", "ChargeState"), ("charge_limit_soc", "ChargeLimitSoc"), ("charger_voltage", "ChargerVoltage"), ("charger_actual_current", "ChargeAmps"), ("time_to_full_charge", "TimeToFullCharge"), ("charger_power", "ChargePower"), ("charge_energy_added", "ChargeEnergyAdded")]),
             ("drive_state", [("shift_state", "Gear"), ("speed", "VehicleSpeed")]),
             ("climate_state", [("inside_temp", "InsideTemp"), ("outside_temp", "OutsideTemp"), ("is_climate_on", "HvacPower")]),
             ("vehicle_state", [("odometer", "Odometer"), ("sentry_mode", "SentryMode"), ("locked", "Locked"), ("tpms_pressure_fl", "TpmsPressureFl"), ("tpms_pressure_fr", "TpmsPressureFr"), ("tpms_pressure_rl", "TpmsPressureRl"), ("tpms_pressure_rr", "TpmsPressureRr")])

@@ -458,6 +458,7 @@ final class TeslaFleetClient: ObservableObject {
             let snapshot = FleetVehicleSnapshot(vin: requestVin, receivedAt: Date(), payload: data)
             guard snapshot.hasMeasurements else { throw FleetAuthPolicy.failure("차량은 온라인이나 상태 데이터가 비어 있습니다. 데이터 권한 확인 필요.") }
             vehicleSnapshot = snapshot
+            ChargeNotificationManager.shared.scheduleEstimate(vin: requestVin, minutes: snapshot.number("charge_state", "time_to_full_charge").map { $0 * 60 }, isCharging: snapshot.charging && snapshot.sectionIsRecent("charge_state"))
             onVehicleSnapshot?(snapshot)
             FleetTelemetryStore.shared.observe(snapshot)
             if snapshot.sectionIsRecent("charge_state"), let at = snapshot.number("charge_state", "timestamp"), let status = (snapshot.payload["charge_state"] as? [String: Any])?["charging_state"] as? String {
@@ -662,16 +663,16 @@ final class TeslaFleetClient: ObservableObject {
     // MARK: - Fleet API: Command Transmission Engine
 
     /// Core helper to dispatch any authenticated command to the Tesla Fleet endpoint with multi-region fallback.
-    @MainActor func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil) async throws -> Bool {
+    @MainActor func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil, authorized: (() -> Bool)? = nil) async throws -> Bool {
         do {
-            guard commandAllowed?() == true else { throw FleetCommandPolicy.failure("현재 상태에서는 차량 제어할 수 없습니다. 데모를 종료하고 앱을 열어 확인하세요.") }
+            guard commandAllowed?() == true, authorized?() ?? true else { throw FleetCommandPolicy.failure("현재 상태에서는 차량 제어할 수 없습니다. 데모를 종료하고 앱을 열어 확인하세요.") }
             guard !isSendingCommand else { throw FleetCommandPolicy.failure("앞선 명령의 응답을 기다리는 중입니다.") }
             isSendingCommand = true
             defer { isSendingCommand = false }
             let activeVin = try resolveVin(vin)
             let base = try FleetCommandPolicy.proxyURL(commandProxy)
             let token = try await authenticatedToken()
-            guard commandAllowed?() == true, activeVin == (vin ?? selectedVin) else { throw FleetCommandPolicy.failure("차량 또는 앱 상태가 변경되어 전송을 중단했습니다.") }
+            guard commandAllowed?() == true, authorized?() ?? true, activeVin == (vin ?? selectedVin) else { throw FleetCommandPolicy.failure("차량 또는 앱 상태가 변경되어 전송을 중단했습니다.") }
             let url = base.appendingPathComponent("api/1/vehicles").appendingPathComponent(activeVin).appendingPathComponent("command").appendingPathComponent(command)
             var request = URLRequest(url: url)
             request.httpMethod = "POST"

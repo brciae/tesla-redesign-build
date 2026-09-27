@@ -424,16 +424,18 @@
         for(const row of byTime.get(at))latest[row.field]=row;
         const soc=scalar('Soc')??scalar('BatteryLevel'),odo=scalar('Odometer'),speed=scalar('VehicleSpeed');
         const gear=String(scalar('Gear')??'').replace('ShiftState','');
-        const detail=String(scalar('DetailedChargeState')??'').replace('DetailedChargeState','');
+        const stateFields=['DetailedChargeState','ChargeState'].filter(k=>latest[k]&&!latest[k].invalid).sort((a,b)=>latest[b].at-latest[a].at);
+        const detail=String(scalar(stateFields[0])??'').replace('DetailedChargeState','');
         const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
         if(charging===5&&previousCharge!==5)chargeBegan=at;
         // v91: only DC was read, so every home charge stored addedKWh:null - for a
         // car charged on AC that is every session. The two counters never run at
         // once, so whichever one this session moved is the session's energy.
-        const energyField=chargeBegan===null?null:
-          latest.DCChargingEnergyIn?.at>=chargeBegan?'DCChargingEnergyIn':
-          latest.ACChargingEnergyIn?.at>=chargeBegan?'ACChargingEnergyIn':null;
-        const added=energyField?scalar(energyField):null;
+        // Ignore an unchanged counter from another session; keep completion-only packets too.
+        const energyCandidates=['DCChargingEnergyIn','ACChargingEnergyIn','ChargeEnergyAdded']
+          .filter(k=>latest[k]&&!latest[k].invalid&&num(scalar(k),0,300)&&latest[k].at>=(chargeBegan??at-120000))
+          .sort((a,b)=>(scalar(b)>0)-(scalar(a)>0)||latest[b].at-latest[a].at);
+        const energyField=energyCandidates[0],added=energyField?scalar(energyField):null;
         if(charging!==undefined){replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);previousCharge=charging;}
         if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
       }
@@ -444,7 +446,19 @@
         if(same>=0){list[same]=row;continue;}
         const overlaps=x=>{const a=kind==='trips'?x.start:x.at,b=x.end??x.lastAt??a;return Math.min(end,b)>=Math.max(start,a);};
         // Prefer existing phone/manual records; never double-count one observed session.
-        if(list.some(overlaps)||(kind==='trips'?this.state.activeTrip:this.state.activeCharge)&&overlaps(kind==='trips'?this.state.activeTrip:this.state.activeCharge))continue;
+        const existing=list.find(overlaps);
+        if(existing){
+          if(kind==='charges'){
+            for(const key of ['startSOC','endSOC','vehicleReportedKWh'])if(existing[key]==null&&row[key]!=null){
+              existing[key]=row[key];
+              if(key==='startSOC'){existing.startSOCObserved=row.startSOCObserved===true;existing.startSOCEstimated=row.startSOCEstimated===true;}
+              if(key==='endSOC'){existing.endSOCObserved=row.endSOCObserved===true;existing.endSOCEstimated=row.endSOCEstimated===true;}
+            }
+            existing.source=[...new Set((existing.source??'차량').split('+').concat('NAS'))].join('+');
+          }
+          continue;
+        }
+        if((kind==='trips'?this.state.activeTrip:this.state.activeCharge)&&overlaps(kind==='trips'?this.state.activeTrip:this.state.activeCharge))continue;
         append(list,row);list.sort((a,b)=>(a.start??a.at)-(b.start??b.at));
       }
       return this.view();
@@ -540,6 +554,8 @@
     chargeSummary(){
       const s=this.state,rows=[...s.charges,...(s.activeCharge?[{...s.activeCharge,active:true,source:'충전 중'}]:[])];
       const total=key=>{const values=rows.map(c=>c[key]).filter(v=>num(v,0,key==='cost'?1e7:300));return values.length?round(values.reduce((a,b)=>a+b,0),2):null;};
+      const capacity=this.health().capacity??s.settings.assumedCapacityKWh;
+      for(const row of rows)if(row.vehicleReportedKWh==null&&row.supplyKWh==null&&num(capacity,20,200)&&num(row.startSOC,0,100)&&num(row.endSOC,row.startSOC,100)){row.estimatedStoredKWh=round((row.endSOC-row.startSOC)/100*capacity,1);}
       return {rows:rows.slice().sort((a,b)=>(b.end??b.lastAt??b.at)-(a.end??a.lastAt??a.at)),count:rows.length,supplyKWh:total('supplyKWh'),vehicleReportedKWh:total('vehicleReportedKWh'),cost:total('cost'),active:!!s.activeCharge};
     }
     batteryUsage(now=Date.now(),days=30){

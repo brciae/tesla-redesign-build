@@ -117,7 +117,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             fleetParkingStatus = "차량이 아직 위치를 보고하지 않음"
             return
         }
-        let vehicle = buildVehicleSnapshot(from: telemetry)
+        let vehicle = buildVehicleSnapshot(from: telemetry, preserveParkedLocation: true)
         let drive = telemetry.object("drive")
         if drive.string("gear") == "P", (drive.number("speedKmh") ?? 0) > 0 {
             fleetParkingStatus = "P 수신 · 속도 신호 불일치로 주차 위치 저장 대기"; return
@@ -346,12 +346,13 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
     // MARK: - Vehicle Snapshot Builder
 
-    private func buildVehicleSnapshot(from telemetry: Object) -> VehicleParkingSnapshot {
+    private func buildVehicleSnapshot(from telemetry: Object, preserveParkedLocation: Bool = false) -> VehicleParkingSnapshot {
         func recent(_ name: String) -> Object {
             let group = telemetry.object(name)
             guard let at = group.number("at"), at.isFinite else { return [:] }
             let age = Date().timeIntervalSince1970 * 1000 - at
-            return age >= -5000 && age <= 120000 ? group : [:]
+            let cachedPosition = preserveParkedLocation && ["location", "drive"].contains(name)
+            return age >= -5000 && (age <= 120000 || cachedPosition) ? group : [:]
         }
         let drive = recent("drive"), loc = recent("location"), closures = recent("closures")
         let charge = recent("charge"), climate = recent("climate")

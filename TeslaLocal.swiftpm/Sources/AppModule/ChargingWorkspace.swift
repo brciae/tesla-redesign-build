@@ -22,7 +22,8 @@ struct ChargingWorkspace: View {
         let c = p.object("charge")
         let soc = c.number("soc")
         let chargerKW = c.number("chargerKW")
-        let minutesToLimit = c.number("minutesToLimit")
+        let estimate = ChargeEventPolicy.remainingMinutes(reported: c.number("minutesToLimit"), soc: soc, limit: c.number("limit"), powerKW: chargerKW, capacityKWh: model.output.object("health").number("capacity") ?? model.settings.number("assumedCapacityKWh"))
+        let minutesToLimit = estimate?.minutes
         let addedKWh = c.number("addedKWh")
         let isCharging = (model.demo || c.string("mode") == "recent") && c.chargingNow
         let isPlugged = isCharging || c.flag("plugged")
@@ -34,9 +35,9 @@ struct ChargingWorkspace: View {
             if isCharging {
                 guard minutesToLimit != nil else { return "충전 중 · 남은 시간 미수신" }
                 if hours > 0 {
-                    return "충전 한도까지 \(hours)시간 \(mins)분 남음"
+                    return "\(estimate?.estimated == true ? "추정 · " : "")\(Int(c.number("limit") ?? targetLimit))%까지 \(hours)시간 \(mins)분"
                 } else {
-                    return "충전 한도까지 \(mins)분 남음"
+                    return "\(estimate?.estimated == true ? "추정 · " : "")\(Int(c.number("limit") ?? targetLimit))%까지 \(mins)분"
                 }
             } else {
                 return c.string("mode") == "recent" ? "충전 대기 중" : "충전 상태 미확인"

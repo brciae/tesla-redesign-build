@@ -30,6 +30,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var lastGuideAt = Date.distantPast
     private var navigationSpeaking = false
     private var activePriority = 0
+    private var activeText = ""
     var navigationTargetIsAhead: ((String) -> Bool)?
     private var navigationPreparation: Task<Void, Never>?
     private var navigationPreparationTimes: [Date] = []
@@ -134,7 +135,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let text = cue.text
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
         // Ignore duplicate SDK callbacks before cancelling current playback.
-        guard text != lastGuideText || now.timeIntervalSince(lastGuideAt) >= 2 else { return }
+        guard SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines) != activeText, text != lastGuideText || now.timeIntervalSince(lastGuideAt) >= 2 else { return }
         lastGuideText = text
         lastGuideAt = now
 
@@ -247,7 +248,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             return false
         }
         let defaults = UserDefaults.standard
-        guard defaults.double(forKey: "voiceVolume") > 0 else {
+        guard defaults.double(forKey: item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume") > 0 else {
             notice = "브리핑 음량이 0임"
             playbackState = "음량 0"
             return true
@@ -264,6 +265,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let ticket = UUID()
         activeTicket = ticket
         activeManual = item.manual
+        activeText = item.text
         lastText = item.text
         notice = ""
 
@@ -286,6 +288,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                 await MainActor.run {
                     guard self.activeTicket == ticket else { return }
                     self.activeTicket = nil
+                    self.activeText = ""
                     self.speaking = false
                     self.navigationSpeaking = false
                     self.activePriority = 0
@@ -305,6 +308,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         // Keep the generated cache, but never play an out-of-date instruction.
         guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             activeTicket = nil
+            activeText = ""
             activeManual = false
             speaking = false
             navigationSpeaking = false
@@ -315,7 +319,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
         do {
             try activateAudio(defaults)
-            let volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
+            let volumeKey = item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume"
+            let volume = Float(min(1, max(0, defaults.double(forKey: volumeKey))))
             let p = try AVAudioPlayer(contentsOf: url)
             p.delegate = self
             p.volume = volume
@@ -327,6 +332,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             self.refreshOutput()
         } catch {
             activeTicket = nil
+            activeText = ""
             typecastPlayer = nil
             activeManual = false
             speaking = false
@@ -346,6 +352,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         guard activeTicket != nil || speaking else { return }
         activeTicket = nil
         activeManual = false
+        activeText = ""
         speaking = false
         navigationSpeaking = false
         activePriority = 0
@@ -377,6 +384,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         synthesisTask = nil
         activeTicket = nil
         activeManual = false
+        activeText = ""
         speaking = false
         navigationSpeaking = false
         activePriority = 0

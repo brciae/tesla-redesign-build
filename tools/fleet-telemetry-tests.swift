@@ -10,10 +10,16 @@ import Foundation
         precondition(FleetTelemetryData.homeOverlay(displayRecords, vin: "ABSENT", now: displayNow).isEmpty)
 
         let now = Date(timeIntervalSince1970: 1_800_000_100)
+        precondition(ChargeEventPolicy.remainingMinutes(reported: nil, soc: 50, limit: 80, powerKW: 7.5, capacityKWh: 75)?.minutes == 180)
+        precondition(ChargeEventPolicy.remainingMinutes(reported: 42, soc: 50, limit: 80, powerKW: 7.5, capacityKWh: 75)?.estimated == false)
+        precondition(ChargeEventPolicy.remainingMinutes(reported: nil, soc: 50, limit: 80, powerKW: 0, capacityKWh: 75) == nil)
+
         precondition(ChargeEventPolicy.bleState(5) == "Charging" && ChargeEventPolicy.bleState(6) == "Complete")
         let previousCharge = ChargeObservation(vin: "A", at: now.addingTimeInterval(-30), state: "Charging", soc: 79, limit: 80)
         let completeCharge = ChargeObservation(vin: "A", at: now, state: "Complete", soc: 80, limit: 80)
         let completed = ChargeEventPolicy.event(previous: previousCharge, current: completeCharge, now: now)
+        let suspended = ChargeObservation(vin: "A", at: now.addingTimeInterval(-3600), state: "Charging", soc: 40, limit: 80)
+        precondition(ChargeEventPolicy.event(previous: suspended, current: completeCharge, now: now)?.kind == "complete")
         precondition(completed?.kind == "complete" && completed!.body.contains("80%") && !completed!.body.contains("100%"))
         precondition(ChargeEventPolicy.event(previous: nil, current: completeCharge, now: now) == nil)
         precondition(ChargeEventPolicy.event(previous: previousCharge, current: completeCharge, now: now.addingTimeInterval(600)) == nil)

@@ -144,10 +144,10 @@ struct NavigationSpeechCue: Decodable {
         if message.hasPrefix("{") {
             guard let data = message.data(using: .utf8), let cue = try? JSONDecoder().decode(Self.self, from: data),
                   cue.validUntil.isFinite, cue.validUntil > now.timeIntervalSince1970,
-                  cue.validUntil <= now.timeIntervalSince1970 + 2.1, !cue.text.isEmpty else { return nil }
+                  cue.validUntil <= now.timeIntervalSince1970 + 12.1, !cue.text.isEmpty else { return nil }
             return cue
         }
-        return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 2, targetID: nil)
+        return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 12, targetID: nil)
     }
 }
 

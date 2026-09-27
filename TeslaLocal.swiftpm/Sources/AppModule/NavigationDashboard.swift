@@ -181,20 +181,8 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
 
     @ViewBuilder
     private func layout(_ m: NavMetrics) -> some View {
-        // v93: 클러스터 was routed here to navigationLayout, which is why its
-        // landscape look disappeared. clusterLayer — the large SpeedRing on the
-        // left with the map fading out from behind it — has been present and
-        // byte-identical this whole time, but nothing reached it: only
-        // modelingLayout calls overlay(m), and cluster never got there. It was
-        // the one theme whose own layer existed and went unused.
-        //
-        // 관제 stays on navigationLayout: it is a monitoring readout, and its
-        // fleetLayer is not the cockpit this restores.
-        if theme == .fleet {
-            navigationLayout(m)
-        } else {
-            modelingLayout(m)
-        }
+        // Keep all six original theme compositions; navigation data updates never select a different layout.
+        modelingLayout(m)
     }
 
     private func modelingLayout(_ m: NavMetrics) -> some View {
@@ -209,7 +197,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .opacity(theme == .minimal ? 0 : 1)
                 .allowsHitTesting(theme != .minimal)
                 .accessibilityHidden(theme == .minimal)
-            overlay(m)
+            overlay(m).accessibilityIdentifier("navigation.theme." + theme.rawValue)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
         .clipped()

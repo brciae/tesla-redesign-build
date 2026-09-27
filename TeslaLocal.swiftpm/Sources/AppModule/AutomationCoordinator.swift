@@ -72,6 +72,59 @@ final class AutomationCoordinator: ObservableObject {
         policy.document.logs[i].status = message
         do { try persist(); publish() } catch { blocked = true; status = "자동화 실행기록 저장 실패 · 추가 실행 중단" }
     }
+    private var fleetPrevious: [String: ChargeObservation] = [:]
+    @MainActor func observeFleet(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator, bleActive: Bool) {
+        guard !blocked, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
+        let charge = snapshot.payload["charge_state"] as? Object ?? [:]
+        if snapshot.sectionIsRecent("charge_state"), let at = snapshot.number("charge_state", "timestamp"), let state = charge["charging_state"] as? String {
+            let current = ChargeObservation(vin: snapshot.vin, at: Date(timeIntervalSince1970: at / 1000), state: state, soc: snapshot.soc, limit: snapshot.number("charge_state", "charge_limit_soc"))
+            let event = ChargeEventPolicy.event(previous: fleetPrevious[snapshot.vin], current: current)
+            fleetPrevious[snapshot.vin] = current
+            if !bleActive, let event {
+                let trigger: AutomationTrigger = event.kind == "start" ? .chargeStart : .chargeEnd
+                if ["start", "complete", "stop"].contains(event.kind) {
+                    for rule in rules where rule.enabled && rule.trigger == trigger && rule.speech && AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: Date())) {
+                        voice.say(rule.message.isEmpty ? event.title + ". " + event.body : rule.message, key: "auto:" + rule.id, category: "voiceAutomations", priority: 2, ttl: 60, manual: false)
+                    }
+                }
+            }
+        }
+        guard snapshot.sectionIsRecent("charge_state"), snapshot.sectionIsRecent("vehicle_state") else { return }
+        let qualifies = snapshot.charging && snapshot.locked == true
+        let defaults = UserDefaults.standard
+        for rule in rules where rule.enabled && rule.trigger == .chargingLocked {
+            let latch = "automation.chargeLocked." + snapshot.vin + "." + rule.id
+            if !qualifies { defaults.removeObject(forKey: latch); continue }
+            guard !defaults.bool(forKey: latch), AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: Date())), (try? rule.validate()) != nil else { continue }
+            guard rule.action == .speech || (rule.vehicle == snapshot.vin && rule.action == .sentryOn) else { continue }
+            if rule.cabinCondition != "always" {
+                guard snapshot.sectionIsRecent("climate_state"), let temperature = snapshot.insideC,
+                      rule.cabinCondition == "above" ? temperature >= rule.cabinThresholdC : temperature <= rule.cabinThresholdC else { continue }
+            }
+            let id = UUID().uuidString
+            policy.document.logs.insert(AutomationLog(id: id, at: Date().timeIntervalSince1970, rule: rule.name, message: "충전 중 · 차량 잠김", status: "조건 확인 · 실행 준비"), at: 0)
+            policy.document.logs = Array(policy.document.logs.prefix(80))
+            do { try persist(); publish() } catch { blocked = true; status = "실행 기록 저장 실패"; return }
+            defaults.set(true, forKey: latch)
+            if rule.speech { voice.say(rule.message.isEmpty ? "충전 중 차량 잠금을 확인했습니다." : rule.message, key: "auto:" + rule.id, category: "voiceAutomations", ttl: 60, manual: false) }
+            guard rule.action == .sentryOn else { report(id, "조건 확인 · 음성 요청"); continue }
+            if (snapshot.payload["vehicle_state"] as? Object)?["sentry_mode"] as? Bool == true { report(id, "이미 감시 모드 켜짐"); continue }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let valid = { [weak self] () -> Bool in
+                        guard let self, self.rules.contains(rule), UIApplication.shared.applicationState == .active,
+                              let current = TeslaFleetClient.shared.vehicleSnapshot, current.vin == rule.vehicle,
+                              current.sectionIsRecent("charge_state"), current.sectionIsRecent("vehicle_state"), current.charging, current.locked == true else { return false }
+                        return AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: Date()))
+                    }
+                    guard valid() else { self.report(id, "조건 변경 · 실행 취소"); return }
+                    _ = try await TeslaFleetClient.shared.sendCommand(vin: snapshot.vin, command: "set_sentry_mode", parameters: ["on": true], authorized: valid)
+                    self.report(id, "감시 모드 켜기 · 차량 승인 응답")
+                } catch { self.report(id, "감시 모드 요청 실패 · " + error.localizedDescription) }
+            }
+        }
+    }
     func observe(output: Object, previousTrips: Int, previousCharges: Int, link: VehicleLink, voice: VoiceCoordinator, demo: Bool) {
         guard !blocked else { return }
         let state = output.object("state"), groups = state.object("groups"), freshness = output.object("fresh")
@@ -140,10 +193,10 @@ final class AutomationCoordinator: ObservableObject {
             }
             var seen = Set<String>()
             texts = texts.filter { seen.insert($0).inserted }
-            if !texts.isEmpty { voice.say(texts.joined(separator: " "), key: "boarding:" + s.vehicle, category: defaults.bool(forKey: "voiceAutomations") ? "voiceAutomations" : "voiceConnection", ttl: 20, manual: false) }
+            if !texts.isEmpty { voice.say(texts.joined(separator: " "), key: "boarding:" + s.vehicle, category: defaults.bool(forKey: "voiceAutomations") ? "voiceAutomations" : "voiceConnection", ttl: 60, manual: false) }
         }
         for effect in effects {
-            if effect.rule.speech && effect.rule.trigger != .boarding { voice.say(effect.text, key: "auto:" + effect.rule.id, category: "voiceAutomations", priority: [.batteryLow, .tireLow].contains(effect.rule.trigger) ? 3 : 1, ttl: 20, manual: false) }
+            if effect.rule.speech && effect.rule.trigger != .boarding { voice.say(effect.text, key: "auto:" + effect.rule.id, category: "voiceAutomations", priority: [.batteryLow, .tireLow].contains(effect.rule.trigger) ? 3 : 1, ttl: 60, manual: false) }
             guard effect.rule.action != .speech else { report(effect.id, effect.rule.speech ? "음성 요청 · 음소거·조용시간·만료 적용" : "조건 감지 · 음성 꺼짐"); continue }
             let valid = { [weak self, weak link] in
                 guard let self, let link, !self.blocked, let current = self.sample,

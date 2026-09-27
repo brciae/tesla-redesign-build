@@ -469,7 +469,7 @@ static NSArray *YLLifecycleObservers;
 - (void)emitTimedSpeech:(KNVoiceCode)code object:(id)object safety:(BOOL)safety {
     NSString *text = [self spokenTextForCode:code object:object];
     if (!text.length) return;
-    NSMutableDictionary *message = [@{@"text":text, @"validUntil":@(NSDate.date.timeIntervalSince1970 + 2)} mutableCopy];
+    NSMutableDictionary *message = [@{@"text":text, @"validUntil":@(NSDate.date.timeIntervalSince1970 + 12)} mutableCopy];
     KNLocation *target = [self speechLocation:object];
     BOOL stateChange = code == KNVoiceCode_StartGuide || code == KNVoiceCode_EndGuide || code == KNVoiceCode_OutOfRoute || code == KNVoiceCode_RouteChanged;
     message[@"stateChange"] = @(stateChange);
@@ -492,7 +492,7 @@ static NSArray *YLLifecycleObservers;
         message[@"targetID"] = identifier;
         KNGPSData *gps = self.locationGuide.gpsMatched;
         double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-        double lifetime = speed > 1 ? fmin(2, fmax(0, distance / speed - 0.5)) : 2;
+        double lifetime = speed > 1 ? fmin(12, fmax(0, distance / speed - 1.5)) : 12;
         if (lifetime <= 0) return;
         message[@"validUntil"] = @(NSDate.date.timeIntervalSince1970 + lifetime);
     }

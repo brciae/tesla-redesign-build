@@ -70,6 +70,19 @@ enum FleetTelemetryData {
         }
         return result
     }
+    static func chargeObservation(_ records: [FleetTelemetryReading], vin: String, now: Date = Date()) -> ChargeObservation? {
+        let fields = latest(records, vin: vin)
+        guard let state = fields["DetailedChargeState"] ?? fields["ChargeState"], !state.invalid,
+              now.timeIntervalSince(state.at) >= -5, now.timeIntervalSince(state.at) <= 120,
+              let value = firstStringValue(state) else { return nil }
+        let name = value.replacingOccurrences(of: "DetailedChargeState", with: "")
+        guard ["Disconnected", "NoPower", "Starting", "Charging", "Complete", "Stopped", "Calibrating"].contains(name) else { return nil }
+        func number(_ key: String) -> Double? {
+            guard let r = fields[key], !r.invalid, now.timeIntervalSince(r.at) <= 120, now.timeIntervalSince(r.at) >= -5 else { return nil }
+            return r.number
+        }
+        return ChargeObservation(vin: vin, at: state.at, state: name, soc: number("Soc") ?? number("BatteryLevel"), limit: number("ChargeLimitSoc"))
+    }
     static func pairedDifference(_ first: FleetTelemetryReading?, _ second: FleetTelemetryReading?, maximumSkew: TimeInterval = 2) -> Double? {
         guard let first, let second, first.vin == second.vin, !first.invalid, !second.invalid,
               abs(first.at.timeIntervalSince(second.at)) <= maximumSkew,
@@ -84,7 +97,7 @@ enum FleetTelemetryData {
             // v91: ChargerVoltage and ChargeAmps were ingested and then had no
             // consumer, so the charging card rendered "요청 32 A · — V" forever.
             ("charge", [("Soc", "soc", 1), ("RatedRange", "rangeKm", 1.609344), ("ChargeLimitSoc", "limit", 1), ("TimeToFullCharge", "minutesToLimit", 60),
-                        ("ChargerVoltage", "chargerVoltage", 1), ("ChargeAmps", "chargerAmps", 1)]),
+                        ("ChargerVoltage", "chargerVoltage", 1), ("ChargeAmps", "chargerAmps", 1), ("ACChargingPower", "chargerKW", 1), ("ChargePower", "chargerKW", 1)]),
             ("climate", [("InsideTemp", "insideC", 1), ("OutsideTemp", "outsideC", 1)])
         ]
         for (group, fields) in maps {
@@ -103,7 +116,7 @@ enum FleetTelemetryData {
                 values["isCharging"] = state == "DetailedChargeStateCharging"
                 stamps.append(r.at)
             }
-            if let oldest = stamps.min() {
+            if let oldest = stamps.max() {
                 values["at"] = oldest.timeIntervalSince1970 * 1000
                 values["mode"] = now.timeIntervalSince(oldest) <= 120 ? "recent" : "cached"
                 values["label"] = now.timeIntervalSince(oldest) <= 120 ? "NAS 차량 수신" : "NAS 마지막 측정"

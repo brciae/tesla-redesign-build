@@ -139,20 +139,9 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["1.5 km"].firstMatch.isHittable, "turn distance covered: \(theme) \(orientation.rawValue)")
                 let media = app.staticTexts["navigation.media.title"]
                 XCTAssertTrue(media.exists, "media dock missing: \(theme)")
-                // v93: 클러스터 moved back to the modeling layout, where its own
-                // clusterLayer draws the gauge over a full-bleed map and docks the
-                // media inside that overlay. The bounded-map and media-outside-map
-                // assertions below describe navigationLayout, which only 관제 uses
-                // now, so applying them to 클러스터 asserted the regression.
-                if theme == "관제" {
-                    let map = app.otherElements["navigation.map"]
-                    XCTAssertTrue(map.exists)
-                    XCTAssertGreaterThan(map.frame.height, 120)
-                    XCTAssertLessThanOrEqual(map.frame.maxY, media.frame.minY, "media must remain outside the map")
-                    XCTAssertFalse(app.otherElements["navigation.modeling"].exists)
-                } else {
-                    XCTAssertTrue(app.otherElements["navigation.modeling"].exists, "modeling layout must be preserved")
-                }
+                XCTAssertTrue(app.otherElements["navigation.modeling"].exists, "theme composition must be preserved")
+                let identifiers = ["클러스터": "cluster", "투어링": "touring", "미니멀": "minimal", "파노라마": "panorama", "포커스": "focus", "관제": "fleet"]
+                XCTAssertTrue(app.otherElements["navigation.theme." + identifiers[theme]!].exists)
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Navigation \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }

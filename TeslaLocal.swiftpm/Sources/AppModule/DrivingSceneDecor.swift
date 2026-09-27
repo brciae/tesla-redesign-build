@@ -373,16 +373,16 @@ final class DrivingSceneDecor {
         let white = UIColor(red: 0.92, green: 0.97, blue: 1, alpha: 1)
 
         // Left & right taillights (Model Y signature C-shape cluster)
-        let clusterMesh = MeshResource.generatePlane(width: 0.44, height: 0.12)
-        for x: Float in [-0.74, 0.74] {
-            let sprite = LevelSprite(parent: lightRig, mesh: clusterMesh) { barMaterial(red, $0) }
-            sprite.root.position = [x, 1.05, -2.36]
+        let clusterMesh = MeshResource.generatePlane(width: 0.30, height: 0.075)
+        for x: Float in [-0.60, 0.60] {
+            let sprite = LevelSprite(parent: lightRig, mesh: clusterMesh) { barMaterial(red, $0 * 0.65) }
+            sprite.root.position = [x, 1.05, -2.27]
             sprite.root.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
             tailGlows.append(sprite)
         }
         // Center high-mount brake light
-        let highMountMesh = MeshResource.generatePlane(width: 0.54, height: 0.05)
-        let highMount = LevelSprite(parent: lightRig, mesh: highMountMesh) { barMaterial(red, $0) }
+        let highMountMesh = MeshResource.generatePlane(width: 0.42, height: 0.035)
+        let highMount = LevelSprite(parent: lightRig, mesh: highMountMesh) { barMaterial(red, $0 * 0.65) }
         highMount.root.position = [0, 1.34, -2.12]
         highMount.root.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
         tailGlows.append(highMount)

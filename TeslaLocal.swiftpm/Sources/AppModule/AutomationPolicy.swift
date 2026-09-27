@@ -1,13 +1,14 @@
 import Foundation
 
 enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
-    case boarding, departure, arrival, chargeStart, chargeEnd, batteryLow, tireLow, rest, remaining, delay, destination
+    case boarding, departure, arrival, chargeStart, chargeEnd, chargingLocked, batteryLow, tireLow, rest, remaining, delay, destination
     var id: String { rawValue }
     var title: String {
         switch self {
         case .boarding: return "탑승 인사"
         case .departure: return "출발 안내"
         case .arrival: return "운행 종료"
+        case .chargingLocked: return "충전 중 차량 잠김"
         case .chargeStart: return "충전 시작"
         case .chargeEnd: return "충전 종료"
         case .batteryLow: return "배터리 잔량 주의"
@@ -23,6 +24,7 @@ enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
         case .boarding: return "차량의 탑승 신호·운전석 문 닫힘·P가 연속 확인될 때 한 번"
         case .departure: return "D/R에서 실제 움직임이 시작될 때 한 번"
         case .arrival: return "주행 후 P가 유지되어 운행 기록이 종료될 때"
+        case .chargingLocked: return "충전 중이고 차량이 잠기면 충전 회차당 한 번"
         case .chargeStart: return "새 상태에서 충전 시작으로 바뀔 때"
         case .chargeEnd: return "충전 종료 기록이 저장될 때"
         case .batteryLow: return "주행 중 설정한 잔량 이하일 때"
@@ -35,10 +37,10 @@ enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
     }
 }
 enum AutomationAction: String, Codable, CaseIterable, Identifiable {
-    case speech, climateOn, climateOff, temperature
+    case speech, climateOn, climateOff, temperature, sentryOn
     var id: String { rawValue }
     var title: String {
-        switch self { case .speech: return "음성 안내만"; case .climateOn: return "공조 켜기"; case .climateOff: return "공조 끄기"; case .temperature: return "공조 목표 온도 설정" }
+        switch self { case .sentryOn: return "감시 모드 켜기"; case .speech: return "음성 안내만"; case .climateOn: return "공조 켜기"; case .climateOff: return "공조 끄기"; case .temperature: return "공조 목표 온도 설정" }
     }
 }
 struct AutomationRule: Codable, Identifiable, Equatable {
@@ -65,6 +67,7 @@ struct AutomationRule: Codable, Identifiable, Equatable {
             var rule = AutomationRule(name: trigger.title, trigger: trigger)
             rule.id = "builtin." + trigger.rawValue
             rule.timeGreeting = trigger == .boarding
+            if trigger == .chargingLocked { rule.enabled = false }
             rule.cooldownMinutes = [.batteryLow, .tireLow].contains(trigger) ? 30 : 1
             if trigger == .rest { rule.threshold = 120 }
             if trigger == .remaining { rule.threshold = 10 }
@@ -77,7 +80,7 @@ struct AutomationRule: Codable, Identifiable, Equatable {
               (0...23).contains(startHour), (0...24).contains(endHour), (1...1440).contains(cooldownMinutes),
               threshold.isFinite, (0...300).contains(threshold), targetC.isFinite, (16...28).contains(targetC), targetC * 2 == (targetC * 2).rounded(),
               cabinThresholdC.isFinite, (-20...60).contains(cabinThresholdC), ["always", "above", "below"].contains(cabinCondition),
-              action == .speech || (trigger == .boarding && vehicle.range(of: "^[A-HJ-NPR-Z0-9]{17}$", options: .regularExpression) != nil) else { throw AutomationError.invalid }
+              action == .speech || (((trigger == .boarding && action != .sentryOn) || (trigger == .chargingLocked && action == .sentryOn)) && vehicle.range(of: "^[A-HJ-NPR-Z0-9]{17}$", options: .regularExpression) != nil) else { throw AutomationError.invalid }
         if [.rest, .remaining, .delay].contains(trigger), !(1...300).contains(threshold) { throw AutomationError.invalid }
         if trigger == .batteryLow, !(1...100).contains(threshold) { throw AutomationError.invalid }
         if trigger == .tireLow, !(1...4).contains(threshold) { throw AutomationError.invalid }
@@ -186,6 +189,7 @@ struct AutomationPolicy {
         case .boarding: text = "탑승을 환영합니다."
         case .departure: text = "출발했습니다."
         case .arrival: text = sample.tripSummary
+        case .chargingLocked: text = "충전 중 차량 잠금을 확인했습니다."
         case .chargeStart: text = "충전이 시작되었습니다."
         case .chargeEnd: text = "충전 종료."
         case .batteryLow: text = "배터리 \(Int(sample.soc ?? 0))퍼센트. 충전이 필요합니다."
@@ -305,6 +309,7 @@ struct AutomationPolicy {
             case .boarding: fire = boarding; text = "탑승을 환영합니다."
             case .departure: fire = departure; text = "출발했습니다."
             case .arrival: fire = sample.endedTrip != nil; text = sample.tripSummary
+            case .chargingLocked: fire = false // Evaluated from fresh Fleet sections; never BLE-cached display data.
             case .chargeStart: fire = sample.chargeFresh && old?.chargeFresh == true && old?.charging != nil && old?.charging != 5 && sample.charging == 5; text = "충전이 시작되었습니다."
             case .chargeEnd: fire = sample.endedCharge != nil; text = "충전 종료."
             case .batteryLow: fire = sample.moving && sample.chargeFresh && sample.soc != nil && (sample.soc ?? 101) <= rule.threshold; text = "배터리 \(Int(sample.soc ?? 0))퍼센트. 충전이 필요합니다."

@@ -37,6 +37,14 @@ import Combine
         guard let event, UserDefaults.standard.bool(forKey: "notify.charge." + event.kind) else { return }
         Task { await deliver(event, id: "YL.charge.\(current.vin).\(event.kind).\(Int(current.at.timeIntervalSince1970))") }
     }
+    func scheduleEstimate(vin: String, minutes: Double?, isCharging: Bool) {
+        guard !vin.isEmpty else { return }
+        let id = "YL.charge.estimate." + vin
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        guard isCharging, let minutes, minutes.isFinite, minutes > 0, minutes <= 10080, UserDefaults.standard.bool(forKey: "notify.charge.complete") else { return }
+        Task { await deliver(ChargeEvent(kind: "estimate", title: "예상 충전 완료 시각", body: "차량이 보고한 목표 충전량 도달 예상 시각입니다. 실제 완료 상태는 앱에서 확인해 주세요."), id: id, delay: max(1, minutes * 60)) }
+    }
     private func deliver(_ event: ChargeEvent, id: String, delay: TimeInterval? = nil) async {
         await refreshAuthorization()
         guard allowed else { return }

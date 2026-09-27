@@ -3,6 +3,15 @@ import Foundation
 @main struct AutomationPolicyTests {
     static func main() throws {
         let vin = "7SAYGDEE0PF000001"
+        var sentry = AutomationRule(name: "충전 감시", trigger: .chargingLocked, enabled: false, action: .sentryOn)
+        sentry.vehicle = vin
+        try sentry.validate()
+        let sentryJSON = try AutomationTransfer.encode(sentry)
+        let decodedSentry = try AutomationTransfer.decode("```json\r\n" + sentryJSON + "\r\n```", vehicle: vin)
+        precondition(decodedSentry.action == .sentryOn && decodedSentry.trigger == .chargingLocked && !decodedSentry.enabled)
+        sentry.trigger = .boarding
+        precondition((try? sentry.validate()) == nil)
+
         func sample(_ now: Double) -> AutomationSample {
             var s = AutomationSample(now: now, vehicle: vin)
             s.driveFresh = true; s.closuresFresh = true; s.gear = "P"; s.speed = 0

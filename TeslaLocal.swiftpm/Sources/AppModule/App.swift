@@ -621,7 +621,7 @@ struct ChargeRow: View {
             }
             if charge.flag("collectedAfterEnd") { Text("종료 후 수집").font(.caption2).foregroundStyle(Theme.muted) }
             Spacer(minLength: 4)
-            Text(valueText(charge.number("supplyKWh") ?? charge.number("vehicleReportedKWh"), digits: 1) + " kWh")
+            Text((charge.number("supplyKWh") == nil && charge.number("vehicleReportedKWh") == nil && charge.number("estimatedStoredKWh") != nil ? "추정 " : "") + valueText(charge.number("supplyKWh") ?? charge.number("vehicleReportedKWh") ?? charge.number("estimatedStoredKWh"), digits: 1) + " kWh")
                 .font(.subheadline).monospacedDigit()
             if let cost = charge.number("cost") {
                 Text(valueText(cost) + "원").font(.caption).foregroundStyle(Theme.muted).monospacedDigit()
@@ -646,7 +646,7 @@ struct ChargeListView: View {
                         RecordActions(edit: { editing = c }, delete: { model.mutate("deleteCharge", ["id": c.selfID]) }, title: "충전 기록")
                     }
                     HStack {
-                        Metric(title: c.number("supplyKWh") != nil ? "영수증 공급" : "차량 보고", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh"), digits: 1, suffix: " kWh")
+                        Metric(title: c.number("supplyKWh") != nil ? "영수증 공급" : c.number("vehicleReportedKWh") != nil ? "차량 보고" : "SOC 기반 추정", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh"), digits: 1, suffix: " kWh")
                         if let cost = c.number("cost") { Metric(title: "결제액", value: cost, suffix: "원") }
                     }
                     Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")

@@ -114,6 +114,7 @@ final class AppModel: ObservableObject {
         fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
         fleet.onVehicleSnapshot = { [weak self] snapshot in
             guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin else { return }
+            Task { @MainActor in self.automations.observeFleet(snapshot, voice: self.voice, bleActive: self.link.authentic) }
             if !self.link.authentic, snapshot.sectionIsRecent("drive_state") {
                 let overlay = snapshot.homeOverlay()
                 let history: Object = ["vin": snapshot.vin, "drive": snapshot.driveDisplay(), "charge": overlay["charge"] ?? Object(), "location": overlay["location"] ?? Object()]
@@ -217,6 +218,7 @@ final class AppModel: ObservableObject {
         lastArchiveSync = Date()
         let vin = fleet.selectedVin
             await FleetArchiveClient.shared.sync(vin: vin)
+            if let observation = FleetTelemetryData.chargeObservation(FleetTelemetryStore.shared.records, vin: vin) { ChargeNotificationManager.shared.observe(observation) }
             guard !self.demo, self.fleet.selectedVin == vin else { return }
             let rows: [Object] = FleetTelemetryStore.shared.records.filter { $0.vin == vin }.map { r in
                 var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "field": r.field, "text": r.text, "invalid": r.invalid]
