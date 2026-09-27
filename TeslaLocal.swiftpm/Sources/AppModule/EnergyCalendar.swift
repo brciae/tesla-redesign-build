@@ -66,110 +66,182 @@ struct EnergyCalendarView: View {
         EnergyCalendarAnalysis.days(month: month, trips: model.output.object("energy").rows("trips"), parking: model.state.rows("parkingPeriods"), charges: model.state.rows("charges"), capacityKWh: model.output.object("energy").number("capacityKWh") ?? 75)
     }
     private var offset: Int { guard let first = days.first else { return 0 }; return (Calendar.current.component(.weekday, from: first.date) - Calendar.current.firstWeekday + 7) % 7 }
+    // v91: the body was one expression the type-checker gave up on. Each strip
+    // is its own small view now, which is also how it reads on screen.
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("이전 달")
-                    Spacer(); Text(month.formatted(.dateTime.year().month())).font(.title3.bold()); Spacer()
-                    Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }.disabled(Calendar.current.isDate(month, equalTo: Date(), toGranularity: .month)).accessibilityLabel("다음 달")
-                }
-                Picker("기록 종류", selection: $charging) { Text("사용").tag(false); Text("충전").tag(true) }.pickerStyle(.segmented)
-                if charging {
-                    Picker("에너지 기준", selection: $vehicleEnergy) { Text("차량 충전량").tag(true); Text("결제 공급량").tag(false) }.pickerStyle(.segmented)
-                }
-                // v90: one muted line for the month's peak, then thin bars on a
-                // dotted baseline. No plot frame, no gridlines, no y-axis — the
-                // day ticks and the summary rows below carry the numbers.
-                Text(peakText).font(.system(size: 12)).foregroundStyle(Theme.muted)
-                Chart(days) { day in
-                    if charging {
-                        if hasCharge(day) {
-                            BarMark(x: .value("날짜", day.date, unit: .day), y: .value("충전량", charge(day)), width: .fixed(4))
-                                .clipShape(Capsule()).foregroundStyle(Theme.green)
-                        }
-                    } else {
-                        if day.hasDrive {
-                            BarMark(x: .value("날짜", day.date, unit: .day), y: .value("사용량", day.driving), width: .fixed(4))
-                                .clipShape(Capsule()).foregroundStyle(by: .value("구분", "주행"))
-                        }
-                        if day.hasParking {
-                            BarMark(x: .value("날짜", day.date, unit: .day), y: .value("사용량", day.parking), width: .fixed(4))
-                                .clipShape(Capsule()).foregroundStyle(by: .value("구분", "주차"))
-                        }
-                    }
-                }
-                .chartForegroundStyleScale(["주행": Color.orange, "주차": Color.purple])
-                .chartLegend(.hidden)
-                .chartYAxis {
-                    AxisMarks(values: [0]) { AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [1, 3])).foregroundStyle(Color.white.opacity(0.35)) }
-                }
-                .chartXAxis {
-                    AxisMarks(values: tickDates) { value in
-                        AxisValueLabel {
-                            if let date = value.as(Date.self) {
-                                Text(String(Calendar.current.component(.day, from: date)))
-                                    .font(.system(size: 11)).foregroundStyle(Theme.muted)
-                            }
-                        }
-                    }
-                }
-                .frame(height: 150)
-
-                VStack(spacing: 10) {
-                    if charging {
-                        summaryRow("충전량", String(format: "%.2f", days.reduce(0) { $0 + charge($1) }), "kWh")
-                        summaryRow("충전 시간", durationText(days.reduce(0) { $0 + $1.chargeMinutes }), "")
-                    } else {
-                        summaryRow("사용량", String(format: "%.1f", days.reduce(0) { $0 + $1.driving + $1.parking }), "kWh")
-                        summaryRow("주행 거리", String(format: "%.1f", days.reduce(0) { $0 + $1.distance }), "km")
-                    }
-                }
-                .padding(.vertical, 2)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 8) {
-                    ForEach(0..<7, id: \.self) { index in
-                        let weekday = (Calendar.current.firstWeekday - 1 + index) % 7
-                        Text(Calendar.current.shortWeekdaySymbols[weekday])
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(weekday == 0 || weekday == 6 ? Color(red: 0.94, green: 0.42, blue: 0.42) : Theme.muted)
-                    }
-                    ForEach(0..<offset, id: \.self) { _ in Color.clear.frame(height: 64) }
-                    ForEach(days) { day in
-                        Button { selected = day.date } label: {
-                            VStack(spacing: 3) {
-                                Text(String(Calendar.current.component(.day, from: day.date)))
-                                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                                // v90: the delta the reference apps show — signed kWh and,
-                                // for a charge, what share of the pack it added.
-                                if charging, hasCharge(day) {
-                                    Text(String(format: "+%.1f", charge(day)))
-                                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.green)
-                                    if let share = packShare(charge(day)) {
-                                        Text(share).font(.system(size: 9)).foregroundStyle(Theme.green.opacity(0.75))
-                                    }
-                                }
-                                if !charging, day.hasDrive || day.hasParking {
-                                    Text(String(format: "-%.1f", day.driving + day.parking))
-                                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(.orange)
-                                    if day.distance > 0 {
-                                        Text(String(format: "%.0f km", day.distance)).font(.system(size: 9)).foregroundStyle(Theme.muted)
-                                    }
-                                }
-                            }.frame(maxWidth: .infinity).frame(height: 64).background(selected == day.date ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
-                        }.buttonStyle(.plain)
-                    }
-                }
-                if let selected, let day = days.first(where: { $0.date == selected }) {
-                    InfoCard {
-                        Text(selected.formatted(date: .abbreviated, time: .omitted)).font(.headline)
-                        if charging { Text(String(format: "충전 %.2f kWh", charge(day))) }
-                        else { Text(String(format: "주행 %.1f kWh · 주차 %.1f kWh · %.1f km", day.driving, day.parking, day.distance)) }
-                    }
-                }
+                monthHeader
+                modePickers
+                chartStrip
+                summaryStrip
+                calendarGrid
+                selectionCard
                 InfoNote("달력 집계 기준", "주행·주차는 종료일, 충전은 시작일에 기록합니다. 충전량은 차량 보고량과 결제 공급량을 합산하지 않습니다. 비어 있는 날은 기록이 없는 날이며 소비 0을 뜻하지 않습니다. 주차 소비 세부 원인은 소비·비용 메뉴에서 확인할 수 있습니다.")
             }.padding(16)
         }.background(Theme.bg).navigationTitle("에너지 달력")
     }
+
+    private var monthHeader: some View {
+        HStack {
+            Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("이전 달")
+            Spacer()
+            Text(month.formatted(.dateTime.year().month())).font(.title3.bold())
+            Spacer()
+            Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+                .disabled(Calendar.current.isDate(month, equalTo: Date(), toGranularity: .month))
+                .accessibilityLabel("다음 달")
+        }
+    }
+
+    @ViewBuilder private var modePickers: some View {
+        Picker("기록 종류", selection: $charging) { Text("사용").tag(false); Text("충전").tag(true) }.pickerStyle(.segmented)
+        if charging {
+            Picker("에너지 기준", selection: $vehicleEnergy) { Text("차량 충전량").tag(true); Text("결제 공급량").tag(false) }.pickerStyle(.segmented)
+        }
+    }
+
+    // v90: one muted line for the month's peak, then thin bars on a dotted
+    // baseline. No plot frame, no gridlines, no y-axis — the day ticks and the
+    // summary rows below carry the numbers.
+    private var chartStrip: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(peakText).font(.system(size: 12)).foregroundStyle(Theme.muted)
+            energyChart
+        }
+    }
+
+    private var energyChart: some View {
+        Chart(days) { day in
+            bars(for: day)
+        }
+        .chartForegroundStyleScale(["주행": Color.orange, "주차": Color.purple])
+        .chartLegend(.hidden)
+        .chartYAxis {
+            AxisMarks(values: [0]) {
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [1, 3])).foregroundStyle(Color.white.opacity(0.35))
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: tickDates) { value in
+                AxisValueLabel { dayTick(value.as(Date.self)) }
+            }
+        }
+        .frame(height: 150)
+    }
+
+    @ChartContentBuilder private func bars(for day: EnergyCalendarDay) -> some ChartContent {
+        if charging {
+            if hasCharge(day) {
+                BarMark(x: .value("날짜", day.date, unit: .day), y: .value("충전량", charge(day)), width: .fixed(4))
+                    .clipShape(Capsule())
+                    .foregroundStyle(Theme.green)
+            }
+        } else {
+            if day.hasDrive {
+                BarMark(x: .value("날짜", day.date, unit: .day), y: .value("사용량", day.driving), width: .fixed(4))
+                    .clipShape(Capsule())
+                    .foregroundStyle(by: .value("구분", "주행"))
+            }
+            if day.hasParking {
+                BarMark(x: .value("날짜", day.date, unit: .day), y: .value("사용량", day.parking), width: .fixed(4))
+                    .clipShape(Capsule())
+                    .foregroundStyle(by: .value("구분", "주차"))
+            }
+        }
+    }
+
+    @ViewBuilder private func dayTick(_ date: Date?) -> some View {
+        if let date {
+            Text(String(Calendar.current.component(.day, from: date)))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+        }
+    }
+
+    @ViewBuilder private var summaryStrip: some View {
+        let totalCharge = days.reduce(0.0) { $0 + charge($1) }
+        let totalMinutes = days.reduce(0.0) { $0 + $1.chargeMinutes }
+        let totalUse = days.reduce(0.0) { $0 + $1.driving + $1.parking }
+        let totalDistance = days.reduce(0.0) { $0 + $1.distance }
+        VStack(spacing: 10) {
+            if charging {
+                summaryRow("충전량", String(format: "%.2f", totalCharge), "kWh")
+                summaryRow("충전 시간", durationText(totalMinutes), "")
+            } else {
+                summaryRow("사용량", String(format: "%.1f", totalUse), "kWh")
+                summaryRow("주행 거리", String(format: "%.1f", totalDistance), "km")
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var calendarGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 8) {
+            ForEach(0..<7, id: \.self) { index in weekdayHeader(index) }
+            ForEach(0..<offset, id: \.self) { _ in Color.clear.frame(height: 64) }
+            ForEach(days) { day in
+                Button { selected = day.date } label: { dayCell(day) }.buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func weekdayHeader(_ index: Int) -> some View {
+        let weekday = (Calendar.current.firstWeekday - 1 + index) % 7
+        let weekend = weekday == 0 || weekday == 6
+        return Text(Calendar.current.shortWeekdaySymbols[weekday])
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(weekend ? Color(red: 0.94, green: 0.42, blue: 0.42) : Theme.muted)
+    }
+
+    // v90: the delta the reference apps show — signed kWh and, for a charge,
+    // what share of the pack it added.
+    private func dayCell(_ day: EnergyCalendarDay) -> some View {
+        let isSelected = selected == day.date
+        return VStack(spacing: 3) {
+            Text(String(Calendar.current.component(.day, from: day.date)))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+            dayDelta(day)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 64)
+        .background(isSelected ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder private func dayDelta(_ day: EnergyCalendarDay) -> some View {
+        if charging {
+            if hasCharge(day) {
+                Text(String(format: "+%.1f", charge(day)))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.green)
+                if let share = packShare(charge(day)) {
+                    Text(share).font(.system(size: 9)).foregroundStyle(Theme.green.opacity(0.75))
+                }
+            }
+        } else if day.hasDrive || day.hasParking {
+            Text(String(format: "-%.1f", day.driving + day.parking))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.orange)
+            if day.distance > 0 {
+                Text(String(format: "%.0f km", day.distance)).font(.system(size: 9)).foregroundStyle(Theme.muted)
+            }
+        }
+    }
+
+    @ViewBuilder private var selectionCard: some View {
+        if let selected, let day = days.first(where: { $0.date == selected }) {
+            InfoCard {
+                Text(selected.formatted(date: .abbreviated, time: .omitted)).font(.headline)
+                if charging {
+                    Text(String(format: "충전 %.2f kWh", charge(day)))
+                } else {
+                    Text(String(format: "주행 %.1f kWh · 주차 %.1f kWh · %.1f km", day.driving, day.parking, day.distance))
+                }
+            }
+        }
+    }
+
     /// Label left, value right, unit small — the reference layout for a figure
     /// that is read, not compared.
     private func summaryRow(_ label: String, _ value: String, _ unit: String) -> some View {

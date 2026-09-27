@@ -85,40 +85,7 @@ struct BatteryOverview: View {
                     .padding(.bottom, 2)
 
                     Chart {
-                        ForEach(cleanedTrend, id: \.batteryRowID) { point in
-                            let at = (point.number("at") ?? 0) / 1000
-                            let soc = min(100.0, max(0.0, point.number("soc") ?? 0))
-                            AreaMark(
-                                x: .value("시각", Date(timeIntervalSince1970: at)),
-                                y: .value("잔량", soc)
-                            )
-                            .interpolationMethod(.catmullRom)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.04)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-
-                            LineMark(
-                                x: .value("시각", Date(timeIntervalSince1970: at)),
-                                y: .value("잔량", soc)
-                            )
-                            .interpolationMethod(.catmullRom)
-                            .foregroundStyle(Color.cyan)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                        }
-                        // v90: a filled dot marks where the trace ends, so the
-                        // current level reads without chasing the line's tip.
-                        if let last = cleanedTrend.last, let at = last.number("at"), let soc = last.number("soc") {
-                            PointMark(
-                                x: .value("시각", Date(timeIntervalSince1970: at / 1000)),
-                                y: .value("잔량", min(100.0, max(0.0, soc)))
-                            )
-                            .symbolSize(60)
-                            .foregroundStyle(Color.cyan)
-                        }
+                        socMarks(cleanedTrend)
                     }
                     .chartYScale(domain: 0...100)
                     // v90: 100 / 50 / 0 on both edges and no gridlines — the
@@ -243,4 +210,45 @@ struct BatteryOverview: View {
 
 private extension Dictionary where Key == String, Value == Any {
     var batteryRowID: String { string("id") }
+}
+
+/// v91: the trend's marks live outside the view body; the type-checker gave up
+/// on the single expression once the end-point dot joined it.
+private extension BatteryOverview {
+    @ChartContentBuilder func socMarks(_ trend: [Object]) -> some ChartContent {
+                        ForEach(trend, id: \.batteryRowID) { point in
+                            let at = (point.number("at") ?? 0) / 1000
+                            let soc = min(100.0, max(0.0, point.number("soc") ?? 0))
+                            AreaMark(
+                                x: .value("시각", Date(timeIntervalSince1970: at)),
+                                y: .value("잔량", soc)
+                            )
+                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.04)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+
+                            LineMark(
+                                x: .value("시각", Date(timeIntervalSince1970: at)),
+                                y: .value("잔량", soc)
+                            )
+                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Color.cyan)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                        }
+                        // v90: a filled dot marks where the trace ends, so the
+                        // current level reads without chasing the line's tip.
+                        if let last = trend.last, let at = last.number("at"), let soc = last.number("soc") {
+                            PointMark(
+                                x: .value("시각", Date(timeIntervalSince1970: at / 1000)),
+                                y: .value("잔량", min(100.0, max(0.0, soc)))
+                            )
+                            .symbolSize(60)
+                            .foregroundStyle(Color.cyan)
+                        }
+    }
 }

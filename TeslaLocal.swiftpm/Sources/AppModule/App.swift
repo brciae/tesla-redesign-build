@@ -281,6 +281,19 @@ struct TripsView: View {
         return f
     }()
 
+    // v90: 회차 수동 종료 moved here from the retired 주행 정보 page — the action
+    // belongs next to the records it closes, and this is its only home. It stays
+    // a separate property so the body remains type-checkable.
+    @ViewBuilder private var activeTripCard: some View {
+        if !model.state.object("activeTrip").isEmpty {
+            InfoCard {
+                CardTitle(title: "운행 기록 중", systemImage: "record.circle",
+                          info: "P 상태가 45초 유지되면 회차를 잠정 종료함. 실제 하차를 감지하는 것은 아니므로 필요하면 수동으로 종료할 수 있음.")
+                Button("회차 수동 종료") { confirmEnd = true }
+            }
+        }
+    }
+
     var body: some View {
         PageBody(title: "운행 기록", briefing: .trips, briefingText: { model.screenBriefing(.trips, days: period) }) {
             let estimates = model.output.object("energyPeriods").object(String(period))
@@ -310,15 +323,7 @@ struct TripsView: View {
                 }
             }
 
-            // v90: 회차 수동 종료 moved here from the retired 주행 정보 page — the
-            // action belongs next to the records it closes, and this is its only home.
-            if !model.state.object("activeTrip").isEmpty {
-                InfoCard {
-                    CardTitle(title: "운행 기록 중", systemImage: "record.circle",
-                              info: "P 상태가 45초 유지되면 회차를 잠정 종료함. 실제 하차를 감지하는 것은 아니므로 필요하면 수동으로 종료할 수 있음.")
-                    Button("회차 수동 종료") { confirmEnd = true }
-                }
-            }
+            activeTripCard
 
             // v34: summary first — the numbers that matter, then a chart, then only the recent runs.
             InfoCard {
