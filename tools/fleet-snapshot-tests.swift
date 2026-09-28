@@ -88,6 +88,23 @@ import Foundation
         precondition(stations.count == 2 && stations[0].available == 2 && stations[0].powerKW == 250)
         precondition(stations[1].available == nil)
         precondition(NearbyChargingSite.parse(["destination_charging": [["location": ["lat": true, "long": 127.1]]]]).isEmpty)
+        let publicRows = [
+            PublicCharger(fields: ["statId": "A", "chgerId": "01", "statNm": "복합 충전소", "chgerType": "04", "stat": "2", "lat": "37.5", "lng": "127.1", "statUpdDt": "20200101000000"]),
+            PublicCharger(fields: ["statId": "A", "chgerId": "02", "chgerType": "02", "stat": "3"]),
+            PublicCharger(fields: ["statId": "A", "chgerId": "03", "chgerType": "08", "stat": "2", "limitYn": "Y"]),
+            PublicCharger(fields: ["statId": "A", "chgerId": "04", "chgerType": "04", "stat": "2", "delYn": "Y"])
+        ]
+        let publicSites = PublicChargingData.sites(publicRows + [publicRows[0]], fetchedAt: now, now: now)
+        precondition(publicSites.count == 1 && publicSites[0].total == 3 && publicSites[0].available == 1)
+        precondition(publicSites[0].matches("급속") && publicSites[0].matches("완속"))
+        precondition(PublicChargingData.sites(publicRows, fetchedAt: now.addingTimeInterval(-601), now: now)[0].available == nil)
+        let updated = PublicChargingData.merge(publicRows, [PublicCharger(fields: ["statId": "A", "chgerId": "01", "stat": "3", "statUpdDt": "20260928230000"])])
+        precondition(updated.first?.value("lat") == "37.5" && updated.first?.value("stat") == "3")
+        precondition(PublicChargingData.merge(updated, []).count == 4, "Empty delta must preserve unchanged chargers")
+        let sample = Data("{\"header\":{\"resultCode\":\"00\",\"totalCount\":1},\"items\":{\"item\":{\"statId\":\"A\",\"chgerId\":\"01\",\"stat\":2}}}".utf8)
+        let decoded = try! PublicChargingData.decode(sample)
+        precondition(decoded.total == 1 && decoded.rows[0].id == "A:01" && decoded.rows[0].value("stat") == "2")
+        precondition((try? PublicChargingData.decode(Data("{\"resultCode\":\"30\"}".utf8))) == nil)
         print("PASS: Fleet snapshots and validated, deduplicated charging map coordinates")
     }
 }

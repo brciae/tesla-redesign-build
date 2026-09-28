@@ -65,15 +65,27 @@ struct NearbyChargingSite: Identifiable {
     let available: Int?
     let total: Int?
     let powerKW: Double?
+    var address = ""
+    var chargingDetail = ""
+    var restriction = ""
+    var source = "Tesla"
+    var fetchedAt: Date?
+    var categoryAvailability: [String: String] = [:]
     var category: String {
+        if kind.contains("급속") || kind == "완속" { return kind }
         if kind == "슈퍼차저" { return "슈퍼차저" }
         if kind == "데스티네이션 충전" { return "완속" }
         if let powerKW { return powerKW >= 50 ? "급속" : "완속" }
         return "충전소"
     }
+    func matches(_ filter: String) -> Bool { filter == "전체" || category.contains(filter) }
     var availability: String? {
         guard let available else { return nil }
         return total.map { "\(available)/\($0)" } ?? "\(available)"
+    }
+    func availability(for filter: String) -> String? {
+        if filter == "전체" || source == "Tesla" { return availability }
+        return categoryAvailability[filter]
     }
 
     static func parse(_ payload: Any) -> [NearbyChargingSite] {
