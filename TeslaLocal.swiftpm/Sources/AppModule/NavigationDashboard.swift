@@ -208,6 +208,8 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         .clipped()
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
+        // Own container so the root identifier does not overwrite the safe-area foreground identifier.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("navigation.modeling")
     }
 
