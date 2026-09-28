@@ -357,6 +357,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             activePriority = 0
             notice = "타입캐스트 오디오 재생 실패: \(error.localizedDescription)"
             playbackState = "재생 실패"
+            automaticTrace("안내 재생 실패 · " + error.localizedDescription)
             drain()
         }
     }
@@ -364,13 +365,13 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         guard player === typecastPlayer else { return }
         if flag { playbackCompletions += 1 }
-        finishPlayback()
+        finishPlayback(success: flag)
         if !flag { playbackState = "재생 중단"; notice = "오디오가 정상 완료되지 않았습니다." }
     }
 
-    private func finishPlayback() {
+    private func finishPlayback(success: Bool) {
         guard activeTicket != nil || speaking else { return }
-        if !activeManual || navigationSpeaking { automaticTrace("자동 안내 재생 완료") }
+        if !activeManual || navigationSpeaking { automaticTrace(success ? "자동 안내 재생 완료" : "자동 안내 재생 중단") }
         activeTicket = nil
         activeManual = false
         activeText = ""

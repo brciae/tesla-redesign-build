@@ -7,13 +7,15 @@ final class AutomationCoordinator: ObservableObject {
     @Published private(set) var status = "최신 차량 신호 대기"
     @Published private(set) var presence = "탑승 신호 미수신"
     private let file: URL
+    private let observationNow: () -> Date
     private var policy = AutomationPolicy()
     private var sample: AutomationSample?
     private var physicalExpiresAt = 0.0
     private var climateExpiresAt = 0.0
     private var blocked = false
     var settingsDidChange: (() -> Void)?
-    init(folder: URL) throws {
+    init(folder: URL, observationNow: @escaping () -> Date = Date.init) throws {
+        self.observationNow = observationNow
         file = folder.appendingPathComponent("automations.json")
         if FileManager.default.fileExists(atPath: file.path) {
             // Corrupt rules must not silently become active defaults.
@@ -73,6 +75,26 @@ final class AutomationCoordinator: ObservableObject {
         do { try persist(); publish() } catch { blocked = true; status = "자동화 실행기록 저장 실패 · 추가 실행 중단" }
     }
     private var fleetPrevious: [String: ChargeObservation] = [:]
+    @MainActor func observeFleetSpeech(_ snapshot: FleetVehicleSnapshot, history: Object = [:], previousTrips: Int = 0, link: VehicleLink, voice: VoiceCoordinator) {
+        guard !link.authentic, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
+        let at = snapshot.number("vehicle_state", "timestamp") ?? 0
+        let vehicle = snapshot.payload["vehicle_state"] as? Object ?? [:]
+        var closures: Object = ["at": at, "receivedAt": at]
+        closures["userPresent"] = vehicle["is_user_present"] as? Bool
+        closures["locked"] = snapshot.locked
+        if let door = snapshot.number("vehicle_state", "df"), door == 0 || door == 1 { closures["driverFront"] = door == 1 }
+        let charge: Object = ["at": snapshot.number("charge_state", "timestamp") ?? 0,
+                              "receivedAt": snapshot.receivedAt.timeIntervalSince1970 * 1000,
+                              "soc": snapshot.soc as Any, "rangeKm": snapshot.rangeKm as Any]
+        let tireKeys = ["fl", "fr", "rl", "rr"]
+        let tires: Object = ["at": at, "receivedAt": at,
+                             "values": tireKeys.map { snapshot.number("vehicle_state", "tpms_pressure_" + $0) as Any },
+                             "seenAt": tireKeys.map { _ in at },
+                             "warnings": tireKeys.map { vehicle["tpms_hard_warning_" + $0] as? Bool == true || vehicle["tpms_soft_warning_" + $0] as? Bool == true }]
+        let output: Object = ["fresh": ["closures": snapshot.sectionIsRecent("vehicle_state"), "drive": snapshot.sectionIsRecent("drive_state"), "charge": snapshot.sectionIsRecent("charge_state"), "tire": snapshot.sectionIsRecent("vehicle_state")],
+                              "state": ["settings": ["vin": snapshot.vin], "trips": history.rows("trips"), "groups": ["closures": closures, "drive": snapshot.driveDisplay(), "charge": charge, "tire": tires]]]
+        observe(output: output, previousTrips: previousTrips, previousCharges: 0, link: link, voice: voice, demo: false, speechOnly: true)
+    }
     @MainActor func observeFleet(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator, bleActive: Bool) {
         guard !blocked, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
         let charge = snapshot.payload["charge_state"] as? Object ?? [:]
@@ -134,14 +156,15 @@ final class AutomationCoordinator: ObservableObject {
             }
         }
     }
-    func observe(output: Object, previousTrips: Int, previousCharges: Int, link: VehicleLink, voice: VoiceCoordinator, demo: Bool) {
+    func observe(output: Object, previousTrips: Int, previousCharges: Int, link: VehicleLink, voice: VoiceCoordinator, demo: Bool, speechOnly: Bool = false) {
         guard !blocked else { return }
         let state = output.object("state"), groups = state.object("groups"), freshness = output.object("fresh")
-        let now = Date().timeIntervalSince1970
+        let now = observationNow().timeIntervalSince1970
         func fresh(_ key: String, maxAge: Double = 15) -> Bool {
             let g = groups.object(key)
             guard freshness.flag(key), let at = g.number("at"), let received = g.number("receivedAt") else { return false }
-            return at / 1000 <= now && received / 1000 <= now && now - at / 1000 <= maxAge && now - received / 1000 <= maxAge
+            let age = speechOnly ? 90.0 : maxAge
+            return at / 1000 <= now && received / 1000 <= now && now - at / 1000 <= age && now - received / 1000 <= age
         }
         let d = groups.object("drive"), c = groups.object("closures"), charge = groups.object("charge"), tire = groups.object("tire")
         let units = VehicleUnits.saved
@@ -150,14 +173,16 @@ final class AutomationCoordinator: ObservableObject {
             vin = UserDefaults.standard.string(forKey: "vin") ?? ""
         }
         var s = AutomationSample(now: now, vehicle: vin)
-        s.active = !demo && link.authentic
+        s.active = !demo && (link.authentic || speechOnly)
+        s.speechOnly = speechOnly
         // Do not consume the first boarding event while its enabled HVAC key is still authenticating.
-        let needsHVAC = rules.contains { $0.enabled && $0.action != .speech && $0.vehicle == s.vehicle }
-        s.boardingReady = !needsHVAC || !link.controlEnabled || link.controlsReady(category: "climate")
+        let needsHVAC = rules.contains { $0.enabled && $0.trigger == .boarding && $0.action != .speech && $0.vehicle == s.vehicle }
+        s.boardingReady = !speechOnly && (!needsHVAC || !link.controlEnabled || link.controlsReady(category: "climate"))
         s.driveFresh = fresh("drive"); s.closuresFresh = fresh("closures"); s.climateFresh = fresh("climate", maxAge: 30)
         s.chargeFresh = fresh("charge", maxAge: 30); s.tireFresh = fresh("tire", maxAge: 30)
         s.gear = d["gear"] as? String; s.speed = d.number("speedKmh")
         s.present = c["userPresent"] as? Bool; s.driverDoor = c["driverFront"] as? Bool
+        s.locked = c["locked"] as? Bool
         s.closuresAt = c.number("receivedAt").map { $0 / 1000 }
         s.insideC = groups.object("climate").number("insideC"); s.soc = charge.number("soc")
         if let charging = charge.number("charging"), charging.isFinite, (0...100).contains(charging) { s.charging = Int(charging) }
@@ -188,19 +213,21 @@ final class AutomationCoordinator: ObservableObject {
         let before = policy.document
         let effects = policy.evaluate(s)
         if !s.active { status = "탑승 인사 대기 · 차량 인증 연결 필요" }
-        else if !s.driveFresh || !s.closuresFresh { status = "탑승 인사 대기 · 최신 기어·탑승 신호 필요" }
+        else if policy.didVoiceBoard { status = "탑승 확인 · 인사 음성 요청" }
+        else if (!speechOnly && !s.driveFresh) || !s.closuresFresh { status = "탑승 인사 대기 · 최신 기어·탑승 신호 필요" }
+        else if speechOnly { status = s.present == true && s.driverDoor == false ? (policy.document.boardingVoiceLatched == true ? "Fleet 탑승 인사 조건 처리됨 · 다음 하차·탑승 신호 대기" : "Fleet 탑승 신호 연속 확인 중") : "Fleet 탑승 인사 대기 · 탑승·운전석 문 닫힘 확인 필요" }
         else if !s.boarded { status = "탑승 인사 대기 · 탑승·운전석 문 닫힘·P 확인 필요" }
-        else if !s.boardingReady { status = "탑승 인사 대기 · 자동 공조 인증 준비 중" }
+        else if !s.boardingReady { status = "탑승 인사 조건 처리됨 · 자동 공조만 인증 준비 중" }
         else if policy.didBoard { status = effects.contains { $0.rule.trigger == .boarding && $0.rule.speech } ? "탑승 확인 · 인사 음성 요청" : "탑승 확인 · 인사 규칙·시간대·재실행 간격 확인" }
         else { status = policy.document.boardingLatched ? "같은 탑승 조건 처리됨 · 다음 하차·탑승 신호 대기" : "탑승 신호 연속 확인 중" }
         guard policy.document != before else { return }
         do { try persist(); publish() } catch { blocked = true; status = "실행 전 기록 저장 실패 · 모든 동작 중단"; return }
         // Boarding and its optional battery summary share ONE persisted session event.
         // BLE reconnects and restored cached groups cannot create another announcement.
-        if policy.didBoard {
+        if policy.didVoiceBoard || policy.didBoard {
             let defaults = UserDefaults.standard
             var texts = defaults.bool(forKey: "voiceAutomations") ? effects.filter { $0.rule.trigger == .boarding && $0.rule.speech }.map(\.text) : []
-            if defaults.bool(forKey: "voiceConnection"), s.chargeFresh, let soc = s.soc, soc.isFinite, (0...100).contains(soc) {
+            if policy.didVoiceBoard, defaults.bool(forKey: "voiceConnection"), s.chargeFresh, let soc = s.soc, soc.isFinite, (0...100).contains(soc) {
                 texts.append("배터리 \(Int(soc))퍼센트입니다.")
                 if defaults.bool(forKey: "voiceBriefDetail"), let range = charge.number("rangeKm"), range.isFinite, (0...2000).contains(range) {
                     texts.append("표시 주행 가능 거리 \(units.format(range, suffix: " km"))입니다.")

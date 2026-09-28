@@ -114,7 +114,14 @@ final class AppModel: ObservableObject {
         fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
         fleet.onVehicleSnapshot = { [weak self] snapshot in
             guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin else { return }
-            Task { @MainActor in self.automations.observeFleet(snapshot, voice: self.voice, bleActive: self.link.authentic) }
+            let previousTrips = self.state.rows("trips").count
+            defer {
+                let history = self.state
+                Task { @MainActor in
+                    self.automations.observeFleetSpeech(snapshot, history: history, previousTrips: previousTrips, link: self.link, voice: self.voice)
+                    self.automations.observeFleet(snapshot, voice: self.voice, bleActive: self.link.authentic)
+                }
+            }
             if !self.link.authentic, snapshot.sectionIsRecent("drive_state") {
                 let overlay = snapshot.homeOverlay()
                 let history: Object = ["vin": snapshot.vin, "drive": snapshot.driveDisplay(), "charge": overlay["charge"] ?? Object(), "location": overlay["location"] ?? Object()]
@@ -189,7 +196,6 @@ final class AppModel: ObservableObject {
                 }
                 if self.state.rows("trips").count > previousCount || self.state.rows("charges").count > previousCharges || Date().timeIntervalSince(self.lastSaved) > 5 { self.saveRecordsWhenAvailable() }
                 self.automations.observe(output: self.output, previousTrips: previousCount, previousCharges: previousCharges, link: self.link, voice: self.voice, demo: self.demo)
-                self.triggerDepartureBriefingIfNeeded()
             } catch {
                 self.automations.resetObservation(); self.link.cancelPendingAutomation()
                 self.errorMessage = error.localizedDescription
@@ -312,22 +318,6 @@ final class AppModel: ObservableObject {
         guard !demo else { errorMessage = "예시 모드를 종료한 뒤 실차에 연결해야 함"; return }
         link.connect(vin: settings.string("vin"))
     }
-    private var sessionBriefed = false
-
-    func triggerDepartureBriefingIfNeeded() {
-        guard !sessionBriefed, !demo, UIApplication.shared.applicationState == .active else { return }
-        let charge = output.object("groups").object("charge")
-        guard let soc = charge.number("soc"), soc.isFinite, (0...100).contains(soc) else { return }
-        sessionBriefed = true
-
-        let units = VehicleUnits.saved
-        var msg = "배터리 \(Int(soc))퍼센트."
-        if let range = charge.number("rangeKm"), range.isFinite, (0...2000).contains(range) {
-            msg += " 주행 가능 거리는 \(units.format(range, suffix: " km"))입니다."
-        }
-        voice.say(msg, key: "session.departure.briefing", category: "voiceConnection", priority: 2, ttl: 20, manual: false)
-    }
-
     func pause() { link.pauseForBackground(); saveRecordsWhenAvailable() }
     func resignActive() { link.resignActive(); navigation.suspendPending() }
     func resume() {

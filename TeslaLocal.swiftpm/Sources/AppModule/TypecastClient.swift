@@ -582,7 +582,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        lastStatus = "재생 완료"
+        guard player === self.player else { return }
+        lastStatus = flag ? "재생 완료" : "오디오 재생 중단"
         testCompletion?()
         testCompletion = nil
     }

@@ -1,6 +1,18 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testVoiceSettingsInterruptionsPreemptionAndRecovery() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["voice-lifecycle-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["음성 상태 17/17 검증 완료"].waitForExistence(timeout: 90))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Voice settings interruption expiry preemption recovery and Typecast preview"; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testEveryAutomationEventReachesPlayback() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["voice-events-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["자동화 24/24 재생 완료"].waitForExistence(timeout: 120))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "All twelve automation triggers and Fleet speech events complete playback"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testAllVoiceCategoriesActuallyStartAndFinishPlayback() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["voice-playback-probe"]; app.launch()
@@ -12,7 +24,10 @@ final class InteractionTests: XCTestCase {
         app.buttons["탑승 자동화 검증"].tap()
         XCTAssertTrue(app.staticTexts["탑승 조건 충족 · 실제 자동화 음성 요청"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["재생 시작 10 / 완료 10"].waitForExistence(timeout: 12))
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Ten voice paths including automatic boarding playback completion"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["Fleet 탑승 자동화 검증"].tap()
+        XCTAssertTrue(app.staticTexts["Fleet 탑승 조건 충족 · 실제 자동화 음성 요청"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["재생 시작 11 / 완료 11"].waitForExistence(timeout: 12))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Eleven voice paths including BLE and Fleet boarding playback completion"; shot.lifetime = .keepAlways; add(shot)
     }
     func testChargeCalendarQuarantinesRepeatedCompletion() {
         XCUIDevice.shared.orientation = .portrait

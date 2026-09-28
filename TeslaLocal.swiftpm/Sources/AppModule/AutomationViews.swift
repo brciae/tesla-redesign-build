@@ -39,7 +39,7 @@ private struct AutomationDashboard: View {
         let active = store.rules.filter(\.enabled).count
         return InfoCard {
             CardTitle(title: "자동화 상태", systemImage: "bolt.circle.fill",
-                      info: "규칙은 앱이 켜져 있고 차량과 연결된 동안에만 실행됨. 상태 문구는 블루투스 연결·탑승 감지 결과이며, 실행 내역에서 각 규칙이 언제 동작했는지 확인할 수 있음.")
+                      info: "앱이 켜져 있고 차량 상태를 받는 동안 실행함. 탑승 인사는 BLE 또는 Fleet의 새 탑승·문 상태로 확인하며, Fleet 조회 간격만큼 늦을 수 있음. 자동 공조는 별도 BLE 인증이 필요함. 앱 종료 중에는 탑승 인사를 실행하지 않음.")
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(active)").font(.system(size: 34, weight: .medium, design: .rounded)).monospacedDigit()
                 Text("/ \(store.rules.count)개 규칙 활성").font(.subheadline).foregroundStyle(Theme.muted)

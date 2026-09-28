@@ -16,7 +16,7 @@ import MapKit
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
-            else if ProcessInfo.processInfo.arguments.contains("voice-playback-probe") { VoicePlaybackProbe() }
+            else if ProcessInfo.processInfo.arguments.contains(where: { ["voice-playback-probe", "voice-events-probe", "voice-lifecycle-probe"].contains($0) }) { VoicePlaybackProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-audit-probe") { ChargeAuditCalendarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
@@ -344,6 +344,7 @@ struct VoicePlaybackProbe: View {
     @StateObject private var voice = VoiceCoordinator()
     @State private var boardingCoordinator: AutomationCoordinator?
     @State private var boardingResult = "탑승 조건 대기"
+    @State private var eventResult = "전체 이벤트 검사 대기"
     private let labels = ["수동 미리듣기", "화면 브리핑", "제어 응답", "연결 알림", "운행 알림", "충전 알림", "자동화", "길안내", "안전 안내"]
     private let categories = ["", "", "voiceControl", "voiceConnection", "voiceTrip", "voiceCharge", "voiceAutomations", "", ""]
     var body: some View {
@@ -354,13 +355,160 @@ struct VoicePlaybackProbe: View {
             Text(voice.notice)
             ForEach(labels.indices, id: \.self) { index in Button(labels[index]) { play(index) } }
             Button("탑승 자동화 검증") { boarding() }
+            Button("Fleet 탑승 자동화 검증") { boarding(fleet: true) }
             Text(boardingResult)
+            Text(eventResult)
         }.onAppear {
             let d = UserDefaults.standard
             for key in ["voiceEnabled", "voiceControl", "voiceConnection", "voiceTrip", "voiceCharge", "voiceAutomations", "navVoiceEnabled", "navSafetyVoice"] { d.set(true, forKey: key) }
             d.set(false, forKey: "voiceQuietEnabled"); d.set(0.8, forKey: "voiceVolume"); d.set(0.8, forKey: "navVoiceVolume")
             d.set("typecast:은경", forKey: "voiceIdentifier"); TypecastClient.shared.isEnabled = true
+            if ProcessInfo.processInfo.arguments.contains("voice-events-probe") { Task { await eventMatrix() } }
+            if ProcessInfo.processInfo.arguments.contains("voice-lifecycle-probe") { Task { await lifecycleMatrix() } }
         }
+    }
+    @MainActor private func lifecycleMatrix() async {
+        let d = UserDefaults.standard
+        let text = "전체 음성 재생 상태 검증입니다."
+        cache(SpeechText.prepare(BriefingStyle.selected.phrase(text, category: "voiceAutomations")))
+        cache(SpeechText.prepare(text))
+        var passed = 0
+        func request() { voice.say(text, key: UUID().uuidString, category: "voiceAutomations", ttl: 60, manual: false) }
+        func blocked(_ name: String, configure: () -> Void, invoke: () -> Void, restore: () -> Void) async -> Bool {
+            voice.stop(); let count = voice.playbackStarts; configure(); invoke()
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let result = voice.playbackStarts == count
+            restore(); voice.stop()
+            if result { passed += 1 } else { eventResult = "실패 · " + name }
+            return result
+        }
+        guard await blocked("전체 음성 OFF", configure: { d.set(false, forKey: "voiceEnabled") }, invoke: request, restore: { d.set(true, forKey: "voiceEnabled") }) else { return }
+        guard await blocked("자동화 음성 OFF", configure: { d.set(false, forKey: "voiceAutomations") }, invoke: request, restore: { d.set(true, forKey: "voiceAutomations") }) else { return }
+        let hour = Calendar.current.component(.hour, from: Date())
+        guard await blocked("방해 금지", configure: { d.set(true, forKey: "voiceQuietEnabled"); d.set(hour, forKey: "voiceQuietStart"); d.set((hour + 1) % 24, forKey: "voiceQuietEnd") }, invoke: request, restore: { d.set(false, forKey: "voiceQuietEnabled") }) else { return }
+        guard await blocked("음량 0", configure: { d.set(0, forKey: "voiceVolume") }, invoke: request, restore: { d.set(0.8, forKey: "voiceVolume") }) else { return }
+        guard await blocked("타입캐스트 OFF", configure: { TypecastClient.shared.isEnabled = false }, invoke: request, restore: { TypecastClient.shared.isEnabled = true }) else { return }
+        guard await blocked("길안내 OFF", configure: { d.set(false, forKey: "navVoiceEnabled") }, invoke: { voice.navigationGuide(text, safety: false) }, restore: { d.set(true, forKey: "navVoiceEnabled") }) else { return }
+        guard await blocked("안전 안내 OFF", configure: { d.set(false, forKey: "navSafetyVoice") }, invoke: { voice.navigationGuide(text, safety: true) }, restore: { d.set(true, forKey: "navSafetyVoice") }) else { return }
+        guard await blocked("이미 지난 안내", configure: {}, invoke: {
+            let cue: Object = ["text": text, "validUntil": Date().addingTimeInterval(-1).timeIntervalSince1970]
+            voice.navigationGuide(String(data: try! JSONSerialization.data(withJSONObject: cue), encoding: .utf8)!, safety: false)
+        }, restore: {}) else { return }
+        guard await blocked("안내 지점 통과", configure: { voice.navigationTargetIsAhead = { _ in false } }, invoke: {
+            let cue: Object = ["text": text, "targetID": "passed", "validUntil": Date().addingTimeInterval(10).timeIntervalSince1970]
+            voice.navigationGuide(String(data: try! JSONSerialization.data(withJSONObject: cue), encoding: .utf8)!, safety: false)
+        }, restore: { voice.navigationTargetIsAhead = nil; voice.nativeSession(false) }) else { return }
+        guard await blocked("통화 중", configure: {
+            NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+        }, invoke: request, restore: {
+            NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue])
+        }) else { return }
+        // After the interruption a new event must actually finish, rather than remain blocked.
+        var count = voice.playbackCompletions; request()
+        for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackCompletions == count + 1 else { eventResult = "실패 · 통화 종료 후 새 안내"; return }; passed += 1
+        // Safety navigation preempts an automatic clip and itself reaches completion.
+        count = voice.playbackCompletions; let starts = voice.playbackStarts
+        request(); voice.nativeSession(false); voice.navigationGuide(text, safety: true)
+        for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackStarts == starts + 2 && voice.playbackCompletions == count + 1 else { eventResult = "실패 · 안전 안내 우선 재생"; return }; passed += 1
+        // Memory and explicit automatic-stop cancellation must stop the actual player.
+        for memory in [false, true] {
+            voice.nativeSession(false); request(); count = voice.playbackCompletions
+            if memory { NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil) }
+            else { voice.stopAutomatic() }
+            try? await Task.sleep(nanoseconds: 1_300_000_000)
+            guard !voice.speaking && voice.playbackCompletions == count else { eventResult = "실패 · 안내 취소"; return }; passed += 1
+        }
+        voice.nativeVoice(true); count = voice.playbackStarts; request()
+        guard voice.playbackStarts == count else { eventResult = "실패 · 내비 오디오 대기"; return }
+        let finished = voice.playbackCompletions; voice.nativeVoice(false)
+        for _ in 0..<50 where voice.playbackCompletions == finished { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackCompletions == finished + 1 else { eventResult = "실패 · 내비 오디오 대기 해제"; return }; passed += 1
+        NotificationCenter.default.post(name: AVAudioSession.routeChangeNotification, object: AVAudioSession.sharedInstance())
+        guard !voice.outputDescription.isEmpty else { eventResult = "실패 · 출력 경로 상태"; return }; passed += 1
+        // Settings' Typecast test uses its own production AVAudioPlayer, not VoiceCoordinator.
+        var previewDone = false
+        TypecastClient.shared.testSpeech(text: SpeechText.prepare(text), voiceId: "은경") { previewDone = true }
+        for _ in 0..<50 where !previewDone { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard previewDone && TypecastClient.shared.lastStatus == "재생 완료" else { eventResult = "실패 · 타입캐스트 설정 미리듣기"; return }; passed += 1
+        eventResult = "음성 상태 \(passed)/17 검증 완료"
+    }
+    @MainActor private func eventMatrix() async {
+        UserDefaults.standard.set(false, forKey: "voiceConnection")
+        defer { UserDefaults.standard.set(true, forKey: "voiceConnection") }
+        var passed = 0
+        let fleetSpeechCases = AutomationTrigger.allCases.filter { ![.chargeStart, .chargeEnd, .chargingLocked].contains($0) }.map { ($0, "Fleet speech") }
+        let cases = AutomationTrigger.allCases.map { ($0, "BLE") } + [(AutomationTrigger.chargeStart, "Fleet start"), (.chargeEnd, "Fleet complete"), (.chargeEnd, "Fleet stop")] + fleetSpeechCases
+        for (trigger, source) in cases {
+            let vin = String(format: "7SAYGDEE0PF%06d", 100 + passed)
+            eventResult = "검사 중 · \(trigger.title) · \(source)"
+            let text = "\(trigger.title) \(source) 이벤트 검증입니다."
+            cache(SpeechText.prepare(BriefingStyle.selected.phrase(text, category: "voiceAutomations")))
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var rule = AutomationRule(name: trigger.title, trigger: trigger)
+            rule.message = text; rule.cooldownMinutes = 1
+            if [.rest, .delay].contains(trigger) { rule.threshold = 1 }
+            if trigger == .remaining { rule.threshold = 10 }
+            var doc = AutomationDocument(); doc.rules = [rule]
+            try! JSONEncoder().encode(doc).write(to: folder.appendingPathComponent("automations.json"))
+            let base = Date().addingTimeInterval(-90)
+            var clock = base
+            let coordinator = try! AutomationCoordinator(folder: folder, observationNow: { clock })
+            let link = VehicleLink()
+            let before = voice.playbackCompletions
+            func feed(_ seconds: Double, gear: String = "P", soc: Double = 80, charging: Int = 2, route: String = "집", minutes: Double = 11, endedTrip: Bool = false, endedCharge: Bool = false, lowTire: Bool = false) {
+                clock = base.addingTimeInterval(seconds)
+                let at = clock.timeIntervalSince1970 * 1000
+                let groups: Object = ["drive": ["at": at, "receivedAt": at, "gear": gear, "speedKmh": gear == "P" ? 0 : 30, "destination": route, "arrivalMinutes": minutes],
+                                      "closures": ["at": at, "receivedAt": at, "userPresent": true, "driverFront": false],
+                                      "charge": ["at": at, "receivedAt": at, "soc": soc, "charging": charging],
+                                      "tire": ["at": at, "receivedAt": at, "values": [2.9, 2.9, 2.9, 2.9], "seenAt": [at, at, at, at], "warnings": [lowTire]]]
+                let output: Object = ["fresh": ["drive": true, "closures": true, "charge": true, "tire": true],
+                                      "state": ["settings": ["vin": vin], "groups": groups,
+                                                "trips": endedTrip ? [["id": "finished-trip", "start": at - 60000, "end": at, "distanceKm": 1]] : [],
+                                                "charges": endedCharge ? [["id": "finished-charge"]] : []]]
+                if source == "Fleet speech" {
+                    link.authentic = false; TeslaFleetClient.shared.selectedVin = vin
+                    let snapshot = FleetVehicleSnapshot(vin: vin, receivedAt: clock, payload: [
+                        "drive_state": ["timestamp": at, "shift_state": gear, "speed": gear == "P" ? 0 : 20, "active_route_destination": route, "active_route_minutes_to_arrival": minutes],
+                        "vehicle_state": ["timestamp": at, "is_user_present": true, "df": 0, "locked": false, "tpms_pressure_fl": 2.9, "tpms_hard_warning_fl": lowTire],
+                        "charge_state": ["timestamp": at, "battery_level": soc]])
+                    coordinator.observeFleetSpeech(snapshot, history: output.object("state"), previousTrips: 0, link: link, voice: voice)
+                } else { coordinator.observe(output: output, previousTrips: 0, previousCharges: 0, link: link, voice: voice, demo: false) }
+            }
+            if ["Fleet start", "Fleet complete", "Fleet stop"].contains(source) || trigger == .chargingLocked {
+                TeslaFleetClient.shared.selectedVin = vin
+                func fleet(_ state: String, seconds: Double) {
+                    let at = Date().addingTimeInterval(seconds).timeIntervalSince1970 * 1000
+                    let snapshot = FleetVehicleSnapshot(vin: vin, receivedAt: Date(), payload: ["charge_state": ["timestamp": at, "charging_state": state, "battery_level": 80, "charge_limit_soc": 80], "vehicle_state": ["timestamp": at, "locked": true]])
+                    coordinator.observeFleet(snapshot, voice: voice, bleActive: false)
+                }
+                if trigger == .chargingLocked { fleet("Charging", seconds: 0) }
+                else if trigger == .chargeStart { fleet("Disconnected", seconds: -2); fleet("Charging", seconds: 0) }
+                else { fleet("Charging", seconds: -2); fleet(source == "Fleet stop" ? "Stopped" : "Complete", seconds: 0) }
+            } else {
+                switch trigger {
+                case .boarding: feed(0); feed(3)
+                case .departure: feed(0); feed(3, gear: "D")
+                case .arrival: feed(0, gear: "D"); feed(3, endedTrip: true)
+                case .chargeStart: feed(0); feed(3, charging: 5)
+                case .chargeEnd: feed(0, charging: 5); feed(3, charging: 6, endedCharge: true)
+                case .batteryLow: feed(0); feed(3, gear: "D", soc: 10)
+                case .tireLow: feed(0); feed(3, gear: "D", lowTire: true)
+                case .rest: for second in stride(from: 0, through: 75, by: 15) { feed(Double(second), gear: "D") }
+                case .remaining: feed(0, gear: "D"); feed(3, gear: "D", minutes: 9)
+                case .delay: feed(0, gear: "D", minutes: 10); feed(3, gear: "D", minutes: 12)
+                case .destination: feed(0, gear: "D"); feed(3, gear: "D", route: "회사")
+                case .chargingLocked: break
+                }
+            }
+            for _ in 0..<60 where voice.playbackCompletions == before { try? await Task.sleep(nanoseconds: 100_000_000) }
+            guard voice.playbackCompletions == before + 1 else { eventResult = "실패 · \(trigger.title) · \(source) · \(coordinator.status) · \(voice.automaticStatus) · \(voice.notice)"; return }
+            passed += 1
+        }
+        eventResult = "자동화 \(passed)/\(cases.count) 재생 완료"
     }
     private func play(_ index: Int) {
         // Test-only PCM cache in the simulator sandbox; no API key or paid request.
@@ -371,7 +519,7 @@ struct VoicePlaybackProbe: View {
         else if index >= 7 { voice.navigationGuide(text, safety: index == 8) }
         else { voice.say(text, key: "probe-\(index)", category: categories[index], priority: 2, ttl: 60, manual: index < 3) }
     }
-    private func boarding() {
+    private func boarding(fleet: Bool = false) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let coordinator = try! AutomationCoordinator(folder: folder)
@@ -379,8 +527,17 @@ struct VoicePlaybackProbe: View {
         let greeting = AutomationPolicy.greeting(hour: Calendar.current.component(.hour, from: Date())) + " 배터리 80퍼센트입니다."
         cache(SpeechText.prepare(BriefingStyle.selected.phrase(greeting, category: "voiceAutomations")))
         let link = VehicleLink()
+        link.authentic = !fleet
         func observe() {
             let at = Date().timeIntervalSince1970 * 1000
+            if fleet {
+                TeslaFleetClient.shared.selectedVin = "7SAYGDEE0PF000002"
+                let snapshot = FleetVehicleSnapshot(vin: "7SAYGDEE0PF000002", receivedAt: Date(), payload: [
+                    "vehicle_state": ["timestamp": at, "is_user_present": true, "df": 0, "locked": false],
+                    "charge_state": ["timestamp": at, "battery_level": 80]])
+                coordinator.observeFleetSpeech(snapshot, link: link, voice: voice)
+                return
+            }
             let output: Object = ["fresh": ["drive": true, "closures": true, "charge": true], "state": ["settings": ["vin": "7SAYGDEE0PF000001"], "groups": [
                 "drive": ["at": at, "receivedAt": at, "gear": "P", "speedKmh": 0],
                 "closures": ["at": at, "receivedAt": at, "userPresent": true, "driverFront": false],
@@ -391,7 +548,7 @@ struct VoicePlaybackProbe: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_300_000_000)
             observe()
-            boardingResult = coordinator.logs.contains { $0.rule == "탑승 인사" } ? "탑승 조건 충족 · 실제 자동화 음성 요청" : coordinator.status
+            boardingResult = coordinator.logs.contains { $0.rule == "탑승 인사" } ? (fleet ? "Fleet 탑승 조건 충족 · 실제 자동화 음성 요청" : "탑승 조건 충족 · 실제 자동화 음성 요청") : coordinator.status
             // A reconnect cannot trigger a second greeting for the same boarding.
             coordinator.resetObservation(); observe()
             try? await Task.sleep(nanoseconds: 2_300_000_000)
