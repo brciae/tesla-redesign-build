@@ -24,6 +24,7 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
             else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("landing-probe") { NavigationLandingProbe() }
             else if ProcessInfo.processInfo.arguments.contains("fullscreen-navigation-probe") { FullscreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
@@ -99,6 +100,16 @@ struct TabBarProbe: View {
         Commercial5TabScaffold(selection: $selection) {
             page
         } controls: { page } energy: { page } drive: { page } menu: { page }
+    }
+}
+
+struct NavigationLandingProbe: View {
+    @State private var result = "대기"
+    var body: some View {
+        VStack {
+            NavigationLandingPanel(guiding: false, recent: [SavedNavigationPlace(name: "반포대교 남단", address: "서울 서초구", latitude: 37.5, longitude: 127)], search: { result = "검색 열림" }, dashboard: { result = "대시보드 열림" }, charging: { result = "충전소 열림" }, naver: {}, tmap: {}, select: { result = $0.name })
+            Text(result).accessibilityIdentifier("landing.result")
+        }
     }
 }
 

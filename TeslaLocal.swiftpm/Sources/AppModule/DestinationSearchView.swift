@@ -38,6 +38,7 @@ struct DestinationSearchView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var navigation: EmbeddedNavigation
     var canEdit: Bool = true
+    var initialPlace: SavedNavigationPlace?
     @State private var query = ""
     @State private var results: [SavedNavigationPlace] = []
     @State private var recent: [SavedNavigationPlace] = []
@@ -87,6 +88,7 @@ struct DestinationSearchView: View {
             recent = load([SavedNavigationPlace].self, "navigation.recent") ?? []
             home = load(SavedNavigationPlace.self, "navigation.home")
             work = load(SavedNavigationPlace.self, "navigation.work")
+            if let initialPlace { select(initialPlace) }
         }.onDisappear { task?.cancel(); suggestions.update("") }
             .onChange(of: query) { _, value in
                 task?.cancel(); busy = false; results = []; selected = nil; route = nil; message = ""
@@ -191,4 +193,72 @@ struct DestinationSearchView: View {
     }
     private func load<T: Decodable>(_ type: T.Type, _ key: String) -> T? { UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(type, from: $0) } }
     private func save<T: Encodable>(_ value: T, _ key: String) { if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: key) } }
+}
+
+
+struct NavigationLandingPanel: View {
+    let guiding: Bool
+    let recent: [SavedNavigationPlace]
+    let search: () -> Void
+    let dashboard: () -> Void
+    let charging: () -> Void
+    let naver: () -> Void
+    let tmap: () -> Void
+    let select: (SavedNavigationPlace) -> Void
+    var externalEnabled = true
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("어디로 갈까요?").font(.title2.bold())
+                Button(action: search) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                        Text("장소 또는 주소 검색")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.bold())
+                    }.padding(.horizontal, 16).frame(minHeight: 56)
+                        .foregroundStyle(.white).background(Color.blue, in: RoundedRectangle(cornerRadius: 16))
+                }.buttonStyle(.plain).accessibilityIdentifier("landing.search")
+                HStack(spacing: 12) {
+                    tile(guiding ? "길안내 계속" : "운전 대시보드", icon: "map.fill", action: dashboard)
+                    tile("주변 충전소", icon: "bolt.car.fill", action: charging)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("최근 목적지").font(.headline)
+                    if recent.isEmpty {
+                        Text("검색한 장소에서 길안내를 시작하면 여기에 저장됩니다.")
+                            .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 12)
+                    } else {
+                        ForEach(Array(recent.prefix(5))) { place in
+                            Button { select(place) } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "clock").foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(place.name).font(.subheadline.weight(.semibold))
+                                        if !place.address.isEmpty { Text(place.address).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                                }.frame(minHeight: 48).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("차량 목적지를 외부 지도로").font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        tile("네이버 지도", icon: "arrow.up.right.square", action: naver)
+                        tile("티맵", icon: "arrow.up.right.square", action: tmap)
+                    }.disabled(!externalEnabled)
+                }
+            }.padding(16)
+        }.background(Theme.bg).foregroundStyle(.primary)
+    }
+    private func tile(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon).font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+    }
 }

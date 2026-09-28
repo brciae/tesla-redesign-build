@@ -1434,13 +1434,23 @@ struct NavigationLandingView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var navigation: EmbeddedNavigation
     @State private var searching = false
+    @State private var selected: SavedNavigationPlace?
+    @State private var nearby = false
+    @State private var recent: [SavedNavigationPlace] = []
     var body: some View {
-        ScrollView { VStack(spacing: 18) {
-            Button { searching = true } label: { Label("어디로 갈까요? 목적지 검색", systemImage: "magnifyingglass").frame(maxWidth: .infinity, minHeight: 60) }.buttonStyle(.borderedProminent)
-            Button { navigation.activateWorkspace(model: model) } label: { Label(navigation.guiding ? "진행 중인 길안내 보기" : "운전 대시보드 열기", systemImage: "map").frame(maxWidth: .infinity, minHeight: 50) }.buttonStyle(.bordered)
-            HStack { Button("네이버 지도로 보내기") { model.openInNaverMap() }; Spacer(); Button("티맵으로 보내기") { model.openInTMap() } }.disabled(model.demo)
-            NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging) } label: { Label("주변 충전소", systemImage: "bolt.car") }
-        }.padding() }
-        .sheet(isPresented: $searching) { DestinationSearchView(navigation: navigation).environmentObject(model) }
+        NavigationLandingPanel(guiding: navigation.guiding, recent: recent,
+            search: { selected = nil; searching = true },
+            dashboard: { navigation.activateWorkspace(model: model) },
+            charging: { nearby = true },
+            naver: { model.openInNaverMap() }, tmap: { model.openInTMap() },
+            select: { selected = $0; searching = true }, externalEnabled: !model.demo)
+        .onAppear { loadRecent() }
+        .sheet(isPresented: $searching, onDismiss: loadRecent) {
+            DestinationSearchView(navigation: navigation, initialPlace: selected).environmentObject(model)
+        }
+        .navigationDestination(isPresented: $nearby) { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging) }
+    }
+    private func loadRecent() {
+        recent = UserDefaults.standard.data(forKey: "navigation.recent").flatMap { try? JSONDecoder().decode([SavedNavigationPlace].self, from: $0) } ?? []
     }
 }

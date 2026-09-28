@@ -49,6 +49,20 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["재생 시작 10 / 완료 10"].waitForExistence(timeout: 12))
     }
 
+    func testNavigationLandingLayoutAndActions() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["landing-probe"]; app.launch()
+        XCTAssertTrue(app.buttons["landing.search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["장소 또는 주소 검색"].exists)
+        app.buttons["landing.search"].tap()
+        XCTAssertEqual(app.staticTexts["landing.result"].label, "검색 열림")
+        app.buttons["운전 대시보드"].tap()
+        XCTAssertEqual(app.staticTexts["landing.result"].label, "대시보드 열림")
+        app.buttons["주변 충전소"].tap()
+        XCTAssertEqual(app.staticTexts["landing.result"].label, "충전소 열림")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Navigation landing search recent places and compact actions"; shot.lifetime = .keepAlways; add(shot)
+    }
+
     func testChargeCostsAutomaticallyUseRegisteredRates() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["charge-cost-probe"]; app.launch()
