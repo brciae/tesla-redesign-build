@@ -51,3 +51,12 @@ const priced=(e,id)=>e.chargeSummary().rows.find(r=>r.id===id);
  const restored=new Engine();restored.load(JSON.parse(JSON.stringify(e.state)));assert.equal(restored.chargeSummary().estimatedCost,7000);
 }
 console.log('PASS: charge cost defaults, site/operator priority, paid/free preservation, historical rates, missing inputs, duplicate exclusion and restart');
+
+{
+ const e=new Engine(),vin='5YJYGDEE0LF000001';
+ const r=(at,field,value)=>({at,field,number:typeof value==='number'?value:null,text:JSON.stringify({value}),invalid:false});
+ e.settings({tariff:200,fastTariff:400});
+ e.ingestArchive({vin,rows:[r(t,'DetailedChargeState','Charging'),r(t,'Soc',30),r(t,'DCChargingPower',100),r(t,'DCChargingEnergyIn',1),r(t,'ACChargingEnergyIn',43),r(t+60000,'DetailedChargeState','Complete'),r(t+60000,'Soc',60),r(t+60000,'DCChargingEnergyIn',20)]});
+ const c=e.chargeSummary().rows[0];assert.equal(c.chargeType,'dc');assert.equal(c.supplyKWh,null,'AC counters are ignored during proven DC charging');assert.equal(c.estimatedCost,8000);
+ console.log('PASS: NAS DC power identifies rapid charging without using AC supply counter');
+}

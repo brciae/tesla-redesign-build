@@ -533,7 +533,8 @@
         const validEnergy=k=>latest[k]&&!latest[k].invalid&&num(scalar(k),0,300)&&latest[k].at>=(chargeBegan??at-120000);
         const energyField=['DCChargingEnergyIn','ChargeEnergyAdded'].find(validEnergy);
         const added=energyField?scalar(energyField):null;
-        const supply=validEnergy('ACChargingEnergyIn')?scalar('ACChargingEnergyIn'):null;
+        const dc=(latest.DCChargingPower?.at>=(chargeBegan??at)-120000&&num(scalar('DCChargingPower'),0.01,1500))||replay.state.activeCharge?.chargeType==='dc'||finishedCharge?.chargeType==='dc';
+        const supply=!dc&&validEnergy('ACChargingEnergyIn')?scalar('ACChargingEnergyIn'):null;
         if(charging!==undefined){
           // A terminal state remains cached for hours. Later SOC drift is not another charge.
           const terminal=[6,7].includes(charging), repeatedEnd=terminal&&[6,7].includes(previousCharge)&&finishedCharge;
@@ -546,10 +547,9 @@
           const current=replay.state.activeCharge??replay.state.charges.findLast(c=>c.end===at);
           if(current&&supply!=null)current.supplyKWh=supply;
           const ac=validEnergy('ACChargingEnergyIn')&&supply>0;
-          const fast=String(latest.FastChargerBrand?.at>=(chargeBegan??at)-120000?scalar('FastChargerBrand')??'':'');
-          const type=String(latest.ChargeType?.at>=(chargeBegan??at)-120000?scalar('ChargeType')??'':'');
+          const acPower=latest.ACChargingPower?.at>=(chargeBegan??at)-120000&&num(scalar('ACChargingPower'),0.01,100);
           const location=latest.Location?.at>=(chargeBegan??at)-120000?scalar('Location'):null;
-          applyChargeMetadata(current,{chargeType:/supercharger|tesla/i.test(fast)?'supercharger':ac?'ac':/dc/i.test(type)?'dc':/ac/i.test(type)?'ac':null,chargeOperator:fast,latitude:location?.latitude,longitude:location?.longitude});
+          applyChargeMetadata(current,{chargeType:dc?'dc':ac||acPower?'ac':null,latitude:location?.latitude,longitude:location?.longitude});
           if(terminal&&current)finishedCharge=current;
           // Tesla can send final counters just after Complete, in a separate packet.
           if(repeatedEnd&&at-finishedCharge.end<=120000){
