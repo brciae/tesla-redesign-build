@@ -32,6 +32,21 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["navigation.chrome.open"].waitForExistence(timeout: 9))
     }
 
+    func testSpeakerOutputForAllVoiceCategories() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["voice-playback-probe", "voice-output-probe"]; app.launch()
+        app.buttons["iPhone 스피커"].tap()
+        for (index, title) in ["수동 미리듣기", "화면 브리핑", "제어 응답", "연결 알림", "운행 알림", "충전 알림", "자동화", "길안내", "안전 안내"].enumerated() {
+            app.buttons[title].tap()
+            XCTAssertTrue(app.staticTexts["재생 시작 \(index + 1) / 완료 \(index + 1)"].waitForExistence(timeout: 12))
+            XCTAssertTrue(app.staticTexts["voice.output.last"].label.contains("iPhone 스피커"))
+        }
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Phone speaker output across nine voice categories"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["시스템·Bluetooth"].tap()
+        app.buttons["수동 미리듣기"].tap()
+        XCTAssertTrue(app.staticTexts["재생 시작 10 / 완료 10"].waitForExistence(timeout: 12))
+    }
+
     func testChargeCostsAutomaticallyUseRegisteredRates() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["charge-cost-probe"]; app.launch()

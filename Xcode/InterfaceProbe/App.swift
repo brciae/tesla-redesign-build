@@ -389,6 +389,10 @@ struct VoicePlaybackProbe: View {
             Text(voice.playbackState)
             Text(voice.automaticStatus)
             Text(voice.notice)
+            if ProcessInfo.processInfo.arguments.contains("voice-output-probe") {
+                VoiceOutputSettings()
+                Text(voice.lastPlaybackOutput).accessibilityIdentifier("voice.output.last")
+            }
             ForEach(labels.indices, id: \.self) { index in Button(labels[index]) { play(index) } }
             Button("탑승 자동화 검증") { boarding() }
             Button("Fleet 탑승 자동화 검증") { boarding(fleet: true) }
@@ -397,6 +401,7 @@ struct VoicePlaybackProbe: View {
         }.onAppear {
             let d = UserDefaults.standard
             for key in ["voiceEnabled", "voiceControl", "voiceConnection", "voiceTrip", "voiceCharge", "voiceAutomations", "navVoiceEnabled", "navSafetyVoice"] { d.set(true, forKey: key) }
+            d.set("system", forKey: "voiceOutput")
             d.set(false, forKey: "voiceQuietEnabled"); d.set(0.8, forKey: "voiceVolume"); d.set(0.8, forKey: "navVoiceVolume")
             d.set("typecast:은경", forKey: "voiceIdentifier"); TypecastClient.shared.isEnabled = true
             if ProcessInfo.processInfo.arguments.contains("voice-events-probe") { Task { await eventMatrix() } }

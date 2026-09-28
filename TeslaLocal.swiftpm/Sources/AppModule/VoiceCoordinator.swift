@@ -450,15 +450,38 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func activateAudio(_ defaults: UserDefaults) throws {
         releaseWork?.cancel()
         releaseWork = nil
+        try VoiceAudioRouting.activate(defaults)
+    }
+}
+
+/// Applies the same output policy to automatic speech and Typecast audition.
+/// No audio input is opened or recorded; playAndRecord enables iOS speaker override.
+enum VoiceAudioRouting {
+    static func activate(_ defaults: UserDefaults = .standard) throws {
         let audio = AVAudioSession.sharedInstance()
-        // Playback already supports A2DP. The explicit A2DP option belongs to playAndRecord.
-        var options: AVAudioSession.CategoryOptions = []
-        if defaults.bool(forKey: "voiceDuck") {
-            options.insert(.duckOthers)
+        let phone = defaults.string(forKey: "voiceOutput") == "speaker"
+        var options: AVAudioSession.CategoryOptions = defaults.bool(forKey: "voiceDuck") ? [.duckOthers] : [.mixWithOthers]
+        if phone {
+            options.insert(.defaultToSpeaker)
+            try audio.setCategory(.playAndRecord, mode: .default, options: options)
+            try audio.setActive(true)
+            try audio.overrideOutputAudioPort(.speaker)
         } else {
-            options.insert(.mixWithOthers)
+            if audio.category == .playAndRecord { try audio.overrideOutputAudioPort(.none) }
+            try audio.setCategory(.playback, mode: .voicePrompt, options: options)
+            try audio.setActive(true)
         }
-        try audio.setCategory(.playback, mode: .voicePrompt, options: options)
-        try audio.setActive(true)
+    }
+}
+
+struct VoiceOutputSettings: View {
+    @AppStorage("voiceOutput") private var output = "system"
+    var body: some View {
+        Picker("안내 출력", selection: $output) {
+            Text("시스템·Bluetooth").tag("system")
+            Text("iPhone 스피커").tag("speaker")
+        }.pickerStyle(.segmented).accessibilityIdentifier("voice.output")
+        Text("차량 자체 YouTube Music·내비를 사용 중이면 iPhone 스피커를 선택하세요. Bluetooth 출력은 차량에서 휴대폰 미디어를 선택해야 들릴 수 있습니다.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }

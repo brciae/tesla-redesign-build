@@ -27,6 +27,7 @@ struct PreferencesView: View {
         Form {
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
+                VoiceOutputSettings()
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
 
                 // Moderate thumbnail portrait card (38pt, clean and sleek)
