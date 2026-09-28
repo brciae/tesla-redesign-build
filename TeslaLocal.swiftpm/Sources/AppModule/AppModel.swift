@@ -136,7 +136,7 @@ final class AppModel: ObservableObject {
             input["at"] = snapshot.number("charge_state", "timestamp")
             input["soc"] = snapshot.soc; input["limit"] = snapshot.number("charge_state", "charge_limit_soc")
             input["addedKWh"] = snapshot.number("charge_state", "charge_energy_added")
-            if snapshot.flag("charge_state", "fast_charger_present") == true {
+            if charge["fast_charger_present"] as? Bool == true {
                 let brand = (charge["fast_charger_brand"] as? String) ?? ""
                 input["chargeType"] = brand.lowercased().contains("tesla") || brand.lowercased().contains("supercharger") ? "supercharger" : "dc"
                 input["chargeOperator"] = brand
