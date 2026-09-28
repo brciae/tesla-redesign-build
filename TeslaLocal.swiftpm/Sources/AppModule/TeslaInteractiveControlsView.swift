@@ -12,6 +12,7 @@ import SwiftUI
 /// - Secondary Quick Grid: Remote Start (`remoteStartDrive`), Flash Lights (`flashLights`),
 ///   Honk Horn (`honkHorn`), Defrost Max (`setPreconditioningMax`).
 struct TeslaInteractiveControlsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
@@ -384,7 +385,7 @@ struct TeslaInteractiveControlsView: View {
     // MARK: - Tesla Official-Style Horizontal Quick Action Bar
 
     private var teslaQuickActionBar: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 44), spacing: 6), count: dynamicTypeSize.isAccessibilitySize ? 3 : 5), spacing: 6) {
             teslaQuickButton(
                 icon: isLocked ? "lock.fill" : "lock.open.fill",
                 title: isLocked ? "도어 잠김" : "잠금 해제",
@@ -467,12 +468,13 @@ struct TeslaInteractiveControlsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(accent)
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(Color.white.opacity(0.85))
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
+            .frame(minHeight: 56)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(MotionButtonStyle())
