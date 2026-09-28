@@ -8,15 +8,18 @@ final class InteractionTests: XCTestCase {
             for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
                 let open = app.buttons["navigation.chrome.open"]
                 XCTAssertTrue(open.waitForExistence(timeout: 5))
-                let canvas = app.otherElements["navigation.canvas"].firstMatch
-                let before = canvas.frame
-                XCTAssertGreaterThan(before.height, app.frame.height - 3)
-                XCTAssertGreaterThan(before.width, app.frame.width - 3)
+                let canvas = app.staticTexts["navigation.canvas.size"]
+                XCTAssertTrue(canvas.waitForExistence(timeout: 3))
+                let before = canvas.label
+                let size = before.split(separator: "/").compactMap { Double($0) }
+                XCTAssertEqual(size.count, 2)
+                guard size.count == 2 else { return }
+                XCTAssertGreaterThan(size[0], app.frame.width - 3)
+                XCTAssertGreaterThan(size[1], app.frame.height - 3)
                 open.tap()
                 XCTAssertTrue(app.buttons["navigation.chrome.close"].waitForExistence(timeout: 3))
                 app.buttons[title].tap()
-                XCTAssertEqual(canvas.frame.height, before.height, accuracy: 1)
-                XCTAssertEqual(canvas.frame.width, before.width, accuracy: 1)
+                XCTAssertEqual(canvas.label, before, "Opening controls and changing theme must preserve canvas geometry")
                 app.buttons["navigation.chrome.close"].tap()
                 XCTAssertTrue(open.waitForExistence(timeout: 3))
                 let shot = XCTAttachment(screenshot: app.screenshot())

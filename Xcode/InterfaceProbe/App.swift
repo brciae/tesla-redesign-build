@@ -120,6 +120,15 @@ struct FullscreenNavigationProbe: View {
         NavigationWorkspaceChrome {
             NavigationDashboard(theme: theme, data: sample) { NavigationMapFixture() }
                 car: { Color.clear }
+                .overlay {
+                    GeometryReader { geometry in
+                        Text("\(Int(geometry.size.width))/\(Int(geometry.size.height))")
+                            .font(.system(size: 8)).foregroundStyle(.white)
+                            .padding(2).background(.black.opacity(0.5))
+                            .accessibilityIdentifier("navigation.canvas.size")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    }.allowsHitTesting(false)
+                }
         } controls: {
             ScrollView(.horizontal) {
                 HStack {
