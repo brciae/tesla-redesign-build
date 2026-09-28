@@ -3,7 +3,7 @@ set -euo pipefail
 xcodegen generate --spec Xcode/InterfaceProbe.json --project Xcode
 # Pick an installed available iPhone simulator, not a guessed model/runtime identifier.
 device_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for a in d["devices"].values() for v in a if v["isAvailable"] and v["name"].startswith("iPhone")))')"
-test_filter=()
+test_filter=(-only-testing:InterfaceProbeTests)
 if [[ "${1:-}" == fullscreen ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testFullscreenChromeAcrossThemesAndRotation)
 fi
