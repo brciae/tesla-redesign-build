@@ -102,7 +102,7 @@ enum FleetLocationRepair {
               var fields = config["fields"] as? [String: Any], !fields.isEmpty else {
             throw NSError(domain: "FleetLocation", code: 1, userInfo: [NSLocalizedDescriptionKey: "기존 차량 수집 설정과 가상 키를 먼저 확인해 주세요."])
         }
-        if let expiration = config["exp"] as? Double, expiration <= now.timeIntervalSince1970 {
+        if let expiration = (config["exp"] as? NSNumber)?.doubleValue, expiration <= now.timeIntervalSince1970 {
             throw NSError(domain: "FleetLocation", code: 2, userInfo: [NSLocalizedDescriptionKey: "기존 수집 설정이 만료됐습니다. 서버 연결 등록을 갱신해 주세요."])
         }
         if fields["Location"] == nil { fields["Location"] = ["interval_seconds": 10] }
