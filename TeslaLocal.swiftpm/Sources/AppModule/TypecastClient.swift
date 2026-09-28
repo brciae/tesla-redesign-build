@@ -556,6 +556,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                         self.player = p
                         self.lastStatus = "타입캐스트 음성 재생 중"
                     } catch {
+                        VoiceAudioRouting.release()
                         self.lastStatus = "오디오 재생 실패: \(error.localizedDescription)"
                         completion?()
                     }

@@ -140,6 +140,7 @@ struct NavigationSpeechCue: Decodable {
     let validUntil: Double
     let targetID: String?
     var stateChange: Bool? = nil
+    var incidental: Bool? = nil
     static func parse(_ message: String, now: Date) -> NavigationSpeechCue? {
         if message.hasPrefix("{") {
             guard let data = message.data(using: .utf8), let cue = try? JSONDecoder().decode(Self.self, from: data),
@@ -148,6 +149,22 @@ struct NavigationSpeechCue: Decodable {
             return cue
         }
         return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 12, targetID: nil)
+    }
+}
+
+/// Repeated safety callbacks must not restart a sentence already being spoken.
+struct NavigationSpeechPolicy {
+    private var recent: [String: Date] = [:]
+    mutating func accepts(text: String, safety: Bool, incidental: Bool, navigationBusy: Bool, now: Date) -> Bool {
+        if incidental && navigationBusy { return false }
+        recent = recent.filter { now.timeIntervalSince($0.value) < 20 }
+        let key = "\(safety):\(text)"
+        if let previous = recent[key], now.timeIntervalSince(previous) < (safety ? 20 : 2) { return false }
+        recent[key] = now
+        return true
+    }
+    static func shouldInterrupt(stateChange: Bool, navigationBusy: Bool, incidental: Bool, priority: Int, activePriority: Int) -> Bool {
+        stateChange || (!incidental && (!navigationBusy || priority > activePriority))
     }
 }
 

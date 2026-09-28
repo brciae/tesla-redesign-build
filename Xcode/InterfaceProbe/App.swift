@@ -416,8 +416,27 @@ struct VoicePlaybackProbe: View {
             d.set(false, forKey: "voiceQuietEnabled"); d.set(0.8, forKey: "voiceVolume"); d.set(0.8, forKey: "navVoiceVolume")
             d.set("typecast:은경", forKey: "voiceIdentifier"); TypecastClient.shared.isEnabled = true
             if ProcessInfo.processInfo.arguments.contains("voice-events-probe") { Task { await eventMatrix() } }
+            if ProcessInfo.processInfo.arguments.contains("voice-overlap-probe") { Task { await overlapMatrix() } }
             if ProcessInfo.processInfo.arguments.contains("voice-lifecycle-probe") { Task { await lifecycleMatrix() } }
         }
+    }
+    @MainActor private func overlapMatrix() async {
+        let camera = "300미터 앞 과속 단속입니다. 제한 속도는 시속 60킬로미터입니다."
+        let nearer = "100미터 앞 과속 단속입니다. 제한 속도는 시속 60킬로미터입니다."
+        for text in [camera, nearer, "주의하세요."] { cache(SpeechText.prepare(text)) }
+        voice.navigationGuide(camera, safety: true)
+        // Bursts arrive while the first cached clip is actually playing.
+        for _ in 0..<4 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            voice.navigationGuide("주의하세요.", safety: true)
+            voice.navigationGuide(nearer, safety: true)
+            voice.navigationGuide(camera, safety: true)
+        }
+        for _ in 0..<50 where voice.playbackCompletions < 2 { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackStarts == 2 && voice.playbackCompletions == 2 else { eventResult = "실패 · 안전 안내 중첩"; return }
+        voice.navigationGuide(camera, safety: true)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        eventResult = voice.playbackStarts == 2 ? "중첩 안내 2개 완주 · 주의 반복 차단" : "실패 · 안전 안내 반복"
     }
     @MainActor private func lifecycleMatrix() async {
         let d = UserDefaults.standard

@@ -34,8 +34,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var routeObserver: NSObjectProtocol?
     private var activeManual = false
     private var requestedAt = Date.distantPast
-    private var lastGuideText = ""
-    private var lastGuideAt = Date.distantPast
+    private var navigationPolicy = NavigationSpeechPolicy()
     private var navigationSpeaking = false
     private var activePriority = 0
     private var activeText = ""
@@ -122,8 +121,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             navigationPreparation?.cancel()
             if navigationSpeaking { cancelCurrent() }
             queue.clearNavigation()
-            lastGuideText = ""
-            lastGuideAt = .distantPast
+            navigationPolicy = NavigationSpeechPolicy()
             nativeSpeaking = false
         }
     }
@@ -143,17 +141,19 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let text = cue.text
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { automaticTrace("길안내 수신 · 음성 설정 꺼짐"); return }
         automaticTrace("길안내 요청 수신")
-        // Ignore duplicate SDK callbacks before cancelling current playback.
-        guard SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines) != activeText, text != lastGuideText || now.timeIntervalSince(lastGuideAt) >= 2 else { return }
-        lastGuideText = text
-        lastGuideAt = now
+        let prepared = SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let incidental = cue.incidental == true || text == "주의하세요."
+        // A generic warning must not replace a specific camera or maneuver sentence.
+        guard prepared != activeText,
+              navigationPolicy.accepts(text: prepared, safety: safety, incidental: incidental,
+                  navigationBusy: navigationSpeaking || queue.items.contains { $0.key.hasPrefix("navigation.") }, now: now) else { return }
 
-        let priority = safety ? 5 : 4
+        let priority = incidental ? 3 : (safety ? 5 : 4)
         if cue.stateChange == true { queue.clearNavigation() }
         else { queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn") }
 
         // Safety guidance interrupts regular chatter immediately
-        if cue.stateChange == true || !navigationSpeaking || priority >= activePriority {
+        if NavigationSpeechPolicy.shouldInterrupt(stateChange: cue.stateChange == true, navigationBusy: navigationSpeaking, incidental: incidental, priority: priority, activePriority: activePriority) {
             cancelCurrent()
             quietUntil = .distantPast
         }

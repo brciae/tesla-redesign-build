@@ -8,7 +8,7 @@ final class InteractionTests: XCTestCase {
             for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
                 let open = app.buttons["navigation.chrome.open"]
                 XCTAssertTrue(open.waitForExistence(timeout: 5))
-                let canvas = app.otherElements["navigation.modeling"].firstMatch
+                let canvas = app.otherElements["navigation.canvas"].firstMatch
                 let before = canvas.frame
                 XCTAssertGreaterThan(before.height, app.frame.height - 3)
                 XCTAssertGreaterThan(before.width, app.frame.width - 3)
@@ -30,6 +30,12 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["fullscreen.stopped"].waitForExistence(timeout: 3))
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fullscreen controls overlay"; shot.lifetime = .keepAlways; add(shot)
         XCTAssertTrue(app.buttons["navigation.chrome.open"].waitForExistence(timeout: 9))
+    }
+
+    func testOverlappingSafetySpeechFinishesWithoutWarningLoop() {
+        let app = XCUIApplication(); app.launchArguments = ["voice-playback-probe", "voice-overlap-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["중첩 안내 2개 완주 · 주의 반복 차단"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["voice.probe.count"].label, "재생 시작 2 / 완료 2")
     }
 
     func testSpeakerOutputForAllVoiceCategories() {

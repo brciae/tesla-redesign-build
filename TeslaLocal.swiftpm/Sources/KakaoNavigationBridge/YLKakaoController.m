@@ -485,6 +485,7 @@ static NSArray *YLLifecycleObservers;
     KNLocation *target = [self speechLocation:object];
     BOOL stateChange = code == KNVoiceCode_StartGuide || code == KNVoiceCode_EndGuide || code == KNVoiceCode_OutOfRoute || code == KNVoiceCode_RouteChanged;
     message[@"stateChange"] = @(stateChange);
+    message[@"incidental"] = @(code == KNVoiceCode_Alert && !target);
     if (stateChange) [self.speechTargets removeAllObjects];
     if (target) {
         if (![self locationIsFresh]) return;

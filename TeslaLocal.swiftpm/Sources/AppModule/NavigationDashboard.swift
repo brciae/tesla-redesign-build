@@ -189,6 +189,9 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         let rect = mapRect(m)
         return ZStack(alignment: .topLeading) {
             theme.canvas.frame(width: m.w, height: m.h)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("내비게이션 전체 화면")
+                .accessibilityIdentifier("navigation.canvas")
             map()
                 .frame(width: rect.width, height: rect.height)
                 .background(NavInk.mapBase)
