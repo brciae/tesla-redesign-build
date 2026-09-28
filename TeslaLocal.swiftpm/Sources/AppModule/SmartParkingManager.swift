@@ -13,6 +13,17 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     @Published var currentPhoneLocation: CLLocation?
     @Published var fleetParkingStatus = "주차 상태 미수신"
     private var fleetSample: FleetVehicleSnapshot?
+    @Published private(set) var vehicleTelemetry: Object = [:]
+    private var telemetryVIN = ""
+    var canSaveVehicleLocation: Bool {
+        let drive = vehicleTelemetry.object("drive"), location = vehicleTelemetry.object("location")
+        guard telemetryVIN == selectedVehicleID, !telemetryVIN.isEmpty,
+              !["D", "R", "N"].contains(drive.string("gear")), (drive.number("speedKmh") ?? 0) <= 0,
+              location.flag("hasCoordinates"), let lat = location.number("latitude"), let lon = location.number("longitude"),
+              CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)), !(lat == 0 && lon == 0),
+              let at = location.number("gpsAt") ?? location.number("at"), at > 0, at <= Date().timeIntervalSince1970 * 1000 + 5000 else { return false }
+        return true
+    }
     private var recordRevision = 0
     var selectedVehicleID: String {
         if let model = AppModel.shared, model.link.authentic { return model.settings.string("vin") }
@@ -74,19 +85,19 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
     func observeFleet(_ snapshot: FleetVehicleSnapshot) {
         fleetSample = snapshot
-        // v92: this is where automatic parking detection lived or died, and with
-        // the strict recency gate it died for every car parked more than two
-        // minutes — which is every parked car. drive_state stops ticking on
-        // park, so "최근 수신 필요" became permanent and saveFleetParking was
-        // never reached. The last report is what tells us the car is parked.
-        guard let telemetry = snapshot.parkingTelemetry(requireRecent: false) else {
-            fleetParkingStatus = "차량이 아직 위치를 보고하지 않음"
-            return
+        if let telemetry = snapshot.parkingTelemetry(requireRecent: false) {
+            observeVehicleTelemetry(telemetry, vin: snapshot.vin, receivedAt: snapshot.receivedAt)
         }
+    }
+
+    func observeVehicleTelemetry(_ telemetry: Object, vin: String, receivedAt: Date = Date()) {
+        guard !vin.isEmpty, vin == selectedVehicleID else { return }
+        guard telemetryVIN != vin || !NSDictionary(dictionary: vehicleTelemetry).isEqual(to: telemetry) else { return }
+        vehicleTelemetry = telemetry; telemetryVIN = vin
         let gear = telemetry.object("drive").string("gear")
         let charging = telemetry.object("charge")["isCharging"] as? Bool
         if ["D", "R", "N"].contains(gear) {
-            UserDefaults.standard.set(true, forKey: "parking.departed." + snapshot.vin)
+            UserDefaults.standard.set(true, forKey: "parking.departed." + vin)
         }
         guard gear == "P" || charging == true else {
             fleetParkingStatus = ["D", "R", "N"].contains(gear) ? "주차 상태가 아님" : "차량 위치 수신 · 주차 여부는 직접 확인 필요"
@@ -94,46 +105,44 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         }
         let reportAge = (telemetry.object("drive").number("at")).map { Date().timeIntervalSince(Date(timeIntervalSince1970: $0 / 1000)) } ?? 0
         fleetParkingStatus = reportAge > 120 ? "차량이 마지막으로 보고한 상태 기준 · 주차 중" : "차량 주차 상태 확인됨"
-        saveFleetParking(snapshot, confirmed: false)
+        saveVehicleParking(telemetry, vin: vin, receivedAt: receivedAt, confirmed: false)
     }
 
     func saveCurrentFleetParking() {
-        guard let snapshot = fleetSample, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
-        saveFleetParking(snapshot, confirmed: true)
+        guard canSaveVehicleLocation else { return }
+        saveVehicleParking(vehicleTelemetry, vin: telemetryVIN, receivedAt: Date(), confirmed: true)
     }
 
     func photoTelemetry(fallback: Object) -> Object {
+        if canSaveVehicleLocation { return vehicleTelemetry }
         if let snapshot = fleetSample, snapshot.vin == TeslaFleetClient.shared.selectedVin,
            let telemetry = snapshot.parkingTelemetry(requireRecent: false) { return telemetry }
         return fallback
     }
 
-    private func saveFleetParking(_ snapshot: FleetVehicleSnapshot, confirmed: Bool) {
-        guard snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
-        // v92: a parked car's drive_state is old by definition — see
-        // parkingTelemetry. Asking for a recent one meant the parking screen sat
-        // at 미수신 while the snapshot held both the P gear and the coordinates.
-        guard let telemetry = snapshot.parkingTelemetry(requireRecent: false) else {
-            fleetParkingStatus = "차량이 아직 위치를 보고하지 않음"
-            return
-        }
+    private func saveVehicleParking(_ telemetry: Object, vin: String, receivedAt: Date, confirmed: Bool) {
+        guard vin == selectedVehicleID else { return }
         let vehicle = buildVehicleSnapshot(from: telemetry, preserveParkedLocation: true)
         let drive = telemetry.object("drive")
         if drive.string("gear") == "P", (drive.number("speedKmh") ?? 0) > 0 {
             fleetParkingStatus = "P 수신 · 속도 신호 불일치로 주차 위치 저장 대기"; return
         }
         guard !["D", "R", "N"].contains(drive.string("gear")), (drive.number("speedKmh") ?? 0) <= 0 else { fleetParkingStatus = "주행 상태에서는 주차 위치를 저장할 수 없음"; return }
-        guard let lat = vehicle.vehicleLatitude, let lon = vehicle.vehicleLongitude else { fleetParkingStatus = "차량 GPS 미수신 · 주차 위치 저장 대기"; return }
-        let departed = UserDefaults.standard.bool(forKey: "parking.departed." + snapshot.vin)
+        guard let lat = vehicle.vehicleLatitude, let lon = vehicle.vehicleLongitude,
+              CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)), !(lat == 0 && lon == 0) else { fleetParkingStatus = "차량 GPS 미수신 · 주차 위치 저장 대기"; return }
+        let location = telemetry.object("location")
+        let coordinateAt = (location.number("gpsAt") ?? location.number("at")).map { Date(timeIntervalSince1970: $0 / 1000) }
+        guard let coordinateAt, coordinateAt.timeIntervalSince1970 > 0, coordinateAt.timeIntervalSinceNow <= 5 else { return }
+        let departed = UserDefaults.standard.bool(forKey: "parking.departed." + vin)
         let samePlace: Bool = {
             guard !departed else { return false }
-            guard let old = latestRecord, old.vehicleID == snapshot.vin || (confirmed && old.vehicleID == nil),
+            guard let old = latestRecord, old.vehicleID == vin || (confirmed && old.vehicleID == nil),
                   let oldLat = old.vehicle.vehicleLatitude, let oldLon = old.vehicle.vehicleLongitude else { return false }
             return CLLocation(latitude: lat, longitude: lon).distance(from: CLLocation(latitude: oldLat, longitude: oldLon)) < 60
         }()
         if samePlace, var existing = latestRecord {
-            existing.vehicleID = snapshot.vin
-            existing.vehicleUpdatedAt = snapshot.receivedAt
+            existing.vehicleID = vin
+            existing.vehicleUpdatedAt = coordinateAt
             existing.vehicle = vehicle
             existing.refreshLocationType()
             existing.verification = performCrossVerification(vehicle: vehicle, mobile: existing.mobile, ocr: nil)
@@ -142,17 +151,17 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             return
         }
         var record = SmartParkingRecord()
-        record.vehicleID = snapshot.vin
-        record.vehicleUpdatedAt = snapshot.receivedAt
+        record.vehicleID = vin
+        record.vehicleUpdatedAt = coordinateAt
         // v92: the vehicle's own report time, so an old fix is labelled as old
         // rather than stamped with the moment the app happened to read it.
-        let reportedAt = (telemetry.object("drive").number("at")).map { Date(timeIntervalSince1970: $0 / 1000) }
-        record.timestamp = reportedAt ?? snapshot.receivedAt // observation time, not inferred arrival time
+        let reportedAt: Date? = coordinateAt
+        record.timestamp = coordinateAt // GPS observation time, never a newly invented arrival time
         record.vehicle = vehicle
         record.locationType = vehicle.isCharging == true ? .evCharging : .general
         record.verification = performCrossVerification(vehicle: vehicle, mobile: record.mobile, ocr: nil)
         saveRecord(record)
-        UserDefaults.standard.removeObject(forKey: "parking.departed." + snapshot.vin)
+        UserDefaults.standard.removeObject(forKey: "parking.departed." + vin)
         if let reportedAt, Date().timeIntervalSince(reportedAt) > 120 {
             fleetParkingStatus = "차량이 마지막으로 보고한 좌표로 저장됨 · \(dateText(reportedAt.timeIntervalSince1970 * 1000))"
         } else {
@@ -162,7 +171,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         Task {
             let geo = await reverseGeocode(location: CLLocation(latitude: lat, longitude: lon))
             await MainActor.run {
-                guard var current = self.latestRecord, current.id == identity, current.vehicleID == snapshot.vin else { return }
+                guard var current = self.latestRecord, current.id == identity, current.vehicleID == vin else { return }
                 current.mobile.buildingName = geo.buildingName; current.mobile.address = geo.address; current.mobile.landmark = geo.landmark
                 self.saveRecord(current)
             }

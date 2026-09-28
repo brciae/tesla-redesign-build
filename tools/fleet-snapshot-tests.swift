@@ -78,6 +78,16 @@ import Foundation
         precondition(noRoute.navigationEvent(now: now)["type"] as? String == "absent")
         precondition(noRoute.navigationEvent(now: now.addingTimeInterval(121))["type"] as? String == "wait")
         precondition((oldGPS.homeOverlay(now: now)["location"] as? [String: Any])?["mode"] as? String == "cached")
-        print("PASS: Fleet display snapshot unit conversion, missing values, timestamps and stale-state labeling")
+        let stations = NearbyChargingSite.parse(["superchargers": [
+            ["name": "지도 충전소", "location": ["lat": 37.5, "long": 127.1], "available_stalls": 2, "total_stalls": 8, "power_kw": 250],
+            ["name": "지도 충전소", "location": ["lat": 37.5, "long": 127.1]],
+            ["name": "잘못된 좌표", "location": ["lat": 137.5, "long": 127.1]],
+            ["name": "좌표 없음"],
+            ["name": "잘못된 잔여 수", "location": ["lat": 37.6, "long": 127.2], "available_stalls": 9, "total_stalls": 8]
+        ]])
+        precondition(stations.count == 2 && stations[0].available == 2 && stations[0].powerKW == 250)
+        precondition(stations[1].available == nil)
+        precondition(NearbyChargingSite.parse(["destination_charging": [["location": ["lat": true, "long": 127.1]]]]).isEmpty)
+        print("PASS: Fleet snapshots and validated, deduplicated charging map coordinates")
     }
 }

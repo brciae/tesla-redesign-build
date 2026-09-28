@@ -521,7 +521,6 @@ struct BatteryView: View {
     @State private var editing: Object?
     @State private var days = 30
     var body: some View {
-        let health = model.output.object("health"), target = model.output.object("target")
         let charges = model.output.object("charging").rows("rows")
         PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }) {
             if let count = model.output.object("charging").number("reviewCount"), count > 0 {
@@ -535,18 +534,6 @@ struct BatteryView: View {
                 NavigationLink("장소·사업자별 충전 단가") { ChargeRateSettingsView() }
                 Button { add = true } label: { Label("충전 기록 추가", systemImage: "plus.circle").frame(maxWidth: .infinity).frame(minHeight: 44) }
                     .buttonStyle(.bordered)
-            }
-            InfoCard {
-                CardTitle(title: "맞춤 충전 목표", systemImage: "target", info: target.string("note") + "\n\n관측 용량 기준: " + health.string("note"))
-                HStack {
-                    Metric(title: "권장 충전 목표", value: target.number("targetSOC"), suffix: "%")
-                    if let capacity = health.number("capacity") {
-                        Metric(title: "관측 유효용량", value: capacity, digits: 1, suffix: " kWh")
-                    } else {
-                        Caption("배터리 용량을 확인할 충전 자료 수집 중")
-                    }
-                }
-                NavigationLink("예정 거리·여유 잔량 설정", value: Page.chargingSettings).frame(minHeight: 44)
             }
             if charges.isEmpty {
                 ContentUnavailableView("충전 기록 없음", systemImage: "bolt.slash", description: Text("충전을 관측하거나 기록을 추가하면 여기에 쌓임."))

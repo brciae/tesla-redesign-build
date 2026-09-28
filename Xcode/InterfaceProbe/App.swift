@@ -15,7 +15,8 @@ import MapKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
+            if ProcessInfo.processInfo.arguments.contains("charging-map-probe") { ChargingMapProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains(where: { ["voice-playback-probe", "voice-events-probe", "voice-lifecycle-probe"].contains($0) }) { VoicePlaybackProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-cost-probe") { ChargeCostProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-audit-probe") { ChargeAuditCalendarProbe() }
@@ -312,6 +313,7 @@ struct ProbeRoot: View {
     var vehicleReference: Object = ["sourceDate": "2026-09-24", "nominalKWh": 88.2, "chemistry": "NCM", "cellMaker": "검증용 제조사", "basicWarrantyEnd": "2030-09-10", "batteryWarrantyEnd": "2034-09-10"]
     var displayOdometerKm: Double? { 1234 }
     let fleet = TeslaFleetClient()
+    let navigation = EmbeddedNavigation()
     let link = VehicleLink()
     let voice = ProbeVoice()
     func requestVehicleControl(_ key: String, title: String, args: Object = [:]) { spokenSummary = title }
@@ -385,7 +387,7 @@ final class TeslaFleetClient: ObservableObject {
         "vehicle_state": ["tpms_pressure_fl": 2.9, "tpms_pressure_fr": 2.8, "tpms_pressure_rl": 2.9, "tpms_pressure_rr": 2.85, "locked": true, "sentry_mode": false, "car_version": "fixture", "timestamp": Date().timeIntervalSince1970 * 1000]])
     func refreshVehicleSnapshot(force: Bool = false) async {}
     func readSupplement(_ kind: FleetSupplement) async throws -> FleetSupplementResult {
-        FleetSupplementResult(vin: selectedVin, receivedAt: Date(), payload: ["fixture": true])
+        FleetSupplementResult(vin: selectedVin, receivedAt: Date(), payload: kind == .nearbyCharging ? ["superchargers": [["name": "검증용 충전소", "location": ["lat": 37.5665, "long": 126.978], "available_stalls": 3, "total_stalls": 8, "power_kw": 250]]] : ["fixture": true])
     }
     func repairLocationStreaming(vin: String) async throws -> FleetSupplementResult {
         throw FleetCommandPolicy.failure("UI 검증에서는 차량 수집 설정을 변경하지 않습니다.")
@@ -699,6 +701,13 @@ struct ClimateFleetProbe: View {
 
 @MainActor final class EmbeddedNavigation: ObservableObject {
     func startManualDestination(name: String, coordinate: CLLocationCoordinate2D, vin: String) throws {}
+}
+
+struct ChargingMapProbe: View {
+    @StateObject private var model = AppModel()
+    var body: some View {
+        NavigationStack { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging) }.environmentObject(model)
+    }
 }
 
 private struct ProbeUnitsKey: EnvironmentKey { static let defaultValue = VehicleUnits() }

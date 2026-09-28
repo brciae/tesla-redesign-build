@@ -173,6 +173,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     /// mediaToggle, mediaNext, mediaPrev, mediaVolumeUp, mediaVolumeDown
     var onMedia: (String) -> Void = { _ in }
 
+    @Environment(\.dashboardSafeArea) private var safeArea
     var body: some View {
         GeometryReader { geo in
             layout(NavMetrics(size: geo.size))
@@ -197,7 +198,11 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .opacity(theme == .minimal ? 0 : 1)
                 .allowsHitTesting(theme != .minimal)
                 .accessibilityHidden(theme == .minimal)
-            overlay(m)
+            overlay(NavMetrics(size: CGSize(width: max(1, m.w - safeArea.leading - safeArea.trailing), height: max(1, m.h - safeArea.top - safeArea.bottom))))
+                .frame(width: max(1, m.w - safeArea.leading - safeArea.trailing), height: max(1, m.h - safeArea.top - safeArea.bottom))
+                .offset(x: safeArea.leading, y: safeArea.top)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("navigation.foreground")
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
         .clipped()
@@ -1871,6 +1876,13 @@ private struct IslandBars: View {
     }
 }
 
+private struct DashboardSafeAreaKey: EnvironmentKey { static let defaultValue = EdgeInsets() }
+extension EnvironmentValues {
+    var dashboardSafeArea: EdgeInsets {
+        get { self[DashboardSafeAreaKey.self] }
+        set { self[DashboardSafeAreaKey.self] = newValue }
+    }
+}
 // Shared by every dashboard theme. Controls overlay the canvas without reserving a row.
 struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1880,16 +1892,18 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
     @ViewBuilder var content: () -> Content
     @ViewBuilder var controls: () -> Controls
     var body: some View {
+        GeometryReader { geometry in
         content()
+            .environment(\.dashboardSafeArea, geometry.safeAreaInsets)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea(.container)
             .overlay(alignment: .top) {
                 VStack(spacing: 0) {
                     if expanded {
-                        VStack(spacing: 0) {
-                            controls()
+                        HStack(spacing: 4) {
+                            VStack(spacing: 4) { controls() }.frame(maxWidth: .infinity)
                             Button { setExpanded(false) } label: {
-                                Image(systemName: "chevron.up").frame(width: 100, height: 44)
+                                Image(systemName: "chevron.up").frame(width: 44, height: 44)
                             }.accessibilityLabel("상단 조작 닫기")
                                 .accessibilityIdentifier("navigation.chrome.close")
                         }
@@ -1907,6 +1921,9 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                             .accessibilityIdentifier("navigation.chrome.open")
                     }
                 }.foregroundStyle(.white).padding(.horizontal, 8)
+                    .padding(.leading, geometry.safeAreaInsets.leading)
+                    .padding(.trailing, geometry.safeAreaInsets.trailing)
+                    .padding(.top, geometry.safeAreaInsets.top)
             }
             .task(id: activity) {
                 guard expanded, !voiceOver else { return }
@@ -1914,6 +1931,7 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                 guard !Task.isCancelled else { return }
                 setExpanded(false)
             }
+        }
     }
     private func setExpanded(_ value: Bool) {
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { expanded = value }

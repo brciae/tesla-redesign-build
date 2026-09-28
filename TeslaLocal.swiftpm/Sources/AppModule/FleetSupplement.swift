@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 enum FleetSupplement: String, CaseIterable, Identifiable {
     case chargingHistory, nearbyCharging, alerts, service, releaseNotes, drivers, telemetryConfig, telemetryErrors
@@ -52,6 +53,57 @@ struct FleetSupplementResult {
     let payload: Any
     var rows: [FleetInsightRow] {
         FleetVehicleSnapshot(vin: vin, receivedAt: receivedAt, payload: ["자료": payload]).flattenedFields(section: "자료")
+    }
+}
+
+struct NearbyChargingSite: Identifiable {
+    let id: String
+    let name: String
+    let latitude: Double
+    let longitude: Double
+    let kind: String
+    let available: Int?
+    let total: Int?
+    let powerKW: Double?
+    var category: String {
+        if kind == "슈퍼차저" { return "슈퍼차저" }
+        if kind == "데스티네이션 충전" { return "완속" }
+        if let powerKW { return powerKW >= 50 ? "급속" : "완속" }
+        return "충전소"
+    }
+    var availability: String? {
+        guard let available else { return nil }
+        return total.map { "\(available)/\($0)" } ?? "\(available)"
+    }
+
+    static func parse(_ payload: Any) -> [NearbyChargingSite] {
+        guard let root = payload as? [String: Any] else { return [] }
+        let object = root["response"] as? [String: Any] ?? root
+        var seen = Set<String>()
+        return [("superchargers", "슈퍼차저"), ("destination_charging", "데스티네이션 충전")].flatMap { key, kind in
+            (object[key] as? [[String: Any]] ?? []).compactMap { site -> NearbyChargingSite? in
+                let location = site["location"] as? [String: Any] ?? site
+                func number(_ value: Any?) -> Double? {
+                    guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue.isFinite else { return nil }
+                    return n.doubleValue
+                }
+                guard let lat = number(location["lat"] ?? location["latitude"]),
+                      let lon = number(location["long"] ?? location["lon"] ?? location["longitude"]),
+                      (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) else { return nil }
+                let name = site["name"] as? String ?? site["site_name"] as? String ?? kind
+                let id = "\(lat),\(lon):\(name)"
+                guard seen.insert(id).inserted else { return nil }
+                func count(_ key: String) -> Int? {
+                    guard let n = number(site[key]), n >= 0, n <= 10000, n.rounded() == n else { return nil }
+                    return Int(n)
+                }
+                let total = count("total_stalls"), available = count("available_stalls")
+                let power = number(site["power_kw"])
+                return NearbyChargingSite(id: id, name: name, latitude: lat, longitude: lon, kind: kind,
+                    available: available.flatMap { n in if let total, n > total { return nil }; return n }, total: total,
+                    powerKW: power.flatMap { $0 > 0 ? $0 : nil })
+            }
+        }
     }
 }
 

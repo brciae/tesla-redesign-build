@@ -47,6 +47,8 @@ struct DestinationSearchView: View {
     @State private var selected: SavedNavigationPlace?
     @State private var route: MKRoute?
     @State private var busy = false
+    @State private var sending = false
+    @State private var sendFailed = false
     @State private var message = ""
     @State private var task: Task<Void, Never>?
     @StateObject private var suggestions = DestinationSuggestions()
@@ -81,9 +83,11 @@ struct DestinationSearchView: View {
                         if !recent.isEmpty { Text("최근 목적지").font(.headline); places(recent) }
                         if home == nil || work == nil { Caption("장소를 검색한 뒤 집·회사로 저장하면 한 번에 경로를 열 수 있습니다.") }
                     }
-                }.padding(16)
+                }.padding(16).disabled(sending)
             }.background(Theme.bg).navigationTitle("목적지 검색").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("닫기") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("닫기") { dismiss() }.disabled(sending) } }
+                .overlay { if sending { ProgressView("차량에 목적지 전송 중…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
+                .interactiveDismissDisabled(sending)
         }.onAppear {
             recent = load([SavedNavigationPlace].self, "navigation.recent") ?? []
             home = load(SavedNavigationPlace.self, "navigation.home")
@@ -121,18 +125,45 @@ struct DestinationSearchView: View {
                 Text(String(format: "약 %.0f분 · %.1f km", route.expectedTravelTime / 60, route.distance / 1000)).font(.headline)
                 Caption("미리보기는 Apple 지도 기준이며 실제 카카오 안내 경로와 다를 수 있습니다.")
             }
-            Button("이 목적지로 길안내 시작") {
-                do {
-                    guard canEdit else { return }
-                    try navigation.startManualDestination(name: place.name, coordinate: place.coordinate, vin: model.settings.string("vin"))
-                    recent = Array(([place] + recent.filter { $0.id != place.id }).prefix(20)); save(recent, "navigation.recent")
-                    dismiss()
-                } catch { message = error.localizedDescription }
-            }.buttonStyle(.borderedProminent).frame(minHeight: 48)
+            Button("차량으로 전송하고 안내 시작") { sendAndNavigate(place) }
+                .buttonStyle(.borderedProminent).frame(minHeight: 48).accessibilityIdentifier("destination.send")
+            Button(sendFailed ? "앱에서만 안내 시작" : "앱 길안내만 사용") { startGuidance(place, vehicleAccepted: false) }
+                .accessibilityIdentifier("destination.appOnly")
             HStack {
                 Button("집으로 저장") { home = place; save(place, "navigation.home"); message = "집 위치를 저장했습니다." }
                 Spacer()
                 Button("회사로 저장") { work = place; save(place, "navigation.work"); message = "회사 위치를 저장했습니다." }
+            }
+        }
+    }
+    private func startGuidance(_ place: SavedNavigationPlace, vehicleAccepted: Bool) {
+        do {
+            guard canEdit else { return }
+            try navigation.startManualDestination(name: place.name, coordinate: place.coordinate, vin: model.fleet.selectedVin.isEmpty ? model.settings.string("vin") : model.fleet.selectedVin)
+            recent = Array(([place] + recent.filter { $0.id != place.id }).prefix(20)); save(recent, "navigation.recent")
+            model.voice.say(vehicleAccepted ? "차량에서 목적지 전송을 승인했습니다. 앱 길안내를 시작합니다." : "앱 길안내를 시작합니다.", category: "voiceControl", manual: true)
+            dismiss()
+        } catch { message = (vehicleAccepted ? "차량 전송 승인됨 · 앱 안내 시작 실패: " : "") + error.localizedDescription }
+    }
+    private func sendAndNavigate(_ place: SavedNavigationPlace) {
+        guard canEdit, !sending, CLLocationCoordinate2DIsValid(place.coordinate) else { return }
+        task?.cancel(); busy = false; sending = true; sendFailed = false; message = ""
+        let vin = model.fleet.selectedVin
+        task = Task { @MainActor in
+            defer { sending = false }
+            do {
+                guard !model.demo, !vin.isEmpty else { throw FleetCommandPolicy.failure("연결된 차량을 먼저 확인하세요.") }
+                let accepted = try await model.fleet.sendCommand(vin: vin, command: "navigation_gps_request",
+                    parameters: ["lat": place.latitude, "lon": place.longitude, "order": 1],
+                    authorized: { !model.demo && canEdit && model.fleet.selectedVin == vin && !Task.isCancelled })
+                guard accepted else { throw FleetCommandPolicy.failure("차량에서 목적지 전송을 승인하지 않았습니다.") }
+                guard !Task.isCancelled, canEdit, model.fleet.selectedVin == vin else { return }
+                startGuidance(place, vehicleAccepted: true)
+            } catch {
+                guard !Task.isCancelled else { return }
+                sendFailed = true
+                message = "차량 전송을 확인하지 못했습니다. " + error.localizedDescription
+                model.voice.say("차량 목적지 전송을 확인하지 못했습니다. 앱 길안내만 사용할 수 있습니다.", category: "voiceControl", manual: true)
             }
         }
     }

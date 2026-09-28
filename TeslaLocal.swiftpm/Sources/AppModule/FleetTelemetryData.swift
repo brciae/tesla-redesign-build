@@ -168,7 +168,7 @@ enum FleetTelemetryData {
         // That is why the NAS could know exactly where the car parked while the
         // app said 위치 미수신. A parked car's fix is old by definition, so age
         // marks it cached rather than discarding it.
-        if let r = latest["Location"], !r.invalid, now.timeIntervalSince(r.at) >= -5,
+        if let r = records.filter({ $0.vin == vin && $0.field == "Location" && !$0.invalid && now.timeIntervalSince($0.at) >= -5 && coordinate($0) != nil }).max(by: { $0.at < $1.at }),
            let point = coordinate(r) {
             let stamp = r.at.timeIntervalSince1970 * 1000
             let fresh = now.timeIntervalSince(r.at) <= 120

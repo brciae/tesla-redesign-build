@@ -13,6 +13,19 @@ struct ControlPanel: View {
         model.demo || (!model.fleet.isAuthenticated && (!link.authentic || !link.controlEnabled)) || model.fleet.isSendingCommand || link.controlBusy || link.preparingControl || link.confirmation != nil
     }
 
+    private func current(_ section: String, _ key: String) -> Bool? {
+        let group = homePresentation(model, link).object(section)
+        return group.string("mode") == "recent" ? group[key] as? Bool : nil
+    }
+    private var currentLock: Bool? {
+        if model.output.object("fresh").flag("closures"), let value = model.groups.object("closures")["locked"] as? Bool { return value }
+        guard let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin, snapshot.sectionIsRecent("vehicle_state") else { return nil }
+        return snapshot.locked
+    }
+    private var currentPort: Bool? {
+        guard let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin, snapshot.sectionIsRecent("charge_state") else { return nil }
+        return snapshot.payload.object("charge_state")["charge_port_door_open"] as? Bool
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             // Live Control In-Flight Status
@@ -33,20 +46,9 @@ struct ControlPanel: View {
             // Body & Security Control Grid
             if category == "body" || category == "security" {
                 VStack(spacing: 10) {
-                    HStack(spacing: 10) {
-                        controlTile(
-                            action: "lock",
-                            title: "차량 잠금",
-                            icon: "lock.fill",
-                            accent: Color(red: 0.28, green: 0.88, blue: 0.42)
-                        )
-                        controlTile(
-                            action: "unlock",
-                            title: "잠금 해제",
-                            icon: "lock.open.fill",
-                            accent: Color.orange
-                        )
-                    }
+                    VehicleStateButton(title: "차량 잠금", icon: "lock.fill", state: currentLock, onTitle: "잠그기", offTitle: "해제", onState: "잠김", offState: "잠금 해제") { on in
+                        model.requestVehicleControl(on ? "lock" : "unlock", title: on ? "차량 잠금" : "잠금 해제")
+                    }.disabled(blocked)
 
                     if category == "body" {
                         HStack(spacing: 10) {
@@ -70,20 +72,9 @@ struct ControlPanel: View {
             // Climate Controls
             if category == "climate" {
                 VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        controlTile(
-                            action: "climateOn",
-                            title: "공조 켜기",
-                            icon: "power",
-                            accent: Color(red: 0.28, green: 0.88, blue: 0.42)
-                        )
-                        controlTile(
-                            action: "climateOff",
-                            title: "공조 끄기",
-                            icon: "power",
-                            accent: Color.red.opacity(0.85)
-                        )
-                    }
+                    VehicleStateButton(title: "공조 전원", icon: "power", state: current("climate", "isOn")) { on in
+                        model.requestVehicleControl(on ? "climateOn" : "climateOff", title: on ? "공조 켜기" : "공조 끄기")
+                    }.disabled(blocked)
 
                     // Temperature Adjuster Card
                     VStack(spacing: 12) {
@@ -152,35 +143,13 @@ struct ControlPanel: View {
             // Charge Controls
             if category == "charge" {
                 VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        controlTile(
-                            action: "chargeStart",
-                            title: "충전 시작",
-                            icon: "play.fill",
-                            accent: Color(red: 0.28, green: 0.88, blue: 0.42)
-                        )
-                        controlTile(
-                            action: "chargeStop",
-                            title: "충전 중지",
-                            icon: "stop.fill",
-                            accent: Color.orange
-                        )
-                    }
+                    VehicleStateButton(title: "충전", icon: "bolt.fill", state: current("charge", "isCharging"), onTitle: "시작", offTitle: "중지", onState: "충전 중", offState: "대기") { on in
+                        model.requestVehicleControl(on ? "chargeStart" : "chargeStop", title: on ? "충전 시작" : "충전 중지")
+                    }.disabled(blocked)
 
-                    HStack(spacing: 10) {
-                        controlTile(
-                            action: "portOpen",
-                            title: "포트 열기",
-                            icon: "bolt.fill",
-                            accent: Color(red: 0.35, green: 0.65, blue: 1.0)
-                        )
-                        controlTile(
-                            action: "portClose",
-                            title: "포트 닫기",
-                            icon: "bolt.slash.fill",
-                            accent: Color.white.opacity(0.6)
-                        )
-                    }
+                    VehicleStateButton(title: "충전 포트", icon: "bolt.circle", state: currentPort, onTitle: "열기", offTitle: "닫기", onState: "열림", offState: "닫힘") { on in
+                        model.requestVehicleControl(on ? "portOpen" : "portClose", title: on ? "포트 열기" : "포트 닫기")
+                    }.disabled(blocked)
 
                     // Charge Limit Stepper Card
                     VStack(spacing: 12) {

@@ -33,6 +33,10 @@ import Foundation
         precondition(chargeDisplay["chargerKW"] == nil && chargeDisplay["minutesToLimit"] == nil)
         let now = Date(timeIntervalSince1970: 1_800_000_100)
         let stableLocation = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now.addingTimeInterval(-3600), number: nil, text: "{\"locationValue\":{\"latitude\":37.5,\"longitude\":127.1}}", invalid: false)
+        let noGPS = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now, number: nil, text: "{}", invalid: true)
+        let remembered = FleetTelemetryData.homeOverlay([stableLocation, noGPS], vin: "DISPLAY", now: now)["location"] as! [String: Any]
+        precondition(remembered["latitude"] as? Double == 37.5 && remembered["mode"] as? String == "cached")
+        precondition(remembered["gpsAt"] as? Double == stableLocation.at.timeIntervalSince1970 * 1000)
         let stableState = FleetTelemetryReading(vin: "DISPLAY", field: "DetailedChargeState", at: now.addingTimeInterval(-3600), number: nil, text: "{\"stringValue\":\"DetailedChargeStateComplete\"}", invalid: false)
         let frequentSOC = (0..<20).map { FleetTelemetryReading(vin: "DISPLAY", field: "Soc", at: now.addingTimeInterval(Double($0)), number: 80, text: "", invalid: false) }
         let retained = FleetTelemetryData.merge([stableLocation, stableState], frequentSOC, limit: 5)

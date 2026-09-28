@@ -613,7 +613,7 @@ struct VehicleLocationCard: View {
     let drive: Object
     @Binding var address: String
 
-    private enum Source { case live, remembered }
+    private enum Source { case live, remembered, phone }
     private struct Fix { let latitude: Double; let longitude: Double; let at: Date?; let source: Source }
 
     private var fix: Fix? {
@@ -622,8 +622,12 @@ struct VehicleLocationCard: View {
                        at: (location.number("gpsAt") ?? location.number("at")).map { Date(timeIntervalSince1970: $0 / 1000) },
                        source: .live)
         }
-        if let record = parking.latestRecord, let lat = record.effectiveLatitude, let lon = record.effectiveLongitude {
+        if let record = parking.latestRecord, record.vehicleID == parking.selectedVehicleID, let lat = record.effectiveLatitude, let lon = record.effectiveLongitude {
             return Fix(latitude: lat, longitude: lon, at: record.timestamp, source: .remembered)
+        }
+        if let record = parking.latestRecord, record.vehicleID == nil || record.vehicleID == parking.selectedVehicleID,
+           let lat = record.mobile.mobileLatitude, let lon = record.mobile.mobileLongitude {
+            return Fix(latitude: lat, longitude: lon, at: record.timestamp, source: .phone)
         }
         return nil
     }
@@ -660,7 +664,7 @@ struct VehicleLocationCard: View {
         let saved = parking.latestRecord
         let title: String = {
             if !address.isEmpty { return address }
-            if fix.source == .remembered, let saved { return saved.displayTitle }
+            if fix.source != .live, let saved { return saved.displayTitle }
             return "위치 확인 중…"
         }()
         VStack(alignment: .leading, spacing: 4) {
@@ -682,7 +686,7 @@ struct VehicleLocationCard: View {
     private func chips(_ fix: Fix) -> some View {
         HStack(spacing: 6) {
             if let at = fix.at { chip(elapsed(at), "clock") }
-            chip(fix.source == .live ? "차량 수신" : "마지막 주차 위치",
+            chip(fix.source == .live ? "차량 수신" : fix.source == .phone ? "저장 당시 휴대폰 위치" : "마지막 주차 위치",
                  fix.source == .live ? "antenna.radiowaves.left.and.right" : "parkingsign")
             Spacer(minLength: 0)
         }
@@ -719,8 +723,7 @@ struct VehicleLocationCard: View {
 
     private var refreshButton: some View {
         Button {
-            if link.authentic { link.refreshNow(retryUnavailable: true) }
-            else { Task { await model.fleet.refreshVehicleSnapshot(force: true) } }
+            model.refreshVehicle()
         } label: {
             Group {
                 if link.refreshing || model.fleet.isReadingVehicle {
@@ -775,10 +778,22 @@ struct VehicleLocationCard: View {
 struct LocationStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
+    @ObservedObject private var parking = SmartParkingManager.shared
     @State private var roadAddress: String = ""
     var body: some View {
         let p = homePresentation(model, link)
-        PageBody(title: "차량 위치", briefing: .location, briefingText: { model.screenBriefing(.location, address: roadAddress) }) {
+        PageBody(title: "차량 위치", briefing: .location, briefingText: {
+            if !p.object("location").flag("hasCoordinates"), let record = parking.latestRecord,
+               record.vehicleID == nil || record.vehicleID == parking.selectedVehicleID {
+                if record.vehicleID == parking.selectedVehicleID, record.effectiveLatitude != nil, record.effectiveLongitude != nil {
+                    return record.briefingLines.joined(separator: " ")
+                }
+                if record.mobile.mobileLatitude != nil, record.mobile.mobileLongitude != nil {
+                    return "저장 당시 휴대폰 위치입니다. " + record.briefingLines.prefix(2).joined(separator: " ")
+                }
+            }
+            return model.screenBriefing(.location, address: roadAddress)
+        }) {
             VStack(spacing: 16) {
                 VehicleLocationCard(link: link, location: p.object("location"), drive: p.object("drive"), address: $roadAddress)
 

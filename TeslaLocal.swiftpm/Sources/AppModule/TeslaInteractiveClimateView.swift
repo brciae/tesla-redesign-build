@@ -44,24 +44,15 @@ struct TeslaInteractiveClimateView: View {
     private var topControls: some View {
         VStack(spacing: 8) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
-                tile("전원 켜기", icon: "power", active: (climate["isOn"] as? Bool) == true) {
-                    model.requestVehicleControl("climateOn", title: "공조 켜기")
-                }
-                tile("전원 끄기", icon: "power", active: (climate["isOn"] as? Bool) == false) {
-                    model.requestVehicleControl("climateOff", title: "공조 끄기")
-                }
-                tile("성에 제거", icon: "windshield.front.and.heat.waves", active: measured.flag("is_preconditioning")) {
-                    run("성에 제거 켜기") { try await model.fleet.setPreconditioningMax(on: true) }
-                }
-                tile("성에 제거 끄기", icon: "windshield.front.and.heat.waves", active: false) {
-                    run("성에 제거 끄기") { try await model.fleet.setPreconditioningMax(on: false) }
-                }
-                tile("핸들 열선 켜기", icon: "steeringwheel", active: measured.flag("steering_wheel_heater")) {
-                    run("핸들 열선 켜기") { try await model.fleet.setSteeringWheelHeater(on: true) }
-                }
-                tile("핸들 열선 끄기", icon: "steeringwheel", active: false) {
-                    run("핸들 열선 끄기") { try await model.fleet.setSteeringWheelHeater(on: false) }
-                }
+                VehicleStateButton(title: "공조 전원", icon: "power", state: climate.string("mode") == "recent" ? climate["isOn"] as? Bool : nil) { on in
+                    model.requestVehicleControl(on ? "climateOn" : "climateOff", title: on ? "공조 켜기" : "공조 끄기")
+                }.accessibilityIdentifier("climate.power")
+                VehicleStateButton(title: "성에 제거", icon: "windshield.front.and.heat.waves", state: measured.number("defrost_mode").map { $0 == 2 }) { on in
+                    run(on ? "성에 제거 켜기" : "성에 제거 끄기") { try await model.fleet.setPreconditioningMax(on: on) }
+                }.accessibilityIdentifier("climate.defrost")
+                VehicleStateButton(title: "핸들 열선", icon: "steeringwheel", state: measured["steering_wheel_heater"] as? Bool) { on in
+                    run(on ? "핸들 열선 켜기" : "핸들 열선 끄기") { try await model.fleet.setSteeringWheelHeater(on: on) }
+                }.accessibilityIdentifier("climate.steering")
             }
         }.padding(10).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16)).disabled(blocked)
     }
@@ -142,7 +133,6 @@ struct TeslaInteractiveClimateView: View {
                 modeButton("반려동물", icon: "pawprint.fill", index: 2)
                 modeButton("캠핑", icon: "tent.fill", index: 3)
             }
-            Button("유지 모드 끄기") { run("공조 유지 모드 끄기", accepted: { acceptedMode = 0 }) { try await model.fleet.setClimateKeeperMode(mode: 0) } }.frame(minHeight: 44)
             Caption("차량에서 내린 후에도 공조를 유지하는 모드입니다. 차량 수신 상태를 확인해 주세요.")
         }.padding(10).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16)).disabled(blocked)
     }
@@ -150,7 +140,8 @@ struct TeslaInteractiveClimateView: View {
         let modes = ["off": 0, "on": 1, "dog": 2, "camp": 3]
         let current = acceptedMode ?? modes[measured.string("climate_keeper_mode")]
         return tile(title, icon: icon, active: current == index) {
-            run(title + " 모드", accepted: { acceptedMode = index }) { try await model.fleet.setClimateKeeperMode(mode: index) }
+            let next = current == index ? 0 : index
+            run(next == 0 ? title + " 모드 끄기" : title + " 모드 켜기", accepted: { acceptedMode = next }) { try await model.fleet.setClimateKeeperMode(mode: next) }
         }
     }
     private func tile(_ title: String, icon: String, active: Bool, action: @escaping () -> Void) -> some View {
@@ -174,6 +165,37 @@ struct TeslaInteractiveClimateView: View {
                 await model.fleet.refreshVehicleSnapshot(force: true)
                 acceptedLevels.removeAll(); acceptedMode = nil
             } catch { result = error.localizedDescription }
+        }
+    }
+}
+
+/// One visible control per feature. Unknown state offers explicit intent without guessing.
+struct VehicleStateButton: View {
+    let title: String
+    let icon: String
+    let state: Bool?
+    var onTitle = "켜기"
+    var offTitle = "끄기"
+    var onState = "작동 중"
+    var offState = "꺼짐"
+    let change: (Bool) -> Void
+    private var label: some View {
+        VStack(spacing: 5) {
+            Image(systemName: icon)
+            Text(title).font(.caption2.bold())
+            Text(state.map { $0 ? onState : offState } ?? "상태 확인 필요").font(.caption2)
+        }.frame(maxWidth: .infinity).frame(minHeight: 58).padding(.vertical, 4)
+            .background(state == true ? Color.blue.opacity(0.7) : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+    }
+    var body: some View {
+        if let state {
+            Button { change(!state) } label: { label }.buttonStyle(MotionButtonStyle())
+                .accessibilityHint("누르면 " + (state ? offTitle : onTitle))
+        } else {
+            Menu {
+                Button(title + " " + onTitle) { change(true) }
+                Button(title + " " + offTitle) { change(false) }
+            } label: { label }
         }
     }
 }

@@ -45,16 +45,14 @@ struct DrivingWorkspace: View {
                         if let controller = navigation.controller, let image = controller.junctionImage {
                             NavigationJunctionCard(image: image, metres: controller.junctionDistance)
                                 .frame(width: min(isLandscape ? proxy.size.width * 0.32 : proxy.size.width * 0.66, 340))
-                                .padding(.leading, 16).padding(.top, 52)
+                                .padding(.leading, proxy.safeAreaInsets.leading + 16).padding(.trailing, proxy.safeAreaInsets.trailing).padding(.top, proxy.safeAreaInsets.top + 60)
                                 .allowsHitTesting(false)
                         }
                     }
                     .animation(.smooth(duration: 0.28), value: readout.speed)
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
             } controls: {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    topBar(compact: isLandscape)
-                }.frame(height: 52)
+                topBar(compact: true).frame(maxWidth: .infinity).frame(height: 52)
                 if readout.gear == "P", navigation.guiding || navigation.busy {
                     ParkedNavigationActions { navigation.endGuidance() }
                 }
@@ -107,6 +105,7 @@ struct DrivingWorkspace: View {
             }.disabled(readout.gear == "D" || readout.gear == "R" || readout.speedKmh > 5)
                 .accessibilityLabel("목적지 검색")
 
+            Spacer(minLength: 4)
             Group {
                 Button {
                     navigation.recenter()
@@ -122,7 +121,9 @@ struct DrivingWorkspace: View {
                 .transition(.opacity)
             }
 
+            Spacer(minLength: 4)
             ScreenBriefingControls(scope: .dashboard, compact: true)
+            Spacer(minLength: 4)
             Button { settings = true } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: compact ? 14 : 16))
@@ -133,7 +134,7 @@ struct DrivingWorkspace: View {
         .lineLimit(1)
         .padding(.horizontal, compact ? 10 : 8)
         .padding(.vertical, compact ? 4 : 0)
-        .background(compact ? AnyView(Capsule().fill(.ultraThinMaterial).overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.8))) : AnyView(EmptyView()))
+        .frame(maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: navigation.following)
     }
 

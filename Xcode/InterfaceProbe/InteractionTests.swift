@@ -1,9 +1,24 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testChargingMapDestinationAndRejectedVehicleSend() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["charging-map-probe"]; app.launch()
+        XCTAssertTrue(app.buttons["charging.destination"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["3/8대 가능"].exists)
+        let mapShot = XCTAttachment(screenshot: app.screenshot()); mapShot.name = "Nearby charging map and selected station"; mapShot.lifetime = .keepAlways; add(mapShot)
+        app.buttons["charging.destination"].tap()
+        XCTAssertTrue(app.buttons["destination.send"].waitForExistence(timeout: 5))
+        app.buttons["destination.send"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "차량 전송을 확인하지 못했습니다")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["destination.appOnly"].exists)
+        let failureShot = XCTAttachment(screenshot: app.screenshot()); failureShot.name = "Vehicle destination rejection offers app only guidance"; failureShot.lifetime = .keepAlways; add(failureShot)
+        app.buttons["destination.appOnly"].tap()
+        XCTAssertTrue(app.buttons["charging.destination"].waitForExistence(timeout: 5))
+    }
     func testFullscreenChromeAcrossThemesAndRotation() {
         let app = XCUIApplication(); app.launchArguments = ["fullscreen-navigation-probe"]; app.launch()
-        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+        for orientation in [UIDeviceOrientation.landscapeLeft, .landscapeRight, .portrait] {
             XCUIDevice.shared.orientation = orientation
             for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
                 let open = app.buttons["navigation.chrome.open"]
@@ -16,6 +31,12 @@ final class InteractionTests: XCTestCase {
                 guard size.count == 2 else { return }
                 XCTAssertGreaterThan(size[0], app.frame.width - 3)
                 XCTAssertGreaterThan(size[1], app.frame.height - 3)
+                let foreground = app.otherElements["navigation.foreground"]
+                XCTAssertTrue(foreground.exists)
+                if orientation != .portrait {
+                    XCTAssertGreaterThan(foreground.frame.minX, app.frame.minX + 20, "Dashboard must avoid either camera cutout orientation")
+                    XCTAssertLessThan(foreground.frame.maxX, app.frame.maxX - 20)
+                }
                 open.tap()
                 XCTAssertTrue(app.buttons["navigation.chrome.close"].waitForExistence(timeout: 3))
                 app.buttons[title].tap()
@@ -157,6 +178,11 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["climate-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["목표 실내 온도"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["climate.power"].exists)
+        XCTAssertTrue(app.buttons["climate.defrost"].exists)
+        XCTAssertTrue(app.buttons["climate.steering"].exists)
+        XCTAssertFalse(app.buttons["전원 켜기"].exists)
+        XCTAssertFalse(app.buttons["전원 끄기"].exists)
         let top = XCTAttachment(screenshot: app.screenshot()); top.name = "Restored climate top and cabin"; top.lifetime = .keepAlways; add(top)
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["반려동물"].waitForExistence(timeout: 5))

@@ -16,7 +16,7 @@ struct SmartParkingCard: View {
             // A parked car stops updating drive_state, so the button greyed out
             // exactly when the owner most wanted it. What it actually needs is a
             // position, not a fresh one.
-            let ready = model.fleet.vehicleSnapshot?.parkingTelemetry(requireRecent: false) != nil
+            let ready = manager.canSaveVehicleLocation
             VStack(alignment: .leading, spacing: 10) {
                 Text(manager.fleetParkingStatus)
                     .font(.system(size: 13))
@@ -25,7 +25,7 @@ struct SmartParkingCard: View {
                 Button { manager.saveCurrentFleetParking() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "mappin.and.ellipse").font(.system(size: 14, weight: .semibold))
-                        Text("현재 차량 위치를 주차 위치로 저장").font(.system(size: 14, weight: .semibold))
+                        Text("확인된 차량 위치를 주차 위치로 저장").font(.system(size: 14, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(ready ? Color(red: 0.18, green: 0.50, blue: 0.95) : Color.white.opacity(0.07),
@@ -68,7 +68,7 @@ struct SmartParkingCard: View {
                             HStack(spacing: 4) {
                                 Image(systemName: record.verification.isSecurityVerified ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
                                     .font(.system(size: 10, weight: .bold))
-                                Text(record.verification.isSecurityVerified ? "모바일+차량 종합검증" : "보안확인필요")
+                                Text(record.verification.isSecurityVerified ? "저장된 주차 기록" : "주차 기록 확인")
                                     .font(.system(size: 10, weight: .semibold))
                             }
                             .foregroundStyle(record.verification.isSecurityVerified ? Color.green : Color.orange)

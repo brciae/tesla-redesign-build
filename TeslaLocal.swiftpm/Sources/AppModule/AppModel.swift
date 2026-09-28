@@ -154,7 +154,7 @@ final class AppModel: ObservableObject {
             catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
         }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
+            DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation(); self?.observeParkingTelemetry() }
         }
         Task { @MainActor [weak self] in
         FleetArchiveClient.shared.onHistoryReady = { [weak self] vin in
@@ -164,10 +164,11 @@ final class AppModel: ObservableObject {
             FleetTelemetryStore.shared.historySaved(vin: vin)
         }
         }
-        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.archiveReadings = FleetTelemetryStore.shared.records } }
+        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = FleetTelemetryStore.shared.records; self.observeParkingTelemetry() } }
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.archiveReadings = FleetTelemetryStore.shared.records
+            self.observeParkingTelemetry()
             do { try self.enrichLocalChargeSOC(); self.saveRecordsWhenAvailable() }
             catch { self.storageStatus = "충전 배터리 기록 보완: " + error.localizedDescription }
         }
@@ -333,6 +334,11 @@ final class AppModel: ObservableObject {
             nextSaveAttempt = Date().addingTimeInterval(30)
             storageStatus = "기록 저장 실패 · 최근 변경은 아직 저장되지 않음. 30초 후 재시도"
         }
+    }
+    private func observeParkingTelemetry() {
+        guard !demo else { return }
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        SmartParkingManager.shared.observeVehicleTelemetry(homePresentation(self, link), vin: vin)
     }
     private func enrichLocalChargeSOC() throws {
         guard !demo else { return }
