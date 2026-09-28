@@ -370,8 +370,10 @@ struct VoicePlaybackProbe: View {
     @MainActor private func lifecycleMatrix() async {
         let d = UserDefaults.standard
         let text = "전체 음성 재생 상태 검증입니다."
+        let safetyText = "전방 안전 안내 우선 재생 검증입니다."
         cache(SpeechText.prepare(BriefingStyle.selected.phrase(text, category: "voiceAutomations")))
         cache(SpeechText.prepare(text))
+        cache(SpeechText.prepare(safetyText))
         var passed = 0
         func request() { voice.say(text, key: UUID().uuidString, category: "voiceAutomations", ttl: 60, manual: false) }
         func blocked(_ name: String, configure: () -> Void, invoke: () -> Void, restore: () -> Void) async -> Bool {
@@ -409,7 +411,7 @@ struct VoicePlaybackProbe: View {
         guard voice.playbackCompletions == count + 1 else { eventResult = "실패 · 통화 종료 후 새 안내"; return }; passed += 1
         // Safety navigation preempts an automatic clip and itself reaches completion.
         count = voice.playbackCompletions; let starts = voice.playbackStarts
-        request(); voice.nativeSession(false); voice.navigationGuide(text, safety: true)
+        request(); voice.nativeSession(false); voice.navigationGuide(safetyText, safety: true)
         for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
         guard voice.playbackStarts == starts + 2 && voice.playbackCompletions == count + 1 else { eventResult = "실패 · 안전 안내 우선 재생"; return }; passed += 1
         // Memory and explicit automatic-stop cancellation must stop the actual player.
@@ -444,11 +446,13 @@ struct VoicePlaybackProbe: View {
             let vin = String(format: "7SAYGDEE0PF%06d", 100 + passed)
             eventResult = "검사 중 · \(trigger.title) · \(source)"
             let text = "\(trigger.title) \(source) 이벤트 검증입니다."
-            cache(SpeechText.prepare(BriefingStyle.selected.phrase(text, category: "voiceAutomations")))
+            cache(SpeechText.prepare(BriefingStyle.selected.phrase(source == "Fleet start" ? text + " 80퍼센트" : text, category: "voiceAutomations")))
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             var rule = AutomationRule(name: trigger.title, trigger: trigger)
             rule.message = text; rule.cooldownMinutes = 1
+            if source == "Fleet start" { rule.message += " {배터리}" }
+            if source == "Fleet start" || (source == "Fleet speech" && trigger == .batteryLow) { rule.cabinCondition = "above"; rule.cabinThresholdC = 26 }
             if [.rest, .delay].contains(trigger) { rule.threshold = 1 }
             if trigger == .remaining { rule.threshold = 10 }
             if trigger == .tireLow { rule.threshold = 2.4 }
@@ -460,7 +464,8 @@ struct VoicePlaybackProbe: View {
             let coordinator = try! AutomationCoordinator(folder: folder, observationNow: { clock.addingTimeInterval(0.01) })
             let link = VehicleLink()
             let before = voice.playbackCompletions
-            func feed(_ seconds: Double, gear: String = "P", soc: Double = 80, charging: Int = 2, route: String = "집", minutes: Double = 11, endedTrip: Bool = false, endedCharge: Bool = false, lowTire: Bool = false) {
+            let startsBefore = voice.playbackStarts
+            func feed(_ seconds: Double, gear: String = "P", soc: Double = 80, charging: Int = 2, route: String = "집", minutes: Double = 11, endedTrip: Bool = false, endedCharge: Bool = false, lowTire: Bool = false, inside: Double = 30) {
                 clock = base.addingTimeInterval(seconds)
                 let at = clock.timeIntervalSince1970 * 1000
                 let groups: Object = ["drive": ["at": at, "receivedAt": at, "gear": gear, "speedKmh": gear == "P" ? 0 : 30, "destination": route, "arrivalMinutes": minutes],
@@ -476,19 +481,25 @@ struct VoicePlaybackProbe: View {
                     let snapshot = FleetVehicleSnapshot(vin: vin, receivedAt: clock, payload: [
                         "drive_state": ["timestamp": at, "shift_state": gear, "speed": gear == "P" ? 0 : 20, "active_route_destination": route, "active_route_minutes_to_arrival": minutes],
                         "vehicle_state": ["timestamp": at, "is_user_present": true, "df": 0, "locked": false, "tpms_pressure_fl": 2.9, "tpms_hard_warning_fl": lowTire],
-                        "charge_state": ["timestamp": at, "battery_level": soc]])
+                        "charge_state": ["timestamp": at, "battery_level": soc], "climate_state": ["timestamp": at, "inside_temp": inside]])
                     coordinator.observeFleetSpeech(snapshot, history: output.object("state"), previousTrips: 0, link: link, voice: voice)
                 } else { coordinator.observe(output: output, previousTrips: 0, previousCharges: 0, link: link, voice: voice, demo: false) }
             }
             if ["Fleet start", "Fleet complete", "Fleet stop"].contains(source) || trigger == .chargingLocked {
                 TeslaFleetClient.shared.selectedVin = vin
-                func fleet(_ state: String, seconds: Double) {
+                func fleet(_ state: String, seconds: Double, inside: Double = 30) {
                     let at = Date().addingTimeInterval(seconds).timeIntervalSince1970 * 1000
-                    let snapshot = FleetVehicleSnapshot(vin: vin, receivedAt: Date(), payload: ["charge_state": ["timestamp": at, "charging_state": state, "battery_level": 80, "charge_limit_soc": 80], "vehicle_state": ["timestamp": at, "locked": true]])
+                    let snapshot = FleetVehicleSnapshot(vin: vin, receivedAt: Date(), payload: ["charge_state": ["timestamp": at, "charging_state": state, "battery_level": 80, "charge_limit_soc": 80], "vehicle_state": ["timestamp": at, "locked": true], "climate_state": ["timestamp": at, "inside_temp": inside]])
                     coordinator.observeFleet(snapshot, voice: voice, bleActive: false)
                 }
                 if trigger == .chargingLocked { fleet("Charging", seconds: 0) }
-                else if trigger == .chargeStart { fleet("Disconnected", seconds: -2); fleet("Charging", seconds: 0) }
+                else if trigger == .chargeStart {
+                    fleet("Disconnected", seconds: -6); fleet("Charging", seconds: -5, inside: 20)
+                    guard voice.playbackStarts == startsBefore else { eventResult = "실패 · Fleet 충전 온도 조건 무시"; return }
+                    fleet("Disconnected", seconds: -4); fleet("Charging", seconds: -3)
+                    fleet("Disconnected", seconds: -2); fleet("Charging", seconds: -1)
+                    guard coordinator.logs.count == 1 else { eventResult = "실패 · Fleet 충전 재실행 간격"; return }
+                }
                 else { fleet("Charging", seconds: -2); fleet(source == "Fleet stop" ? "Stopped" : "Complete", seconds: 0) }
             } else {
                 switch trigger {
@@ -497,7 +508,13 @@ struct VoicePlaybackProbe: View {
                 case .arrival: feed(0, gear: "D"); feed(3, endedTrip: true)
                 case .chargeStart: feed(0); feed(3, charging: 5)
                 case .chargeEnd: feed(0, charging: 5); feed(3, charging: 6, endedCharge: true)
-                case .batteryLow: feed(0); feed(3, gear: "D", soc: 10)
+                case .batteryLow:
+                    feed(0)
+                    if source == "Fleet speech" {
+                        feed(3, gear: "D", soc: 10, inside: 20)
+                        guard voice.playbackStarts == startsBefore else { eventResult = "실패 · Fleet 배터리 온도 조건 무시"; return }
+                    }
+                    feed(6, gear: "D", soc: 10)
                 case .tireLow: feed(0); feed(3, gear: "D", lowTire: true)
                 case .rest: for second in stride(from: 0, through: 75, by: 15) { feed(Double(second), gear: "D") }
                 case .remaining: feed(0, gear: "D"); feed(3, gear: "D", minutes: 9)

@@ -86,13 +86,16 @@ final class AutomationCoordinator: ObservableObject {
         let charge: Object = ["at": snapshot.number("charge_state", "timestamp") ?? 0,
                               "receivedAt": snapshot.receivedAt.timeIntervalSince1970 * 1000,
                               "soc": snapshot.soc as Any, "rangeKm": snapshot.rangeKm as Any]
+        let climate: Object = ["at": snapshot.number("climate_state", "timestamp") ?? 0,
+                               "receivedAt": snapshot.receivedAt.timeIntervalSince1970 * 1000,
+                               "insideC": snapshot.insideC as Any]
         let tireKeys = ["fl", "fr", "rl", "rr"]
         let tires: Object = ["at": at, "receivedAt": at,
                              "values": tireKeys.map { snapshot.number("vehicle_state", "tpms_pressure_" + $0) as Any },
                              "seenAt": tireKeys.map { _ in at },
                              "warnings": tireKeys.map { vehicle["tpms_hard_warning_" + $0] as? Bool == true || vehicle["tpms_soft_warning_" + $0] as? Bool == true }]
-        let output: Object = ["fresh": ["closures": snapshot.sectionIsRecent("vehicle_state"), "drive": snapshot.sectionIsRecent("drive_state"), "charge": snapshot.sectionIsRecent("charge_state"), "tire": snapshot.sectionIsRecent("vehicle_state")],
-                              "state": ["settings": ["vin": snapshot.vin], "trips": history.rows("trips"), "groups": ["closures": closures, "drive": snapshot.driveDisplay(), "charge": charge, "tire": tires]]]
+        let output: Object = ["fresh": ["closures": snapshot.sectionIsRecent("vehicle_state"), "drive": snapshot.sectionIsRecent("drive_state"), "charge": snapshot.sectionIsRecent("charge_state"), "tire": snapshot.sectionIsRecent("vehicle_state"), "climate": snapshot.sectionIsRecent("climate_state")],
+                              "state": ["settings": ["vin": snapshot.vin], "trips": history.rows("trips"), "groups": ["closures": closures, "drive": snapshot.driveDisplay(), "charge": charge, "tire": tires, "climate": climate]]]
         observe(output: output, previousTrips: previousTrips, previousCharges: 0, link: link, voice: voice, demo: false, speechOnly: true)
     }
     @MainActor func observeFleet(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator, bleActive: Bool) {
@@ -106,7 +109,23 @@ final class AutomationCoordinator: ObservableObject {
                 let trigger: AutomationTrigger = event.kind == "start" ? .chargeStart : .chargeEnd
                 if ["start", "complete", "stop"].contains(event.kind) {
                     for rule in rules where rule.enabled && rule.trigger == trigger && rule.speech && AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: Date())) {
-                        voice.say(rule.message.isEmpty ? event.title + ". " + event.body : rule.message, key: "auto:" + rule.id, category: "voiceAutomations", priority: 2, ttl: 60, manual: false)
+                        guard (try? rule.validate()) != nil else { continue }
+                        let now = Date().timeIntervalSince1970, key = snapshot.vin + ":" + rule.id
+                        if let fired = policy.document.lastFired[key], now - fired < Double(rule.cooldownMinutes * 60) { continue }
+                        if rule.cabinCondition != "always" {
+                            guard snapshot.sectionIsRecent("climate_state"), let temperature = snapshot.insideC,
+                                  rule.cabinCondition == "above" ? temperature >= rule.cabinThresholdC : temperature <= rule.cabinThresholdC else { continue }
+                        }
+                        var sample = AutomationSample(now: now, vehicle: snapshot.vin)
+                        sample.hour = Calendar.current.component(.hour, from: Date()); sample.chargeFresh = true; sample.soc = snapshot.soc
+                        sample.driveFresh = snapshot.sectionIsRecent("drive_state"); sample.destination = snapshot.driveDisplay().string("destination")
+                        let message = rule.message.isEmpty ? event.title + ". " + event.body : AutomationPolicy.renderedText(for: rule, sample: sample)
+                        policy.document.lastFired[key] = now
+                        let id = UUID().uuidString
+                        policy.document.logs.insert(AutomationLog(id: id, at: now, rule: rule.name, message: message, status: "Fleet 충전 조건 확인 · 음성 요청"), at: 0)
+                        policy.document.logs = Array(policy.document.logs.prefix(80))
+                        do { try persist(); publish() } catch { blocked = true; status = "음성 실행 기록 저장 실패"; return }
+                        voice.say(message, key: "auto:" + rule.id, category: "voiceAutomations", priority: 2, ttl: 60, manual: false)
                     }
                 }
             }
