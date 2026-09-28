@@ -186,7 +186,11 @@ struct AutomationPolicy {
         previous = nil; lastPresenceAt = nil; occupancySince = nil; absentSince = nil; exitDoorAt = nil; driveSeconds = 0
         parkSince = nil; routeBaseline = nil; milestones = []
     }
-    mutating func settingsChanged() { reset(); document.boardingLatched = true; document.boardingVoiceLatched = false }
+    mutating func settingsChanged() {
+        reset()
+        document.boardingVoiceLatched = document.boardingVoiceLatched ?? document.boardingLatched
+        document.boardingLatched = true
+    }
     static func renderedText(for rule: AutomationRule, sample: AutomationSample, delayMinutes: Double = 0) -> String {
         var text: String
         switch rule.trigger {

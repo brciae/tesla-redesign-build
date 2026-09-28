@@ -18,7 +18,12 @@ struct EnergyCalendarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if model.output.object("charging").number("reviewCount") ?? 0 > 0 {
-                    InfoNote("중복 의심 기록 제외", "반복 수집이 의심되는 충전은 합계에서 제외했습니다. 충전 전체 기록에서 원본과 판정 이유를 확인하세요.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("중복 의심 기록 제외").font(.subheadline.bold()).foregroundStyle(.orange)
+                        Text("반복 수집이 의심되는 충전은 합계에서 제외했습니다. 충전 전체 기록에서 원본과 판정 이유를 확인하세요.")
+                            .font(.footnote).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                    }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 }
                 monthHeader
                 modePickers
@@ -111,12 +116,14 @@ struct EnergyCalendarView: View {
     @ViewBuilder private var summaryStrip: some View {
         let totalCharge = days.reduce(0.0) { $0 + charge($1) }
         let totalMinutes = days.reduce(0.0) { $0 + $1.chargeMinutes }
+        let hasTime = days.contains { $0.hasChargeDuration }
+        let missingTime = days.contains { $0.hasUnknownChargeDuration }
         let totalUse = days.reduce(0.0) { $0 + $1.driving + $1.parking }
         let totalDistance = days.reduce(0.0) { $0 + $1.distance }
         VStack(spacing: 10) {
             if charging {
                 summaryRow("충전량", String(format: "%.2f", totalCharge), "kWh")
-                summaryRow("충전 시간", durationText(totalMinutes), "")
+                summaryRow(missingTime && hasTime ? "확인된 충전 시간" : "충전 시간", hasTime ? durationText(totalMinutes) : missingTime ? "미확인" : "—", "")
             } else {
                 summaryRow("사용량", String(format: "%.1f", totalUse), "kWh")
                 summaryRow("주행 거리", String(format: "%.1f", totalDistance), "km")

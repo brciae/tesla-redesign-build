@@ -15,9 +15,11 @@ import Foundation
         precondition(abs(days[26].chargeVehicle - 40.36) < 0.001)
         precondition(abs(days[26].chargeSupply - 43.1) < 0.001)
         precondition(days[26].chargeMinutes == 60)
+        precondition(days[26].hasChargeDuration && !days[26].hasUnknownChargeDuration)
         var unknown = valid; unknown["collectedAfterEnd"] = true; unknown["startTimeObserved"] = false
         let partial = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: [unknown], capacityKWh: 75, calendar: calendar)
         precondition(partial[26].chargeMinutes == 0, "Collection timestamps are not charging duration")
+        precondition(!partial[26].hasChargeDuration && partial[26].hasUnknownChargeDuration)
         print("PASS: calendar excludes duplicate energy/time and never invents duration from collection times")
     }
 }

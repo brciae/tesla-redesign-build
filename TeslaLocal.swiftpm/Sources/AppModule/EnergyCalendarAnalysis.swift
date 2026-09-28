@@ -10,6 +10,8 @@ struct EnergyCalendarDay: Identifiable {
     var chargeSupply: Double = 0
     var chargeVehicle: Double = 0
     var chargeMinutes: Double = 0
+    var hasChargeDuration = false
+    var hasUnknownChargeDuration = false
     var hasDrive = false
     var hasParking = false
     var hasSupply = false
@@ -49,9 +51,10 @@ enum EnergyCalendarAnalysis {
             guard let i = index(number(charge, "at")) else { continue }
             if let value = number(charge, "supplyKWh"), value >= 0 { result[i].chargeSupply += value; result[i].hasSupply = true }
             if let value = number(charge, "vehicleReportedKWh"), value >= 0 { result[i].chargeVehicle += value; result[i].hasVehicleCharge = true }
-            if charge["collectedAfterEnd"] as? Bool != true, charge["startTimeObserved"] as? Bool != false, charge["endTimeObserved"] as? Bool != false, let start = number(charge, "at"), let end = number(charge, "end"), end >= start { result[i].chargeMinutes += (end - start) / 60000 }
+            if charge["collectedAfterEnd"] as? Bool != true, charge["startTimeObserved"] as? Bool != false, charge["endTimeObserved"] as? Bool != false, let start = number(charge, "at"), let end = number(charge, "end"), end >= start {
+                result[i].chargeMinutes += (end - start) / 60000; result[i].hasChargeDuration = true
+            } else { result[i].hasUnknownChargeDuration = true }
         }
         return result
     }
 }
-
