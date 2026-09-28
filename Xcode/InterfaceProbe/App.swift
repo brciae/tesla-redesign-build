@@ -451,11 +451,13 @@ struct VoicePlaybackProbe: View {
             rule.message = text; rule.cooldownMinutes = 1
             if [.rest, .delay].contains(trigger) { rule.threshold = 1 }
             if trigger == .remaining { rule.threshold = 10 }
+            if trigger == .tireLow { rule.threshold = 2.4 }
+            try! rule.validate()
             var doc = AutomationDocument(); doc.rules = [rule]
             try! JSONEncoder().encode(doc).write(to: folder.appendingPathComponent("automations.json"))
             let base = Date().addingTimeInterval(-90)
             var clock = base
-            let coordinator = try! AutomationCoordinator(folder: folder, observationNow: { clock })
+            let coordinator = try! AutomationCoordinator(folder: folder, observationNow: { clock.addingTimeInterval(0.01) })
             let link = VehicleLink()
             let before = voice.playbackCompletions
             func feed(_ seconds: Double, gear: String = "P", soc: Double = 80, charging: Int = 2, route: String = "집", minutes: Double = 11, endedTrip: Bool = false, endedCharge: Bool = false, lowTire: Bool = false) {

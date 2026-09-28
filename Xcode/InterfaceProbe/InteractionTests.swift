@@ -1,16 +1,20 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
-    func testVoiceSettingsInterruptionsPreemptionAndRecovery() {
+    func testAudioSettingsInterruptionsPreemptionAndRecovery() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["voice-lifecycle-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["음성 상태 17/17 검증 완료"].waitForExistence(timeout: 90))
+        let result = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "음성 상태 17/17 검증 완료", "실패 ·")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 90))
+        XCTAssertEqual(result.label, "음성 상태 17/17 검증 완료")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Voice settings interruption expiry preemption recovery and Typecast preview"; shot.lifetime = .keepAlways; add(shot)
     }
-    func testEveryAutomationEventReachesPlayback() {
+    func testAllAutomationEventsReachPlayback() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["voice-events-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["자동화 24/24 재생 완료"].waitForExistence(timeout: 120))
+        let result = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "자동화 24/24 재생 완료", "실패 ·")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 120))
+        XCTAssertEqual(result.label, "자동화 24/24 재생 완료")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "All twelve automation triggers and Fleet speech events complete playback"; shot.lifetime = .keepAlways; add(shot)
     }
     func testAllVoiceCategoriesActuallyStartAndFinishPlayback() {
