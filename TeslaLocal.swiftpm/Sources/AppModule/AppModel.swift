@@ -258,17 +258,28 @@ final class AppModel: ObservableObject {
         output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
     }
     func refresh() {
-        if !demo && !recoveryLock {
-            var rates: Object = [:]
-            if settings.number("tariff") == nil, let legacy = UserDefaults.standard.string(forKey: "cost.electricity").flatMap(Double.init), legacy.isFinite, (0...10000).contains(legacy) { rates["tariff"] = legacy }
-            if let data = UserDefaults.standard.data(forKey: "navigation.home"), let home = try? JSONSerialization.jsonObject(with: data) as? Object,
-               let lat = home.number("latitude"), let lon = home.number("longitude"), (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) {
-                rates["homePoint"] = ["latitude": lat, "longitude": lon]
+        do {
+            // Read loaded settings before migrating the older standalone preference.
+            output = try runtime.call("view") as? Object ?? [:]
+            if !demo && !recoveryLock {
+                let defaults = UserDefaults.standard
+                var rates: Object = [:]
+                if settings.number("tariff") != nil { defaults.set(true, forKey: "cost.legacyTariffMigrated") }
+                if !defaults.bool(forKey: "cost.legacyTariffMigrated"), settings.number("tariff") == nil,
+                   let legacy = defaults.string(forKey: "cost.electricity").flatMap(Double.init), legacy.isFinite, (0...10000).contains(legacy) { rates["tariff"] = legacy }
+                if let data = defaults.data(forKey: "navigation.home"), let home = try? JSONSerialization.jsonObject(with: data) as? Object,
+                   let lat = home.number("latitude"), let lon = home.number("longitude"), (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0),
+                   settings.object("homePoint").number("latitude") != lat || settings.object("homePoint").number("longitude") != lon {
+                    rates["homePoint"] = ["latitude": lat, "longitude": lon]
+                }
+                if !rates.isEmpty {
+                    _ = try runtime.call("settings", rates)
+                    if rates["tariff"] != nil { defaults.set(true, forKey: "cost.legacyTariffMigrated") }
+                    output = try runtime.call("view") as? Object ?? [:]
+                }
             }
-            if !rates.isEmpty { _ = try? runtime.call("settings", rates) }
-        }
-        do { output = try runtime.call("view") as? Object ?? [:]; if !link.connected || !link.authentic { output["fresh"] = Object() } }
-        catch { output["fresh"] = Object(); errorMessage = error.localizedDescription }
+            if !link.connected || !link.authentic { output["fresh"] = Object() }
+        } catch { output["fresh"] = Object(); errorMessage = error.localizedDescription }
     }
     private func persist() throws {
         guard !demo else { return }
