@@ -5,6 +5,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) void (^eventHandler)(NSString *event, NSString *message);
 @property(nonatomic, copy, nullable) void (^telemetryHandler)(NSDictionary<NSString *, id> *snapshot);
 @property(nonatomic, readonly) BOOL guiding;
+@property(nonatomic, readonly, nullable) UIImage *junctionImage;
+@property(nonatomic, readonly) double junctionDistance;
 - (void)configureMapAnchorX:(double)x y:(double)y NS_SWIFT_NAME(configureMapAnchor(x:y:));
 - (void)configureMapTheme:(NSString *)theme NS_SWIFT_NAME(configureMapTheme(_:));
 - (void)configureVoice:(BOOL)enabled safety:(BOOL)safety volume:(float)volume duck:(BOOL)duck

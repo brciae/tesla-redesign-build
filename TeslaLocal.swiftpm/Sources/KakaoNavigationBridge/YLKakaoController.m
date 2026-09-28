@@ -178,6 +178,16 @@ static NSArray *YLLifecycleObservers;
     self.voiceVolume = fmaxf(0, fminf(1, volume)); self.duckAudio = duck;
     // v30: the SDK never plays audio (all speech goes through the app voice), so the audio session is left to the app.
 }
+- (double)junctionDistance {
+    KNImageDirection *image = self.routeGuide.imgDirection;
+    if (!self.guiding || !image.directionImg || !image.location || !self.locationGuide.location ||
+        [NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt > 8) return -1;
+    return [self.locationGuide.location distToLocation:image.location];
+}
+- (UIImage *)junctionImage {
+    double distance = self.junctionDistance;
+    return distance >= 0 && distance <= 800 ? self.routeGuide.imgDirection.directionImg : nil;
+}
 - (void)configureMapTheme:(NSString *)theme {
     BOOL changed = ![self.displayTheme isEqualToString:theme];
     self.displayTheme = theme;

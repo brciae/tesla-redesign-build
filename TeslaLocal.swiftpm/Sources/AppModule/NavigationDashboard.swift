@@ -1920,3 +1920,23 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
         activity += 1
     }
 }
+
+
+struct NavigationJunctionCard: View {
+    let image: UIImage
+    let metres: Double
+    var body: some View {
+        VStack(spacing: 0) {
+            Image(uiImage: image).resizable().scaledToFit()
+                .accessibilityLabel("교차로 상세 안내 이미지")
+            HStack {
+                Text("분기점 상세 안내").font(.caption.weight(.semibold))
+                Spacer()
+                Text("\(Int(max(0, metres))) m").font(.subheadline.bold()).monospacedDigit()
+            }.padding(10)
+        }.foregroundStyle(.white).background(Color.black.opacity(0.88))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18)))
+            .accessibilityIdentifier("navigation.junction")
+    }
+}

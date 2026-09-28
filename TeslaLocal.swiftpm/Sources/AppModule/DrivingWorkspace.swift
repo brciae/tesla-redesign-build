@@ -41,6 +41,14 @@ struct DrivingWorkspace: View {
                         default: link.mediaCommand(action)
                         }
                     }
+                    .overlay(alignment: .topLeading) {
+                        if let controller = navigation.controller, let image = controller.junctionImage {
+                            NavigationJunctionCard(image: image, metres: controller.junctionDistance)
+                                .frame(width: min(isLandscape ? proxy.size.width * 0.32 : proxy.size.width * 0.66, 340))
+                                .padding(.leading, 16).padding(.top, 52)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .animation(.smooth(duration: 0.28), value: readout.speed)
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
             } controls: {
