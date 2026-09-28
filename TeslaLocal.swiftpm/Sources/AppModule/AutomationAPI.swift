@@ -35,7 +35,7 @@ enum AutomationAPI {
         guard result == errSecSuccess else { throw failure("API 키를 갱신하지 못했습니다.") }
     }
     static func removeKey(_ provider: AutomationAPIProvider) { SecItemDelete(query(provider) as CFDictionary) }
-    static func generate(provider: AutomationAPIProvider, model: String, prompt: String) async throws -> String {
+    static func generate(provider: AutomationAPIProvider, model: String, prompt: String, onRetry: ((Int, TimeInterval) async -> Void)? = nil) async throws -> String {
         guard let key = key(provider), !key.isEmpty else { throw failure("선택한 서비스의 API 키를 먼저 등록해 주세요.") }
         let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard model.range(of: "^[A-Za-z0-9._-]{1,100}$", options: .regularExpression) != nil else { throw failure("사용할 모델 ID를 확인해 주세요.") }
@@ -65,15 +65,77 @@ enum AutomationAPI {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let session = URLSession(configuration: .ephemeral, delegate: AutomationAPIRedirectGuard(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw failure("AI 서비스 응답을 확인할 수 없습니다.") }
-        guard http.statusCode == 200 else {
-            let reason = [401: "API 키 인증 실패", 403: "모델 또는 API 접근 권한 없음", 404: "모델 ID 확인 필요", 429: "사용량·요청 한도 도달" ][http.statusCode] ?? "AI 요청 실패"
-            throw failure("\(reason) (HTTP \(http.statusCode)). 설정을 확인한 뒤 다시 시도해 주세요.")
+        return try await complete(provider: provider, onRetry: onRetry) {
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else { throw failure("AI 서비스 응답을 확인할 수 없습니다.") }
+            var data = Data()
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                data.append(byte)
+                guard data.count <= 262144 else { throw failure("AI 응답이 너무 큽니다.") }
+            }
+            return (data, http)
         }
-        var data = Data()
-        for try await byte in bytes { data.append(byte); guard data.count <= 262144 else { throw failure("AI 응답이 너무 큽니다.") } }
-        return try decodeResponse(data, provider: provider)
+    }
+    /// Retry only explicit transient HTTP responses, never ambiguous network failures or invalid drafts.
+    /// Each generation owns its retry budget; no failed state carries into the next generation.
+    static func complete(provider: AutomationAPIProvider,
+                         sleep: (TimeInterval) async throws -> Void = { seconds in
+                             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                         },
+                         onRetry: ((Int, TimeInterval) async -> Void)? = nil,
+                         send: () async throws -> (Data, HTTPURLResponse)) async throws -> String {
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            let (data, http) = try await send()
+            try Task.checkCancellation()
+            if http.statusCode == 200 { return try decodeResponse(data, provider: provider) }
+            if let delay = retryDelay(http: http, data: data, attempt: attempt) {
+                await onRetry?(attempt + 1, delay)
+                try await sleep(delay)
+                continue
+            }
+            throw httpFailure(http.statusCode, provider: provider)
+        }
+        throw failure("AI 생성 재시도 한도에 도달했습니다.")
+    }
+    static func retryDelay(http: HTTPURLResponse, data: Data, attempt: Int, now: Date = Date()) -> TimeInterval? {
+        guard [502, 503, 504].contains(http.statusCode), attempt < 2 else { return nil }
+        var serverDelay: TimeInterval = 0
+        if let header = http.value(forHTTPHeaderField: "Retry-After") {
+            if let seconds = Double(header), seconds.isFinite { serverDelay = max(0, seconds) }
+            else {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.timeZone = TimeZone(secondsFromGMT: 0)
+                formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+                if let date = formatter.date(from: header) { serverDelay = max(0, date.timeIntervalSince(now)) }
+            }
+        }
+        if let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let error = root["error"] as? [String: Any], let details = error["details"] as? [[String: Any]] {
+            for detail in details where detail["@type"] as? String == "type.googleapis.com/google.rpc.RetryInfo" {
+                if let raw = detail["retryDelay"] as? String, raw.hasSuffix("s"),
+                   let seconds = Double(raw.dropLast()), seconds.isFinite { serverDelay = max(serverDelay, seconds) }
+            }
+        }
+        // Do not wait indefinitely or retry earlier than the provider requested.
+        guard serverDelay <= 30 else { return nil }
+        return max(serverDelay, pow(2, Double(attempt + 1)) + Double.random(in: 0...0.5))
+    }
+    static func httpFailure(_ status: Int, provider: AutomationAPIProvider) -> NSError {
+        let reason: String
+        switch status {
+        case 502, 503, 504:
+            reason = "\(provider.rawValue) 서비스가 일시적으로 응답하지 않습니다. 잠시 뒤 다시 생성해 주세요. 앱 재시동이나 API 키 재등록은 필요하지 않습니다."
+        case 401: reason = "API 키 인증에 실패했습니다. 등록한 키를 확인해 주세요."
+        case 403: reason = "모델 또는 API 접근 권한이 없습니다. 서비스 설정을 확인해 주세요."
+        case 404: reason = "모델을 찾을 수 없습니다. 등록한 모델 ID를 확인해 주세요."
+        case 429: reason = "사용량·요청 한도에 도달했습니다. 서비스의 한도와 결제 설정을 확인한 뒤 다시 시도해 주세요."
+        default: reason = "AI 요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요."
+        }
+        // Do not echo provider bodies: they can contain prompts, identifiers or credentials.
+        return NSError(domain: "AutomationAPI", code: status, userInfo: [NSLocalizedDescriptionKey: "\(reason) (HTTP \(status))"])
     }
     static func decodeResponse(_ data: Data, provider: AutomationAPIProvider) throws -> String {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw failure("AI 응답 형식 오류") }

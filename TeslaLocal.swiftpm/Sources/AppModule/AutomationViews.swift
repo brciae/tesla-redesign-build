@@ -241,11 +241,17 @@ final class AutomationAI: ObservableObject {
         busy = true; status = "규칙 생성 중…"
         task = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { if self.generation == token { self.busy = false } }
+            defer { if self.generation == token { self.busy = false; self.task = nil } }
             do {
                 let prompt = try AutomationTransfer.prompt(request)
-                let result = try await AutomationAPI.generate(provider: provider, model: model, prompt: prompt)
+                let result = try await AutomationAPI.generate(provider: provider, model: model, prompt: prompt) { retry, delay in
+                    await MainActor.run {
+                        guard self.generation == token else { return }
+                        self.status = "AI 서비스 일시 오류 · 약 \(Int(ceil(delay)))초 후 재시도 (\(retry)/2)…"
+                    }
+                }
                 try Task.checkCancellation()
+                guard self.generation == token else { return }
                 guard vehicle == TeslaFleetClient.shared.selectedVin || (TeslaFleetClient.shared.selectedVin.isEmpty && vehicle == (UserDefaults.standard.string(forKey: "vin") ?? "")) else { throw AutomationAPI.failure("차량이 변경되었습니다. 다시 생성해 주세요.") }
                 self.draft = try AutomationTransfer.decode(result, vehicle: vehicle)
                 self.status = "생성 완료 · 조건과 동작을 검토한 후 저장하세요."
