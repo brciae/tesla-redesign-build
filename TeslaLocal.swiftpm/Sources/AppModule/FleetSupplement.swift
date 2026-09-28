@@ -62,7 +62,7 @@ struct NearbyChargingSite: Identifiable {
     let latitude: Double
     let longitude: Double
     let kind: String
-    let available: Int?
+    var available: Int?
     let total: Int?
     let powerKW: Double?
     var address = ""
@@ -71,6 +71,7 @@ struct NearbyChargingSite: Identifiable {
     var source = "Tesla"
     var fetchedAt: Date?
     var categoryAvailability: [String: String] = [:]
+    var providerID = ""
     var category: String {
         if kind.contains("급속") || kind == "완속" { return kind }
         if kind == "슈퍼차저" { return "슈퍼차저" }

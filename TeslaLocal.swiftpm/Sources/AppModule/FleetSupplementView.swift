@@ -5,6 +5,7 @@ struct FleetSupplementView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var fleet: TeslaFleetClient
     let kind: FleetSupplement
+    var samplePublicSites: [NearbyChargingSite] = []
     @State private var result: FleetSupplementResult?
     @State private var error = ""
     @State private var busy = false
@@ -31,9 +32,9 @@ struct FleetSupplementView: View {
     }
     private var sites: [NearbyChargingSite] {
         let tesla = result.flatMap { $0.vin == fleet.selectedVin ? NearbyChargingSite.parse($0.payload) : nil } ?? []
-        let publicOnly = publicSites.filter { site in
+        let publicOnly = (publicSites + samplePublicSites).filter { site in
             !tesla.contains { existing in
-                existing.category == site.category && CLLocation(latitude: existing.latitude, longitude: existing.longitude)
+                site.providerID == "TE" && existing.category == site.category && CLLocation(latitude: existing.latitude, longitude: existing.longitude)
                     .distance(from: CLLocation(latitude: site.latitude, longitude: site.longitude)) < 60
             }
         }
@@ -85,10 +86,11 @@ struct FleetSupplementView: View {
                         let values = try await PublicChargingAPI.shared.sites(region: requestedRegion)
                         guard !Task.isCancelled, requestedRegion == region else { return }
                         publicSites = values
+                        self.error = ""
                     } catch {
                         if !Task.isCancelled {
                             publicSites = publicSites.map { site in
-                                var stale = site; stale = NearbyChargingSite(id: site.id, name: site.name, latitude: site.latitude, longitude: site.longitude, kind: site.kind, available: nil, total: site.total, powerKW: site.powerKW, address: site.address, chargingDetail: "상태 갱신 대기", restriction: site.restriction, source: site.source, fetchedAt: site.fetchedAt)
+                                var stale = site; stale.available = nil; stale.categoryAvailability = [:]; stale.chargingDetail = "상태 갱신 대기"
                                 return stale
                             }
                             self.error = error.localizedDescription
@@ -104,7 +106,19 @@ struct FleetSupplementView: View {
     private var chargingMap: some View {
         Map(selection: $selectedSite) {
             ForEach(visibleSites) { site in
-                Annotation(site.name, coordinate: CLLocationCoordinate2D(latitude: site.latitude, longitude: site.longitude)) {
+                stationAnnotation(site)
+            }
+        }.accessibilityIdentifier("charging.map")
+        .safeAreaInset(edge: .top) { mapFilters }
+        .onChange(of: category) { _, _ in selectedSite = visibleSites.first?.id }
+        .overlay(alignment: .topTrailing) {
+            Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise").padding(14).background(.regularMaterial, in: Circle()) }
+                .disabled(busy).accessibilityLabel("충전소 새로고침").padding(12)
+        }
+        .safeAreaInset(edge: .bottom) { stationPanel }
+    }
+    private func stationAnnotation(_ site: NearbyChargingSite) -> some MapContent {
+Annotation(site.name, coordinate: CLLocationCoordinate2D(latitude: site.latitude, longitude: site.longitude)) {
                     Button { selectedSite = site.id } label: {
                         HStack(spacing: 4) {
                             Image(systemName: site.category == "슈퍼차저" ? "bolt.circle.fill" : site.category.contains("급속") ? "bolt.fill" : "powerplug.fill")
@@ -114,9 +128,8 @@ struct FleetSupplementView: View {
                             .overlay(Capsule().stroke(.white, lineWidth: site.id == selectedSite ? 3 : 0))
                     }.buttonStyle(.plain).accessibilityLabel(site.name + " · " + site.category + (site.availability.map { " · " + $0 + "대 가능" } ?? ""))
                 }.tag(site.id)
-            }
-        }.accessibilityIdentifier("charging.map")
-        .safeAreaInset(edge: .top) {
+    }
+    private var mapFilters: some View {
             VStack(spacing: 8) {
             HStack {
                 Button { showSetup = true } label: { Label(PublicChargingRegions.names[region] ?? "공공 충전소 연결", systemImage: "slider.horizontal.3") }.font(.caption)
@@ -126,13 +139,8 @@ struct FleetSupplementView: View {
                 ForEach(["전체", "슈퍼차저", "급속", "완속"], id: \.self) { Text($0).tag($0) }
             }.pickerStyle(.segmented)
             }.padding(10).background(.regularMaterial)
-        }
-        .onChange(of: category) { _, _ in selectedSite = visibleSites.first?.id }
-        .overlay(alignment: .topTrailing) {
-            Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise").padding(14).background(.regularMaterial, in: Circle()) }
-                .disabled(busy).accessibilityLabel("충전소 새로고침").padding(12)
-        }
-        .safeAreaInset(edge: .bottom) {
+    }
+    private var stationPanel: some View {
             VStack(alignment: .leading, spacing: 10) {
                 if busy { ProgressView("충전소 조회 중…") }
                 if !error.isEmpty { Text(error).font(.subheadline).foregroundStyle(.orange) }
@@ -154,10 +162,9 @@ struct FleetSupplementView: View {
                 } else if !busy && error.isEmpty {
                     Text(visibleSites.isEmpty ? "이 종류의 충전소가 조회되지 않았습니다" : "지도에서 충전소를 선택하세요").font(.subheadline)
                 }
-                Text(publicSites.isEmpty ? "Tesla 제공 · 빈자리 수는 조회 시점 기준" : "한국환경공단·Tesla · 충전 가능 대수 기준").font(.caption2).foregroundStyle(.secondary)
+                Text(publicSites.isEmpty && samplePublicSites.isEmpty ? "Tesla 제공 · 빈자리 수는 조회 시점 기준" : "한국환경공단·Tesla · 충전 가능 대수 기준").font(.caption2).foregroundStyle(.secondary)
                 if sites.filter({ $0.matches(category) }).count > 300 { Text("가까운 충전소 최대 300곳 표시").font(.caption2).foregroundStyle(.secondary) }
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
-        }
     }
     @MainActor private func refresh() async {
         let request = UUID(); requestID = request

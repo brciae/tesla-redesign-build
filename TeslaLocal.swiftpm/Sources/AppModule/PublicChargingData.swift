@@ -37,10 +37,15 @@ enum PublicChargingData {
     static func merge(_ existing: [PublicCharger], _ updates: [PublicCharger]) -> [PublicCharger] {
         var records: [String: PublicCharger] = [:]
         for row in existing + updates {
-            if let old = records[row.id], !old.value("statUpdDt").isEmpty, !row.value("statUpdDt").isEmpty,
+            let incomingValid = row.value("statUpdDt").range(of: "^[0-9]{14}$", options: .regularExpression) != nil
+            if let old = records[row.id], !old.value("statUpdDt").isEmpty, incomingValid,
                old.value("statUpdDt") > row.value("statUpdDt") { continue }
             var fields = records[row.id]?.fields ?? [:]
-            row.fields.forEach { fields[$0.key] = $0.value }
+            let preserveStatus = records[row.id]?.value("statUpdDt").isEmpty == false && !incomingValid
+            row.fields.forEach {
+                if preserveStatus && ["stat", "statUpdDt", "lastTsdt", "lastTedt", "nowTsdt"].contains($0.key) { return }
+                fields[$0.key] = $0.value
+            }
             records[row.id] = PublicCharger(fields: fields)
         }
         return records.values.sorted { $0.id < $1.id }
@@ -65,14 +70,15 @@ enum PublicChargingData {
             }.joined(separator: " · ")
             let restrictions = Set(rows.filter { $0.value("limitYn") == "Y" }.map { $0.value("limitDetail").isEmpty ? "이용 제한" : $0.value("limitDetail") })
             var site = NearbyChargingSite(id: "keco:" + id, name: first.value("statNm"), latitude: lat, longitude: lon,
-                kind: kinds.joined(separator: "·"), available: fresh && !known.isEmpty ? available : nil, total: rows.count,
+                kind: kinds.joined(separator: "·"), available: fresh && known.count == rows.count ? available : nil, total: rows.count,
                 powerKW: rows.compactMap { Double($0.value("output")) }.filter { $0.isFinite && $0 > 0 }.max())
             site.address = first.value("addr"); site.source = "한국환경공단"; site.fetchedAt = fetchedAt
+            site.providerID = first.value("busiId")
             site.chargingDetail = detail + (known.count < rows.count ? " · 상태 확인 필요 \(rows.count - known.count)대" : "")
             if fresh {
                 for kind in kinds {
                     let group = rows.filter { $0.category == kind }
-                    if group.contains(where: { ["2", "3", "4", "5", "6"].contains($0.value("stat")) }) {
+                    if group.allSatisfy({ ["2", "3", "4", "5", "6"].contains($0.value("stat")) }) {
                         site.categoryAvailability[kind] = "\(group.filter { $0.value("stat") == "2" && $0.value("limitYn") != "Y" }.count)/\(group.count)"
                     }
                 }

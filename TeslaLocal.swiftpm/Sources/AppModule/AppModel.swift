@@ -269,6 +269,7 @@ final class AppModel: ObservableObject {
         }
         guard !rows.isEmpty else { return }
         output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
+        archiveReadings = store.records
         try enrichLocalChargeSOC()
     }
     func refresh() {
@@ -344,7 +345,7 @@ final class AppModel: ObservableObject {
         guard !demo else { return }
         let vin = settings.string("vin")
         let intervals = state.rows("charges").filter { $0.number("end") != nil }
-        let rows: [Object] = FleetTelemetryStore.shared.records.filter { r in
+        let rows: [Object] = archiveReadings.filter { r in
             r.vin == vin && ["Soc", "BatteryLevel"].contains(r.field) && intervals.contains { c in
                 let stamp = r.at.timeIntervalSince1970 * 1000
                 return abs(stamp - (c.number("at") ?? 0)) <= 120000 || abs(stamp - (c.number("end") ?? 0)) <= 120000

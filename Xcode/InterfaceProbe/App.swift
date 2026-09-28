@@ -706,7 +706,10 @@ struct ClimateFleetProbe: View {
 struct ChargingMapProbe: View {
     @StateObject private var model = AppModel()
     var body: some View {
-        NavigationStack { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging) }.environmentObject(model)
+        NavigationStack { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging, samplePublicSites: PublicChargingData.sites([
+            PublicCharger(fields: ["statId": "PROBE", "chgerId": "01", "statNm": "공공 검증 충전소", "chgerType": "04", "stat": "2", "lat": "37.565", "lng": "126.978", "output": "100"]),
+            PublicCharger(fields: ["statId": "PROBE", "chgerId": "02", "statNm": "공공 검증 충전소", "chgerType": "02", "stat": "3", "lat": "37.565", "lng": "126.978", "output": "7"])
+        ], fetchedAt: Date())) }.environmentObject(model)
     }
 }
 

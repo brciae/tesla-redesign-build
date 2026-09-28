@@ -100,6 +100,8 @@ import Foundation
         precondition(PublicChargingData.sites(publicRows, fetchedAt: now.addingTimeInterval(-601), now: now)[0].available == nil)
         let updated = PublicChargingData.merge(publicRows, [PublicCharger(fields: ["statId": "A", "chgerId": "01", "stat": "3", "statUpdDt": "20260928230000"])])
         precondition(updated.first?.value("lat") == "37.5" && updated.first?.value("stat") == "3")
+        let invalidUpdate = PublicChargingData.merge(updated, [PublicCharger(fields: ["statId": "A", "chgerId": "01", "stat": "2", "statUpdDt": "invalid"])])
+        precondition(invalidUpdate.first?.value("stat") == "3")
         precondition(PublicChargingData.merge(updated, []).count == 4, "Empty delta must preserve unchanged chargers")
         let sample = Data("{\"header\":{\"resultCode\":\"00\",\"totalCount\":1},\"items\":{\"item\":{\"statId\":\"A\",\"chgerId\":\"01\",\"stat\":2}}}".utf8)
         let decoded = try! PublicChargingData.decode(sample)
