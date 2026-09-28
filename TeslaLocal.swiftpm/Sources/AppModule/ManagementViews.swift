@@ -10,7 +10,6 @@ struct CareView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.vehicleUnits) private var units
     @State private var addMaintenance = false
-    @State private var addParking = false
     var body: some View {
         PageBody(title: "차량 관리", briefing: .care) {
             InfoCard {
@@ -40,7 +39,7 @@ struct CareView: View {
                     }
                 }
             }
-        }.sheet(isPresented: $addMaintenance) { MaintenanceForm() }.sheet(isPresented: $addParking) { ParkingForm() }
+        }.sheet(isPresented: $addMaintenance) { MaintenanceForm() }
     }
     private var tirePoints: [TirePoint] {
         let resetAt = model.state.rows("maintenance").filter { $0.flag("tireReset") }.compactMap { $0.number("at") }.max() ?? 0
@@ -349,16 +348,7 @@ struct AutomationUtilitiesView: View {
             }
         }.padding().navigationTitle("출발 알림")
     }
-    private func scheduleSummary() async -> String {
-        let center = UNUserNotificationCenter.current()
-        let requests = await center.pendingNotificationRequests()
-        let settings = await center.notificationSettings()
-        guard let request = requests.first(where: { $0.identifier == "YL.dailyBrief" }),
-              let trigger = request.trigger as? UNCalendarNotificationTrigger,
-              let hour = trigger.dateComponents.hour, let minute = trigger.dateComponents.minute else { return "등록된 출발 확인 알림이 없습니다." }
-        let blocked = settings.authorizationStatus == .denied ? " 알림 권한이 꺼져 있어 수신할 수 없습니다." : ""
-        return "매일 \(hour)시 \(minute)분 출발 확인 알림이 등록되어 있습니다." + blocked
-    }
+
 }
 enum ConnectionSection: String { case connection = "차량·NAS 연결", charging = "충전 계획·요금", records = "기록·백업" }
 struct ConnectionView: View {

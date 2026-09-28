@@ -11,7 +11,6 @@ private struct AutomationDashboard: View {
     @AppStorage("voiceAutomations") private var voiceEnabled = true
     @ObservedObject var store: AutomationCoordinator
     @State private var editor: AutomationRule?
-    @State private var importing = false
     var body: some View {
         PageBody(title: "자동화", briefing: .automation) {
             summary
@@ -31,7 +30,6 @@ private struct AutomationDashboard: View {
             }
         } }
         .sheet(item: $editor) { r in AutomationRuleEditor(store: store, initial: r) { editor = nil } }
-        .sheet(isPresented: $importing) { AutomationImportView(store: store) }
         .onChange(of: voiceEnabled) { _, value in if !value { model.voice.stopAutomatic() } }
     }
     /// v34: counts first, history one tap away — no log dump on the page.

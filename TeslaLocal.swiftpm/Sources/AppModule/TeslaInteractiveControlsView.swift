@@ -16,8 +16,6 @@ struct TeslaInteractiveControlsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
-    @State private var isLocked = true
-    @State private var isPortOpen = false
     @State private var enrollment = false
     @State private var remoteStartAlert = false
     @State private var tokenSheet = false
@@ -187,55 +185,8 @@ struct TeslaInteractiveControlsView: View {
                 // Top-View Vehicle Body Graphic (Rotated 180° so Front Hood is at Top)
                 vehicleTopSilhouette
 
-                // Front Hood Hotspot (Frunk) - Top Center
-                sleekHotspot(
-                    icon: "car.side.front.open.fill",
-                    label: "프렁크",
-                    accent: Color(red: 0.35, green: 0.65, blue: 1.0)
-                ) {
-                    dispatchHybridAction(
-                        title: "프렁크 열기",
-                        bleAction: "frunkOpen",
-                        fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }
-                    )
-                }
-                .offset(y: -140)
-
-                // Center Roof Hotspot (Lock / Unlock) - Mid Center
-                centerLockHotspot
-                    .offset(y: -15)
-
-                // Rear Left Charge Port Hotspot - Bottom Left (Driver side rear taillight)
-                sleekHotspot(
-                    icon: isPortOpen ? "bolt.slash.fill" : "bolt.fill",
-                    label: isPortOpen ? "포트 닫기" : "충전구",
-                    accent: isPortOpen ? Color.orange : Color(red: 0.28, green: 0.88, blue: 0.42),
-                    isActive: isPortOpen
-                ) {
-                    withAnimation { isPortOpen.toggle() }
-                    dispatchHybridAction(
-                        title: isPortOpen ? "포트 닫기" : "포트 열기",
-                        bleAction: isPortOpen ? "portClose" : "portOpen",
-                        fleetAction: { try await model.fleet.chargePortDoor(open: !isPortOpen) }
-                    )
-                }
-                .offset(x: -78, y: 138)
-
-                // Keep the rear control beside the vehicle, clear of the plate.
-                sleekHotspot(
-                    icon: "car.side.rear.open.fill",
-                    label: "트렁크",
-                    accent: Color(red: 0.35, green: 0.65, blue: 1.0)
-                ) {
-                    dispatchHybridAction(
-                        title: "트렁크 동작",
-                        bleAction: "trunkMove",
-                        fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }
-                    )
-                }
-                .offset(x: 78, y: 138)
             }
-            .frame(height: 420)
+            .frame(height: 320)
 
             // Tesla Official-Style Horizontal Quick Action Bar
             teslaQuickActionBar
@@ -294,110 +245,14 @@ struct TeslaInteractiveControlsView: View {
 
     // MARK: - Center Lock Hotspot
 
-    private var centerLockHotspot: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                isLocked.toggle()
-                dispatchHybridAction(
-                    title: isLocked ? "차량 잠금" : "잠금 해제",
-                    bleAction: isLocked ? "lock" : "unlock",
-                    fleetAction: { try await (isLocked ? model.fleet.doorLock() : model.fleet.doorUnlock()) }
-                )
-            }
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            isLocked
-                                ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.25)
-                                : Color.orange.opacity(0.28)
-                        )
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    isLocked
-                                        ? Color(red: 0.28, green: 0.88, blue: 0.42)
-                                        : Color.orange,
-                                    lineWidth: 1.5
-                                )
-                        )
-                        .shadow(
-                            color: (isLocked ? Color.green : Color.orange).opacity(0.4),
-                            radius: 8
-                        )
-
-                    Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(isLocked ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange)
-                }
-
-                Text(isLocked ? "잠김" : "열림")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-        }
-        .buttonStyle(MotionButtonStyle())
-    }
-
-    // MARK: - Sleek Hotspot Button
-
-    private func sleekHotspot(
-        icon: String,
-        label: String,
-        accent: Color,
-        isActive: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    Circle()
-                        .fill(isActive ? accent.opacity(0.28) : Color(white: 0.12).opacity(0.85))
-                        .frame(width: 40, height: 40)
-                    Circle()
-                        .stroke(isActive ? accent : Color.white.opacity(0.25), lineWidth: 1.2)
-                        .frame(width: 40, height: 40)
-                    Image(systemName: icon)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(isActive ? accent : .white)
-                }
-                .shadow(color: isActive ? accent.opacity(0.4) : Color.black.opacity(0.3), radius: 6)
-
-                Text(label)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.9))
-                    .fixedSize()
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color(white: 0.08), in: Capsule())
-            }
-            .frame(minWidth: 64, minHeight: 64)
-        }
-        .buttonStyle(MotionButtonStyle())
-    }
-
     // MARK: - Tesla Official-Style Horizontal Quick Action Bar
 
     private var teslaQuickActionBar: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 44), spacing: 6), count: dynamicTypeSize.isAccessibilitySize ? 3 : 5), spacing: 6) {
-            teslaQuickButton(
-                icon: isLocked ? "lock.fill" : "lock.open.fill",
-                title: isLocked ? "도어 잠김" : "잠금 해제",
-                accent: isLocked ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange
-            ) {
-                withAnimation { isLocked.toggle() }
-                dispatchHybridAction(
-                    title: isLocked ? "차량 잠금" : "잠금 해제",
-                    bleAction: isLocked ? "lock" : "unlock",
-                    fleetAction: { try await (isLocked ? model.fleet.doorLock() : model.fleet.doorUnlock()) }
-                )
-            }
+            Menu {
+                Button("도어 잠그기") { dispatchHybridAction(title: "차량 잠금", bleAction: "lock", fleetAction: { try await model.fleet.doorLock() }) }
+                Button("도어 잠금 해제") { dispatchHybridAction(title: "잠금 해제", bleAction: "unlock", fleetAction: { try await model.fleet.doorUnlock() }) }
+            } label: { quickLabel("도어 잠금", icon: "lock.fill", accent: .green) }
 
             teslaQuickButton(
                 icon: "fanblades.fill",
@@ -411,18 +266,10 @@ struct TeslaInteractiveControlsView: View {
                 )
             }
 
-            teslaQuickButton(
-                icon: isPortOpen ? "bolt.slash.fill" : "bolt.fill",
-                title: isPortOpen ? "충전 닫기" : "충전 열기",
-                accent: isPortOpen ? Color.orange : Color(red: 0.28, green: 0.88, blue: 0.42)
-            ) {
-                withAnimation { isPortOpen.toggle() }
-                dispatchHybridAction(
-                    title: isPortOpen ? "포트 닫기" : "포트 열기",
-                    bleAction: isPortOpen ? "portClose" : "portOpen",
-                    fleetAction: { try await model.fleet.chargePortDoor(open: !isPortOpen) }
-                )
-            }
+            Menu {
+                Button("충전구 열기") { dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
+                Button("충전구 닫기") { dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
+            } label: { quickLabel("충전구", icon: "bolt.fill", accent: .green) }
 
             teslaQuickButton(
                 icon: "car.side.front.open.fill",
@@ -463,6 +310,12 @@ struct TeslaInteractiveControlsView: View {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             action()
         } label: {
+            quickLabel(title, icon: icon, accent: accent)
+        }
+        .buttonStyle(MotionButtonStyle())
+    }
+
+    private func quickLabel(_ title: String, icon: String, accent: Color) -> some View {
             VStack(spacing: 5) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
@@ -476,8 +329,6 @@ struct TeslaInteractiveControlsView: View {
             .frame(maxWidth: .infinity)
             .frame(minHeight: 56)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(MotionButtonStyle())
     }
 
     // MARK: - Secondary Quick Controls Grid (Fleet LTE & Hybrid)

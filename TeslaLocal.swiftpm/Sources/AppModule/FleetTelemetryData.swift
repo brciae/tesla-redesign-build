@@ -155,7 +155,7 @@ enum FleetTelemetryData {
                 values["isCharging"] = state == "DetailedChargeStateCharging"
                 stamps.append(r.at)
             }
-            if let oldest = stamps.max() {
+            if let oldest = stamps.min() {
                 values["at"] = oldest.timeIntervalSince1970 * 1000
                 values["mode"] = now.timeIntervalSince(oldest) <= 120 ? "recent" : "cached"
                 values["label"] = now.timeIntervalSince(oldest) <= 120 ? "NAS 차량 수신" : "NAS 마지막 측정"

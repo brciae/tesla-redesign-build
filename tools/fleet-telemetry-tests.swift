@@ -23,6 +23,10 @@ import Foundation
         precondition((FleetTelemetryData.homeOverlay(displayRecords, vin: "DISPLAY", now: displayNow.addingTimeInterval(121))["charge"] as? [String: Any])?["mode"] as? String == "cached")
         precondition(FleetTelemetryData.homeOverlay(displayRecords, vin: "ABSENT", now: displayNow).isEmpty)
 
+        let oldInside = FleetTelemetryReading(vin: "DISPLAY", field: "InsideTemp", at: displayNow.addingTimeInterval(-3600), number: 19, text: "", invalid: false)
+        let newOutside = FleetTelemetryReading(vin: "DISPLAY", field: "OutsideTemp", at: displayNow, number: 25, text: "", invalid: false)
+        let mixedClimate = FleetTelemetryData.homeOverlay([oldInside, newOutside], vin: "DISPLAY", now: displayNow)["climate"] as! [String: Any]
+        precondition(mixedClimate["mode"] as? String == "cached", "A new outside reading must not make old cabin temperature live")
         let stalePower = FleetTelemetryReading(vin: "DISPLAY", field: "DCChargingPower", at: displayNow.addingTimeInterval(-3600), number: 100, text: "", invalid: false)
         let staleETA = FleetTelemetryReading(vin: "DISPLAY", field: "TimeToFullCharge", at: displayNow.addingTimeInterval(-3600), number: 1, text: "", invalid: false)
         let chargeDisplay = FleetTelemetryData.homeOverlay(displayRecords + [stalePower, staleETA], vin: "DISPLAY", now: displayNow)["charge"] as! [String: Any]
