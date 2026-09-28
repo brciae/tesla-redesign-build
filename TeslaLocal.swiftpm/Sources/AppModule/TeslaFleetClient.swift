@@ -499,6 +499,37 @@ final class TeslaFleetClient: ObservableObject {
         return FleetSupplementResult(vin: vin, receivedAt: Date(), payload: root?["response"] ?? json)
     }
 
+    @MainActor func repairLocationStreaming(vin: String) async throws -> FleetSupplementResult {
+        guard commandAllowed?() == true, selectedVin == vin, !isSendingCommand else { throw CancellationError() }
+        isSendingCommand = true
+        defer { isSendingCommand = false }
+        let proxy = try FleetCommandPolicy.proxyURL(commandProxy)
+        let before = try await readSupplement(.telemetryConfig)
+        guard before.vin == vin else { throw CancellationError() }
+        let config = try FleetLocationRepair.configuration(before.payload)
+        let token = try await authenticatedToken()
+        guard selectedVin == vin, commandAllowed?() == true,
+              try FleetCommandPolicy.proxyURL(commandProxy) == proxy else { throw CancellationError() }
+        var request = URLRequest(url: proxy.appendingPathComponent("api/1/vehicles/fleet_telemetry_config"))
+        request.httpMethod = "POST"; request.timeoutInterval = 30
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["vins": [vin], "config": config])
+        let session = URLSession(configuration: .ephemeral, delegate: FleetCommandRedirectGuard(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200...299).contains(http.statusCode) else {
+            throw FleetAuthPolicy.apiFailure(status: http.statusCode, data: data, stage: "주차 좌표 수집 추가", secrets: [token, vin])
+        }
+        guard selectedVin == vin else { throw CancellationError() }
+        let after = try await readSupplement(.telemetryConfig)
+        guard after.vin == vin, FleetStreamingStatus(payload: after.payload).locationConfigured else {
+            throw FleetCommandPolicy.failure("좌표 수집 설정을 확인하지 못했습니다. 차량 수집 오류를 확인하세요. 자동 재전송하지 않습니다.")
+        }
+        return after
+    }
+
     func getStoredVin() -> String? {
         readKeychain(key: vinKey)
     }

@@ -61,6 +61,7 @@ struct FleetStreamingStatus {
     let synced: Bool
     let limitReached: Bool
     let hostname: String?
+    let locationConfigured: Bool
     init(payload: Any) {
         let object = payload as? [String: Any] ?? [:]
         let config = object["config"] as? [String: Any]
@@ -69,15 +70,18 @@ struct FleetStreamingStatus {
         synced = configured && (object["synced"] as? Bool == true)
         limitReached = object["limit_reached"] as? Bool == true
         hostname = config?["hostname"] as? String
+        locationConfigured = (config?["fields"] as? [String: Any])?["Location"] != nil
     }
     var title: String {
         if keyPaired == false { return "차량 가상 키 등록 필요" }
         if !configured { return limitReached ? "차량의 스트리밍 연결 한도 도달" : "차량 수집 설정 필요" }
+        if !locationConfigured { return "주차 좌표 수집 항목 누락" }
         return synced ? "차량에 수집 설정 적용됨" : "차량의 수집 설정 적용 대기"
     }
     var detail: String {
         if keyPaired == false { return "Tesla 앱에서 이 앱의 가상 키를 차량에 추가하세요." }
         if !configured { return limitReached ? "기존 연결을 확인하세요. 다른 앱의 설정을 자동 삭제하지 않습니다." : "서명 서버를 통해 NAS 수신 주소와 수집 항목을 차량에 등록해야 합니다." }
+        if !locationConfigured { return "현재 차량 수집 설정에 위치가 빠져 있습니다. 아래에서 기존 NAS 주소를 유지한 채 주차 좌표 수집을 추가하세요." }
         return synced ? "NAS에 실제 기록이 도착했는지도 아래에서 확인하세요." : "차량이 온라인으로 연결되면 설정을 적용합니다. 반복해서 차량을 깨우지 않습니다."
     }
 }
@@ -86,6 +90,26 @@ struct FleetSupplementCard: Identifiable {
     let id: String
     let title: String
     let rows: [FleetInsightRow]
+}
+
+enum FleetLocationRepair {
+    /// Patch only missing location fields. Keep the existing destination, CA and other subscriptions.
+    static func configuration(_ payload: Any, now: Date = Date()) throws -> [String: Any] {
+        guard let object = payload as? [String: Any], object["key_paired"] as? Bool != false,
+              var config = object["config"] as? [String: Any],
+              let hostname = config["hostname"] as? String, !hostname.isEmpty,
+              let port = config["port"] as? Int, (1...65535).contains(port),
+              var fields = config["fields"] as? [String: Any], !fields.isEmpty else {
+            throw NSError(domain: "FleetLocation", code: 1, userInfo: [NSLocalizedDescriptionKey: "기존 차량 수집 설정과 가상 키를 먼저 확인해 주세요."])
+        }
+        if let expiration = config["exp"] as? Double, expiration <= now.timeIntervalSince1970 {
+            throw NSError(domain: "FleetLocation", code: 2, userInfo: [NSLocalizedDescriptionKey: "기존 수집 설정이 만료됐습니다. 서버 연결 등록을 갱신해 주세요."])
+        }
+        if fields["Location"] == nil { fields["Location"] = ["interval_seconds": 10] }
+        if fields["GpsState"] == nil { fields["GpsState"] = ["interval_seconds": 10] }
+        config["fields"] = fields
+        return config
+    }
 }
 
 extension FleetSupplementResult {

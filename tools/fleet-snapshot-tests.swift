@@ -2,6 +2,19 @@ import Foundation
 
 @main struct FleetSnapshotTests {
     static func main() {
+        let originalConfig: [String: Any] = ["hostname": "fixture.example", "port": 8443, "ca": "fixture-ca", "exp": Date().addingTimeInterval(600).timeIntervalSince1970, "delivery_policy": "latest", "fields": ["Soc": ["interval_seconds": 30]]]
+        let patched = try! FleetLocationRepair.configuration(["key_paired": true, "config": originalConfig])
+        let patchedFields = patched["fields"] as! [String: Any]
+        precondition(patched["hostname"] as? String == "fixture.example" && patched["ca"] as? String == "fixture-ca")
+        precondition((patchedFields["Location"] as? [String: Int])?["interval_seconds"] == 10)
+        precondition((patchedFields["Soc"] as? [String: Int])?["interval_seconds"] == 30)
+        precondition(FleetStreamingStatus(payload: ["config": patched, "synced": true]).locationConfigured)
+        precondition(!FleetStreamingStatus(payload: ["config": originalConfig, "synced": true]).locationConfigured)
+        precondition((try? FleetLocationRepair.configuration(["key_paired": false, "config": originalConfig])) == nil)
+        precondition((try? FleetLocationRepair.configuration(["config": ["hostname": "fixture.example", "port": 8443, "fields": ["Soc": [:]], "exp": 1]])) == nil)
+        let existingLocation: [String: Any] = ["hostname": "fixture.example", "port": 8443, "fields": ["Location": ["interval_seconds": 60]]]
+        let kept = try! FleetLocationRepair.configuration(["config": existingLocation])
+        precondition(((kept["fields"] as? [String: Any])?["Location"] as? [String: Int])?["interval_seconds"] == 60)
         let absentStream = FleetStreamingStatus(payload: ["synced": true, "config": NSNull(), "key_paired": false])
         precondition(!absentStream.configured && !absentStream.synced && absentStream.title == "차량 가상 키 등록 필요")
         let waitingStream = FleetStreamingStatus(payload: ["synced": false, "config": ["hostname": "fixture.example"], "key_paired": true])

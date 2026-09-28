@@ -60,7 +60,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
         status = "NAS 연결 설정 저장됨"
         connected = false; packetCount = nil; lastVehicleReceivedAt = nil
     }
-    func sync(vin: String) async {
+    func sync(vin: String, rebuild: Bool = false) async {
         guard !busy else { return }
         guard !vin.isEmpty else { status = "Tesla 계정에서 차량을 먼저 선택해 주세요."; return }
         guard !address.isEmpty else { status = "NAS 서버 주소와 연결 키를 저장해 주세요."; return }
@@ -69,9 +69,12 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
         do {
             let base = address, key = try token(base)
             let scope = SHA256.hash(data: Data((base + "|" + vin).utf8)).map { String(format: "%02x", $0) }.joined()
-            let cursorKey = "fleet.archive.cursor." + scope
+            // Re-read once with the repaired history importer; keep v94 records and manual edits.
+            let cursorKey = "fleet.archive.cursor.v95." + scope
+            if rebuild { UserDefaults.standard.removeObject(forKey: cursorKey) }
             var cursor = UserDefaults.standard.integer(forKey: cursorKey), total = 0
-            for _ in 0..<20 {
+            let deadline = Date().addingTimeInterval(90)
+            for _ in 0..<500 {
                 try Task.checkCancellation()
                 var url = URLComponents(string: base + "/v1/telemetry")!
                 url.queryItems = [URLQueryItem(name: "vin", value: vin), URLQueryItem(name: "after", value: String(cursor))]
@@ -92,7 +95,8 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
                 connected = true
                 if !payloads.isEmpty {
                     try FleetTelemetryStore.shared.ingest(JSONSerialization.data(withJSONObject: payloads), vin: vin)
-                    try onPageSaved?(vin)
+                    guard let onPageSaved else { throw FleetTelemetryData.failure("기록 저장 준비 중입니다. 잠시 후 다시 가져오세요.") }
+                    try onPageSaved(vin)
                     total += payloads.count
                 }
                 // Persist progress only after the archive page has been saved on the phone.
@@ -102,8 +106,9 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
                     await readStatus(base: base, key: key, vin: vin)
                     return
                 }
+                if Date() >= deadline { break }
             }
-            status += " · 다음 동기화에서 나머지 기록을 이어 가져옵니다."
+            status += " · 이어 가져오기를 누르면 남은 기록부터 계속합니다."
         } catch is CancellationError { status = "다음에 기록 가져오기를 누르면 이어집니다." }
         catch let error as URLError {
             switch error.code {

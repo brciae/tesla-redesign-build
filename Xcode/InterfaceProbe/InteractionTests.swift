@@ -10,6 +10,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.secureTextFields["archive.token"].isHittable)
         XCTAssertTrue(app.staticTexts["NAS 연결 키"].exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "NAS labeled connection fields"; shot.lifetime = .keepAlways; add(shot)
+        for _ in 0..<3 where !app.buttons["과거 충전 기록 다시 연결"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["과거 충전 기록 다시 연결"].isHittable)
+        XCTAssertTrue(app.buttons["남은 기록 이어 가져오기"].exists)
+        XCTAssertFalse(app.buttons["과거 충전 기록 다시 연결"].isEnabled, "No NAS credentials must never start a recovery")
+        let recovery = XCTAttachment(screenshot: app.screenshot()); recovery.name = "NAS history recovery controls"; recovery.lifetime = .keepAlways; add(recovery)
     }
     func testDestinationSearchEntry() {
         XCUIDevice.shared.orientation = .portrait

@@ -2,6 +2,28 @@
 const path = require('path');
 const C = require(path.join(__dirname, '../TeslaLocal.swiftpm/Sources/AppModule/Resources/analysis.js'));
 const chargeAssert = require('node:assert/strict');
+// Sparse packets like the verified NAS trace: stale ChargeState, delayed final counters,
+// and SOC drift after completion. SOC values here are synthetic regression fixtures.
+{
+ const vin='5YJYGDEE0LF000001',start=Date.now()-86400000,rows=[];
+ const put=(seconds,field,value)=>rows.push({at:start+seconds*1000,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ put(0,'ChargeState','Init');put(0,'DetailedChargeState','DetailedChargeStateDisconnected');put(0,'Soc',30);
+ for(const [t,state,soc,ac,dc] of [[10,'Starting',30,0,0],[15,'Charging',30,0,0],[75,'Charging',31,0.8,0.7],[135,'Stopped',32,1.6,1.4],[150,'Disconnected',32,1.6,1.4],[3600,'Starting',28,0,0],[3605,'Charging',28,0,0],[3660,'Charging',29,1,0.9],[3720,'Complete',80,42.9,40.48]]){
+  put(t,'DetailedChargeState','DetailedChargeState'+state);put(t,'Soc',soc);put(t,'ACChargingEnergyIn',ac);put(t,'DCChargingEnergyIn',dc);
+ }
+ const e=new C.Engine();e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,2);
+ put(3772,'ACChargingEnergyIn',43.10377842007361);
+ put(7200,'Soc',79);put(7210,'DCChargingEnergyIn',39.9);put(7300,'Soc',78.8);
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,2,'cached Complete plus later SOC drift must not create phantom charges');
+ const last=e.state.charges[1];chargeAssert.equal(last.endSOC,80);
+ chargeAssert.equal(last.supplyKWh,43.10377842007361,'final counter arriving on a later page must update the same charge');
+ chargeAssert.equal(last.vehicleReportedKWh,40.48,'post-charge counter decline must not reduce recorded energy');
+ last.supplyKWh=44;last.cost=1234;
+ e.ingestArchive({vin,rows});chargeAssert.equal(last.supplyKWh,44);
+ chargeAssert.equal(e.state.charges[1].supplyKWh,44);chargeAssert.equal(e.state.charges[1].cost,1234);
+ console.log('PASS: sparse NAS sessions, delayed final counters, post-completion drift and manual preservation');
+}
 {
   const engine = new C.Engine(), now = Date.now() - 60000, vin = '5YJYGDEE0LF000001';
   const feed = (dt, charging, soc, addedKWh) => engine.ingestFleetCharge({vin, at: now + dt, charging, soc, addedKWh, limit: 80}, now + dt);

@@ -18,6 +18,7 @@ struct FleetTelemetryView: View {
     @State private var streaming: FleetStreamingStatus?
     @State private var checking = false
     @State private var connectionError = ""
+    @State private var repairMessage = ""
     private var latest: [String: FleetTelemetryReading] { store.latest(vin: vin) }
     private var trend: [FleetTelemetryReading] { Array(store.records.filter { $0.vin == vin && $0.field == selectedField && !$0.invalid && $0.number != nil }.suffix(240)) }
     var body: some View {
@@ -46,6 +47,25 @@ struct FleetTelemetryView: View {
                             } catch { connectionError = error.localizedDescription }
                         }
                     }.disabled(checking || vin.isEmpty || !model.fleet.isAuthenticated)
+                    if let streaming, streaming.configured && !streaming.locationConfigured {
+                        Button(checking ? "좌표 수집 설정 확인 중…" : "주차 좌표 수집 추가") {
+                            checking = true; connectionError = ""; repairMessage = ""
+                            Task { @MainActor in
+                                defer { checking = false }
+                                do {
+                                    let result = try await model.fleet.repairLocationStreaming(vin: vin)
+                                    guard result.vin == vin else { return }
+                                    self.streaming = FleetStreamingStatus(payload: result.payload)
+                                    repairMessage = "위치 수집 설정 확인됨 · 차량에서 새 좌표를 보내면 주차 위치에 반영됩니다."
+                                } catch { connectionError = error.localizedDescription }
+                            }
+                        }.disabled(checking || model.demo)
+                        Caption("기존 NAS로 차량 위치를 10초 간격으로 수집하도록 추가합니다. Tesla 위치 권한과 설정된 명령 서명 서버가 필요합니다.")
+                    }
+                    if let location = latest["Location"], !location.invalid {
+                        LabeledContent("좌표 마지막 수신", value: location.at.formatted(date: .abbreviated, time: .shortened)).font(.caption)
+                    } else { Caption("NAS 좌표 수신 기록 없음 · 차량 수집 설정의 위치 항목을 확인하세요.") }
+                    if !repairMessage.isEmpty { Caption(repairMessage) }
                     if let url = model.fleet.virtualKeyPairingURL {
                         Link("Tesla 앱에서 차량 가상 키 등록", destination: url)
                     }
@@ -76,6 +96,11 @@ struct FleetTelemetryView: View {
                         } catch { self.error = error.localizedDescription }
                     }.disabled(archive.busy || vin.isEmpty)
                     Caption(archive.status)
+                    Button("남은 기록 이어 가져오기") { Task { await archive.sync(vin: vin) } }
+                        .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
+                    Button("과거 충전 기록 다시 연결") { Task { await archive.sync(vin: vin, rebuild: true) } }
+                        .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
+                    Caption("과거 기록을 처음부터 다시 대조합니다. 영수증·금액·직접 수정한 내역은 보존합니다.")
                     Caption("QuickConnect 관리 화면과 별도의 차량 기록 서버 주소를 사용합니다. 연결 키는 기기의 보안 저장소에 보관됩니다.")
                 }
                 } else {

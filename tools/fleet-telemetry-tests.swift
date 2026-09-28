@@ -14,6 +14,12 @@ import Foundation
         let chargeDisplay = FleetTelemetryData.homeOverlay(displayRecords + [stalePower, staleETA], vin: "DISPLAY", now: displayNow)["charge"] as! [String: Any]
         precondition(chargeDisplay["chargerKW"] == nil && chargeDisplay["minutesToLimit"] == nil)
         let now = Date(timeIntervalSince1970: 1_800_000_100)
+        let stableLocation = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now.addingTimeInterval(-3600), number: nil, text: "{\"locationValue\":{\"latitude\":37.5,\"longitude\":127.1}}", invalid: false)
+        let stableState = FleetTelemetryReading(vin: "DISPLAY", field: "DetailedChargeState", at: now.addingTimeInterval(-3600), number: nil, text: "{\"stringValue\":\"DetailedChargeStateComplete\"}", invalid: false)
+        let frequentSOC = (0..<20).map { FleetTelemetryReading(vin: "DISPLAY", field: "Soc", at: now.addingTimeInterval(Double($0)), number: 80, text: "", invalid: false) }
+        let retained = FleetTelemetryData.merge([stableLocation, stableState], frequentSOC, limit: 5)
+        precondition(retained.count == 5 && retained.contains(where: { $0.id == stableLocation.id }) && retained.contains(where: { $0.id == stableState.id }))
+        precondition(retained.last?.at == frequentSOC.last?.at)
         precondition(ChargeEventPolicy.remainingMinutes(reported: nil, soc: 50, limit: 80, powerKW: 7.5, capacityKWh: 75)?.minutes == 180)
         precondition(ChargeEventPolicy.remainingMinutes(reported: 42, soc: 50, limit: 80, powerKW: 7.5, capacityKWh: 75)?.estimated == false)
         precondition(ChargeEventPolicy.remainingMinutes(reported: nil, soc: 50, limit: 80, powerKW: 0, capacityKWh: 75) == nil)

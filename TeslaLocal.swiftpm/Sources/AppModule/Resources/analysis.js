@@ -417,7 +417,7 @@
       if(!this.state.settings.vin){if(this.state.trips.length||this.state.charges.length)throw Error('기존 기록의 차량을 먼저 선택해 주세요.');this.state.settings.vin=vin;}
       const replay=new Engine();replay.state.settings={...this.state.settings};
       const latest={},byTime=new Map();
-      let chargeBegan=null,previousCharge=null;
+      let chargeBegan=null,previousCharge=null,finishedCharge=null;
       for(const r of rows){if(!num(r.at,1,Date.now()+5000)||typeof r.field!=='string')continue;if(!byTime.has(r.at))byTime.set(r.at,[]);byTime.get(r.at).push(r);}
       const scalar=field=>{const r=latest[field];if(!r||r.invalid)return null;if(Number.isFinite(r.number))return r.number;try{return Object.values(JSON.parse(r.text))[0];}catch{return null;}};
       for(const at of [...byTime.keys()].sort((a,b)=>a-b)){
@@ -427,7 +427,7 @@
         const stateFields=['DetailedChargeState','ChargeState'].filter(k=>latest[k]&&!latest[k].invalid).sort((a,b)=>latest[b].at-latest[a].at);
         const detail=String(scalar(stateFields[0])??'').replace('DetailedChargeState','');
         const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
-        if(charging===5&&previousCharge!==5)chargeBegan=at;
+        if(charging===5&&previousCharge!==5){chargeBegan=at;finishedCharge=null;}
         // DCChargingEnergyIn measures battery input on both AC and DC charging.
         // ACChargingEnergyIn is grid-side supply: retain it separately, never add counters.
         const validEnergy=k=>latest[k]&&!latest[k].invalid&&num(scalar(k),0,300)&&latest[k].at>=(chargeBegan??at-120000);
@@ -435,14 +435,22 @@
         const added=energyField?scalar(energyField):null;
         const supply=validEnergy('ACChargingEnergyIn')?scalar('ACChargingEnergyIn'):null;
         if(charging!==undefined){
-          replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);
-          if(!replay.state.activeCharge&&[6,7].includes(charging)&&added==null&&supply>0&&num(soc,0,100)&&!replay.state.charges.some(c=>c.end===at)){
+          // A terminal state remains cached for hours. Later SOC drift is not another charge.
+          const terminal=[6,7].includes(charging), repeatedEnd=terminal&&[6,7].includes(previousCharge)&&finishedCharge;
+          if(!repeatedEnd)replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);
+          if(!repeatedEnd&&!replay.state.activeCharge&&terminal&&added==null&&supply>0&&num(soc,0,100)&&!replay.state.charges.some(c=>c.end===at)){
             // A completion-only AC packet still proves supplied energy, but not starting SOC.
             const duplicate=replay.state.charges.some(c=>c.supplyKWh===supply&&c.endSOC===soc&&at-c.end<48*3600000);
             if(!duplicate)append(replay.state.charges,{id:id(),at,end:at,startSOC:null,endSOC:soc,endSOCObserved:true,supplyKWh:supply,complete:false,partial:true,collectedAfterEnd:true,source:'NAS'});
           }
           const current=replay.state.activeCharge??replay.state.charges.findLast(c=>c.end===at);
           if(current&&supply!=null)current.supplyKWh=supply;
+          if(terminal&&current)finishedCharge=current;
+          // Tesla can send final counters just after Complete, in a separate packet.
+          if(repeatedEnd&&at-finishedCharge.end<=120000){
+            if(added!=null)finishedCharge.vehicleReportedKWh=Math.max(finishedCharge.vehicleReportedKWh??0,added);
+            if(supply!=null)finishedCharge.supplyKWh=Math.max(finishedCharge.supplyKWh??0,supply);
+          }
           previousCharge=charging;
         }
         if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
@@ -456,10 +464,13 @@
           if(kind==='charges'){
             // Replaying the archive must not erase receipt/manual additions or earlier evidence.
             const merged={...row,...old};
+            // Earlier pages can close a session before its final counters arrive.
+            // Only replace machine-derived values; receipt and manual edits stay authoritative.
+            for(const key of ['vehicleReportedKWh','supplyKWh'])if(old.source==='NAS'&&old.archiveValues?.[key]===old[key]&&row[key]!=null)merged[key]=Math.max(old[key]??0,row[key]);
             for(const key of ['startSOC','endSOC','vehicleReportedKWh','supplyKWh'])if(merged[key]==null&&row[key]!=null)merged[key]=row[key];
             if(!old.startSOCObserved&&row.startSOCObserved){merged.startSOC=row.startSOC;merged.startSOCObserved=true;merged.startSOCEstimated=false;}
             if(!old.endSOCObserved&&row.endSOCObserved){merged.endSOC=row.endSOC;merged.endSOCObserved=true;merged.endSOCEstimated=false;}
-            list[same]=merged;
+            merged.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};list[same]=merged;
           }else list[same]=row;
           continue;
         }
@@ -478,6 +489,7 @@
           continue;
         }
         if((kind==='trips'?this.state.activeTrip:this.state.activeCharge)&&overlaps(kind==='trips'?this.state.activeTrip:this.state.activeCharge))continue;
+        if(kind==='charges')row.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};
         append(list,row);list.sort((a,b)=>(a.start??a.at)-(b.start??b.at));
       }
       return this.view();

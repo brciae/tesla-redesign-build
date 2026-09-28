@@ -61,7 +61,15 @@ enum FleetTelemetryData {
     static func merge(_ existing: [FleetTelemetryReading], _ incoming: [FleetTelemetryReading], limit: Int = 50000) -> [FleetTelemetryReading] {
         var byID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         for reading in incoming { byID[reading.id] = reading }
-        return Array(byID.values.sorted { $0.at == $1.at ? $0.field < $1.field : $0.at < $1.at }.suffix(limit))
+        let ordered = byID.values.sorted { $0.at == $1.at ? $0.field < $1.field : $0.at < $1.at }
+        guard ordered.count > limit, limit > 0 else { return limit > 0 ? ordered : [] }
+        // Stable signals (parked coordinates, charge state) may not be emitted again for hours.
+        // Retain their actual timestamps instead of letting frequent SOC packets evict them.
+        var latestByField: [String: FleetTelemetryReading] = [:]
+        for reading in ordered { latestByField[reading.vin + ":" + reading.field] = reading }
+        var kept = Dictionary(latestByField.values.sorted { $0.at > $1.at }.prefix(limit).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        for reading in ordered.reversed() where kept.count < limit { kept[reading.id] = reading }
+        return kept.values.sorted { $0.at == $1.at ? $0.field < $1.field : $0.at < $1.at }
     }
     static func latest(_ records: [FleetTelemetryReading], vin: String) -> [String: FleetTelemetryReading] {
         var result: [String: FleetTelemetryReading] = [:]
