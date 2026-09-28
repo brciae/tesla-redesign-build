@@ -357,6 +357,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             speaking = false
             navigationSpeaking = false
             activePriority = 0
+            releaseAudio()
             notice = "타입캐스트 오디오 재생 실패: \(error.localizedDescription)"
             playbackState = "재생 실패"
             automaticTrace("안내 재생 실패 · " + error.localizedDescription)
@@ -461,7 +462,17 @@ enum VoiceAudioRouting {
         let audio = AVAudioSession.sharedInstance()
         let phone = defaults.string(forKey: "voiceOutput") == "speaker"
         var options: AVAudioSession.CategoryOptions = defaults.bool(forKey: "voiceDuck") ? [.duckOthers] : [.mixWithOthers]
-        if phone {
+        if defaults.string(forKey: "voiceOutput") == "handsfree" {
+            // HFP requests the vehicle's hands-free path without placing a call.
+            try audio.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
+            try audio.overrideOutputAudioPort(.none)
+            try audio.setActive(true)
+            guard let port = audio.availableInputs?.first(where: { $0.portType == .bluetoothHFP }) else {
+                try? audio.setActive(false, options: [.notifyOthersOnDeactivation])
+                throw LocalError.message("Bluetooth 통화 장치가 없습니다. 차량의 휴대폰 통화 연결을 확인하거나 다른 안내 출력을 선택하세요.")
+            }
+            try audio.setPreferredInput(port)
+        } else if phone {
             options.insert(.defaultToSpeaker)
             try audio.setCategory(.playAndRecord, mode: .default, options: options)
             try audio.setActive(true)
@@ -480,8 +491,9 @@ struct VoiceOutputSettings: View {
         Picker("안내 출력", selection: $output) {
             Text("시스템·Bluetooth").tag("system")
             Text("iPhone 스피커").tag("speaker")
-        }.pickerStyle(.segmented).accessibilityIdentifier("voice.output")
-        Text("차량 자체 YouTube Music·내비를 사용 중이면 iPhone 스피커를 선택하세요. Bluetooth 출력은 차량에서 휴대폰 미디어를 선택해야 들릴 수 있습니다.")
+            Text("Bluetooth 통화").tag("handsfree")
+        }.pickerStyle(.menu).accessibilityIdentifier("voice.output")
+        Text("차량 자체 음악을 사용 중이면 Bluetooth 통화 출력을 시험할 수 있습니다. 안내 중 음악이 잠시 멈추거나 통화 화면이 표시될 수 있으며 차량별 확인이 필요합니다. 시스템·Bluetooth는 차량의 휴대폰 미디어 입력을 사용합니다. iPhone 스피커도 선택할 수 있습니다.")
             .font(.caption).foregroundStyle(.secondary)
     }
 }
