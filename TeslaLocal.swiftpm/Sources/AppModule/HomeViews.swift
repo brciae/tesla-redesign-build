@@ -517,7 +517,9 @@ struct FleetStatusCard: View {
                     divider
                     tile(snapshot.rangeKm.map { "\(Int($0))" }, "km", "주행 가능")
                     divider
-                    tile(snapshot.insideC.map { "\(Int($0.rounded()))" }, "°C", "실내")
+                    let bleTemperature = model.output.object("fresh").flag("climate") ? model.groups.object("climate").number("insideC") : nil
+                    let temperature = bleTemperature ?? snapshot.insideC
+                    tile(temperature.map { "\(Int($0.rounded()))" }, "°C", "실내 온도")
                 }
                 lockChip(snapshot.locked)
             }
@@ -544,25 +546,25 @@ struct FleetStatusCard: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.muted).monospacedDigit()
             }
             Button {
-                Task { @MainActor in await model.fleet.refreshVehicleSnapshot(force: true) }
+                model.refreshVehicle()
             } label: {
                 Group {
-                    if model.fleet.isReadingVehicle { ProgressView().controlSize(.mini) }
+                    if model.fleet.isReadingVehicle || model.link.refreshing { ProgressView().controlSize(.mini) }
                     else { Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold)) }
                 }
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .background(Color.white.opacity(0.08), in: Circle())
                 .foregroundStyle(.white)
             }
-            .disabled(model.fleet.isReadingVehicle)
-            .accessibilityLabel("Fleet 차량 상태 새로고침")
+            .disabled(model.fleet.isReadingVehicle || model.link.refreshing)
+            .accessibilityLabel("차량 상태 새로고침")
         }
     }
 
     private func tile(_ value: String?, _ unit: String, _ label: String) -> some View {
         VStack(spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value ?? "—")
+                Text(value ?? "미수신")
                     .font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(value == nil ? Theme.muted : .white)
                 if value != nil {

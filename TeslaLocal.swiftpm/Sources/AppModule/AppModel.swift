@@ -358,8 +358,8 @@ final class AppModel: ObservableObject {
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
         if link.authentic { link.refreshNow(retryUnavailable: true) }
-        else if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
-        else { connect() }
+        if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
+        if !link.authentic && !fleet.isAuthenticated { connect() }
         refresh()
     }
     func speak(_ text: String? = nil) {
