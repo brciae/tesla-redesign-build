@@ -146,9 +146,16 @@ struct MainView: View {
         else { model.resignActive() }
     }
     private func consumeNotificationRoute() {
-        guard UserDefaults.standard.bool(forKey: "YL.openChargingPending") else { return }
-        UserDefaults.standard.removeObject(forKey: "YL.openChargingPending")
-        selectedTab = .energy; energyPath = NavigationPath(); energyPath.append(Page.charging)
+        let defaults = UserDefaults.standard
+        let destination = defaults.string(forKey: "YL.notificationDestination") ?? (defaults.bool(forKey: "YL.openChargingPending") ? "charging" : "")
+        guard !destination.isEmpty else { return }
+        defaults.removeObject(forKey: "YL.notificationDestination"); defaults.removeObject(forKey: "YL.openChargingPending")
+        navigation.dismissWorkspace(); model.chargingPresented = false
+        switch destination {
+        case "trips": selectedTab = .drive; drivePath = NavigationPath()
+        case "automation": selectedTab = .menu; menuPath = NavigationPath(); menuPath.append(Page.automation)
+        default: selectedTab = .energy; energyPath = NavigationPath(); energyPath.append(Page.charging)
+        }
     }
 
 }

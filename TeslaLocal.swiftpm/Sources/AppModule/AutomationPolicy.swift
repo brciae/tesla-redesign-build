@@ -23,7 +23,7 @@ enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .boarding: return "차량의 탑승 신호·운전석 문 닫힘·P가 연속 확인될 때 한 번"
         case .departure: return "D/R에서 실제 움직임이 시작될 때 한 번"
-        case .arrival: return "주행 후 P가 유지되어 운행 기록이 종료될 때"
+        case .arrival: return "주행 후 실제 P 전환을 수신해 운행 기록이 종료될 때"
         case .chargingLocked: return "충전 중이고 차량이 잠기면 충전 회차당 한 번"
         case .chargeStart: return "새 상태에서 충전 시작으로 바뀔 때"
         case .chargeEnd: return "충전 종료 기록이 저장될 때"

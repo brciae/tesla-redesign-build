@@ -72,7 +72,7 @@
         this.absence=previous&&previous.parked===(event.parked===true)&&event.receivedAt>previous.last&&event.receivedAt-previous.last<=75000?
           {first:previous.first,last:event.receivedAt,count:previous.count+1,parked:event.parked===true}:{first:event.receivedAt,last:event.receivedAt,count:1,parked:event.parked===true};
         // Established guidance tolerates transient empty route groups (stops, Tesla re-routing, BLE partials). 
-        const need=event.parked?{count:3,span:10000}:(this.active&&guiding?{count:6,span:45000}:{count:3,span:3000});
+        const need=event.parked?{count:1,span:0}:(this.active&&guiding?{count:6,span:45000}:{count:3,span:3000});
         if(this.absence.count>=need.count&&this.absence.last-this.absence.first>=need.span){
           this.cancel(false);this.blocked=null;return {type:'clear',reason:'vehicleRouteAbsent'};
         }
@@ -321,8 +321,6 @@
     drive(g,now,context=this.state.groups){
       if(!fresh(g,now)||this.lastDrive&&g.at<=this.lastDrive.at)return;
       const s=this.state,prev=this.lastDrive,c=fresh(context.charge,now,TTL.charge)?context.charge:null;
-      // Resume after disconnect in P: close the previous trip before a new drive starts.
-      if(s.activeTrip?.parkAt!=null&&g.at-s.activeTrip.parkAt>=45000)this.finish(s.activeTrip.parkAt,false);
       const moving=['D','R'].includes(g.gear)&&num(g.speedKmh,1,350);
       if(moving&&!s.activeTrip){
         s.activeTrip={id:id(),start:g.at,startSOC:c?.soc??null,lastSOC:c?.soc??null,startOdo:g.odometerKm,lastOdo:g.odometerKm,distanceKm:0,missing:false,observedStart:!!prev&&prev.gear==='P'&&g.at-prev.at<=15000,socUnknown:c==null,gaps:0,gapSeconds:0,lastAt:g.at,parkAt:null,points:[]};
@@ -355,7 +353,8 @@
         else t.missing=true;
         t.lastAt=g.at;t.lastOdo=g.odometerKm;if(c)t.lastSOC=c.soc;
         const loc=context.location;if(freshLocation(loc,now)&&t.points.length<2000)t.points.push({at:g.at,lat:loc.latitude,lng:loc.longitude});
-        if(g.gear==='P'){if(t.parkAt==null)t.parkAt=g.at;if(g.at-t.parkAt>=45000)this.finish(g.at,false);}else t.parkAt=null;
+        // A fresh explicit P ends an observed drive now; no second packet after exiting is required.
+        if(g.gear==='P'&&(g.speedKmh==null||num(g.speedKmh,0,0.5))&&now-g.at<=120000){t.parkAt=g.at;this.finish(g.at,false);}else t.parkAt=null;
       }
       this.lastDrive=g;
     }

@@ -14,6 +14,7 @@ final class AutomationCoordinator: ObservableObject {
     private var climateExpiresAt = 0.0
     private var blocked = false
     var settingsDidChange: (() -> Void)?
+    var onNotification: ((String, String, String) -> Void)?
     init(folder: URL, observationNow: @escaping () -> Date = Date.init) throws {
         self.observationNow = observationNow
         file = folder.appendingPathComponent("automations.json")
@@ -257,6 +258,10 @@ final class AutomationCoordinator: ObservableObject {
             if !texts.isEmpty { voice.say(texts.joined(separator: " "), key: "boarding:" + s.vehicle, category: defaults.bool(forKey: "voiceAutomations") ? "voiceAutomations" : "voiceConnection", ttl: 60, manual: false) }
         }
         for effect in effects {
+            // Charging and trip completion already have one vehicle-event notification.
+            if ![AutomationTrigger.arrival, .chargeStart, .chargeEnd].contains(effect.rule.trigger) {
+                onNotification?(effect.id, effect.rule.name, effect.text)
+            }
             if effect.rule.speech && effect.rule.trigger != .boarding { voice.say(effect.text, key: "auto:" + effect.rule.id, category: "voiceAutomations", priority: [.batteryLow, .tireLow].contains(effect.rule.trigger) ? 3 : 1, ttl: 60, manual: false) }
             guard effect.rule.action != .speech else { report(effect.id, effect.rule.speech ? "음성 요청 · 음소거·조용시간·만료 적용" : "조건 감지 · 음성 꺼짐"); continue }
             let valid = { [weak self, weak link] in

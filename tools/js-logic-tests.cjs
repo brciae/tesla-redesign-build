@@ -75,15 +75,15 @@ console.log('PASS: route gate + freshness');
 const parkedGate = new C.EmbeddedRouteGate();
 parkedGate.observe(ev(37.5, 1000), true, false);
 const absent = receipt => ({type:'absent', at:1000, receivedAt:receipt, parked:true});
-assert(parkedGate.observe(absent(2000), true, true).type === 'wait', 'first parked absence');
+assert(parkedGate.observe(absent(2000), true, true).type === 'clear', 'fresh parked absence clears immediately');
 for(let i=0;i<4;i++) assert(parkedGate.observe(absent(2000), true, true).type === 'wait', 'cached receipt cannot count');
-assert(parkedGate.observe(absent(7000), true, true).type === 'wait', 'second parked absence');
+assert(parkedGate.observe(absent(7000), true, true).type === 'clear', 'new parked absence remains cleared');
 assert(parkedGate.observe(absent(12000), true, true).type === 'clear', 'fixed source clock clears after new receipts');
 parkedGate.reset(); parkedGate.observe(ev(37.5, 1000), true, false);
 parkedGate.observe({...absent(2000), parked:false},true,true);
 parkedGate.observe({...absent(7000), parked:false},true,true);
-assert(parkedGate.observe(absent(12000),true,true).type==='wait','entering P resets confirmation');
-assert(parkedGate.observe(ev(37.5,15000),true,true).type==='refresh','P alone does not cancel a valid route');
+assert(parkedGate.observe(absent(12000),true,true).type==='clear','entering P ends absence without waiting');
+assert(parkedGate.observe(ev(37.5,15000),true,true).type==='start','a later valid destination can start while parked');
 assert(parkedGate.absence===null,'route restoration resets absence');
 parkedGate.cancel();
 assert(parkedGate.observe(ev(37.5,16000),true,false).type==='wait','manual route stop blocks old destination while freely driving');
@@ -133,7 +133,9 @@ console.log('PASS: receipt parsing');
 {
  const e=new C.Engine(),now=Date.now(),vin='5YJYGDEE0LF000001';
  const feed=(seconds,gear,odo,soc)=>e.ingestFleetDrive({vin,drive:{at:now+seconds*1000,gear,speedKmh:gear==='D'?36:0,odometerKm:odo},charge:{at:now+seconds*1000,soc}},now+seconds*1000);
- feed(0,'P',100,80); feed(10,'D',100,80); feed(70,'D',100.6,79); feed(80,'P',100.7,79); feed(130,'P',100.7,79);
+ feed(0,'P',100,80); feed(10,'D',100,80); feed(70,'D',100.6,79); feed(80,'P',100.7,79);
+ chargeAssert.equal(e.state.trips.length,1,'first explicit P ends trip without any later packet');
+ feed(130,'P',100.7,79);
  chargeAssert.equal(e.state.trips.length,1,'Fleet-only drive must populate shared trip history');
  chargeAssert.equal(e.state.trips[0].distanceKm,0.7);
  chargeAssert.equal(e.state.groups.drive,undefined,'Fleet history must not authorize BLE automation');
@@ -246,4 +248,22 @@ console.log('PASS: receipt parsing');
  e.state.charges[0].cost=5000;e.state.charges[0].place='Verified receipt';
  e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges[0].cost,5000);chargeAssert.equal(e.state.charges[0].place,'Verified receipt');
  console.log('PASS: simultaneous grid/battery counters kept separate without double counting');
+}
+
+// Stop-and-go and loss of reception must not fabricate a P transition.
+{
+ const e = new C.Engine(), start = Date.now();
+ const feed = (ms, gear, speed, source = start + ms) => e.drive({at:source,receivedAt:start+ms,gear,speedKmh:speed,odometerKm:100},start+ms);
+ feed(0,'D',20); feed(1000,'D',0);
+ chargeAssert.equal(e.state.trips.length,0,'red-light stop is not arrival');
+ feed(2000,undefined,0);
+ chargeAssert.equal(e.state.trips.length,0,'missing gear is not arrival');
+ e.view(start+60000);
+ chargeAssert.equal(e.state.trips.length,0,'disconnect alone is not arrival');
+ feed(61000,'P',0);
+ chargeAssert.equal(e.state.trips.length,1,'P receipt completes without waiting for another packet');
+ chargeAssert.equal(e.state.trips[0].end,start+61000);
+ feed(62000,'P',0);
+ chargeAssert.equal(e.state.trips.length,1,'repeated P cannot duplicate completion');
+ console.log('PASS: immediate P completion, red-light stop, missing gear and disconnect protection');
 }

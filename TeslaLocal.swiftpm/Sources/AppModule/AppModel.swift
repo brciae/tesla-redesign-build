@@ -106,6 +106,9 @@ final class AppModel: ObservableObject {
                 storageStatus = "기록 불러오기 대기 · 기기 잠금 해제 후 기존 자료를 엶"
             }
         }
+        automations.onNotification = { id, title, body in
+            Task { @MainActor in ChargeNotificationManager.shared.notifyAutomation(id: id, title: title, body: body) }
+        }
         refresh()
         fleet.commandAllowed = { [weak self] in
             guard let self else { return false }
@@ -116,13 +119,16 @@ final class AppModel: ObservableObject {
             guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin else { return }
             let previousTrips = self.state.rows("trips").count
             defer {
+                self.finishObservedTrip(previousCount: previousTrips)
                 let history = self.state
                 Task { @MainActor in
                     self.automations.observeFleetSpeech(snapshot, history: history, previousTrips: previousTrips, link: self.link, voice: self.voice)
                     self.automations.observeFleet(snapshot, voice: self.voice, bleActive: self.link.authentic)
                 }
             }
-            if !self.link.authentic, snapshot.sectionIsRecent("drive_state") {
+            let bleDrive = self.groups.object("drive")
+            let fleetDriveAt = snapshot.number("drive_state", "timestamp") ?? 0
+            if snapshot.sectionIsRecent("drive_state"), !self.link.authentic || fleetDriveAt > (bleDrive.number("at") ?? 0) {
                 let overlay = snapshot.homeOverlay()
                 let history: Object = ["vin": snapshot.vin, "drive": snapshot.driveDisplay(), "charge": overlay["charge"] ?? Object(), "location": overlay["location"] ?? Object()]
                 do { self.output = try self.runtime.call("ingestFleetDrive", history) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
@@ -203,6 +209,7 @@ final class AppModel: ObservableObject {
                     }
                 }
                 if self.state.rows("trips").count > previousCount || self.state.rows("charges").count > previousCharges || Date().timeIntervalSince(self.lastSaved) > 5 { self.saveRecordsWhenAvailable() }
+                self.finishObservedTrip(previousCount: previousCount)
                 self.automations.observe(output: self.output, previousTrips: previousCount, previousCharges: previousCharges, link: self.link, voice: self.voice, demo: self.demo)
             } catch {
                 self.automations.resetObservation(); self.link.cancelPendingAutomation()
@@ -418,12 +425,22 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    private func finishObservedTrip(previousCount: Int) {
+        guard !demo, state.rows("trips").count > previousCount,
+              let trip = state.rows("trips").last, let end = trip.number("end"),
+              abs(Date().timeIntervalSince1970 * 1000 - end) <= 120000 else { return }
+        navigation.endGuidance()
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        let body = state.string("lastBrief")
+        let id = trip.string("id")
+        Task { @MainActor in chargeNotifications.notifyTrip(vin: vin, id: id, body: body) }
+    }
     private func considerNavigation() {
         // v29: observe in background too — clear/refresh decisions must keep flowing while locked.
         // Only a *new* start is gated by navigation.canPresent() (foreground, no modal).
         guard !demo else { return }
         do {
-            let event: Object
+            var event: Object
             let vin: String
             if !link.authentic {
                 guard let snapshot = fleet.vehicleSnapshot, snapshot.vin == fleet.selectedVin else { return }
@@ -431,6 +448,12 @@ final class AppModel: ObservableObject {
             } else {
                 event = try runtime.call("embeddedDestination", [:]) as? Object ?? [:]
                 vin = settings.string("vin")
+                if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin {
+                    let fallback = snapshot.navigationEvent()
+                    if event.string("type") == "wait" || (fallback.number("at") ?? 0) > (event.number("at") ?? 0) {
+                        if fallback.string("type") != "wait" { event = fallback }
+                    }
+                }
             }
             // v39: with hand-off enabled the destination goes to Naver Map instead of the built-in guidance,
             // so its licensed voice does the talking. One hand-off per destination, foreground only.

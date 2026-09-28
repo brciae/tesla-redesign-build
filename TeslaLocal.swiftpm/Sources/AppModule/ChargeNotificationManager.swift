@@ -11,7 +11,7 @@ import Combine
     private let stateKey = "YL.charge.observations"
     override init() {
         super.init()
-        UserDefaults.standard.register(defaults: ["notify.charge.start": true, "notify.charge.complete": true, "notify.charge.limit": true, "notify.charge.stop": true])
+        UserDefaults.standard.register(defaults: ["notify.trip.end": true, "notify.automation": true, "notify.charge.start": true, "notify.charge.complete": true, "notify.charge.limit": true, "notify.charge.stop": true])
         if let data = UserDefaults.standard.data(forKey: stateKey), let saved = try? JSONDecoder().decode([String: ChargeObservation].self, from: data) { previous = saved }
         UNUserNotificationCenter.current().delegate = self
     }
@@ -37,6 +37,21 @@ import Combine
         guard let event, UserDefaults.standard.bool(forKey: "notify.charge." + event.kind) else { return }
         Task { await deliver(event, id: "YL.charge.\(current.vin).\(event.kind).\(Int(current.at.timeIntervalSince1970))") }
     }
+    func notifyTrip(vin: String, id: String, body: String) {
+        guard !vin.isEmpty, !id.isEmpty, UserDefaults.standard.bool(forKey: "notify.trip.end") else { return }
+        notifyOnce(id: "YL.trip.\(vin).\(id)", title: "운행 종료", body: body, destination: "trips")
+    }
+    func notifyAutomation(id: String, title: String, body: String) {
+        guard UserDefaults.standard.bool(forKey: "notify.automation") else { return }
+        notifyOnce(id: "YL.automation." + id, title: title, body: body, destination: "automation")
+    }
+    private func notifyOnce(id: String, title: String, body: String, destination: String) {
+        let key = "YL.notification.events"
+        var sent = UserDefaults.standard.stringArray(forKey: key) ?? []
+        guard !sent.contains(id) else { return }
+        sent.append(id); UserDefaults.standard.set(Array(sent.suffix(200)), forKey: key)
+        Task { await deliver(ChargeEvent(kind: destination, title: title, body: body), id: id, destination: destination) }
+    }
     func scheduleEstimate(vin: String, minutes: Double?, isCharging: Bool) {
         guard !vin.isEmpty else { return }
         let id = "YL.charge.estimate." + vin
@@ -45,13 +60,13 @@ import Combine
         guard isCharging, let minutes, minutes.isFinite, minutes > 0, minutes <= 10080, UserDefaults.standard.bool(forKey: "notify.charge.complete") else { return }
         Task { await deliver(ChargeEvent(kind: "estimate", title: "예상 충전 완료 시각", body: "차량이 보고한 목표 충전량 도달 예상 시각입니다. 실제 완료 상태는 앱에서 확인해 주세요."), id: id, delay: max(1, minutes * 60)) }
     }
-    private func deliver(_ event: ChargeEvent, id: String, delay: TimeInterval? = nil) async {
+    private func deliver(_ event: ChargeEvent, id: String, delay: TimeInterval? = nil, destination: String = "charging") async {
         await refreshAuthorization()
         guard allowed else { return }
         let content = UNMutableNotificationContent()
         content.title = event.title; content.body = event.body; content.sound = .default
-        content.threadIdentifier = "YL.charging"
-        content.userInfo = ["destination": "charging"]
+        content.threadIdentifier = "YL." + destination
+        content.userInfo = ["destination": destination]
         let trigger = delay.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
         do {
             try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
@@ -64,8 +79,9 @@ import Combine
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) { completionHandler([.banner, .sound, .list]) }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         Task { @MainActor in
-            if response.notification.request.content.userInfo["destination"] as? String == "charging" {
-                UserDefaults.standard.set(true, forKey: "YL.openChargingPending")
+            if let destination = response.notification.request.content.userInfo["destination"] as? String,
+               ["charging", "trips", "automation"].contains(destination) {
+                UserDefaults.standard.set(destination, forKey: "YL.notificationDestination")
                 NotificationCenter.default.post(name: Notification.Name("YL.openChargingFromNotification"), object: nil)
             }
             completionHandler()

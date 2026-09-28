@@ -7,6 +7,8 @@ struct NotificationSettingsView: View {
     @AppStorage("notify.charge.complete") private var complete = true
     @AppStorage("notify.charge.limit") private var limit = true
     @AppStorage("notify.charge.stop") private var stop = true
+    @AppStorage("notify.trip.end") private var tripEnd = true
+    @AppStorage("notify.automation") private var automation = true
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -16,6 +18,8 @@ struct NotificationSettingsView: View {
                     Button("iOS 알림 설정 열기") { if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) } }
                 }
                 NavigationLink { AutomationUtilitiesView(title: "출발 알림") } label: { Label("매일 출발 알림", systemImage: "clock") }
+                Toggle(isOn: $tripEnd) { item("운행 종료", "주행 후 P 수신 시 운행 요약 알림") }
+                Toggle(isOn: $automation) { item("자동화 알림", "자동화 조건이 충족되면 음성 설정과 별도로 알림") }
                 Text("충전 알림").font(.headline).foregroundStyle(.purple)
                 VStack(spacing: 20) {
                     Toggle(isOn: $start) { item("충전 시작", "차량이 충전을 시작했을 때") }
