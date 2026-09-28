@@ -118,16 +118,11 @@ struct FleetSupplementView: View {
         .safeAreaInset(edge: .bottom) { stationPanel }
     }
     private func stationAnnotation(_ site: NearbyChargingSite) -> some MapContent {
-Annotation(site.name, coordinate: CLLocationCoordinate2D(latitude: site.latitude, longitude: site.longitude)) {
-                    Button { selectedSite = site.id } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: site.category == "슈퍼차저" ? "bolt.circle.fill" : site.category.contains("급속") ? "bolt.fill" : "powerplug.fill")
-                            if let count = site.availability(for: category) { Text(count).font(.caption.bold()).monospacedDigit() }
-                        }.padding(9).foregroundStyle(.white)
-                            .background(site.category == "슈퍼차저" ? Color.red : site.category.contains("급속") ? Color.orange : Color.green, in: Capsule())
-                            .overlay(Capsule().stroke(.white, lineWidth: site.id == selectedSite ? 3 : 0))
-                    }.buttonStyle(.plain).accessibilityLabel(site.name + " · " + site.category + (site.availability.map { " · " + $0 + "대 가능" } ?? ""))
-                }.tag(site.id)
+        Annotation(site.name, coordinate: CLLocationCoordinate2D(latitude: site.latitude, longitude: site.longitude)) {
+            ChargingStationMapPin(site: site, filter: category, selected: site.id == selectedSite) {
+                selectedSite = site.id
+            }
+        }.tag(site.id)
     }
     private var mapFilters: some View {
             VStack(spacing: 8) {
@@ -187,5 +182,41 @@ Annotation(site.name, coordinate: CLLocationCoordinate2D(latitude: site.latitude
                 if selectedSite == nil { selectedSite = visibleSites.first?.id }
             } catch { if requestID == request && !Task.isCancelled { self.error = error.localizedDescription } }
         }
+    }
+}
+
+private struct ChargingStationMapPin: View {
+    let site: NearbyChargingSite
+    let filter: String
+    let selected: Bool
+    let action: () -> Void
+    private var symbol: String {
+        if site.category == "슈퍼차저" { return "bolt.circle.fill" }
+        return site.category.contains("급속") ? "bolt.fill" : "powerplug.fill"
+    }
+    private var color: Color {
+        if site.category == "슈퍼차저" { return .red }
+        return site.category.contains("급속") ? .orange : .green
+    }
+    private var accessibilityText: String {
+        let base = site.name + " · " + site.category
+        guard let count = site.availability(for: filter) else { return base }
+        return base + " · " + count + "대 가능"
+    }
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                if let count = site.availability(for: filter) {
+                    Text(count).font(.caption.bold()).monospacedDigit()
+                }
+            }
+            .padding(9)
+            .foregroundStyle(Color.white)
+            .background(color, in: Capsule())
+            .overlay(Capsule().stroke(Color.white, lineWidth: selected ? 3 : 0))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityText)
     }
 }
