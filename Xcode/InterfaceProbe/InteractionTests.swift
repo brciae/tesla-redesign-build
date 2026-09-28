@@ -22,7 +22,7 @@ final class InteractionTests: XCTestCase {
                 XCTAssertEqual(canvas.label, before, "Opening controls and changing theme must preserve canvas geometry")
                 app.buttons["navigation.chrome.close"].tap()
                 XCTAssertTrue(open.waitForExistence(timeout: 3))
-                let shot = XCTAttachment(screenshot: app.screenshot())
+                let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Fullscreen \(title) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }
         }
@@ -31,7 +31,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(stop.isHittable); XCTAssertGreaterThanOrEqual(stop.frame.height, 44)
         stop.tap()
         XCTAssertTrue(app.staticTexts["fullscreen.stopped"].waitForExistence(timeout: 3))
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fullscreen controls overlay"; shot.lifetime = .keepAlways; add(shot)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Fullscreen controls overlay"; shot.lifetime = .keepAlways; add(shot)
         XCTAssertTrue(app.buttons["navigation.chrome.open"].waitForExistence(timeout: 9))
     }
 
