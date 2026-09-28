@@ -18,6 +18,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         automaticStatus = Date().formatted(date: .omitted, time: .standard) + " · " + message
     }
 
+    private let audioOwner = UUID().uuidString
     private var typecastPlayer: AVAudioPlayer?
     private var activeTicket: UUID?
     private var synthesisTask: Task<Void, Never>?
@@ -442,7 +443,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         releaseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.activeTicket == nil, self.typecastPlayer == nil, self.queue.items.isEmpty else { return }
-            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            VoiceAudioRouting.release(owner: self.audioOwner)
         }
         releaseWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
@@ -451,14 +452,19 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func activateAudio(_ defaults: UserDefaults) throws {
         releaseWork?.cancel()
         releaseWork = nil
-        try VoiceAudioRouting.activate(defaults)
+        try VoiceAudioRouting.activate(defaults, owner: audioOwner)
     }
 }
 
 /// Applies the same output policy to automatic speech and Typecast audition.
 /// No audio input is opened or recorded; playAndRecord enables iOS speaker override.
 enum VoiceAudioRouting {
-    static func activate(_ defaults: UserDefaults = .standard) throws {
+    private static var owners = Set<String>()
+    static func release(owner: String = "preview") {
+        owners.remove(owner)
+        if owners.isEmpty { try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation]) }
+    }
+    static func activate(_ defaults: UserDefaults = .standard, owner: String = "preview") throws {
         let audio = AVAudioSession.sharedInstance()
         let phone = defaults.string(forKey: "voiceOutput") == "speaker"
         var options: AVAudioSession.CategoryOptions = defaults.bool(forKey: "voiceDuck") ? [.duckOthers] : [.mixWithOthers]
@@ -482,6 +488,7 @@ enum VoiceAudioRouting {
             try audio.setCategory(.playback, mode: .voicePrompt, options: options)
             try audio.setActive(true)
         }
+        owners.insert(owner)
     }
 }
 

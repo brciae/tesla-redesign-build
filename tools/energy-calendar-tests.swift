@@ -13,6 +13,7 @@ import Foundation
         duplicates.append(valid)
         let days = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: duplicates, capacityKWh: 75, calendar: calendar)
         precondition(abs(days[26].chargeVehicle - 40.36) < 0.001)
+        precondition(abs(days[26].chargeTotal - 40.36) < 0.001)
         precondition(abs(days[26].chargeSupply - 43.1) < 0.001)
         precondition(days[26].chargeMinutes == 60)
         precondition(days[26].hasChargeDuration && !days[26].hasUnknownChargeDuration)
@@ -20,6 +21,13 @@ import Foundation
         let partial = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: [unknown], capacityKWh: 75, calendar: calendar)
         precondition(partial[26].chargeMinutes == 0, "Collection timestamps are not charging duration")
         precondition(!partial[26].hasChargeDuration && partial[26].hasUnknownChargeDuration)
+        let mixed: [[String: Any]] = [valid,
+            ["at": start, "supplyKWh": 12.0],
+            ["at": start, "estimatedStoredKWh": 5.0, "supplyKWh": 6.0],
+            ["at": start, "nasSupplyKWh": 3.0],
+            ["at": start, "vehicleReportedKWh": -1.0, "supplyKWh": 2.0]]
+        let combined = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: mixed, capacityKWh: 75, calendar: calendar)
+        precondition(abs(combined[26].chargeTotal - 62.36) < 0.001, "Each session contributes exactly one available measurement")
         print("PASS: calendar excludes duplicate energy/time and never invents duration from collection times")
     }
 }

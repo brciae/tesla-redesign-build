@@ -6,7 +6,6 @@ struct EnergyCalendarView: View {
     @EnvironmentObject private var model: AppModel
     @State private var month = Date()
     @State private var charging = false
-    @State private var vehicleEnergy = true
     @State private var selected: Date?
     private var days: [EnergyCalendarDay] {
         EnergyCalendarAnalysis.days(month: month, trips: model.output.object("energy").rows("trips"), parking: model.state.rows("parkingPeriods"), charges: model.state.rows("charges"), capacityKWh: model.output.object("energy").number("capacityKWh") ?? 75)
@@ -27,11 +26,12 @@ struct EnergyCalendarView: View {
                 }
                 monthHeader
                 modePickers
+                calendarLegend
                 chartStrip
                 summaryStrip
                 calendarGrid
                 selectionCard
-                InfoNote("달력 집계 기준", "주행·주차는 종료일, 충전은 시작일에 기록합니다. 충전량은 차량 보고량과 결제 공급량을 합산하지 않습니다. 비어 있는 날은 기록이 없는 날이며 소비 0을 뜻하지 않습니다. 주차 소비 세부 원인은 소비·비용 메뉴에서 확인할 수 있습니다.")
+                InfoNote("달력 집계 기준", "주행·주차는 종료일, 충전은 시작일에 기록합니다. 충전 1회마다 차량 보고량, 배터리 증가 추정량, 충전기 공급량 순으로 확인 가능한 값 하나만 사용합니다. 공급량에는 충전 손실이 포함될 수 있습니다. 비어 있는 날은 기록이 없는 날이며 소비 0을 뜻하지 않습니다. 주차 소비 세부 원인은 소비·비용 메뉴에서 확인할 수 있습니다.")
             }.padding(16)
         }.background(Theme.bg).navigationTitle("에너지 달력")
     }
@@ -50,9 +50,24 @@ struct EnergyCalendarView: View {
 
     @ViewBuilder private var modePickers: some View {
         Picker("기록 종류", selection: $charging) { Text("사용").tag(false); Text("충전").tag(true) }.pickerStyle(.segmented)
-        if charging {
-            Picker("에너지 기준", selection: $vehicleEnergy) { Text("차량 충전량").tag(true); Text("결제 공급량").tag(false) }.pickerStyle(.segmented)
-        }
+
+    }
+
+    private var calendarLegend: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 16) {
+                if charging {
+                    Label("충전", systemImage: "circle.fill").foregroundStyle(Theme.green)
+                } else {
+                    Label("주행", systemImage: "circle.fill").foregroundStyle(.orange)
+                    Label("주차", systemImage: "circle.fill").foregroundStyle(.purple)
+                }
+                Spacer()
+                Text("단위 kWh").foregroundStyle(Theme.muted)
+            }.font(.caption)
+            Text(charging ? "+ 충전량 · 약 %는 배터리 용량 대비 환산값" : "달력 −값은 주행·주차 합계 · km는 주행 거리")
+                .font(.caption2).foregroundStyle(Theme.muted)
+        }.accessibilityIdentifier("energy.calendar.legend")
     }
 
     // v90: one muted line for the month's peak, then thin bars on a dotted
@@ -229,7 +244,7 @@ struct EnergyCalendarView: View {
         guard capacity > 0, kWh > 0 else { return nil }
         return String(format: "+약 %.0f%%", kWh / capacity * 100)
     }
-    private func charge(_ day: EnergyCalendarDay) -> Double { vehicleEnergy ? day.chargeVehicle : day.chargeSupply }
-    private func hasCharge(_ day: EnergyCalendarDay) -> Bool { vehicleEnergy ? day.hasVehicleCharge : day.hasSupply }
+    private func charge(_ day: EnergyCalendarDay) -> Double { day.chargeTotal }
+    private func hasCharge(_ day: EnergyCalendarDay) -> Bool { day.hasCharge }
     private func move(_ delta: Int) { if let next = Calendar.current.date(byAdding: .month, value: delta, to: month) { month = next; selected = nil } }
 }

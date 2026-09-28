@@ -7,6 +7,8 @@ struct EnergyCalendarDay: Identifiable {
     var driving: Double = 0
     var parking: Double = 0
     var distance: Double = 0
+    var chargeTotal: Double = 0
+    var hasCharge = false
     var chargeSupply: Double = 0
     var chargeVehicle: Double = 0
     var chargeMinutes: Double = 0
@@ -49,6 +51,9 @@ enum EnergyCalendarAnalysis {
         }
         for charge in charges where charge["chargeExcluded"] as? Bool != true {
             guard let i = index(number(charge, "at")) else { continue }
+            // Select one amount per session, never add vehicle and charger readings together.
+            let amount = ["vehicleReportedKWh", "estimatedStoredKWh", "supplyKWh", "nasSupplyKWh"].compactMap { number(charge, $0) }.first(where: { $0 >= 0 })
+            if let amount { result[i].chargeTotal += amount; result[i].hasCharge = true }
             if let value = number(charge, "supplyKWh"), value >= 0 { result[i].chargeSupply += value; result[i].hasSupply = true }
             if let value = number(charge, "vehicleReportedKWh"), value >= 0 { result[i].chargeVehicle += value; result[i].hasVehicleCharge = true }
             if charge["collectedAfterEnd"] as? Bool != true, charge["startTimeObserved"] as? Bool != false, charge["endTimeObserved"] as? Bool != false, let start = number(charge, "at"), let end = number(charge, "end"), end >= start {

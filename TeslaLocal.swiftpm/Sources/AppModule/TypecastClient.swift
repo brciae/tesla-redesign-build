@@ -575,6 +575,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         previewTask = nil
         player?.stop()
         player = nil
+        VoiceAudioRouting.release()
         testCompletion?()
         testCompletion = nil
     }
@@ -582,6 +583,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         guard player === self.player else { return }
         lastStatus = flag ? "재생 완료" : "오디오 재생 중단"
+        self.player = nil
+        VoiceAudioRouting.release()
         testCompletion?()
         testCompletion = nil
     }
