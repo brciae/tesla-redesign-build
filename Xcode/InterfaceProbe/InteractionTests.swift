@@ -35,7 +35,8 @@ final class InteractionTests: XCTestCase {
                 guard size.count == 2 else { return }
                 XCTAssertGreaterThan(size[0], app.frame.width - 3)
                 XCTAssertGreaterThan(size[1], app.frame.height - 3)
-                let foreground = app.otherElements["navigation.foreground"]
+                // SwiftUI propagates the dashboard root identifier onto its contained foreground.
+                let foreground = app.otherElements["navigation.modeling"]
                 XCTAssertTrue(foreground.exists)
                 if orientation != .portrait {
                     XCTAssertGreaterThan(foreground.frame.minX, app.frame.minX + 20, "Dashboard must avoid either camera cutout orientation")
