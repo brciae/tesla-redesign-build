@@ -11,6 +11,7 @@ struct FleetSupplementView: View {
     @State private var busy = false
     @State private var search = ""
     @State private var selectedSite: String?
+    @State private var mapPosition: MapCameraPosition = .automatic
     @State private var destination: SavedNavigationPlace?
     @State private var requestID = UUID()
     @State private var category = "전체"
@@ -104,18 +105,25 @@ struct FleetSupplementView: View {
         .sheet(isPresented: $showSetup, onDismiss: { Task { await refresh() } }) { PublicChargingSetupView(region: $region) }
     }
     private var chargingMap: some View {
-        Map(selection: $selectedSite) {
+        Map(position: $mapPosition, selection: $selectedSite) {
             ForEach(visibleSites) { site in
                 stationAnnotation(site)
             }
         }.accessibilityIdentifier("charging.map")
         .safeAreaInset(edge: .top) { mapFilters }
         .onChange(of: category) { _, _ in selectedSite = visibleSites.first?.id }
-        .overlay(alignment: .topTrailing) {
-            Button { Task { await refresh() } } label: { Image(systemName: "arrow.clockwise").padding(14).background(.regularMaterial, in: Circle()) }
-                .disabled(busy).accessibilityLabel("충전소 새로고침").padding(12)
-        }
+        .onChange(of: visibleSites.map(\.id)) { _, _ in fitChargingMap() }
         .safeAreaInset(edge: .bottom) { stationPanel }
+    }
+    private func fitChargingMap() {
+        let values = visibleSites
+        guard let first = values.first else { return }
+        let latitudes = values.map(\.latitude), longitudes = values.map(\.longitude)
+        let lowLat = latitudes.min() ?? first.latitude, highLat = latitudes.max() ?? first.latitude
+        let lowLon = longitudes.min() ?? first.longitude, highLon = longitudes.max() ?? first.longitude
+        mapPosition = .region(MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (lowLat + highLat) / 2, longitude: (lowLon + highLon) / 2),
+            span: MKCoordinateSpan(latitudeDelta: max(0.025, (highLat - lowLat) * 1.3), longitudeDelta: max(0.025, (highLon - lowLon) * 1.3))))
     }
     private func stationAnnotation(_ site: NearbyChargingSite) -> some MapContent {
         Annotation(site.name, coordinate: CLLocationCoordinate2D(latitude: site.latitude, longitude: site.longitude)) {
@@ -129,6 +137,9 @@ struct FleetSupplementView: View {
             HStack {
                 Button { showSetup = true } label: { Label(PublicChargingRegions.names[region] ?? "공공 충전소 연결", systemImage: "slider.horizontal.3") }.font(.caption)
                 Spacer()
+                Button { Task { await refresh() } } label: {
+                    Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
+                }.disabled(busy).accessibilityLabel("충전소 새로고침")
             }
             Picker("충전소 종류", selection: $category) {
                 ForEach(["전체", "슈퍼차저", "급속", "완속"], id: \.self) { Text($0).tag($0) }
