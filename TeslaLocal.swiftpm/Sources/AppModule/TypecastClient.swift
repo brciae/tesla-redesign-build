@@ -548,7 +548,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 await MainActor.run {
                     do {
                         let audioSession = AVAudioSession.sharedInstance()
-                        try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                        try audioSession.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
                         try audioSession.setActive(true)
 
                         let p = try AVAudioPlayer(contentsOf: audioURL)

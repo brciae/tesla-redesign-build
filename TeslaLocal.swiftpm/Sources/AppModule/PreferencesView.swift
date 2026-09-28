@@ -383,6 +383,7 @@ struct VoiceStatus: View {
         if !voice.notice.isEmpty { Text(voice.notice).font(.caption).foregroundStyle(.orange) }
         if !voice.lastText.isEmpty { Text(voice.playbackState + ": " + voice.lastText).font(.caption).foregroundStyle(Theme.muted) }
         if !voice.outputDescription.isEmpty { Text(voice.outputDescription).font(.caption).foregroundStyle(Theme.muted) }
+        if !voice.lastPlaybackOutput.isEmpty { Text(voice.lastPlaybackOutput).font(.caption).foregroundStyle(Theme.muted).textSelection(.enabled) }
     }
 }
 

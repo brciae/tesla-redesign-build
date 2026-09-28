@@ -10,6 +10,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     @Published private(set) var notice = ""
     @Published private(set) var playbackState = "대기"
     @Published private(set) var outputDescription = ""
+    @Published private(set) var lastPlaybackOutput = ""
     @Published private(set) var automaticStatus = "자동 안내 요청 없음"
     @Published private(set) var playbackStarts = 0
     @Published private(set) var playbackCompletions = 0
@@ -347,6 +348,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             self.playbackState = "읽는 중 · 타입캐스트 AI 음성"
             if !item.manual || item.key.hasPrefix("navigation.") { self.automaticTrace("자동 안내 재생 시작") }
             self.refreshOutput()
+            self.lastPlaybackOutput = "최근 재생 " + self.outputDescription
         } catch {
             activeTicket = nil
             activeText = ""
@@ -419,7 +421,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private func refreshOutput() {
         let audio = AVAudioSession.sharedInstance()
-        let ports = audio.currentRoute.outputs.map { $0.portType == .builtInSpeaker ? "iPhone 스피커" : $0.portName }
+        let ports = audio.currentRoute.outputs.map { port in
+            switch port.portType {
+            case .builtInSpeaker: return "iPhone 스피커"
+            case .bluetoothA2DP: return port.portName + " (Bluetooth 미디어)"
+            case .bluetoothHFP: return port.portName + " (Bluetooth 통화)"
+            case .carAudio: return port.portName + " (차량 오디오)"
+            default: return port.portName
+            }
+        }
         let route = ports.isEmpty ? "출력 준비 중" : ports.joined(separator: ", ")
         let description = "출력: \(route) · 기기 음량 \(Int((audio.outputVolume * 100).rounded()))%"
         if outputDescription != description {
@@ -448,7 +458,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         } else {
             options.insert(.mixWithOthers)
         }
-        try audio.setCategory(.playback, mode: .spokenAudio, options: options)
+        try audio.setCategory(.playback, mode: .voicePrompt, options: options)
         try audio.setActive(true)
     }
 }
