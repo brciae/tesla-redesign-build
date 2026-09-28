@@ -98,5 +98,6 @@ assert(scoped.includes('if scope.supportsSpeech'), 'Settings/menu scopes must no
 const local = fs.readFileSync(root+'LocalBriefingControls.swift','utf8');
 assert(local.includes('].contains(title)'), 'Local editor voice controls must be opt-in');
 assert(!fs.readFileSync(root+'DrivingWorkspace.swift','utf8').includes('announceDashboardStart('), 'Opening a dashboard must be silent');
-assert(fs.readFileSync(root+'VoiceCoordinator.swift','utf8').includes('guard category != "voiceControl"'), 'Routine command/selection acknowledgements must stay visual');
+const voiceSource = fs.readFileSync(root+'VoiceCoordinator.swift','utf8');
+assert(!voiceSource.includes('guard category != "voiceControl"') && voiceSource.includes('!d.bool(forKey: "voiceControl")'), 'Control speech must honor its setting instead of an unconditional silent return');
 assert(!speech.includes('connectedFacts'), 'Do not mechanically join sentences');

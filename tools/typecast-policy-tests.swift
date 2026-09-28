@@ -3,6 +3,10 @@ import Foundation
 @main
 struct TypecastPolicyTests {
     static func main() {
+        precondition(TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: false, runningPreparation: true, samePhrase: false))
+        precondition(!TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: false, runningPreparation: true, samePhrase: true))
+        precondition(!TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: true, runningPreparation: false, samePhrase: false))
+        precondition(!TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: false, runningPreparation: false, samePhrase: false))
         let legacy = "676cda78bde49be9d17f38e0"
         let id = "tc_" + legacy
         precondition(!TypecastAPIPolicy.isVoiceID(legacy))

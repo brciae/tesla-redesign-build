@@ -14,13 +14,36 @@ import CoreFoundation
             catch { writable = false; status = "Telemetry 저장 자료를 읽지 못했습니다. 원본 파일은 보존됩니다." }
         }
     }
-    func ingest(_ data: Data, vin: String) throws {
+    private func pendingKey(_ vin: String) -> String { "fleet.archive.history.pending." + vin }
+    func pendingHistoryStart(vin: String) -> Date? {
+        guard let stamp = UserDefaults.standard.object(forKey: pendingKey(vin)) as? Double else { return nil }
+        return Date(timeIntervalSince1970: stamp)
+    }
+    func historySaved(vin: String) { UserDefaults.standard.removeObject(forKey: pendingKey(vin)) }
+    func requestHistoryRebuild(vin: String) {
+        if let first = records.filter({ $0.vin == vin }).map(\.at).min() {
+            UserDefaults.standard.set(first.timeIntervalSince1970, forKey: pendingKey(vin))
+        }
+    }
+    @discardableResult func ingest(_ data: Data, vin: String) throws -> Int {
         guard writable else { throw FleetTelemetryData.failure("기존 저장 자료를 먼저 복구해야 합니다. 덮어쓰지 않습니다.") }
         let incoming = try FleetTelemetryData.decode(data, vin: vin)
+        let old = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let changed = incoming.filter { row in
+            guard let previous = old[row.id] else { return true }
+            return previous.number != row.number || previous.text != row.text || previous.invalid != row.invalid
+        }
+        guard !changed.isEmpty else { return 0 }
+        if let first = changed.map(\.at).min() {
+            // Mark before the atomic raw save. A crash can cause a harmless retry, never a skipped page.
+            let pending = min(pendingHistoryStart(vin: vin) ?? first, first)
+            UserDefaults.standard.set(pending.timeIntervalSince1970, forKey: pendingKey(vin))
+        }
         let merged = FleetTelemetryData.merge(records, incoming)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(merged).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         records = merged; status = "\(incoming.count)개 확인 · 저장 표본 \(merged.count)개"
+        return changed.count
     }
     func latest(vin: String) -> [String: FleetTelemetryReading] { FleetTelemetryData.latest(records, vin: vin) }
     func observe(_ snapshot: FleetVehicleSnapshot) {

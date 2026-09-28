@@ -19,6 +19,7 @@ struct FleetTelemetryView: View {
     @State private var checking = false
     @State private var connectionError = ""
     @State private var repairMessage = ""
+    @State private var confirmFullDownload = false
     private var latest: [String: FleetTelemetryReading] { store.latest(vin: vin) }
     private var trend: [FleetTelemetryReading] { Array(store.records.filter { $0.vin == vin && $0.field == selectedField && !$0.invalid && $0.number != nil }.suffix(240)) }
     var body: some View {
@@ -96,11 +97,11 @@ struct FleetTelemetryView: View {
                         } catch { self.error = error.localizedDescription }
                     }.disabled(archive.busy || vin.isEmpty)
                     Caption(archive.status)
-                    Button("남은 기록 이어 가져오기") { Task { await archive.sync(vin: vin) } }
+                    Button("신규·누락 기록 가져오기") { Task { await archive.sync(vin: vin) } }
                         .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
-                    Button("과거 충전 기록 다시 연결") { Task { await archive.sync(vin: vin, rebuild: true) } }
+                    Button("NAS 전체 다시 받기") { confirmFullDownload = true }
                         .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
-                    Caption("과거 기록을 처음부터 다시 대조합니다. 영수증·금액·직접 수정한 내역은 보존합니다.")
+                    Caption("평소에는 마지막 저장 지점 이후의 데이터만 받습니다. 처음 연결하거나 전체 다시 받기를 확인한 경우에만 전체 자료를 조회합니다. 중복 검증은 원본을 보존하며 집계에서 제외합니다.")
                     Caption("QuickConnect 관리 화면과 별도의 차량 기록 서버 주소를 사용합니다. 연결 키는 기기의 보안 저장소에 보관됩니다.")
                 }
                 } else {
@@ -153,6 +154,12 @@ struct FleetTelemetryView: View {
                 } }
             }.padding(16)
         }.background(Theme.bg).navigationTitle(connectionSettings ? "NAS 연결·수집 설정" : "배터리 추이")
+        .confirmationDialog("NAS 전체 자료를 다시 받겠습니까?", isPresented: $confirmFullDownload, titleVisibility: .visible) {
+            Button("전체 다시 받기") { Task { await archive.sync(vin: vin, rebuild: true) } }
+            Button("취소", role: .cancel) { }
+        } message: {
+            Text("일상 갱신에는 필요하지 않습니다. 기존 수신 구간의 누락을 조사할 때만 사용하세요. 저장된 원본과 수기 기록은 보존합니다.")
+        }
         .task(id: vin) {
             serverAddress = archive.address
             serverExpanded = archive.address.isEmpty

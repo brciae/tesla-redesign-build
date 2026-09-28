@@ -187,6 +187,12 @@ final class AutomationCoordinator: ObservableObject {
         presence = !s.closuresFresh || s.present == nil ? "탑승 신호 미수신 · 자동 공조 실행 안 함" : s.present == true ? "차량 탑승 신호 있음" : "차량 탑승 신호 없음"
         let before = policy.document
         let effects = policy.evaluate(s)
+        if !s.active { status = "탑승 인사 대기 · 차량 인증 연결 필요" }
+        else if !s.driveFresh || !s.closuresFresh { status = "탑승 인사 대기 · 최신 기어·탑승 신호 필요" }
+        else if !s.boarded { status = "탑승 인사 대기 · 탑승·운전석 문 닫힘·P 확인 필요" }
+        else if !s.boardingReady { status = "탑승 인사 대기 · 자동 공조 인증 준비 중" }
+        else if policy.didBoard { status = effects.contains { $0.rule.trigger == .boarding && $0.rule.speech } ? "탑승 확인 · 인사 음성 요청" : "탑승 확인 · 인사 규칙·시간대·재실행 간격 확인" }
+        else { status = policy.document.boardingLatched ? "같은 탑승 조건 처리됨 · 다음 하차·탑승 신호 대기" : "탑승 신호 연속 확인 중" }
         guard policy.document != before else { return }
         do { try persist(); publish() } catch { blocked = true; status = "실행 전 기록 저장 실패 · 모든 동작 중단"; return }
         // Boarding and its optional battery summary share ONE persisted session event.

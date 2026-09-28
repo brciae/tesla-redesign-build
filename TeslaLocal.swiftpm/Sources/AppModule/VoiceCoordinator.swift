@@ -10,6 +10,12 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     @Published private(set) var notice = ""
     @Published private(set) var playbackState = "대기"
     @Published private(set) var outputDescription = ""
+    @Published private(set) var automaticStatus = "자동 안내 요청 없음"
+    @Published private(set) var playbackStarts = 0
+    @Published private(set) var playbackCompletions = 0
+    private func automaticTrace(_ message: String) {
+        automaticStatus = Date().formatted(date: .omitted, time: .standard) + " · " + message
+    }
 
     private var typecastPlayer: AVAudioPlayer?
     private var activeTicket: UUID?
@@ -38,7 +44,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     func prepareNavigation(_ message: String) {
         let tc = TypecastClient.shared, d = UserDefaults.standard
         guard navigationPreparation == nil, !navigationSpeaking, tc.isEnabled, !tc.synthesisPaused,
-              d.bool(forKey: "voiceEnabled"), d.double(forKey: "voiceVolume") > 0, let data = message.data(using: .utf8),
+              d.bool(forKey: "voiceEnabled"), d.double(forKey: "navVoiceVolume") > 0, let data = message.data(using: .utf8),
               let phrases = try? JSONDecoder().decode([String].self, from: data) else { return }
         let selected = d.string(forKey: "voiceIdentifier") ?? ""
         let voice = selected.hasPrefix("typecast:") ? String(selected.dropFirst(9)) : tc.selectedVoiceId
@@ -52,7 +58,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                 self.navigationPreparationTimes.removeAll { now.timeIntervalSince($0) >= 60 }
                 guard self.navigationPreparationTimes.count < 6 else { break }
                 self.navigationPreparationTimes.append(now)
-                do { _ = try await tc.synthesize(text: text, voiceId: voice) }
+                do { _ = try await tc.synthesize(text: text, voiceId: voice, preparation: true) }
                 catch { break } // No repeated request or alternate account on failure.
             }
         }
@@ -131,9 +137,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
-        guard let cue = NavigationSpeechCue.parse(text, now: now) else { return }
+        guard let cue = NavigationSpeechCue.parse(text, now: now) else { automaticTrace("길안내 수신 · 기한 만료 또는 형식 오류"); return }
         let text = cue.text
-        guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
+        guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { automaticTrace("길안내 수신 · 음성 설정 꺼짐"); return }
+        automaticTrace("길안내 요청 수신")
         // Ignore duplicate SDK callbacks before cancelling current playback.
         guard SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines) != activeText, text != lastGuideText || now.timeIntervalSince(lastGuideAt) >= 2 else { return }
         lastGuideText = text
@@ -176,12 +183,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     /// Speaks an announcement with instant button preemption (cancels previous speech immediately with 0ms delay).
     func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true) {
-        guard category != "voiceControl" else { return } // Routine UI/command acknowledgements stay visual.
         let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
-        guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { return }
+        if category == "voiceControl" && (!d.bool(forKey: "voiceEnabled") || !d.bool(forKey: "voiceControl")) {
+            automaticTrace("제어 안내 차단 · 음성 설정 꺼짐"); return
+        }
+        guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { automaticTrace("자동 안내 차단 · 전체 또는 종류별 음성 설정 꺼짐"); return }
         let now = Date()
-        if !manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: now), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
+        if !manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: now), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { automaticTrace("자동 안내 차단 · 방해 금지 시간"); return }
+        if !manual { automaticTrace("자동 안내 요청 수신 · 재생 대기") }
         let styled = BriefingStyle.selected.phrase(text, category: category)
         let prepared = SpeechText.prepare(styled)
 
@@ -251,10 +261,12 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         guard defaults.double(forKey: item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume") > 0 else {
             notice = "브리핑 음량이 0임"
             playbackState = "음량 0"
+            automaticTrace("안내 차단 · 앱 안내 음량 0")
             return true
         }
         guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             playbackState = "안내 기한 만료"
+            automaticTrace(item.canStartPlayback(at: Date()) ? "길안내 보류 · 현재 위치 또는 안내 지점 확인 필요" : "자동 안내 기한 만료")
             drain()
             return true
         }
@@ -277,6 +289,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         // 2. Online fetch via Typecast API
         playbackState = "타입캐스트 음성 생성 중…"
+        if !item.manual || item.key.hasPrefix("navigation.") { automaticTrace("안내 요청 수신 · 타입캐스트 합성 중") }
         synthesisTask = Task {
             do {
                 let audioURL = try await tc.synthesize(text: item.text, voiceId: resolvedTarget, validUntil: item.key.hasPrefix("navigation.") ? item.expires : nil)
@@ -295,6 +308,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                     let expired = !item.canStartPlayback(at: Date()) || error is CancellationError
                     self.notice = expired ? "" : "타입캐스트 안내 실패: \(error.localizedDescription)"
                     self.playbackState = expired ? "지난 안내 건너뜀" : "합성 실패"
+                    if !item.manual || item.key.hasPrefix("navigation.") { self.automaticTrace(expired ? "합성 후 안내 기한 만료 또는 요청 취소" : "합성 실패 · " + error.localizedDescription) }
                     self.drain()
                 }
             }
@@ -314,6 +328,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             navigationSpeaking = false
             activePriority = 0
             playbackState = "안내 기한 만료"
+            automaticTrace(item.canStartPlayback(at: Date()) ? "합성 완료 · 현재 위치 또는 안내 지점 확인 필요" : "합성 완료 · 안내 기한 만료")
             drain()
             return
         }
@@ -326,9 +341,11 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             p.volume = volume
             p.prepareToPlay()
             guard p.play() else { throw LocalError.message("오디오 출력을 시작하지 못했습니다.") }
+            playbackStarts += 1
             self.typecastPlayer = p
             self.speaking = true
             self.playbackState = "읽는 중 · 타입캐스트 AI 음성"
+            if !item.manual || item.key.hasPrefix("navigation.") { self.automaticTrace("자동 안내 재생 시작") }
             self.refreshOutput()
         } catch {
             activeTicket = nil
@@ -345,11 +362,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        guard player === typecastPlayer else { return }
+        if flag { playbackCompletions += 1 }
         finishPlayback()
+        if !flag { playbackState = "재생 중단"; notice = "오디오가 정상 완료되지 않았습니다." }
     }
 
     private func finishPlayback() {
         guard activeTicket != nil || speaking else { return }
+        if !activeManual || navigationSpeaking { automaticTrace("자동 안내 재생 완료") }
         activeTicket = nil
         activeManual = false
         activeText = ""
@@ -419,17 +440,14 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         releaseWork?.cancel()
         releaseWork = nil
         let audio = AVAudioSession.sharedInstance()
-        var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
+        // Playback already supports A2DP. The explicit A2DP option belongs to playAndRecord.
+        var options: AVAudioSession.CategoryOptions = []
         if defaults.bool(forKey: "voiceDuck") {
             options.insert(.duckOthers)
         } else {
             options.insert(.mixWithOthers)
         }
-        do {
-            try audio.setCategory(.playback, mode: .spokenAudio, options: options)
-        } catch {
-            try? audio.setCategory(.playback, options: options)
-        }
+        try audio.setCategory(.playback, mode: .spokenAudio, options: options)
         try audio.setActive(true)
     }
 }

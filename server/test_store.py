@@ -18,6 +18,24 @@ def payload(vin=VIN, value=40):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_incremental_cursor_includes_late_packets_without_full_rescan(self):
+        for i in range(81):
+            self.archive.ingest("tesla_V", 0, i, VIN.encode(), payload(value=i))
+        cursor, seen = 0, 0
+        while True:
+            page = self.archive.page(VIN, cursor)
+            cursor = page["next"]
+            seen += len(page["payloads"])
+            if not page["more"]:
+                break
+        self.assertEqual(seen, 81)
+        self.assertEqual(self.archive.page(VIN, cursor)["payloads"], [])
+        late = json.loads(payload(value=82))
+        late["createdAt"] = "2025-12-31T10:00:00Z"
+        self.archive.ingest("tesla_V", 0, 81, VIN.encode(), json.dumps(late).encode())
+        delta = self.archive.page(VIN, cursor)
+        self.assertEqual(delta["payloads"], [late])
+        self.assertEqual(self.archive.page(VIN, delta["next"])["payloads"], [])
     def test_receiver_ack_types_match_tesla_protocol(self):
         config = json.loads((Path(__file__).parent / "telemetry-config.example.json").read_text())
         self.assertIn("connectivity", config["records"])

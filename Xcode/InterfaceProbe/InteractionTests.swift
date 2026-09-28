@@ -1,6 +1,28 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testAllVoiceCategoriesActuallyStartAndFinishPlayback() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["voice-playback-probe"]; app.launch()
+        for (index, title) in ["수동 미리듣기", "화면 브리핑", "제어 응답", "연결 알림", "운행 알림", "충전 알림", "자동화", "길안내", "안전 안내"].enumerated() {
+            XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 10)); app.buttons[title].tap()
+            let completed = app.staticTexts["재생 시작 \(index + 1) / 완료 \(index + 1)"]
+            XCTAssertTrue(completed.waitForExistence(timeout: 12), "Must actually complete AVAudioPlayer output: \(title)")
+        }
+        app.buttons["탑승 자동화 검증"].tap()
+        XCTAssertTrue(app.staticTexts["탑승 조건 충족 · 실제 자동화 음성 요청"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["재생 시작 10 / 완료 10"].waitForExistence(timeout: 12))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Ten voice paths including automatic boarding playback completion"; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testChargeCalendarQuarantinesRepeatedCompletion() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["charge-audit-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["중복 의심 기록 제외"].waitForExistence(timeout: 10))
+        app.segmentedControls.buttons["충전"].tap()
+        XCTAssertTrue(app.staticTexts["40.36"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["1452.96"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Charge duplicate quarantine calendar"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testNASConnectionFieldsVisible() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["archive-probe"]; app.launch()
@@ -10,10 +32,10 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.secureTextFields["archive.token"].isHittable)
         XCTAssertTrue(app.staticTexts["NAS 연결 키"].exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "NAS labeled connection fields"; shot.lifetime = .keepAlways; add(shot)
-        for _ in 0..<3 where !app.buttons["과거 충전 기록 다시 연결"].isHittable { app.swipeUp() }
-        XCTAssertTrue(app.buttons["과거 충전 기록 다시 연결"].isHittable)
-        XCTAssertTrue(app.buttons["남은 기록 이어 가져오기"].exists)
-        XCTAssertFalse(app.buttons["과거 충전 기록 다시 연결"].isEnabled, "No NAS credentials must never start a recovery")
+        for _ in 0..<3 where !app.buttons["NAS 전체 다시 받기"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["NAS 전체 다시 받기"].isHittable)
+        XCTAssertTrue(app.buttons["신규·누락 기록 가져오기"].exists)
+        XCTAssertFalse(app.buttons["NAS 전체 다시 받기"].isEnabled, "No NAS credentials must never start a recovery")
         let recovery = XCTAttachment(screenshot: app.screenshot()); recovery.name = "NAS history recovery controls"; recovery.lifetime = .keepAlways; add(recovery)
     }
     func testDestinationSearchEntry() {

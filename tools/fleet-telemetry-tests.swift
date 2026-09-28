@@ -2,6 +2,20 @@ import Foundation
 
 @main struct FleetTelemetryTests {
     static func main() throws {
+        let anchor = Date(timeIntervalSince1970: 1_790_000_000)
+        func reading(_ seconds: Double, _ field: String, _ value: String) -> FleetTelemetryReading {
+            FleetTelemetryReading(vin: "WINDOW", field: field, at: anchor.addingTimeInterval(seconds), number: nil, text: "{\"stringValue\":\"\(value)\"}", invalid: false)
+        }
+        let oldWindow = [reading(0, "ChargeState", "Charging"), reading(60, "Soc", "40"), reading(120, "ChargeState", "Complete"), reading(130, "Soc", "80")]
+        let currentWindow = [reading(10000, "ChargeState", "Charging"), reading(10060, "Soc", "50"), reading(10120, "ChargeState", "Complete")]
+        let window = FleetTelemetryData.historyWindow(oldWindow + currentWindow, vin: "WINDOW", since: anchor.addingTimeInterval(10060))
+        precondition(window.start == anchor.addingTimeInterval(10000), "Continue current session from its start")
+        precondition(!window.rows.contains(where: { $0.at == anchor.addingTimeInterval(60) }), "Do not replay unrelated historical samples")
+        let delayed = FleetTelemetryData.historyWindow(oldWindow + currentWindow, vin: "WINDOW", since: anchor.addingTimeInterval(10130))
+        precondition(delayed.start == anchor.addingTimeInterval(10000), "A late final counter needs the completed session context")
+        let lateOld = FleetTelemetryData.historyWindow(oldWindow + currentWindow, vin: "WINDOW", since: anchor.addingTimeInterval(90))
+        precondition(lateOld.start == anchor, "Late data is selected by source time, not only newest timestamp")
+        precondition(FleetTelemetryData.historyWindow(oldWindow, vin: "OTHER", since: anchor).rows.isEmpty)
         let displayNow = Date(timeIntervalSince1970: 1_800_000_000)
         let displayRecords = [FleetTelemetryReading(vin: "DISPLAY", field: "Soc", at: displayNow, number: 31, text: "", invalid: false), FleetTelemetryReading(vin: "OTHER", field: "Soc", at: displayNow, number: 90, text: "", invalid: false)]
         let display = FleetTelemetryData.homeOverlay(displayRecords, vin: "DISPLAY", now: displayNow)

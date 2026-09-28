@@ -13,6 +13,36 @@ struct FleetTelemetryReading: Codable, Identifiable {
 }
 
 enum FleetTelemetryData {
+    /// Rebuild only sessions affected by new/late data, with previous field values as context.
+    static func historyWindow(_ records: [FleetTelemetryReading], vin: String, since: Date) -> (rows: [FleetTelemetryReading], start: Date) {
+        let ordered = records.filter { $0.vin == vin }.sorted { $0.at < $1.at }
+        var chargeStart: Date?, driveStart: Date?, recentChargeStart: Date?, chargeEnd: Date?
+        var recentDriveStart: Date?, driveEnd: Date?
+        var chargeState = "", gear = ""
+        for row in ordered where row.at < since && !row.invalid {
+            if ["ChargeState", "DetailedChargeState"].contains(row.field), let raw = firstStringValue(row) {
+                let state = raw.replacingOccurrences(of: "DetailedChargeState", with: "")
+                guard ["Charging", "Starting", "Complete", "Stopped", "Disconnected", "NoPower"].contains(state) else { continue }
+                if state == "Charging", chargeState != "Charging" { chargeStart = row.at }
+                if ["Complete", "Stopped", "Disconnected"].contains(state), chargeStart != nil {
+                    recentChargeStart = chargeStart; chargeEnd = row.at; chargeStart = nil
+                }
+                chargeState = state
+            }
+            if row.field == "Gear", let raw = firstStringValue(row) {
+                let state = raw.replacingOccurrences(of: "ShiftState", with: "")
+                if ["D", "R", "N"].contains(state), !["D", "R", "N"].contains(gear) { driveStart = row.at }
+                if state == "P", let started = driveStart { recentDriveStart = started; driveEnd = row.at; driveStart = nil }
+                gear = state
+            }
+        }
+        var start = min(since, chargeStart ?? since, driveStart ?? since)
+        if let end = chargeEnd, since.timeIntervalSince(end) <= 120, let previous = recentChargeStart { start = min(start, previous) }
+        if let end = driveEnd, since.timeIntervalSince(end) <= 120, let previous = recentDriveStart { start = min(start, previous) }
+        var seed: [String: FleetTelemetryReading] = [:]
+        for row in ordered where row.at < start { seed[row.field] = row }
+        return (Array(seed.values) + ordered.filter { $0.at >= start }, start)
+    }
     static func decode(_ data: Data, vin: String, now: Date = Date()) throws -> [FleetTelemetryReading] {
         guard !vin.isEmpty, data.count <= 5_000_000 else { throw failure("차량 선택과 파일 크기를 확인해 주세요. 최대 5 MB입니다.") }
         let json = try JSONSerialization.jsonObject(with: data)

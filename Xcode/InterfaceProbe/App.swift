@@ -1,5 +1,6 @@
 import SwiftUI
 import CryptoKit
+import AVFoundation
 import MapKit
 
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
@@ -15,6 +16,8 @@ import MapKit
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains("voice-playback-probe") { VoicePlaybackProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charge-audit-probe") { ChargeAuditCalendarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
             else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
@@ -306,10 +309,15 @@ func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String
 func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object { ["charge": ["soc": 90.0, "rangeKm": 451.0, "isCharging": false], "climate": ["insideC": 25.0, "outsideC": 29.0, "targetC": 22.0, "isOn": false]] }
 final class VehicleLink: ObservableObject {
     var controlBusy = false; var preparingControl = false; var confirmation: String?
+    var authentic = true; var controlEnabled = false
+    func controlsReady(category: String) -> Bool { false }
+    func runAutomation(_ action: String, title: String, args: Object, authorized: @escaping () -> Bool, completion: @escaping (String) -> Void) -> String? { "검증 환경 · 차량 명령 차단" }
 }
 struct ProbeVoice { func say(_ text: String, category: String, manual: Bool) {} }
 enum FleetCommandPolicy { static func failure(_ text: String) -> Error { NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) } }
 final class TeslaFleetClient: ObservableObject {
+    static let shared = TeslaFleetClient()
+    @MainActor func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil, authorized: (() -> Bool)? = nil) async throws -> Bool { throw FleetCommandPolicy.failure("검증 환경 · 차량 명령 차단") }
     var virtualKeyPairingURL: URL? { nil }
     var isSendingCommand = false; var isAuthenticated = true; var isReadingVehicle = false
     var commandStatus = "UI 검증용 · 실제 차량에 명령을 보내지 않음"
@@ -331,6 +339,94 @@ final class TeslaFleetClient: ObservableObject {
     func setSeatCooler(seatPosition: Int, level: Int) async throws -> Bool { true }
     func setSeatHeater(seatPosition: Int, level: Int) async throws -> Bool { true }
     func setClimateKeeperMode(mode: Int) async throws -> Bool { true }
+}
+struct VoicePlaybackProbe: View {
+    @StateObject private var voice = VoiceCoordinator()
+    @State private var boardingCoordinator: AutomationCoordinator?
+    @State private var boardingResult = "탑승 조건 대기"
+    private let labels = ["수동 미리듣기", "화면 브리핑", "제어 응답", "연결 알림", "운행 알림", "충전 알림", "자동화", "길안내", "안전 안내"]
+    private let categories = ["", "", "voiceControl", "voiceConnection", "voiceTrip", "voiceCharge", "voiceAutomations", "", ""]
+    var body: some View {
+        VStack {
+            Text("재생 시작 \(voice.playbackStarts) / 완료 \(voice.playbackCompletions)").accessibilityIdentifier("voice.probe.count")
+            Text(voice.playbackState)
+            Text(voice.automaticStatus)
+            Text(voice.notice)
+            ForEach(labels.indices, id: \.self) { index in Button(labels[index]) { play(index) } }
+            Button("탑승 자동화 검증") { boarding() }
+            Text(boardingResult)
+        }.onAppear {
+            let d = UserDefaults.standard
+            for key in ["voiceEnabled", "voiceControl", "voiceConnection", "voiceTrip", "voiceCharge", "voiceAutomations", "navVoiceEnabled", "navSafetyVoice"] { d.set(true, forKey: key) }
+            d.set(false, forKey: "voiceQuietEnabled"); d.set(0.8, forKey: "voiceVolume"); d.set(0.8, forKey: "navVoiceVolume")
+            d.set("typecast:은경", forKey: "voiceIdentifier"); TypecastClient.shared.isEnabled = true
+        }
+    }
+    private func play(_ index: Int) {
+        // Test-only PCM cache in the simulator sandbox; no API key or paid request.
+        let text = labels[index] + " 음성 검증입니다."
+        let prepared = SpeechText.prepare(index >= 7 ? text : BriefingStyle.selected.phrase(text, category: categories[index]))
+        cache(prepared)
+        if index == 0 { voice.preview(text) }
+        else if index >= 7 { voice.navigationGuide(text, safety: index == 8) }
+        else { voice.say(text, key: "probe-\(index)", category: categories[index], priority: 2, ttl: 60, manual: index < 3) }
+    }
+    private func boarding() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let coordinator = try! AutomationCoordinator(folder: folder)
+        boardingCoordinator = coordinator
+        let greeting = AutomationPolicy.greeting(hour: Calendar.current.component(.hour, from: Date())) + " 배터리 80퍼센트입니다."
+        cache(SpeechText.prepare(BriefingStyle.selected.phrase(greeting, category: "voiceAutomations")))
+        let link = VehicleLink()
+        func observe() {
+            let at = Date().timeIntervalSince1970 * 1000
+            let output: Object = ["fresh": ["drive": true, "closures": true, "charge": true], "state": ["settings": ["vin": "7SAYGDEE0PF000001"], "groups": [
+                "drive": ["at": at, "receivedAt": at, "gear": "P", "speedKmh": 0],
+                "closures": ["at": at, "receivedAt": at, "userPresent": true, "driverFront": false],
+                "charge": ["at": at, "receivedAt": at, "soc": 80]]]]
+            coordinator.observe(output: output, previousTrips: 0, previousCharges: 0, link: link, voice: voice, demo: false)
+        }
+        observe()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_300_000_000)
+            observe()
+            boardingResult = coordinator.logs.contains { $0.rule == "탑승 인사" } ? "탑승 조건 충족 · 실제 자동화 음성 요청" : coordinator.status
+            // A reconnect cannot trigger a second greeting for the same boarding.
+            coordinator.resetObservation(); observe()
+            try? await Task.sleep(nanoseconds: 2_300_000_000)
+            observe()
+            precondition(coordinator.logs.filter { $0.rule == "탑승 인사" }.count == 1)
+        }
+    }
+    private func cache(_ prepared: String) {
+        let key = SHA256.hash(data: Data(("은경_" + prepared).utf8)).map { String(format: "%02x", $0) }.joined()
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/TypecastAudioCache")
+        try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16000)!
+        buffer.frameLength = 16000
+        for sample in 0..<16000 { buffer.int16ChannelData![0][sample] = Int16(sin(Double(sample) * 2 * .pi * 440 / 16000) * 200) }
+        do { let file = try AVAudioFile(forWriting: dir.appendingPathComponent(key + ".wav"), settings: format.settings, commonFormat: .pcmFormatInt16, interleaved: true); try file.write(from: buffer) }
+        catch { fatalError("Fixture WAV failed: \(error)") }
+        precondition(TypecastClient.shared.cachedURL(for: prepared, voiceId: "은경") != nil)
+    }
+}
+struct ChargeAuditCalendarProbe: View {
+    @StateObject private var model: AppModel
+    init() {
+        let m = AppModel()
+        var state = (try! m.runtime.call("export")) as! Object
+        let at = Date().addingTimeInterval(-3600).timeIntervalSince1970 * 1000
+        state["charges"] = (0..<36).map { i -> Object in
+            ["id": "duplicate-fixture-\(i)", "at": at + Double(i) * 60000, "end": at + Double(i) * 60000,
+             "startSOC": 25, "endSOC": 80 - Double(i) * 0.11, "vehicleReportedKWh": 40.36,
+             "collectedAfterEnd": true, "source": "Fleet", "complete": false]
+        }
+        m.output = (try! m.runtime.call("load", state)) as! Object
+        _model = StateObject(wrappedValue: m)
+    }
+    var body: some View { NavigationStack { EnergyCalendarView().environmentObject(model) } }
 }
 struct ClimateFleetProbe: View {
     @StateObject private var model = AppModel()

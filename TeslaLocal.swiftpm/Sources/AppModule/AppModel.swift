@@ -136,10 +136,11 @@ final class AppModel: ObservableObject {
             DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
         }
         Task { @MainActor [weak self] in
-        FleetArchiveClient.shared.onPageSaved = { [weak self] vin in
+        FleetArchiveClient.shared.onHistoryReady = { [weak self] vin in
             guard let self, !self.demo, self.fleet.selectedVin == vin else { throw CancellationError() }
             try self.mergeArchiveHistory(vin: vin)
             try self.persist()
+            FleetTelemetryStore.shared.historySaved(vin: vin)
         }
         }
         archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.archiveReadings = FleetTelemetryStore.shared.records } }
@@ -197,7 +198,7 @@ final class AppModel: ObservableObject {
         link.onReadAvailabilityChange = { [weak self] in
             guard let self else { return }
             self.output["fresh"] = Object(); self.refresh()
-            if !self.link.authentic { self.voice.stopAutomatic(); self.automations.resetObservation() }
+            if !self.link.authentic { self.automations.resetObservation() } // BLE loss must not cancel already-valid Fleet or navigation speech.
         }
         protectedDataObserver = NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main) { [weak self] _ in
             self?.loadProtectedRecordsIfNeeded()
@@ -232,12 +233,15 @@ final class AppModel: ObservableObject {
         }
     }
     @MainActor private func mergeArchiveHistory(vin: String) throws {
-        let rows: [Object] = FleetTelemetryStore.shared.records.filter { $0.vin == vin }.map { r in
+        let store = FleetTelemetryStore.shared
+        guard let since = store.pendingHistoryStart(vin: vin) else { return }
+        let window = FleetTelemetryData.historyWindow(store.records, vin: vin, since: since)
+        let rows: [Object] = window.rows.map { r in
             var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "field": r.field, "text": r.text, "invalid": r.invalid]
             if let n = r.number { value["number"] = n }; return value
         }
         guard !rows.isEmpty else { return }
-        output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows]) as? Object ?? output
+        output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
     }
     func refresh() {
         do { output = try runtime.call("view") as? Object ?? [:]; if !link.connected || !link.authentic { output["fresh"] = Object() } }

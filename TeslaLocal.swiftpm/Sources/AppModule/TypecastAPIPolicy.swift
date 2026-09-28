@@ -1,6 +1,9 @@
 import Foundation
 
 enum TypecastAPIPolicy {
+    static func shouldPreemptPreparation(incomingPreparation: Bool, runningPreparation: Bool, samePhrase: Bool) -> Bool {
+        !incomingPreparation && runningPreparation && !samePhrase
+    }
     static func isVoiceID(_ value: String) -> Bool {
         (value.hasPrefix("tc_") || value.hasPrefix("uc_")) && value.count > 3
             && !value.contains(where: { $0.isWhitespace })

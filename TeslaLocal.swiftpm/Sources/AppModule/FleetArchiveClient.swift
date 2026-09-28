@@ -17,7 +17,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
     @Published private(set) var lastVehicleReceivedAt: Date?
     @Published private(set) var status = "NAS 연결 주소를 등록하면 저장된 차량 기록을 가져옵니다."
     var address: String { UserDefaults.standard.string(forKey: "fleet.archive.address") ?? "" }
-    var onPageSaved: ((String) throws -> Void)?
+    var onHistoryReady: ((String) throws -> Void)?
     private let redirectGuard = ArchiveRedirectGuard()
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -69,10 +69,13 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
         do {
             let base = address, key = try token(base)
             let scope = SHA256.hash(data: Data((base + "|" + vin).utf8)).map { String(format: "%02x", $0) }.joined()
-            // Re-read once with the repaired history importer; keep v94 records and manual edits.
+            // Keep the existing cursor across app upgrades. Only an explicit server rescan resets it.
             let cursorKey = "fleet.archive.cursor.v95." + scope
-            if rebuild { UserDefaults.standard.removeObject(forKey: cursorKey) }
-            var cursor = UserDefaults.standard.integer(forKey: cursorKey), total = 0
+            if rebuild {
+                UserDefaults.standard.removeObject(forKey: cursorKey)
+                FleetTelemetryStore.shared.requestHistoryRebuild(vin: vin)
+            }
+            var cursor = UserDefaults.standard.integer(forKey: cursorKey), total = 0, pendingReadings = 0
             let deadline = Date().addingTimeInterval(90)
             for _ in 0..<500 {
                 try Task.checkCancellation()
@@ -94,20 +97,27 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
                 guard address == base else { throw CancellationError() }
                 connected = true
                 if !payloads.isEmpty {
-                    try FleetTelemetryStore.shared.ingest(JSONSerialization.data(withJSONObject: payloads), vin: vin)
-                    guard let onPageSaved else { throw FleetTelemetryData.failure("기록 저장 준비 중입니다. 잠시 후 다시 가져오세요.") }
-                    try onPageSaved(vin)
+                    pendingReadings += try FleetTelemetryStore.shared.ingest(JSONSerialization.data(withJSONObject: payloads), vin: vin)
+                    // Bound the batch so raw retention cannot evict a large initial import before analysis.
+                    if pendingReadings >= 5000 {
+                        guard let onHistoryReady else { throw FleetTelemetryData.failure("기록 분석 준비 중입니다.") }
+                        try onHistoryReady(vin); pendingReadings = 0
+                    }
                     total += payloads.count
                 }
-                // Persist progress only after the archive page has been saved on the phone.
+                // Raw records are atomically saved, with a durable pending-analysis marker, before advancing.
                 cursor = next; UserDefaults.standard.set(cursor, forKey: cursorKey)
                 status = total > 0 ? "NAS 연결됨 · 새 차량 기록 \(total)건 저장" : "NAS 연결됨 · 새로 받은 차량 기록 없음"
                 if !more {
+                    guard let onHistoryReady else { throw FleetTelemetryData.failure("기록 분석 준비 중입니다. 다시 가져오면 저장된 기록부터 처리합니다.") }
+                    try onHistoryReady(vin)
                     await readStatus(base: base, key: key, vin: vin)
                     return
                 }
                 if Date() >= deadline { break }
             }
+            guard let onHistoryReady else { throw FleetTelemetryData.failure("기록 분석 준비 중입니다. 다시 가져오면 저장된 기록부터 처리합니다.") }
+            try onHistoryReady(vin)
             status += " · 이어 가져오기를 누르면 남은 기록부터 계속합니다."
         } catch is CancellationError { status = "다음에 기록 가져오기를 누르면 이어집니다." }
         catch let error as URLError {

@@ -379,6 +379,7 @@ private struct VoiceCategoryToggle: View {
 struct VoiceStatus: View {
     @ObservedObject var voice: VoiceCoordinator
     var body: some View {
+        Text(voice.automaticStatus).font(.caption).foregroundStyle(Theme.muted).textSelection(.enabled)
         if !voice.notice.isEmpty { Text(voice.notice).font(.caption).foregroundStyle(.orange) }
         if !voice.lastText.isEmpty { Text(voice.playbackState + ": " + voice.lastText).font(.caption).foregroundStyle(Theme.muted) }
         if !voice.outputDescription.isEmpty { Text(voice.outputDescription).font(.caption).foregroundStyle(Theme.muted) }

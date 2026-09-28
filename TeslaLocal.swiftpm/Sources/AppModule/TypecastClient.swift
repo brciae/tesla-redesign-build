@@ -382,7 +382,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // MARK: - API Speech Synthesis
 
-    @MainActor private var synthesisFlight: (id: UUID, task: Task<URL, Error>)?
+    @MainActor private var synthesisFlight: (id: UUID, task: Task<URL, Error>, preparation: Bool, text: String, voice: String)?
     private var previewTask: Task<Void, Never>?
 
     private func pauseKey(_ key: String) -> String {
@@ -398,7 +398,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     /// One network synthesis at a time. Playback cancellation never restarts an accepted request.
     @MainActor
-    func synthesize(text: String, voiceId: String? = nil, validUntil: Date? = nil) async throws -> URL {
+    func synthesize(text: String, voiceId: String? = nil, validUntil: Date? = nil, preparation: Bool = false) async throws -> URL {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let requestedVoice = (voiceId ?? selectedVoiceId).trimmingCharacters(in: .whitespacesAndNewlines)
         let voice = requestedVoice.isEmpty ? Self.defaultVoiceId : requestedVoice
@@ -408,6 +408,9 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             if let validUntil, Date() >= validUntil { throw CancellationError() }
             if let cached = cachedURL(for: clean, voiceId: voice) { return cached }
             if let flight = synthesisFlight {
+                if TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: preparation, runningPreparation: flight.preparation, samePhrase: flight.text == clean && flight.voice == voice) {
+                    flight.task.cancel()
+                }
                 _ = await flight.task.result
                 if synthesisFlight?.id == flight.id { synthesisFlight = nil }
                 continue
@@ -427,7 +430,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     throw error
                 }
             }
-            synthesisFlight = (id, task)
+            synthesisFlight = (id, task, preparation, clean, voice)
             let result = await task.result
             if synthesisFlight?.id == id { synthesisFlight = nil }
             try Task.checkCancellation()
@@ -545,13 +548,13 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 await MainActor.run {
                     do {
                         let audioSession = AVAudioSession.sharedInstance()
-                        try? audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-                        try? audioSession.setActive(true)
+                        try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+                        try audioSession.setActive(true)
 
                         let p = try AVAudioPlayer(contentsOf: audioURL)
                         p.delegate = self
                         p.prepareToPlay()
-                        p.play()
+                        guard p.play() else { throw NSError(domain: "TypecastPlayback", code: 1, userInfo: [NSLocalizedDescriptionKey: "오디오 재생을 시작하지 못했습니다."]) }
                         self.player = p
                         self.lastStatus = "타입캐스트 음성 재생 중"
                     } catch {
