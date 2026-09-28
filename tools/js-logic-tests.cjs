@@ -22,6 +22,11 @@ const chargeAssert = require('node:assert/strict');
  last.supplyKWh=44;last.cost=1234;
  e.ingestArchive({vin,rows});chargeAssert.equal(last.supplyKWh,44);
  chargeAssert.equal(e.state.charges[1].supplyKWh,44);chargeAssert.equal(e.state.charges[1].cost,1234);
+ delete e.state.charges[1].archiveValues;e.state.charges[1].vehicleReportedKWh=39;
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges[1].vehicleReportedKWh,40.48,'legacy vehicle-derived energy must be repaired');
+ chargeAssert.equal(e.state.charges[1].supplyKWh,44,'legacy editable supply must stay intact without provenance');
+ chargeAssert.equal(e.state.charges[1].nasSupplyKWh,43.10377842007361,'show recovered supply alongside legacy input');
  console.log('PASS: sparse NAS sessions, delayed final counters, post-completion drift and manual preservation');
 }
 {

@@ -646,8 +646,11 @@ struct ChargeListView: View {
                         RecordActions(edit: { editing = c }, delete: { model.mutate("deleteCharge", ["id": c.selfID]) }, title: "충전 기록")
                     }
                     HStack {
-                        Metric(title: c.number("supplyKWh") != nil ? "영수증 공급" : c.number("vehicleReportedKWh") != nil ? "차량 보고" : "SOC 기반 추정", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh"), digits: 1, suffix: " kWh")
+                        Metric(title: c.number("supplyKWh") != nil ? (c.number("nasSupplyKWh") == c.number("supplyKWh") ? "NAS 공급량" : "기록 공급량") : c.number("vehicleReportedKWh") != nil ? "차량 보고" : "SOC 기반 추정", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh"), digits: 1, suffix: " kWh")
                         if let cost = c.number("cost") { Metric(title: "결제액", value: cost, suffix: "원") }
+                    }
+                    if let recovered = c.number("nasSupplyKWh"), recovered != c.number("supplyKWh") {
+                        Caption("NAS 확인 공급량 \(valueText(recovered, digits: 2)) kWh · 기존 입력값은 보존했습니다.")
                     }
                     Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")
                     if c.flag("startSOCEstimated") || c.flag("endSOCEstimated") { InfoNote("잔량 계산 근거", "충전 도중 연결된 경우 시작 잔량은 차량 충전량과 배터리 용량으로 계산합니다. 완료 신호를 늦게 받은 경우 종료 잔량은 차량 충전 한도를 참고합니다. 직접 수신한 시작·완료 잔량은 그대로 보존합니다.") }

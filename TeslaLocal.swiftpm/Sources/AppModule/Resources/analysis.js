@@ -464,6 +464,8 @@
           if(kind==='charges'){
             // Replaying the archive must not erase receipt/manual additions or earlier evidence.
             const merged={...row,...old};
+            if(row.vehicleReportedKWh!=null)merged.vehicleReportedKWh=Math.max(old.vehicleReportedKWh??0,row.vehicleReportedKWh);
+            if(row.supplyKWh!=null)merged.nasSupplyKWh=row.supplyKWh;
             // Earlier pages can close a session before its final counters arrive.
             // Only replace machine-derived values; receipt and manual edits stay authoritative.
             for(const key of ['vehicleReportedKWh','supplyKWh'])if(old.source==='NAS'&&old.archiveValues?.[key]===old[key]&&row[key]!=null)merged[key]=Math.max(old[key]??0,row[key]);
@@ -489,7 +491,7 @@
           continue;
         }
         if((kind==='trips'?this.state.activeTrip:this.state.activeCharge)&&overlaps(kind==='trips'?this.state.activeTrip:this.state.activeCharge))continue;
-        if(kind==='charges')row.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};
+        if(kind==='charges'){row.nasSupplyKWh=row.supplyKWh;row.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};}
         append(list,row);list.sort((a,b)=>(a.start??a.at)-(b.start??b.at));
       }
       return this.view();
