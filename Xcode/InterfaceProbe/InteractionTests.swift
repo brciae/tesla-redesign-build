@@ -6,6 +6,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["charging-map-probe"]; app.launch()
         XCTAssertTrue(app.buttons["charging.destination"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["3/8대 가능"].exists)
+        XCTAssertFalse(app.buttons["충전소 새로고침"].frame.intersects(app.segmentedControls.firstMatch.frame))
         let mapShot = XCTAttachment(screenshot: app.screenshot()); mapShot.name = "Nearby charging map and selected station"; mapShot.lifetime = .keepAlways; add(mapShot)
         app.segmentedControls.buttons["급속"].tap()
         XCTAssertTrue(app.staticTexts.matching(identifier: "공공 검증 충전소").firstMatch.waitForExistence(timeout: 3))
