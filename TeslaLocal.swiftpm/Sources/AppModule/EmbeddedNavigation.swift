@@ -490,12 +490,13 @@ struct KakaoMapPanel: View {
 }
 
 struct KakaoMapSurface: UIViewControllerRepresentable {
+    @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     let controller: YLKakaoController
     var theme: NavigationTheme = .cluster
     var anchorX: Double = 0.52
     var anchorY: Double = 0.72
     func makeUIViewController(context: Context) -> YLKakaoController { controller }
-    func updateUIViewController(_ controller: YLKakaoController, context: Context) { controller.configureMapAnchor(x: anchorX, y: anchorY); controller.configureMapTheme(theme.rawValue) }
+    func updateUIViewController(_ controller: YLKakaoController, context: Context) { controller.configureMapAnchor(x: anchorX, y: anchorY); controller.configureMapTheme(theme.rawValue + ":" + mapAppearance) }
 }
 struct EmbeddedNavigationScreen: View {
     @ObservedObject var navigation: EmbeddedNavigation

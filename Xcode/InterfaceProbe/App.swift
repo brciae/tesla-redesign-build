@@ -24,6 +24,7 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
             else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("fullscreen-navigation-probe") { FullscreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-gauge-probe") { BatteryGaugeProbe() }
@@ -98,6 +99,35 @@ struct TabBarProbe: View {
         Commercial5TabScaffold(selection: $selection) {
             page
         } controls: { page } energy: { page } drive: { page } menu: { page }
+    }
+}
+
+struct FullscreenNavigationProbe: View {
+    @State private var theme: NavigationTheme = .cluster
+    @State private var stopped = false
+    var body: some View {
+        NavigationWorkspaceChrome {
+            NavigationDashboard(theme: theme, data: sample) { NavigationMapFixture() }
+                car: { Color.clear }
+        } controls: {
+            ScrollView(.horizontal) {
+                HStack {
+                    ForEach(NavigationTheme.allCases) { value in
+                        Button(value.title) { theme = value }.frame(minHeight: 44)
+                    }
+                }
+            }.frame(height: 44)
+            if !stopped { ParkedNavigationActions { stopped = true } }
+            else { Text("안내 종료됨").accessibilityIdentifier("fullscreen.stopped") }
+        }.background(.black).statusBarHidden(true).persistentSystemOverlays(.hidden)
+    }
+    private var sample: NavigationReadout {
+        var r = NavigationReadout()
+        r.speed = "0"; r.gear = "P"; r.battery = "71%"; r.range = "399 km"
+        r.turn = "출발지 지나고 진행"; r.turnDistance = "0 m"; r.turnSymbol = "arrow.up"
+        r.next = "24 m · 좌회전"; r.remaining = "54분 남음"; r.remainingDistance = "29.9 km"; r.arrival = "18:19"
+        r.mediaTitle = "Orbit Pop"; r.mediaPlaying = true
+        return r
     }
 }
 

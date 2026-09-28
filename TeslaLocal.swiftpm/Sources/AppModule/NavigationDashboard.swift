@@ -1870,3 +1870,53 @@ private struct IslandBars: View {
         return CGFloat(0.3 + 0.7 * abs(sin(phase)))
     }
 }
+
+// Shared by every dashboard theme. Controls overlay the canvas without reserving a row.
+struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @State private var expanded = false
+    @State private var activity = 0
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var controls: () -> Controls
+    var body: some View {
+        content()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea(.container)
+            .overlay(alignment: .top) {
+                VStack(spacing: 0) {
+                    if expanded {
+                        VStack(spacing: 0) {
+                            controls()
+                            Button { setExpanded(false) } label: {
+                                Image(systemName: "chevron.up").frame(width: 100, height: 44)
+                            }.accessibilityLabel("상단 조작 닫기")
+                                .accessibilityIdentifier("navigation.chrome.close")
+                        }
+                        .padding(.horizontal, 8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                        .simultaneousGesture(TapGesture().onEnded { activity += 1 })
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    } else {
+                        Button { setExpanded(true) } label: {
+                            Capsule().fill(.white.opacity(0.85)).frame(width: 36, height: 4)
+                                .padding(8).background(.black.opacity(0.45), in: Capsule())
+                                .frame(width: 100, height: 44, alignment: .top)
+                                .contentShape(Rectangle())
+                        }.accessibilityLabel("상단 조작 열기")
+                            .accessibilityIdentifier("navigation.chrome.open")
+                    }
+                }.foregroundStyle(.white).padding(.horizontal, 8)
+            }
+            .task(id: activity) {
+                guard expanded, !voiceOver else { return }
+                do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                guard !Task.isCancelled else { return }
+                setExpanded(false)
+            }
+    }
+    private func setExpanded(_ value: Bool) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { expanded = value }
+        activity += 1
+    }
+}

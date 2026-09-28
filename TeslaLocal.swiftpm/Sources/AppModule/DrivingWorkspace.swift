@@ -15,17 +15,7 @@ struct DrivingWorkspace: View {
     var body: some View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width > proxy.size.height
-            ZStack(alignment: .top) {
-                VStack(spacing: 0) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        topBar(compact: isLandscape)
-                    }
-                    .frame(height: isLandscape ? 52 : 48)
-                    if readout.gear == "P", navigation.guiding || navigation.busy {
-                        ParkedNavigationActions {
-                            navigation.endGuidance()
-                        }
-                    }
+            NavigationWorkspaceChrome {
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: 0.50, anchorY: 0.72)
@@ -53,11 +43,18 @@ struct DrivingWorkspace: View {
                     }
                     .animation(.smooth(duration: 0.28), value: readout.speed)
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
+            } controls: {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    topBar(compact: isLandscape)
+                }.frame(height: 52)
+                if readout.gear == "P", navigation.guiding || navigation.busy {
+                    ParkedNavigationActions { navigation.endGuidance() }
                 }
-
             }
             .background(navigation.theme.canvas)
         }
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $settings) {
             NavigationStack {
                 Form {
@@ -80,7 +77,7 @@ struct DrivingWorkspace: View {
             Button { navigation.dismissWorkspace() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: compact ? 14 : 16, weight: .bold))
-                    .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
+                    .frame(width: 44, height: 44)
             }
             .accessibilityLabel("운전 화면 닫기")
 
@@ -121,7 +118,7 @@ struct DrivingWorkspace: View {
             Button { settings = true } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: compact ? 14 : 16))
-                    .frame(width: compact ? 34 : 44, height: compact ? 34 : 44)
+                    .frame(width: 44, height: 44)
             }
             .accessibilityLabel("운전 화면 설정")
         }
@@ -442,6 +439,7 @@ struct StandbyMKMapView: UIViewRepresentable {
 struct NavigationDisplaySettings: View {
     @ObservedObject var navigation: EmbeddedNavigation
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
+    @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     var body: some View { Group {
                     Section("지도 표시") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
@@ -453,6 +451,12 @@ struct NavigationDisplaySettings: View {
                             if newEngine == "kakao" && navigation.controller == nil {
                                 navigation.startStandbyKakaoMap()
                             }
+                        }
+                        if preferredMapEngine == "kakao" {
+                            Picker("카카오 지도 밝기", selection: $mapAppearance) {
+                                Text("주간").tag("day")
+                                Text("야간").tag("night")
+                            }.pickerStyle(.segmented)
                         }
                         Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
                     }
