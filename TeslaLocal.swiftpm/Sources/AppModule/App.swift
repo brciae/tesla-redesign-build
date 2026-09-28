@@ -513,12 +513,7 @@ struct BatteryView: View {
     @State private var add = false
     @State private var editing: Object?
     @State private var days = 30
-    /// Receipt-based price per kWh; nil (shown as "—") until a charge with both a cost and a supply figure exists.
-    private var averagePrice: Double? {
-        let totals = model.output.object("totals")
-        guard let cost = totals.number("cost"), let supply = totals.number("supplyKWh"), supply > 0.1, cost > 0 else { return nil }
-        return cost / supply
-    }
+    private var averagePrice: Double? { model.output.object("charging").number("averagePaidUnitPrice") }
     var body: some View {
         let health = model.output.object("health"), target = model.output.object("target")
         let charges = model.output.object("charging").rows("rows")
@@ -540,6 +535,11 @@ struct BatteryView: View {
                     Metric(title: "영수증 공급", value: model.output.object("totals").number("supplyKWh"), digits: 1, suffix: " kWh")
                     Metric(title: "평균 단가", value: averagePrice, digits: 0, suffix: " 원/kWh")
                 }
+                HStack {
+                    Metric(title: "확인 결제액", value: model.output.object("charging").number("cost"), suffix: "원")
+                    Metric(title: "미입력분 예상액", value: model.output.object("charging").number("estimatedCost"), suffix: "원")
+                }
+                NavigationLink("장소·사업자별 충전 단가") { ChargeRateSettingsView() }
                 Button { add = true } label: { Label("충전 기록 추가", systemImage: "plus.circle").frame(maxWidth: .infinity).frame(minHeight: 44) }
                     .buttonStyle(.bordered)
             }
@@ -627,9 +627,9 @@ struct ChargeRow: View {
             Spacer(minLength: 4)
             Text((charge.number("supplyKWh") == nil && charge.number("vehicleReportedKWh") == nil && charge.number("estimatedStoredKWh") != nil ? "추정 " : "") + valueText(charge.number("supplyKWh") ?? charge.number("vehicleReportedKWh") ?? charge.number("estimatedStoredKWh"), digits: 1) + " kWh")
                 .font(.subheadline).monospacedDigit()
-            if let cost = charge.number("cost") {
-                Text(valueText(cost) + "원").font(.caption).foregroundStyle(Theme.muted).monospacedDigit()
-            }
+            if let cost = charge.number("cost") ?? charge.number("estimatedCost") {
+                Text((charge.number("cost") == nil ? "예상 " : "") + valueText(cost) + "원").font(.caption).foregroundStyle(Theme.muted).monospacedDigit()
+            } else { Text("단가 확인").font(.caption2).foregroundStyle(.orange) }
         }
         .frame(minHeight: 40)
     }
@@ -640,17 +640,18 @@ struct ChargeListView: View {
     let charges: [Object]
     @State private var editing: Object?
     @State private var reviewing: Object?
+    private var currentCharges: [Object] { model.output.object("charging").rows("rows") }
     private var reviewRows: [Object] { model.output.object("charging").rows("reviewRows") }
     var body: some View {
-        PageBody(title: "충전 전체 기록", briefing: .charges, briefingText: { model.screenBriefing(.charges, rows: charges) }) {
+        PageBody(title: "충전 전체 기록", briefing: .charges, briefingText: { model.screenBriefing(.charges, rows: currentCharges) }) {
             if !reviewRows.isEmpty {
                 InfoNote("중복 의심 \(reviewRows.count)건 · 합계 제외", "같은 충전의 반복 수집 여부를 대조했습니다. 아래에 원본을 보존하며, 다른 충전임을 영수증·시각으로 확인한 경우에만 별도 충전으로 인정하세요.")
             }
-            ForEach(charges + reviewRows, id: \.selfID) { c in
+            ForEach(currentCharges + reviewRows, id: \.selfID) { c in
                 InfoCard {
                     if c.flag("chargeExcluded") {
                         InfoNote("집계 제외 · 확인 필요", c.string("chargeReviewReason"))
-                        if let original = charges.first(where: { $0.selfID == c.string("chargeDuplicateOf") }) {
+                        if let original = currentCharges.first(where: { $0.selfID == c.string("chargeDuplicateOf") }) {
                             Caption("비교 기록: \(dateText(original.number("at"), time: true)) · \(valueText(original.number("vehicleReportedKWh") ?? original.number("supplyKWh"), digits: 2)) kWh")
                         }
                         Button("확인한 별도 충전으로 인정") { reviewing = c }
@@ -665,6 +666,7 @@ struct ChargeListView: View {
                         Metric(title: c.number("supplyKWh") != nil ? (c.number("nasSupplyKWh") == c.number("supplyKWh") ? "NAS 공급량" : "기록 공급량") : c.number("vehicleReportedKWh") != nil ? "차량 보고" : "SOC 기반 추정", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh"), digits: 1, suffix: " kWh")
                         if let cost = c.number("cost") { Metric(title: "결제액", value: cost, suffix: "원") }
                     }
+                    ChargeCostDetails(charge: c)
                     if let recovered = c.number("nasSupplyKWh"), recovered != c.number("supplyKWh") {
                         Caption("NAS 확인 공급량 \(valueText(recovered, digits: 2)) kWh · 기존 입력값은 보존했습니다.")
                     }
@@ -710,6 +712,8 @@ struct ChargeForm: View {
     @State private var end = ""
     @State private var stored = ""
     @State private var place = ""
+    @State private var chargeType = ""
+    @State private var chargeOperator = ""
     @State private var note = ""
     @State private var verified = false
     @State private var complete = false
@@ -739,6 +743,11 @@ struct ChargeForm: View {
                 Section("충전 기록") {
                     DatePicker("충전 시각", selection: $date)
                     TextField("장소", text: $place)
+                    TextField("충전 사업자", text: $chargeOperator)
+                    Picker("충전 방식", selection: $chargeType) {
+                        Text("미확인").tag(""); Text("완속 AC").tag("ac"); Text("급속 DC").tag("dc"); Text("슈퍼차저").tag("supercharger")
+                    }
+                    Text("결제 금액을 비우면 등록 단가로 예상액을 계산합니다. 직접 입력한 결제액이 우선합니다.").font(.caption)
                     numberField("공급량 kWh · 영수증", $supply)
                     numberField("결제 금액 원 · 무료는 0", $cost)
                     numberField("시작 SOC %", $start); numberField("종료 SOC %", $end)
@@ -806,11 +815,13 @@ struct ChargeForm: View {
         end = row.number("endSOC").map(trimmed) ?? ""
         stored = row.number("storedKWh").map(trimmed) ?? ""
         place = row.string("place"); note = row.string("note")
+        chargeType = row.string("chargeType"); chargeOperator = row.string("chargeOperator")
         complete = row.flag("complete"); verified = row.flag("storageVerified"); comparable = row.flag("comparable")
     }
     private func save() {
         do {
             var input: Object = ["at": date.timeIntervalSince1970*1000, "startSOC": try jsonNumber(start), "endSOC": try jsonNumber(end), "supplyKWh": try jsonNumber(supply), "storedKWh": verified ? try jsonNumber(stored) : NSNull(), "cost": try jsonNumber(cost), "place": place, "note": note, "receiptText": model.receiptText, "complete": complete, "storageVerified": verified, "comparable": comparable, "source": model.receiptText.isEmpty ? "manual" : "OCR"]
+            input["chargeType"] = chargeType; input["chargeOperator"] = chargeOperator
             model.errorMessage = nil
             if let row = existing { input["id"] = row.selfID; model.mutate("updateCharge", input) } else { model.mutate("addCharge", input) }
             if model.errorMessage == nil { model.receiptText = ""; model.receiptDraft = [:]; dismiss() }

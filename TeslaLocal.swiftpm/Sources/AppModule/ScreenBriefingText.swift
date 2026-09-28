@@ -76,6 +76,8 @@ extension AppModel {
             details = [selected.isEmpty ? "충전 기록이 없습니다." : "충전 기록 \(selected.count)회입니다."]
             let costs = selected.compactMap { $0.number("cost") }.filter(\.isFinite)
             if !costs.isEmpty { details.append("금액 확인 \(costs.count)회 합계는 \(Int(costs.reduce(0, +).rounded()))원입니다.") }
+            let estimated = selected.filter { $0.number("cost") == nil }.compactMap { $0.number("estimatedCost") }.filter(\.isFinite)
+            if !estimated.isEmpty { details.append("미입력 \(estimated.count)회의 예상 금액은 \(Int(estimated.reduce(0, +).rounded()))원입니다. 실제 결제액과 다를 수 있습니다.") }
         case .battery, .batteryAndCharging:
             let usage = output.object("battery").object(String(days))
             let energy = output.object("energyPeriods").object(String(days))

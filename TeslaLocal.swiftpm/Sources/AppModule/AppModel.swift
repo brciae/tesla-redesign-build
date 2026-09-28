@@ -136,6 +136,14 @@ final class AppModel: ObservableObject {
             input["at"] = snapshot.number("charge_state", "timestamp")
             input["soc"] = snapshot.soc; input["limit"] = snapshot.number("charge_state", "charge_limit_soc")
             input["addedKWh"] = snapshot.number("charge_state", "charge_energy_added")
+            if snapshot.flag("charge_state", "fast_charger_present") == true {
+                let brand = (charge["fast_charger_brand"] as? String) ?? ""
+                input["chargeType"] = brand.lowercased().contains("tesla") || brand.lowercased().contains("supercharger") ? "supercharger" : "dc"
+                input["chargeOperator"] = brand
+            } else if let phases = snapshot.number("charge_state", "charger_phases"), phases > 0 { input["chargeType"] = "ac" }
+            if snapshot.sectionIsRecent("drive_state") {
+                input["latitude"] = snapshot.number("drive_state", "latitude"); input["longitude"] = snapshot.number("drive_state", "longitude")
+            }
             do { self.output = try self.runtime.call("ingestFleetCharge", input) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
             catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
         }
@@ -250,6 +258,15 @@ final class AppModel: ObservableObject {
         output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
     }
     func refresh() {
+        if !demo && !recoveryLock {
+            var rates: Object = [:]
+            if settings.number("tariff") == nil, let legacy = UserDefaults.standard.string(forKey: "cost.electricity").flatMap(Double.init), legacy.isFinite, (0...10000).contains(legacy) { rates["tariff"] = legacy }
+            if let data = UserDefaults.standard.data(forKey: "navigation.home"), let home = try? JSONSerialization.jsonObject(with: data) as? Object,
+               let lat = home.number("latitude"), let lon = home.number("longitude"), (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) {
+                rates["homePoint"] = ["latitude": lat, "longitude": lon]
+            }
+            if !rates.isEmpty { _ = try? runtime.call("settings", rates) }
+        }
         do { output = try runtime.call("view") as? Object ?? [:]; if !link.connected || !link.authentic { output["fresh"] = Object() } }
         catch { output["fresh"] = Object(); errorMessage = error.localizedDescription }
     }

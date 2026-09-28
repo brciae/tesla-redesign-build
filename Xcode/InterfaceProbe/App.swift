@@ -17,6 +17,7 @@ import MapKit
         Group {
             if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains(where: { ["voice-playback-probe", "voice-events-probe", "voice-lifecycle-probe"].contains($0) }) { VoicePlaybackProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charge-cost-probe") { ChargeCostProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-audit-probe") { ChargeAuditCalendarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
@@ -247,6 +248,11 @@ struct ProbeRoot: View {
     func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
+    var errorMessage: String?
+    func mutate(_ action: String, _ input: Object) {
+        do { _ = try runtime.call(action, input); output = try runtime.call("view") as? Object ?? [:]; settings = state.object("settings"); objectWillChange.send() }
+        catch { errorMessage = error.localizedDescription }
+    }
     var output: Object = ["charging": ["rows": [
         ["id": "fixture-charge-1", "at": Date().addingTimeInterval(-86400).timeIntervalSince1970 * 1000, "supplyKWh": 30.0, "cost": 9000],
         ["id": "fixture-charge-2", "at": Date().addingTimeInterval(-172800).timeIntervalSince1970 * 1000, "supplyKWh": 50.0, "cost": 15000]], "supplyKWh": 80.0, "cost": 24000],
@@ -626,3 +632,25 @@ extension EnvironmentValues { var vehicleUnits: VehicleUnits { get { self[ProbeU
 struct CareView: View { var body: some View { ScrollView { TirePressureDiagram().padding() }.navigationTitle("타이어·정비") } }
 
 enum Page: Hashable { case chargingSettings }
+
+// This uses the real JS estimate policy and the production cost details view.
+struct ChargeCostProbe: View {
+    @StateObject private var model = AppModel()
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(model.output.object("charging").rows("rows"), id: \.selfID) { row in
+                        ChargeCostDetails(charge: row)
+                    }
+                    NavigationLink("단가 설정 열기") { ChargeRateSettingsView() }
+                }.padding()
+            }.navigationTitle("충전 예상 금액")
+        }.environmentObject(model).onAppear {
+            model.mutate("settings", ["tariff": 200, "fastTariff": 350])
+            model.mutate("addCharge", ["at": Date().addingTimeInterval(-7200).timeIntervalSince1970 * 1000, "supplyKWh": 10, "place": "집", "chargeType": "ac"])
+            model.mutate("addCharge", ["at": Date().addingTimeInterval(-3600).timeIntervalSince1970 * 1000, "supplyKWh": 20, "place": "수퍼차저 검증", "chargeType": "supercharger"])
+        }
+    }
+}
+extension Dictionary where Key == String, Value == Any { var selfID: String { string("id") } }

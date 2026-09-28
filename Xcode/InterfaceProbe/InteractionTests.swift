@@ -1,6 +1,16 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testChargeCostsAutomaticallyUseRegisteredRates() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["charge-cost-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["예상 충전금액 2000원"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["예상 충전금액 7000원"].exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Automatic home and Supercharger estimated cost"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["단가 설정 열기"].tap()
+        XCTAssertTrue(app.navigationBars["충전 단가 자동 적용"].waitForExistence(timeout: 10))
+    }
+
     func testAudioSettingsInterruptionsPreemptionAndRecovery() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["voice-lifecycle-probe"]; app.launch()

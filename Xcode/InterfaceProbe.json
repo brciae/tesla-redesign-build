@@ -64,7 +64,8 @@
      "path": "Assets.xcassets"
     },
     "../TeslaLocal.swiftpm/Sources/AppModule/TirePressureDiagram.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeCostViews.swift"
    ],
    "settings": {
     "base": {

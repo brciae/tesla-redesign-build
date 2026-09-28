@@ -404,11 +404,12 @@ struct ConnectionView: View {
                 TextField("예정 거리 km", text: $km).keyboardType(.decimalPad)
                 TextField("여유 잔량 %", text: $reserve).keyboardType(.decimalPad)
                 TextField("차량이 안내하는 일상 충전 기준 %", text: $daily).keyboardType(.decimalPad)
-                TextField("참고 단가 원/kWh", text: $tariff).keyboardType(.decimalPad)
+                TextField("집·완속 기준 단가 원/kWh", text: $tariff).keyboardType(.decimalPad)
                 TextField("비교 휘발유 단가 원/L", text: $gasoline).keyboardType(.decimalPad)
                 TextField("비교 차량 연비 km/L", text: $gasolineEfficiency).keyboardType(.decimalPad)
                 Stepper("전비 추정용 가정 용량 \(Int(assumedCapacity)) kWh", value: $assumedCapacity, in: 20...200, step: 1)
                 Button("충전 계획 저장") { saveSettings() }
+                NavigationLink("급속·슈퍼차저·장소별 단가") { ChargeRateSettingsView() }
             }
             }
             if section == .connection { Section {
