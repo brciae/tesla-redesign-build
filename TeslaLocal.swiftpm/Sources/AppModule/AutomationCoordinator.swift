@@ -77,7 +77,7 @@ final class AutomationCoordinator: ObservableObject {
     }
     private var fleetPrevious: [String: ChargeObservation] = [:]
     @MainActor func observeFleetSpeech(_ snapshot: FleetVehicleSnapshot, history: Object = [:], previousTrips: Int = 0, link: VehicleLink, voice: VoiceCoordinator) {
-        guard !link.authentic, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
+        guard (!link.authentic || history.rows("trips").count > previousTrips), snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
         let at = snapshot.number("vehicle_state", "timestamp") ?? 0
         let vehicle = snapshot.payload["vehicle_state"] as? Object ?? [:]
         var closures: Object = ["at": at, "receivedAt": at]
