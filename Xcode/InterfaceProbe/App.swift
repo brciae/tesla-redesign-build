@@ -323,6 +323,9 @@ final class TeslaFleetClient: ObservableObject {
     func readSupplement(_ kind: FleetSupplement) async throws -> FleetSupplementResult {
         FleetSupplementResult(vin: selectedVin, receivedAt: Date(), payload: ["fixture": true])
     }
+    func repairLocationStreaming(vin: String) async throws -> FleetSupplementResult {
+        throw FleetCommandPolicy.failure("UI 검증에서는 차량 수집 설정을 변경하지 않습니다.")
+    }
     func setPreconditioningMax(on: Bool) async throws -> Bool { true }
     func setSteeringWheelHeater(on: Bool) async throws -> Bool { true }
     func setSeatCooler(seatPosition: Int, level: Int) async throws -> Bool { true }
