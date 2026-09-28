@@ -295,7 +295,7 @@ struct TripsView: View {
         if !model.state.object("activeTrip").isEmpty {
             InfoCard {
                 CardTitle(title: "운행 기록 중", systemImage: "record.circle",
-                          info: "P 상태가 45초 유지되면 회차를 잠정 종료함. 실제 하차를 감지하는 것은 아니므로 필요하면 수동으로 종료할 수 있음.")
+                          info: "최신 P 전환을 수신하면 운행을 종료합니다. 수신이 끊긴 경우에는 임의로 주차를 판정하지 않으며 수동으로 종료할 수 있습니다.")
                 Button("회차 수동 종료") { confirmEnd = true }
             }
         }
@@ -336,14 +336,14 @@ struct TripsView: View {
             InfoCard {
                 CardTitle(title: "요약", systemImage: "chart.bar.fill")
                 HStack {
-                    Metric(title: "운행", value: model.output.object("totals").number("trips"))
-                    Metric(title: "거리", value: model.output.object("totals").number("distanceKm"), digits: 1, suffix: " km")
+                    Metric(title: "운행", value: Double(estimates.rows("trips").count))
+                    Metric(title: "거리", value: estimates.number("totalDistanceKm"), digits: 1, suffix: " km")
                 }
                 HStack {
                     Metric(title: "주행 전비", value: estimates.number("drivingKmPerKWh"), digits: 2, suffix: " km/kWh")
                     Metric(title: "종합 전비", value: estimates.number("overallKmPerKWh"), digits: 2, suffix: " km/kWh")
                 }
-                let recentTrips = Array(model.state.rows("trips").suffix(7))
+                let recentTrips = Array(estimates.rows("trips").suffix(7))
                 if !recentTrips.isEmpty {
                     let maxDist = recentTrips.compactMap { $0.number("distanceKm") }.map { units.distanceValue($0) }.max() ?? 10.0
                     let yDomainMax = max(maxDist * 1.45, 25.0)
@@ -520,7 +520,6 @@ struct BatteryView: View {
     @State private var add = false
     @State private var editing: Object?
     @State private var days = 30
-    private var averagePrice: Double? { model.output.object("charging").number("averagePaidUnitPrice") }
     var body: some View {
         let health = model.output.object("health"), target = model.output.object("target")
         let charges = model.output.object("charging").rows("rows")
@@ -532,20 +531,7 @@ struct BatteryView: View {
             NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin) } label: { Label("배터리 온도·수신 추이", systemImage: "waveform.path.ecg") }
             BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days)
             InfoCard {
-                CardTitle(title: "충전 요약", systemImage: "bolt.fill",
-                          info: "차량 보고 충전량은 차량이 알려준 저장 에너지이고, 영수증 공급량은 직접 입력한 결제 기준 공급량임. 충전기 손실 때문에 두 값은 다를 수 있음.")
-                HStack {
-                    Metric(title: "충전 횟수", value: Double(charges.count))
-                    Metric(title: "차량 보고", value: model.output.object("totals").number("vehicleReportedKWh"), digits: 1, suffix: " kWh")
-                }
-                HStack {
-                    Metric(title: "영수증 공급", value: model.output.object("totals").number("supplyKWh"), digits: 1, suffix: " kWh")
-                    Metric(title: "평균 단가", value: averagePrice, digits: 0, suffix: " 원/kWh")
-                }
-                HStack {
-                    Metric(title: "확인 결제액", value: model.output.object("charging").number("cost"), suffix: "원")
-                    Metric(title: "미입력분 예상액", value: model.output.object("charging").number("estimatedCost"), suffix: "원")
-                }
+                ChargingSummary(rows: charges, days: days)
                 NavigationLink("장소·사업자별 충전 단가") { ChargeRateSettingsView() }
                 Button { add = true } label: { Label("충전 기록 추가", systemImage: "plus.circle").frame(maxWidth: .infinity).frame(minHeight: 44) }
                     .buttonStyle(.bordered)
@@ -557,7 +543,7 @@ struct BatteryView: View {
                     if let capacity = health.number("capacity") {
                         Metric(title: "관측 유효용량", value: capacity, digits: 1, suffix: " kWh")
                     } else {
-                        Metric(title: "선별된 충전 회차", value: health.number("count"))
+                        Caption("배터리 용량을 확인할 충전 자료 수집 중")
                     }
                 }
                 NavigationLink("예정 거리·여유 잔량 설정", value: Page.chargingSettings).frame(minHeight: 44)
@@ -632,7 +618,7 @@ struct ChargeRow: View {
             }
             if charge.flag("collectedAfterEnd") { Text("종료 후 수집").font(.caption2).foregroundStyle(Theme.muted) }
             Spacer(minLength: 4)
-            Text((charge.number("supplyKWh") == nil && charge.number("vehicleReportedKWh") == nil && charge.number("estimatedStoredKWh") != nil ? "추정 " : "") + valueText(charge.number("supplyKWh") ?? charge.number("vehicleReportedKWh") ?? charge.number("estimatedStoredKWh"), digits: 1) + " kWh")
+            Text((charge.flag("chargeEnergyEstimated") ? "약 " : "") + valueText(charge.number("chargedKWh"), digits: 1) + " kWh")
                 .font(.subheadline).monospacedDigit()
             if let cost = charge.number("cost") ?? charge.number("estimatedCost") {
                 Text((charge.number("cost") == nil ? "예상 " : "") + valueText(cost) + "원").font(.caption).foregroundStyle(Theme.muted).monospacedDigit()
@@ -666,16 +652,19 @@ struct ChargeListView: View {
                     HStack {
                         Label(dateText(c.number("at"), time: c.string("atPrecision") != "day"), systemImage: "bolt.fill").font(.headline)
                         Spacer()
-                        Caption(c.string("source"))
                         RecordActions(edit: { editing = c }, delete: { model.mutate("deleteCharge", ["id": c.selfID]) }, title: "충전 기록")
                     }
                     HStack {
-                        Metric(title: c.number("supplyKWh") != nil ? (c.number("nasSupplyKWh") == c.number("supplyKWh") ? "NAS 공급량" : "기록 공급량") : c.number("vehicleReportedKWh") != nil ? "차량 보고" : "SOC 기반 추정", value: c.number("supplyKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh"), digits: 1, suffix: " kWh")
-                        if let cost = c.number("cost") { Metric(title: "결제액", value: cost, suffix: "원") }
+                        Metric(title: c.flag("chargeEnergyEstimated") ? "충전량 · 추정" : "충전량", value: c.number("chargedKWh"), digits: 1, suffix: " kWh")
+                        if let cost = c.number("totalCost") { Metric(title: c.number("cost") == nil ? "충전비 · 추정" : "충전비", value: cost, suffix: "원") }
                     }
-                    ChargeCostDetails(charge: c)
+                    DisclosureGroup("충전량·금액 계산 근거") {
+                    Caption(c.string("source"))
+                    if let supply = c.number("supplyKWh") { Caption("충전기 공급량 \(valueText(supply, digits: 1)) kWh") }
+                    if c["linkedRecordIDs"] != nil { Caption("영수증과 차량 충전 기록 자동 연결") }
                     if let recovered = c.number("nasSupplyKWh"), recovered != c.number("supplyKWh") {
                         Caption("NAS 확인 공급량 \(valueText(recovered, digits: 2)) kWh · 기존 입력값은 보존했습니다.")
+                    }
                     }
                     Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")
                     if c.flag("startSOCEstimated") || c.flag("endSOCEstimated") { InfoNote("잔량 계산 근거", "충전 도중 연결된 경우 시작 잔량은 차량 충전량과 배터리 용량으로 계산합니다. 완료 신호를 늦게 받은 경우 종료 잔량은 차량 충전 한도를 참고합니다. 직접 수신한 시작·완료 잔량은 그대로 보존합니다.") }
@@ -713,6 +702,10 @@ struct ChargeForm: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var date = Date()
+    @State private var finished = Date()
+    @State private var hasFinish = false
+    @State private var timeBasis = "unknown"
+    @State private var duration = ""
     @State private var supply = ""
     @State private var cost = ""
     @State private var start = ""
@@ -748,7 +741,16 @@ struct ChargeForm: View {
                     HStack { Text("영수증·충전 완료 화면"); Spacer(); InfoNote("사진 자동 입력", "사진 속 글자를 기기 안에서만 읽어 장소·시각·공급량·결제액·시작·종료 SOC·소요시간까지 채움. 항목 라벨이 있는 줄을 우선 사용하므로 영수증에 숫자가 여러 개 있어도 구분함. 누적 사용량 같은 줄은 제외함. 읽히지 않은 칸만 직접 입력하면 됨.") }
                 }
                 Section("충전 기록") {
-                    DatePicker("충전 시각", selection: $date)
+                    DatePicker(timeBasis == "end" ? "종료 시각" : "기록 시각", selection: $date)
+                    Picker("시각 기준", selection: $timeBasis) {
+                        Text("확인 필요").tag("unknown"); Text("시작").tag("start"); Text("종료").tag("end")
+                    }
+                    numberField("충전 소요시간 · 분", $duration)
+                    if timeBasis == "start" {
+                        Toggle("종료 시각 직접 입력", isOn: $hasFinish)
+                        if hasFinish { DatePicker("종료 시각", selection: $finished) }
+                    }
+                    Text("시작·종료 시각을 확인하면 같은 시간의 차량 배터리 기록을 대조해 잔량을 보완합니다.").font(.caption)
                     TextField("장소", text: $place)
                     TextField("충전 사업자", text: $chargeOperator)
                     Picker("충전 방식", selection: $chargeType) {
@@ -788,6 +790,7 @@ struct ChargeForm: View {
     /// v35: every field the parser recognised is written into the form, so a photo is enough on its own.
     private func applyReceipt() {
         let draft = model.receiptDraft
+        timeBasis = draft.string("timeBasis", "unknown")
         if let value = draft.number("supplyKWh") { supply = trimmed(value) }
         if let value = draft.number("cost") { cost = trimmed(value) }
         if let value = draft.number("startSOC") { start = trimmed(value) }
@@ -802,7 +805,7 @@ struct ChargeForm: View {
             if let parsed = formatter.date(from: clock.isEmpty ? day : day + " " + clock) { date = parsed }
         }
         var notes: [String] = []
-        if let minutes = draft.number("minutes") { notes.append("충전 \(Int(minutes))분") }
+        if let minutes = draft.number("minutes") { duration = trimmed(minutes) }
         if let unit = draft.number("unitPrice") { notes.append("단가 \(Int(unit))원/kWh") }
         if !notes.isEmpty, note.isEmpty { note = notes.joined(separator: " · ") }
     }
@@ -816,6 +819,11 @@ struct ChargeForm: View {
     private func loadExisting() {
         guard let row = existing else { return }
         date = Date(timeIntervalSince1970: (row.number("at") ?? 0) / 1000)
+        timeBasis = row.string("timeBasis", "unknown")
+        duration = row.number("durationMinutes").map(trimmed) ?? ""
+        if let stamp = row.number("end"), stamp > (row.number("at") ?? 0) {
+            finished = Date(timeIntervalSince1970: stamp / 1000); hasFinish = true; timeBasis = "start"
+        }
         supply = row.number("supplyKWh").map(trimmed) ?? ""
         cost = row.number("cost").map(trimmed) ?? ""
         start = row.number("startSOC").map(trimmed) ?? ""
@@ -829,6 +837,14 @@ struct ChargeForm: View {
         do {
             var input: Object = ["at": date.timeIntervalSince1970*1000, "startSOC": try jsonNumber(start), "endSOC": try jsonNumber(end), "supplyKWh": try jsonNumber(supply), "storedKWh": verified ? try jsonNumber(stored) : NSNull(), "cost": try jsonNumber(cost), "place": place, "note": note, "receiptText": model.receiptText, "complete": complete, "storageVerified": verified, "comparable": comparable, "source": model.receiptText.isEmpty ? "manual" : "OCR"]
             input["chargeType"] = chargeType; input["chargeOperator"] = chargeOperator
+            input["timeBasis"] = timeBasis
+            input["durationMinutes"] = try jsonNumber(duration)
+            input["end"] = NSNull()
+            if timeBasis == "start", hasFinish { input["end"] = finished.timeIntervalSince1970 * 1000 }
+            else if let minutes = Double(duration), minutes > 0, minutes <= 10080 {
+                if timeBasis == "start" { input["end"] = date.addingTimeInterval(minutes * 60).timeIntervalSince1970 * 1000 }
+                if timeBasis == "end" { input["end"] = date.timeIntervalSince1970 * 1000; input["at"] = date.addingTimeInterval(-minutes * 60).timeIntervalSince1970 * 1000 }
+            }
             model.errorMessage = nil
             if let row = existing { input["id"] = row.selfID; model.mutate("updateCharge", input) } else { model.mutate("addCharge", input) }
             if model.errorMessage == nil { model.receiptText = ""; model.receiptDraft = [:]; dismiss() }

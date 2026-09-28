@@ -30,6 +30,7 @@ Xcode/TypecastPolicyTests
 node tools/js-logic-tests.cjs
 node tools/charge-integrity-tests.cjs
 node tools/charge-cost-tests.cjs
+node tools/charge-enrichment-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendarAnalysis.swift tools/energy-calendar-tests.swift -o Xcode/EnergyCalendarTests
 Xcode/EnergyCalendarTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests
@@ -47,7 +48,7 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.sw
 Xcode/AutomationPolicyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationAPI.swift tools/automation-api-tests.swift -o Xcode/AutomationAPITests
 Xcode/AutomationAPITests
-swiftc TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests
 Xcode/ScreenBriefingTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/ParkingModels.swift tools/parking-record-tests.swift -o Xcode/ParkingRecordTests
 Xcode/ParkingRecordTests

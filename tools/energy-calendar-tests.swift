@@ -27,7 +27,7 @@ import Foundation
             ["at": start, "nasSupplyKWh": 3.0],
             ["at": start, "vehicleReportedKWh": -1.0, "supplyKWh": 2.0]]
         let combined = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: mixed, capacityKWh: 75, calendar: calendar)
-        precondition(abs(combined[26].chargeTotal - 62.36) < 0.001, "Each session contributes exactly one available measurement")
+        precondition(abs(combined[26].chargeTotal - 45.36) < 0.001, "Grid supply must never inflate battery charging energy")
         print("PASS: calendar excludes duplicate energy/time and never invents duration from collection times")
     }
 }

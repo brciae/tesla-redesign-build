@@ -11,7 +11,7 @@ struct FleetParkingBucket: Identifiable {
         case "climate": return "공조 작동 구간"
         case "combined": return "감시 모드·공조 동시 작동"
         case "standby": return "대기 구간"
-        default: return "주차 중 자연방전"
+        default: return "주차 중 배터리 소모"
         }
     }
 }

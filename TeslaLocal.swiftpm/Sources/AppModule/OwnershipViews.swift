@@ -39,8 +39,8 @@ struct DrivingInsightsView: View {
                     number("기록 거리", energy.number("totalDistanceKm"), "km")
                     number("주행 소비", energy.number("drivingKWh"), "kWh")
                     HStack {
-                        number(parking.isEmpty ? "주차 중 자연방전" : "주차 중 소비", energy.number("parkingKWh"), "kWh")
-                        InfoNote("주차 중 소비", "상태·시간 기록으로 확인되는 감시 모드·공조·대기는 세분해 표시합니다. 원인을 나눌 근거가 없는 주차 구간은 자연방전으로 묶습니다.")
+                        number("주차 중 배터리 소모", energy.number("parkingKWh"), "kWh")
+                        InfoNote("주차 중 배터리 소모", "주차 동안 줄어든 배터리를 합산합니다. 아래 작동 시간은 실제 확인된 감시 모드·공조 기록이며, 기능별 전력량 배분을 뜻하지 않습니다.")
                     }
                     number("전체 소비", energy.number("totalKWh"), "kWh")
                     Chart {
@@ -49,20 +49,15 @@ struct DrivingInsightsView: View {
                     }.frame(height: 170)
                     HStack { Label("주행", systemImage: "circle.fill").foregroundStyle(.mint); Label("주차", systemImage: "circle.fill").foregroundStyle(.orange) }.font(.caption)
 
-                    if parking.isEmpty {
-                        number("주차 중 자연방전", energy.number("parkingKWh"), "kWh")
-                    } else {
-                        ForEach(parking) { bucket in
+                    if parking.contains(where: { ["sentry", "climate", "combined"].contains($0.id) }) {
+                        ForEach(parking.filter { ["sentry", "climate", "combined"].contains($0.id) }) { bucket in
                             HStack {
                                 Text(bucket.title).font(.subheadline)
                                 Spacer()
                                 Text(String(format: "%.0f분", bucket.seconds / 60)).monospacedDigit()
-                                if bucket.energySeconds >= bucket.seconds * 0.95 {
-                                    Text(String(format: "· %.2f kWh", bucket.measuredKWh)).monospacedDigit()
-                                }
                             }
                         }
-                        InfoNote("주차 소비 세부 분류", "연속해서 확인된 주차 상태와 감시 모드·공조 상태로 구간을 나눕니다. 전력량은 해당 구간 전체 소비입니다. 누적 에너지 계수가 함께 수신된 구간만 kWh를 표시합니다.")
+                        Caption("주차 중 확인된 작동 시간 · 동시 작동은 별도로 표시")
                     }
                     InfoNote("계산 기준", energy.string("note"))
                 }

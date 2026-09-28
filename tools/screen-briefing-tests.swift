@@ -49,11 +49,20 @@ func dateText(_ value: Double?) -> String { value == nil ? "미확인" : "기록
         precondition(m.screenBriefing(.allTrips, rows: [["distanceKm": 9]]).contains("9.0"))
         precondition(m.screenBriefing(.allTrips, rows: []).contains("운행 기록이 없습니다"))
         precondition(m.screenBriefing(.charges, rows: [["cost": 1234]]).contains("1234"))
+        let chargeRows: [Object] = [["at": Date().timeIntervalSince1970 * 1000 - 1000, "chargedKWh": 14.0, "cost": 0], ["at": Date().timeIntervalSince1970 * 1000 - 2000, "chargedKWh": 15.0, "estimatedCost": 2000, "chargeEnergyEstimated": true], ["chargedKWh": 999.0, "cost": 999, "chargeExcluded": true]]
+        let summary = ChargePeriodSummary(rows: chargeRows)
+        precondition(summary.total("chargedKWh") == 29 && summary.cost == 2000 && summary.rows.count == 2)
+        let chargeSpeech = m.screenBriefing(.charges, rows: chargeRows)
+        precondition(chargeSpeech.contains("29.0") && chargeSpeech.contains("2000") && chargeSpeech.contains("추정값"))
+        precondition(!chargeSpeech.contains("미입력") && !chargeSpeech.contains("999"))
+        m.output["charging"] = ["rows": chargeRows]
+        precondition(m.screenBriefing(.batteryAndCharging, days: 7).contains("29.0"))
+        m.output.removeValue(forKey: "charging")
         precondition(m.screenBriefing(.battery, days: 7).contains("12.5"))
         precondition(m.screenBriefing(.location, address: "ADDRESS_SENTINEL").contains("ADDRESS_SENTINEL"))
         m.output["energyPeriods"] = ["30": ["drivingKmPerKWh": 6.2, "overallKmPerKWh": 4.7, "parkingKWh": 3.2, "unclassifiedKWh": 0.8, "capacityAssumed": true]]
         let analysis = m.screenBriefing(.batteryAndCharging)
-        precondition(analysis.contains("주차 중 소비") && analysis.contains("살펴보세요"))
+        precondition(analysis.contains("주차 중 배터리 소모") && analysis.contains("살펴보세요"))
         precondition(!analysis.contains("6.2") && !analysis.contains("4.7") && !analysis.contains("초기 기준값"))
         precondition(analysis.count < 110 && !analysis.contains("이며,"))
         precondition(BriefingScope.home.text(["하나.", "둘.", "셋.", "넷."]) == "하나. 둘. 셋.")
@@ -62,7 +71,7 @@ func dateText(_ value: Double?) -> String { value == nil ? "미확인" : "기록
         }
         m.home["charge"] = ["mode": "recent", "soc": 67, "isCharging": true, "minutesToLimit": 40]
         let charging = m.screenBriefing(.batteryAndCharging)
-        precondition(charging.contains("40분") && !charging.contains("주차 중 소비"))
+        precondition(charging.contains("40분") && !charging.contains("주차 중 배터리 소모"))
         m.home = [:]; m.groups = [:]; m.output = [:]
         for scope in BriefingScope.allCases {
             let text = m.screenBriefing(scope)

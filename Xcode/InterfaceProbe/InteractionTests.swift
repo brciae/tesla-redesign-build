@@ -77,6 +77,9 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["charge-cost-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["예상 충전금액 2000원"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["예상 충전금액 7000원"].exists)
+        XCTAssertTrue(app.staticTexts["총 충전량"].exists)
+        XCTAssertTrue(app.staticTexts["총 충전비"].exists)
+        XCTAssertFalse(app.staticTexts["미입력분 예상액"].exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Automatic home and Supercharger estimated cost"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["단가 설정 열기"].tap()
         XCTAssertTrue(app.navigationBars["충전 단가 자동 적용"].waitForExistence(timeout: 10))
@@ -221,7 +224,8 @@ final class InteractionTests: XCTestCase {
     func testBatteryBaselineAndPeriods() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["battery-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["초기 가정 · 관측 추정 전"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["충전 자료가 쌓이면 추정값 표시"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts["현재 지수 100%"].exists)
         for period in ["7일", "30일", "90일"] {
             app.segmentedControls.buttons[period].tap()
             XCTAssertTrue(app.segmentedControls.buttons[period].isSelected)

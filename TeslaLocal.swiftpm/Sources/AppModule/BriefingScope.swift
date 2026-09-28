@@ -1,5 +1,39 @@
 import Foundation
 
+/// One selected set and one calculation for on-screen charging metrics and speech.
+struct ChargePeriodSummary {
+    let rows: [[String: Any]]
+    init(rows: [[String: Any]], days: Int? = nil, now: Date = Date()) {
+        let stamp = now.timeIntervalSince1970 * 1000
+        self.rows = rows.filter { row in
+            guard row["active"] as? Bool != true, row["chargeExcluded"] as? Bool != true else { return false }
+            guard let days else { return true }
+            guard let at = Self.number(row, "end") ?? Self.number(row, "at") else { return false }
+            return at >= stamp - Double(days) * 86400000 && at <= stamp
+        }
+    }
+    static func number(_ row: [String: Any], _ key: String) -> Double? {
+        guard let value = (row[key] as? NSNumber)?.doubleValue, value.isFinite, value >= 0 else { return nil }
+        return value
+    }
+    func total(_ key: String) -> Double? {
+        let values = rows.compactMap { Self.number($0, key) }
+        return values.isEmpty ? nil : values.reduce(0, +)
+    }
+    var cost: Double? {
+        let values = rows.compactMap { Self.number($0, "cost") ?? Self.number($0, "estimatedCost") }
+        return values.isEmpty ? nil : values.reduce(0, +)
+    }
+    var estimated: Bool { rows.contains { $0["chargeEnergyEstimated"] as? Bool == true || (Self.number($0, "cost") == nil && Self.number($0, "estimatedCost") != nil) } }
+    var spoken: [String] {
+        guard !rows.isEmpty else { return ["선택한 범위의 충전 기록이 없습니다."] }
+        var facts = ["충전 \(rows.count)회"]
+        if let energy = total("chargedKWh") { facts.append(String(format: "총충전량 %.1f킬로와트시", energy)) }
+        if let cost { facts.append("총충전비 \(Int(cost.rounded()))원") }
+        return [facts.joined(separator: ", ") + "입니다." + (estimated ? " 추정값이 포함되어 있습니다." : "")]
+    }
+}
+
 /// Explicit ownership: changing a screen title cannot redirect its spoken content.
 enum BriefingScope: String, CaseIterable {
     case home = "홈", controls = "차량 제어", climate = "실내 공조"

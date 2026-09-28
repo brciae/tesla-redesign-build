@@ -8,7 +8,7 @@ struct EnergyCalendarView: View {
     @State private var charging = false
     @State private var selected: Date?
     private var days: [EnergyCalendarDay] {
-        EnergyCalendarAnalysis.days(month: month, trips: model.output.object("energy").rows("trips"), parking: model.state.rows("parkingPeriods"), charges: model.state.rows("charges"), capacityKWh: model.output.object("energy").number("capacityKWh") ?? 75)
+        EnergyCalendarAnalysis.days(month: month, trips: model.output.object("energy").rows("trips"), parking: model.state.rows("parkingPeriods"), charges: model.output.object("charging").rows("rows"), capacityKWh: model.output.object("energy").number("capacityKWh") ?? 75)
     }
     private var offset: Int { guard let first = days.first else { return 0 }; return (Calendar.current.component(.weekday, from: first.date) - Calendar.current.firstWeekday + 7) % 7 }
     // v91: the body was one expression the type-checker gave up on. Each strip
@@ -31,7 +31,7 @@ struct EnergyCalendarView: View {
                 summaryStrip
                 calendarGrid
                 selectionCard
-                InfoNote("달력 집계 기준", "주행·주차는 종료일, 충전은 시작일에 기록합니다. 충전 1회마다 차량 보고량, 배터리 증가 추정량, 충전기 공급량 순으로 확인 가능한 값 하나만 사용합니다. 공급량에는 충전 손실이 포함될 수 있습니다. 비어 있는 날은 기록이 없는 날이며 소비 0을 뜻하지 않습니다. 주차 소비 세부 원인은 소비·비용 메뉴에서 확인할 수 있습니다.")
+                InfoNote("달력 집계 기준", "주행·주차는 종료일, 충전은 시작일에 기록합니다. 영수증과 차량 기록을 연결한 충전 회차별 배터리 충전량을 사용합니다. 차량 측정값을 우선하며 SOC 계산값은 추정입니다. 충전기 공급량만 있는 기록은 배터리 충전량으로 합산하지 않습니다. 비어 있는 날은 기록이 없는 날이며 소비 0을 뜻하지 않습니다. 주차 소비 세부 원인은 소비·비용 메뉴에서 확인할 수 있습니다.")
             }.padding(16)
         }.background(Theme.bg).navigationTitle("에너지 달력")
     }

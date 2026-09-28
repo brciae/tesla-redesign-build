@@ -1,5 +1,47 @@
 import SwiftUI
 
+struct ChargingSummary: View {
+    let rows: [Object]
+    let days: Int
+    private var summary: ChargePeriodSummary { ChargePeriodSummary(rows: rows, days: days) }
+    private var selected: [Object] { summary.rows }
+    private func total(_ key: String) -> Double? { summary.total(key) }
+    private var minutes: Double? {
+        let values = selected.compactMap { row -> Double? in
+            guard !row.flag("collectedAfterEnd"), row["startTimeObserved"] as? Bool != false,
+                  row["endTimeObserved"] as? Bool != false,
+                  let start = row.number("at"), let end = row.number("end"), end > start else { return nil }
+            return (end - start) / 60000
+        }
+        return values.isEmpty ? nil : values.reduce(0, +)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("최근 \(days)일 충전").font(.headline)
+            HStack {
+                metric("총 충전량", total("chargedKWh"), digits: 1, unit: "kWh")
+                metric("총 충전비", summary.cost, unit: "원")
+            }
+            HStack {
+                metric("충전 횟수", Double(selected.count), unit: "회")
+                metric("충전 시간", minutes, unit: "분")
+            }
+            if selected.contains(where: { $0.flag("chargeEnergyEstimated") || ($0.number("cost") == nil && $0.number("estimatedCost") != nil) }) {
+                Caption("추정값 포함 · 상세 기록에서 근거 확인")
+            }
+            if selected.contains(where: { $0.number("chargedKWh") == nil || $0.number("totalCost") == nil }) {
+                Caption("확인 가능한 데이터 기준 · 추가 수신 시 자동 보완")
+            }
+        }
+    }
+    private func metric(_ title: String, _ value: Double?, digits: Int = 0, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(valueText(value, digits: digits) + " " + unit).font(.title3.weight(.semibold)).monospacedDigit()
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct ChargeCostDetails: View {
     let charge: Object
     var body: some View {

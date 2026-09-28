@@ -58,7 +58,7 @@ import Combine
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id])
         guard isCharging, let minutes, minutes.isFinite, minutes > 0, minutes <= 10080, UserDefaults.standard.bool(forKey: "notify.charge.complete") else { return }
-        Task { await deliver(ChargeEvent(kind: "estimate", title: "예상 충전 완료 시각", body: "차량이 보고한 목표 충전량 도달 예상 시각입니다. 실제 완료 상태는 앱에서 확인해 주세요."), id: id, delay: max(1, minutes * 60)) }
+        Task { await deliver(ChargeEvent(kind: "estimate", title: "예상 충전 완료 시각", body: "목표 배터리 잔량에 도달할 것으로 예상한 시각입니다. 실제 완료 상태는 앱에서 확인해 주세요."), id: id, delay: max(1, minutes * 60)) }
     }
     private func deliver(_ event: ChargeEvent, id: String, delay: TimeInterval? = nil, destination: String = "charging") async {
         await refreshAuthorization()

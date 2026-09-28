@@ -165,7 +165,12 @@ final class AppModel: ObservableObject {
         }
         }
         archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.archiveReadings = FleetTelemetryStore.shared.records } }
-        Task { @MainActor [weak self] in self?.archiveReadings = FleetTelemetryStore.shared.records }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.archiveReadings = FleetTelemetryStore.shared.records
+            do { try self.enrichLocalChargeSOC(); self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "충전 배터리 기록 보완: " + error.localizedDescription }
+        }
         automations.settingsDidChange = { [weak self] in self?.voice.stopAutomatic(); self?.link.cancelPendingAutomation() }
         navigation.canPresent = { [weak self] in
             guard let self else { return false }
@@ -263,6 +268,7 @@ final class AppModel: ObservableObject {
         }
         guard !rows.isEmpty else { return }
         output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
+        try enrichLocalChargeSOC()
     }
     func refresh() {
         do {
@@ -328,11 +334,28 @@ final class AppModel: ObservableObject {
             storageStatus = "기록 저장 실패 · 최근 변경은 아직 저장되지 않음. 30초 후 재시도"
         }
     }
+    private func enrichLocalChargeSOC() throws {
+        guard !demo else { return }
+        let vin = settings.string("vin")
+        let intervals = state.rows("charges").filter { $0.number("end") != nil }
+        let rows: [Object] = FleetTelemetryStore.shared.records.filter { r in
+            r.vin == vin && ["Soc", "BatteryLevel"].contains(r.field) && intervals.contains { c in
+                let stamp = r.at.timeIntervalSince1970 * 1000
+                return abs(stamp - (c.number("at") ?? 0)) <= 120000 || abs(stamp - (c.number("end") ?? 0)) <= 120000
+            }
+        }.map { r in
+            var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "invalid": r.invalid]
+            if let soc = r.number { value["soc"] = soc }; return value
+        }
+        guard !rows.isEmpty else { return }
+        output = try runtime.call("enrichChargeSOC", ["vin": vin, "rows": rows]) as? Object ?? output
+    }
     func mutate(_ operation: String, _ value: Object = [:]) {
         guard !recoveryLock || demo else { errorMessage = "원본 기록 보호 중. 백업 복원 필요."; return }
         do {
             let previousVIN = settings.string("vin")
             _ = try runtime.call(operation, value); refresh()
+            if ["addCharge", "updateCharge"].contains(operation) { try enrichLocalChargeSOC() }
             if settings.string("vin") != previousVIN { navigation.reset(); automations.resetObservation(); link.cancelPendingAutomation() }
             saveRecordsWhenAvailable()
         }

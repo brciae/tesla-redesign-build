@@ -714,6 +714,7 @@ struct ChargeCostProbe: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    ChargingSummary(rows: model.output.object("charging").rows("rows"), days: 30)
                     ForEach(model.output.object("charging").rows("rows"), id: \.selfID) { row in
                         ChargeCostDetails(charge: row)
                     }

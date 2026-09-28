@@ -30,17 +30,17 @@ struct BatteryOverview: View {
                         InfoNote("열화율 추정", "차량이 보고한 충전 자료로 계산한 상대 추정값이며 BMS 진단이 아님. 표시되는 전비·소비량도 모두 관측값 기반 추정임.")
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(index.flag("initial") ? "0" : number(index.number("degradationPercent"))).font(.system(size: 56, weight: .light)).monospacedDigit()
+                        Text(index.flag("initial") ? "—" : number(index.number("degradationPercent"))).font(.system(size: 56, weight: .light)).monospacedDigit()
                         Text("%").font(.title2).foregroundStyle(.secondary)
                     }
-                    Text(index.flag("initial") ? "초기 가정 · 관측 추정 전" : "관측 용량 기반 상대 추정")
+                    Text(index.flag("initial") ? "충전 자료가 쌓이면 추정값 표시" : "관측 용량 기반 상대 추정")
                         .font(.caption).foregroundStyle(index.flag("initial") ? .orange : accent)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 7) {
                     Image(systemName: "waveform.path.ecg").font(.system(size: 32)).foregroundStyle(accent)
-                    Text("SOH 기준 100%").font(.subheadline.weight(.semibold))
-                    Text("현재 지수 " + (index.flag("initial") ? "100" : number(index.number("soh"))) + "%").font(.caption)
+                    Text("배터리 상태").font(.subheadline.weight(.semibold))
+                    Text(index.flag("initial") ? "측정 자료 수집 중" : "상태 지수 " + number(index.number("soh")) + "%").font(.caption)
                 }
             }.accessibilityIdentifier("battery.health")
             Picker("분석 기간", selection: $days) {
@@ -131,8 +131,8 @@ struct BatteryOverview: View {
             DisclosureGroup("자세한 수치") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        measure("주차 중 소비", usage.object("energy").number("parkingKWh"), "kWh")
-                        InfoNote("주차 중 소비", "확인되는 작동 기록에 따라 감시 모드·공조·대기를 나눕니다. 세분할 근거가 없는 주차 구간은 자연방전으로 묶습니다.")
+                        measure("주차 중 배터리 소모", usage.object("energy").number("parkingKWh"), "kWh")
+                        InfoNote("주차 중 배터리 소모", "주차 동안 줄어든 배터리의 합계입니다. 감시 모드·공조 작동 시간은 소비·비용 화면에서 확인할 수 있습니다.")
                     }
                     if let forecast = index.number("forecastDegradation180") {
                         HStack { measure("180일 후 열화", forecast, "%"); measure("현재 관측 오차", index.number("uncertaintyPercent"), "%p") }

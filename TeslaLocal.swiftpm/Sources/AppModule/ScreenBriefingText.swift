@@ -6,7 +6,7 @@ extension AppModel {
         let approximate = energy.flag("capacityAssumed") ? "추정 " : ""
         if let overall = energy.number("overallKmPerKWh"), overall.isFinite, overall > 0, overall <= driving,
            (1 - overall / driving) >= 0.05 {
-            return ["기록상 주차 중 소비가 전체 전비를 낮추고 있습니다.",
+            return ["기록상 주차 중 배터리 소모가 전체 전비를 낮추고 있습니다.",
                     "감시 모드나 주차 중 공조 사용 시간을 살펴보세요."]
         }
         return [String(format: "최근 %@주행 전비는 킬로와트시당 %.1f킬로미터입니다.", approximate, driving)]
@@ -30,6 +30,7 @@ extension AppModel {
         let connection = demo ? "예시 모드의 자료입니다." : (link.authentic ? "블루투스 연결됨." : "Fleet \(fleet.vehicleDisplayStatus)입니다.")
         let battery = measurement(charge, key: "soc", label: "배터리 잔량", unit: "퍼센트")
         let inside = measurement(climate, key: "insideC", label: "실내 온도", unit: "도")
+        let remaining = charge.string("mode") == "recent" ? ChargeEventPolicy.remainingMinutes(reported: charge.number("minutesToLimit"), soc: charge.number("soc"), limit: charge.number("limit"), powerKW: charge.number("chargerKW"), capacityKWh: output.object("health").number("capacity") ?? settings.number("assumedCapacityKWh")) : nil
         var details: [String] = []
         switch scope {
         case .automation:
@@ -43,7 +44,7 @@ extension AppModel {
         case .charging:
             details = [battery]
             if charge.string("mode") == "recent", let charging = charge["isCharging"] as? Bool { details.insert(charging ? "충전 중입니다." : "충전 중이 아닙니다.", at: 0) }
-            if charge.flag("isCharging") { details.append(measurement(charge, key: "minutesToLimit", label: "목표까지 남은 시간", unit: "분")) }
+            if charge.flag("isCharging"), let remaining { details.append("목표까지 약 \(Int(remaining.minutes.rounded()))분 남았습니다.") }
         case .driving, .dashboard:
             if driveFresh {
                 if drive.string("gear") == "P" { details.append("주차 중.") }
@@ -73,22 +74,24 @@ extension AppModel {
             }
         case .charges:
             let selected = rows ?? output.object("charging").rows("rows")
-            details = [selected.isEmpty ? "충전 기록이 없습니다." : "충전 기록 \(selected.count)회입니다."]
-            let costs = selected.compactMap { $0.number("cost") }.filter(\.isFinite)
-            if !costs.isEmpty { details.append("금액 확인 \(costs.count)회 합계는 \(Int(costs.reduce(0, +).rounded()))원입니다.") }
-            let estimated = selected.filter { $0.number("cost") == nil }.compactMap { $0.number("estimatedCost") }.filter(\.isFinite)
-            if !estimated.isEmpty { details.append("미입력 \(estimated.count)회의 예상 금액은 \(Int(estimated.reduce(0, +).rounded()))원입니다. 실제 결제액과 다를 수 있습니다.") }
+            details = ChargePeriodSummary(rows: selected).spoken
         case .battery, .batteryAndCharging:
             let usage = output.object("battery").object(String(days))
             let energy = output.object("energyPeriods").object(String(days))
             let estimates = energy.isEmpty ? usage.object("energy") : energy
             details = scope == .batteryAndCharging ? [battery] : []
             if charge.string("mode") == "recent", charge.flag("isCharging") {
-                if let minutes = charge.number("minutesToLimit"), minutes.isFinite, minutes >= 0 {
-                    details.append("충전 완료까지 약 \(Int(minutes.rounded()))분 남았습니다.")
+                if let remaining {
+                    details.append("충전 완료까지 약 \(Int(remaining.minutes.rounded()))분 남았습니다.")
                 } else { details.append("충전 중입니다.") }
             }
-            if !charge.flag("isCharging") { details += energyInterpretation(estimates) }
+            if !charge.flag("isCharging") {
+                if scope == .batteryAndCharging {
+                    let summary = ChargePeriodSummary(rows: output.object("charging").rows("rows"), days: days)
+                    if !summary.rows.isEmpty { details = ["최근 \(days)일, " + summary.spoken.joined(separator: " ")] }
+                }
+                details += energyInterpretation(estimates)
+            }
             if details.filter({ !$0.isEmpty }).isEmpty,
                let distance = usage.number("distanceKm") ?? estimates.number("totalDistanceKm"), distance.isFinite {
                 details.append(String(format: "최근 \(days)일 주행 거리는 %.1f킬로미터입니다.", distance))
