@@ -208,7 +208,7 @@ final class TeslaFleetClient: ObservableObject {
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: cid),
             URLQueryItem(name: "redirect_uri", value: rUri),
-            URLQueryItem(name: "scope", value: "openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds"),
+            URLQueryItem(name: "scope", value: FleetAuthPolicy.requestedScopes),
             URLQueryItem(name: "state", value: readKeychain(key: oauthStateKey) ?? ""),
             URLQueryItem(name: "prompt", value: "login"),
             URLQueryItem(name: "code_challenge", value: activeChallenge),

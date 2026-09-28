@@ -60,7 +60,7 @@ struct FleetTelemetryView: View {
                                 } catch { connectionError = error.localizedDescription }
                             }
                         }.disabled(checking || model.demo)
-                        Caption("기존 NAS로 차량 위치를 10초 간격으로 수집하도록 추가합니다. Tesla 위치 권한과 설정된 명령 서명 서버가 필요합니다.")
+                        Caption("기존 NAS로 차량 위치를 10초 간격으로 수집하도록 추가합니다. 이전 버전 사용자는 Tesla에 다시 로그인해 위치 권한을 허용하세요. 설정된 명령 서명 서버가 필요합니다.")
                     }
                     if let location = latest["Location"], !location.invalid {
                         LabeledContent("좌표 마지막 수신", value: location.at.formatted(date: .abbreviated, time: .shortened)).font(.caption)
