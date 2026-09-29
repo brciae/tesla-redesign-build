@@ -188,6 +188,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
 
     private func modelingLayout(_ m: NavMetrics) -> some View {
         let rect = mapRect(m)
+        let inset = overlayInset(m)
         return ZStack(alignment: .topLeading) {
             theme.canvas.frame(width: m.w, height: m.h)
             map()
@@ -198,9 +199,15 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .opacity(theme == .minimal ? 0 : 1)
                 .allowsHitTesting(theme != .minimal)
                 .accessibilityHidden(theme == .minimal)
-            overlay(NavMetrics(size: CGSize(width: max(1, m.w - safeArea.leading - safeArea.trailing), height: max(1, m.h - safeArea.top - safeArea.bottom))))
-                .frame(width: max(1, m.w - safeArea.leading - safeArea.trailing), height: max(1, m.h - safeArea.top - safeArea.bottom))
-                .offset(x: safeArea.leading, y: safeArea.top)
+            // Scrim themes: continue the leading scrim into the camera-side gap so no hard edge appears.
+            if m.wide, inset.leading > 0, theme == .cluster || theme == .fleet {
+                Color.black.opacity(theme == .cluster ? 1 : 0.4)
+                    .frame(width: inset.leading + 1, height: m.h)
+                    .allowsHitTesting(false)
+            }
+            overlay(NavMetrics(size: CGSize(width: max(1, m.w - inset.leading - inset.trailing), height: max(1, m.h - inset.top - inset.bottom))))
+                .frame(width: max(1, m.w - inset.leading - inset.trailing), height: max(1, m.h - inset.top - inset.bottom))
+                .offset(x: inset.leading, y: inset.top)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("navigation.foreground")
         }
@@ -211,6 +218,15 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         // Own container so the root identifier does not overwrite the safe-area foreground identifier.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("navigation.modeling")
+    }
+
+    /// Only nudge content clear of the camera island: landscape takes a partial side inset,
+    /// portrait only the top. Bottom (home indicator) and the far side stay full-bleed.
+    private func overlayInset(_ m: NavMetrics) -> EdgeInsets {
+        if m.w > m.h {
+            return EdgeInsets(top: 0, leading: (safeArea.leading * 0.55).rounded(), bottom: 0, trailing: (safeArea.trailing * 0.55).rounded())
+        }
+        return EdgeInsets(top: safeArea.top, leading: 0, bottom: 0, trailing: 0)
     }
 
     private func navigationLayout(_ m: NavMetrics) -> some View {
