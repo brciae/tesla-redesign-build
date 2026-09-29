@@ -126,6 +126,8 @@ static NSArray *YLLifecycleObservers;
 @property(nonatomic, strong) KNGuide_Safety *safetyGuide;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *speechTargets;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDate *> *preparedSpeechPoints;
+@property(nonatomic) BOOL forceImminent;
+@property(nonatomic, strong) KNLocation *imminentTarget;
 @property(nonatomic) FloatPoint mapAnchor;
 @property(nonatomic) BOOL cameraReady;
 @property(nonatomic) float trustedBearing;
@@ -500,7 +502,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 }
 - (void)guidance:(KNGuidance *)guidance didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { YL_FORWARD([self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects]; if (routes.count) [self.map setRoutes:routes]; else [self.map removeRoutesAll]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateIndoorRoute:(KNRoute *)route { if (route) YL_FORWARD([self.map setRoute:route]); }
-- (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate]; [self updateMap]; [self publishTelemetry]); }
+- (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate]; [self updateMap]; [self publishTelemetry]; [self emitImminentTurn]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateRouteGuide:(KNGuide_Route *)route { YL_FORWARD(self.routeGuide = route; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateSafetyGuide:(KNGuide_Safety *)safety { YL_FORWARD(self.safetyGuide = safety; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateAroundSafeties:(NSArray<__kindof KNSafety *> *)safeties { }
@@ -593,18 +595,39 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:phrases options:0 error:nil];
     if (data) [self emit:@"prepareSpeech" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
 }
+/// Distance the driver will be at when the sentence is actually heard (~2 s bridge + playback lead).
+- (SInt32)spokenMetres:(KNLocation *)target {
+    SInt32 raw = [self.locationGuide.location distToLocation:target];
+    if (raw <= 0) return raw;
+    if (self.forceImminent) return 40;
+    KNGPSData *gps = self.locationGuide.gpsMatched;
+    double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
+    return (SInt32)fmax(1, raw - speed * 2.0);
+}
+/// "잠시 후" cue a few seconds before the maneuver; the SDK's own last call comes too early for it.
+- (void)emitImminentTurn {
+    if (!self.voiceEnabled || ![self locationIsFresh] || YLGuidanceOwner != self) return;
+    KNDirection *dir = self.routeGuide.curDirection;
+    if (!dir.location || dir.rgCode == 101 || dir.rgCode == 1000) return;
+    if (self.imminentTarget && [self.imminentTarget distToLocation:dir.location] < 5) return;
+    SInt32 raw = [self.locationGuide.location distToLocation:dir.location];
+    KNGPSData *gps = self.locationGuide.gpsMatched;
+    double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
+    if (speed < 2 || raw <= 10 || raw > fmax(60, fmin(180, speed * 5))) return;
+    self.imminentTarget = dir.location;
+    self.forceImminent = YES;
+    [self emitTimedSpeech:KNVoiceCode_Turn object:dir safety:NO];
+    self.forceImminent = NO;
+}
 - (NSString *)spokenTextForCode:(KNVoiceCode)code object:(id)object {
     NSString *prefix = @"";
     KNLocation *target = nil;
     if ([object isKindOfClass:KNDirection.class]) target = ((KNDirection *)object).location;
     if ([object isKindOfClass:KNSafety.class]) target = ((KNSafety *)object).location;
-    if (target && [self locationIsFresh]) {
-        SInt32 metres = [self.locationGuide.location distToLocation:target];
-        prefix = YLNavigationDistancePrefix(metres);
-    }
+    if (target && [self locationIsFresh]) prefix = YLNavigationDistancePrefix([self spokenMetres:target]);
     if ([object isKindOfClass:KNDirection.class]) {
         KNDirection *dir = (KNDirection *)object;
-        SInt32 metres = target && [self locationIsFresh] ? [self.locationGuide.location distToLocation:target] : -1;
+        SInt32 metres = target && [self locationIsFresh] ? [self spokenMetres:target] : -1;
         return YLNavigationSpeech(dir.rgCode, dir.nodeName, dir.directionNames, metres);
     }
     if ([object isKindOfClass:KNSafety.class]) {
