@@ -220,24 +220,31 @@ struct PageBody<Content: View>: View {
 struct InfoCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 14, content: content)
+        VStack(alignment: .leading, spacing: 12, content: content)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(white: 0.12).opacity(0.75))
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-            )
+            .padding(18)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .cardScrollEffect()
     }
 }
+/// Short captions stay inline; long explanations fold into an ⓘ button so screens read at a glance.
 struct Caption: View {
     let text: String
+    @State private var open = false
     init(_ text: String) { self.text = text }
-    var body: some View { Text(text).font(.system(size: 14)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true) }
+    var body: some View {
+        if text.count <= 40 {
+            Text(text).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            Button { open = true } label: {
+                Label(String(text.prefix(18)) + "…", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $open) {
+                Text(text).font(.callout).padding(16).frame(maxWidth: 320).presentationCompactAdaptation(.popover)
+            }
+        }
+    }
 }
 struct Metric: View {
     let title: String
