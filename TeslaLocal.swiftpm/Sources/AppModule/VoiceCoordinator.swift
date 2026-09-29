@@ -2,9 +2,9 @@ import SwiftUI
 import AVFoundation
 
 /// Single selected-voice output for navigation, safety and vehicle announcements.
-/// Exclusively powered by Typecast AI with permanent local audio caching,
+/// Typecast AI with permanent local audio caching; the iOS system voice covers any Typecast failure,
 /// with instant button-preemption (0ms interruption latency) and zero default-voice clutter.
-final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
     @Published private(set) var speaking = false
     @Published private(set) var lastText = ""
     @Published private(set) var notice = ""
@@ -20,6 +20,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private let audioOwner = UUID().uuidString
     private var typecastPlayer: AVAudioPlayer?
+    /// System voice used whenever Typecast is off, unconfigured or fails, so guidance is never silent.
+    private lazy var fallbackSynth: AVSpeechSynthesizer = { let s = AVSpeechSynthesizer(); s.delegate = self; return s }()
+    private var fallbackSpeaking = false
     private var activeTicket: UUID?
     private var synthesisTask: Task<Void, Never>?
     private var releaseWork: DispatchWorkItem?
@@ -210,7 +213,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     private func drain() {
-        guard !interrupted, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
+        guard !interrupted, !nativeSpeaking, !fallbackSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
         guard let item = queue.next(now: Date()) else { return }
         navigationSpeaking = item.key.hasPrefix("navigation.")
         activePriority = item.priority
@@ -226,11 +229,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         let tc = TypecastClient.shared
         guard tc.isEnabled else {
-            notice = "타입캐스트 AI 음성을 켜 주세요."
-            playbackState = "타입캐스트 꺼짐"
-            activeTicket = nil
-            navigationSpeaking = false
-            activePriority = 0
+            playFallback(item, reason: "타입캐스트 꺼짐")
             return
         }
 
@@ -302,12 +301,17 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             } catch {
                 await MainActor.run {
                     guard self.activeTicket == ticket else { return }
+                    let expired = !item.canStartPlayback(at: Date()) || error is CancellationError
+                    if !expired {
+                        self.activeTicket = nil
+                        self.playFallback(item, reason: "타입캐스트 실패: \(error.localizedDescription)")
+                        return
+                    }
                     self.activeTicket = nil
                     self.activeText = ""
                     self.speaking = false
                     self.navigationSpeaking = false
                     self.activePriority = 0
-                    let expired = !item.canStartPlayback(at: Date()) || error is CancellationError
                     self.notice = expired ? "" : "타입캐스트 안내 실패: \(error.localizedDescription)"
                     self.playbackState = expired ? "지난 안내 건너뜀" : "합성 실패"
                     if !item.manual || item.key.hasPrefix("navigation.") { self.automaticTrace(expired ? "합성 후 안내 기한 만료 또는 요청 취소" : "합성 실패 · " + error.localizedDescription) }
@@ -417,8 +421,55 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         typecastPlayer?.stop()
         typecastPlayer = nil
+        if fallbackSpeaking { fallbackSpeaking = false; fallbackSynth.stopSpeaking(at: .immediate) }
 
         releaseAudio()
+    }
+
+    // MARK: - System voice fallback
+
+    private func playFallback(_ item: VoiceItem, reason: String) {
+        let defaults = UserDefaults.standard
+        let volume = Float(min(1, max(0, defaults.double(forKey: item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume"))))
+        guard volume > 0, item.canStartPlayback(at: Date()) else {
+            activeTicket = nil; navigationSpeaking = false; activePriority = 0
+            playbackState = volume > 0 ? "안내 기한 만료" : "음량 0"
+            drain(); return
+        }
+        do { try activateAudio(defaults) } catch {
+            notice = "오디오 세션 실패: \(error.localizedDescription)"
+        }
+        let u = AVSpeechUtterance(string: item.text)
+        u.voice = AVSpeechSynthesisVoice(language: "ko-KR")
+        u.rate = Float(defaults.object(forKey: "voiceRate") == nil ? 0.5 : defaults.double(forKey: "voiceRate"))
+        u.pitchMultiplier = Float(defaults.object(forKey: "voicePitch") == nil ? 1 : defaults.double(forKey: "voicePitch"))
+        u.volume = volume
+        activeTicket = UUID()
+        activeManual = item.manual
+        activeText = item.text
+        lastText = item.text
+        fallbackSpeaking = true
+        speaking = true
+        playbackStarts += 1
+        notice = reason
+        playbackState = "읽는 중 · 기본 음성 (\(reason))"
+        automaticTrace("기본 음성으로 재생 · " + reason)
+        refreshOutput()
+        lastPlaybackOutput = "최근 재생 " + outputDescription
+        fallbackSynth.speak(u)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        guard fallbackSpeaking else { return }
+        fallbackSpeaking = false
+        playbackCompletions += 1
+        finishPlayback(success: true)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        guard fallbackSpeaking else { return }
+        fallbackSpeaking = false
+        finishPlayback(success: false)
     }
 
     private func refreshOutput() {
@@ -442,7 +493,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func releaseAudio() {
         releaseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.activeTicket == nil, self.typecastPlayer == nil, self.queue.items.isEmpty else { return }
+            guard let self, self.activeTicket == nil, self.typecastPlayer == nil, !self.fallbackSpeaking, self.queue.items.isEmpty else { return }
             VoiceAudioRouting.release(owner: self.audioOwner)
         }
         releaseWork = work
