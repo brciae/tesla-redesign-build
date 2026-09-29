@@ -34,7 +34,7 @@ import Foundation
         precondition(supplement.cards[0].rows.contains { $0.label == "사용 가능" && $0.value == "3" })
         precondition(!supplement.cards[0].rows.contains { $0.value == "hidden" })
         let sections = snapshot.insightSections()
-        precondition(sections.count == 5)
+        precondition(sections.count == 7)
         precondition(sections.first(where: { $0.title == "타이어 상태" })!.rows.first!.value == "미수신")
         precondition(snapshot.flattenedFields(section: "charge_state").contains(where: { $0.label == "charge_state.battery_level" && $0.value == "72" }))
         let nested = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["vehicle_state": ["software_update": ["status": "available"], "missing": NSNull()]])
