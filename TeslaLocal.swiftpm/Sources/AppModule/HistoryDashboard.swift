@@ -65,7 +65,7 @@ struct HistoryDashboardView: View {
                 NavigationLink { VisitedPlacesView(trips: trips, charges: charges) } label: { Label("자주 가는 장소", systemImage: "mappin.and.ellipse") }
             }
             Section { NavigationLink { TeslaExportImportView() } label: { Label("Tesla 요청 자료 가져오기", systemImage: "square.and.arrow.down") } }
-                footer: { Text("Tesla 계정 개인정보 메뉴에서 요청한 슈퍼차저 이력(CSV·JSON)을 기존 기록과 합칩니다. 집·완속 충전은 NAS 수집 이후 기록만 있습니다.") }
+                footer: { Text("Tesla 계정 개인정보 메뉴에서 받은 충전 데이터(Charging Data.csv)를 기존 기록과 합칩니다. 비용은 설정한 충전 단가로 추정합니다.") }
         }.navigationTitle("차량 기록")
     }
     private var monthSummary: some View {
@@ -341,7 +341,7 @@ struct TeslaExportImportView: View {
     var body: some View {
         List {
             Section {
-                Text("1. Tesla 계정 → 설정 → 개인정보 → 데이터 요청에서 슈퍼차저 이력을 요청합니다. 최대 30일 걸립니다.")
+                Text("1. Tesla 계정 → 설정 → 개인정보 → 데이터 요청에서 충전 데이터(Charging Data)를 요청합니다. 슈퍼차저와 집·완속 충전이 모두 들어 있습니다.")
                 Text("2. 받은 파일(CSV 또는 JSON)을 이 화면에서 선택하면 충전 기록에 합칩니다. 같은 시각·금액 기록은 건너뜁니다.")
             }.font(.subheadline)
             Button { picking = true } label: { Label("파일 선택", systemImage: "doc.badge.plus") }
@@ -355,6 +355,8 @@ struct TeslaExportImportView: View {
             let rows = TeslaExportParser.rows(text)
             var added = 0, skipped = 0
             for row in rows {
+                let at = row.number("at") ?? 0
+                if model.state.rows("charges").contains(where: { abs(($0.number("at") ?? 0) - at) < 600_000 }) { skipped += 1; continue }
                 let before = model.state.rows("charges").count
                 model.mutate("addCharge", row)
                 if model.state.rows("charges").count > before { added += 1 } else { skipped += 1 }
@@ -406,20 +408,26 @@ enum TeslaExportParser {
     private static func date(_ v: Any?) -> Date? {
         guard let s = v as? String, !s.isEmpty else { return nil }
         if let d = ISO8601DateFormatter().date(from: s) { return d }
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
+        // Tesla's export labels its times "(UTC)"; without a zone they must not be read as local time.
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "UTC")
         for fmt in ["yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "MM/dd/yyyy HH:mm", "yyyy.MM.dd HH:mm", "yyyy-MM-dd"] {
             f.dateFormat = fmt; if let d = f.date(from: s) { return d }
         }
         return nil
     }
     private static func record(_ row: [String: Any]) -> Object? {
-        guard let at = date(find(row, ["chargestartdatetime", "start_time", "starttime", "start date", "date", "시작"])),
+        guard let at = date(find(row, ["charge start time", "start time", "chargestartdatetime", "start_time", "starttime", "start date", "date", "시작"])),
               let kwh = number(find(row, ["energy", "kwh", "usage", "충전량"])), kwh > 0.1, kwh < 300 else { return nil }
         var out: Object = ["at": at.timeIntervalSince1970 * 1000, "supplyKWh": (kwh * 100).rounded() / 100,
-                           "chargeType": "supercharger", "note": "Tesla 요청 자료"]
-        if let end = date(find(row, ["chargestopdatetime", "end_time", "endtime", "stop", "종료"])), end > at { out["end"] = end.timeIntervalSince1970 * 1000 }
+                           "note": "Tesla 요청 자료"]
+        // "Europe Supercharger" / "General - AC power" (Tesla Charging Data export).
+        let kind = (find(row, ["charger type", "charger_type", "chargertype", "type"]) as? String ?? "Supercharger").lowercased()
+        out["chargeType"] = kind.contains("supercharger") ? "supercharger" : (kind.contains("dc") || kind.contains("fast") ? "dc" : "ac")
+        if let end = date(find(row, ["charge end time", "end time", "chargestopdatetime", "end_time", "endtime", "stop", "종료"])), end > at { out["end"] = end.timeIntervalSince1970 * 1000 }
         if let cost = number(find(row, ["totalcost", "total_cost", "amount", "cost", "금액"])), cost >= 0 { out["cost"] = cost }
-        if let place = find(row, ["sitelocationname", "site_name", "location", "site", "장소"]) as? String { out["place"] = String(place.prefix(120)) }
+        if let place = find(row, ["sitelocationname", "site_name", "location", "site", "장소"]) as? String, !place.isEmpty {
+            out["place"] = place == "Home" ? "집" : place == "Away" ? "외부" : String(place.prefix(120))
+        }
         return out
     }
 }
