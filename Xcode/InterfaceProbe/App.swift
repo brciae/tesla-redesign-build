@@ -133,7 +133,7 @@ struct FullscreenNavigationProbe: View {
         } controls: {
             ScrollView(.horizontal) {
                 HStack {
-                    ForEach(NavigationTheme.allCases) { value in
+                    ForEach(NavigationTheme.allCases.filter { $0 != .running }) { value in
                         Button(value.title) { theme = value }.frame(minHeight: 44)
                     }
                 }
