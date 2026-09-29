@@ -390,6 +390,9 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         snap.vehicleLatitude = loc.number("latitude")
         snap.vehicleLongitude = loc.number("longitude")
         snap.positionStatus = loc["positionStatus"] as? String
+        // Surface GPS quality the car reports, so a stale or estimated fix is not shown as exact.
+        if loc["gpsMeasurementOld"] as? Bool == true { snap.positionStatus = "gpsOld" }
+        else if loc["estimatedGPSValid"] as? Bool == false { snap.positionStatus = "estimated" }
 
         // Closures & Security
         snap.isLocked = closures["locked"] as? Bool
