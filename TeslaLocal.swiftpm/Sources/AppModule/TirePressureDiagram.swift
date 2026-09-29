@@ -39,14 +39,14 @@ struct TirePressureDiagram: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("타이어 공기압").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                Text("타이어 공기압").font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.primary)
                 Spacer()
                 Text(receivedAt.map { $0.formatted(date: .omitted, time: .shortened) } ?? "미수신")
                     .font(.system(size: 12)).foregroundStyle(Theme.muted).monospacedDigit()
             }
             HStack(spacing: 14) {
                 VStack(spacing: 26) { wheel(0); wheel(2) }
-                CarOutline().stroke(Color.white.opacity(0.28), lineWidth: 1.2).frame(width: 52, height: 104)
+                CarOutline().stroke(Color.primary.opacity(0.28), lineWidth: 1.2).frame(width: 52, height: 104)
                 VStack(spacing: 26) { wheel(1); wheel(3) }
             }
             .frame(maxWidth: .infinity)
@@ -63,7 +63,7 @@ struct TirePressureDiagram: View {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(parts.0)
                     .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(reading?.validBar == nil ? Theme.muted : .white)
+                    .foregroundStyle(reading?.validBar == nil ? Theme.muted : Color.primary)
                 Text(parts.1.trimmingCharacters(in: .whitespaces))
                     .font(.system(size: 11)).foregroundStyle(Theme.muted)
             }
