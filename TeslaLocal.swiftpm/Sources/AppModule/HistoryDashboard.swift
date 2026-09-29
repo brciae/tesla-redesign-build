@@ -222,8 +222,20 @@ struct VisitedPlacesView: View {
             if map[key] == nil { map[key] = Place(id: key, coordinate: p, visits: 0, charges: 0) }
             if charge { map[key]!.charges += 1 } else { map[key]!.visits += 1 }
         }
-        for t in trips { if let last = HistoryData.points(t).last { add(last, charge: false) } }
-        for c in charges { if let d = HistoryData.date(c, "at"), let p = HistoryData.location(near: d) { add(p, charge: true) } }
+        // A visit = the car actually stopped there: a complete trip ends at a point, the next trip starts
+        // within 300 m of it, and at least 10 minutes pass in between. Pass-through GPS points never count.
+        let ordered = trips.filter { !$0.flag("missing") }.sorted { ($0.number("start") ?? 0) < ($1.number("start") ?? 0) }
+        for (i, t) in ordered.enumerated() {
+            guard let last = HistoryData.points(t).last, let end = t.number("end") else { continue }
+            if i + 1 < ordered.count {
+                let next = ordered[i + 1]
+                guard let first = HistoryData.points(next).first, let start = next.number("start"), start - end >= 600_000,
+                      CLLocation(latitude: last.latitude, longitude: last.longitude).distance(from: CLLocation(latitude: first.latitude, longitude: first.longitude)) < 300 else { continue }
+            }
+            add(last, charge: false)
+        }
+        // A charge place needs a car position recorded within 5 minutes of the session start.
+        for c in charges { if let d = HistoryData.date(c, "at"), let p = HistoryData.location(near: d, within: 300) { add(p, charge: true) } }
         return map.values.sorted { $0.visits + $0.charges > $1.visits + $1.charges }.prefix(15).map { $0 }
     }
     @State private var names: [String: String] = [:]
