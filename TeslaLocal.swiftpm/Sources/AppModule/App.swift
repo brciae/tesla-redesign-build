@@ -7,10 +7,12 @@ import UniformTypeIdentifiers
 struct YLCompanionApp: App {
     @UIApplicationDelegateAdaptor(YLApplicationDelegate.self) private var appDelegate
     @StateObject private var owner = AppOwner()
+    @AppStorage("appearance") private var appearance = "dark"
+    private var colorScheme: ColorScheme? { appearance == "light" ? .light : (appearance == "system" ? nil : .dark) }
     var body: some Scene {
         WindowGroup {
-            if let model = owner.model { MainView(model: model, link: model.link, navigation: model.navigation).environmentObject(model).preferredColorScheme(.dark) }
-            else { ContentUnavailableView("앱 준비 실패", systemImage: "exclamationmark.triangle", description: Text(owner.failure)).preferredColorScheme(.dark) }
+            if let model = owner.model { MainView(model: model, link: model.link, navigation: model.navigation).environmentObject(model).preferredColorScheme(colorScheme) }
+            else { ContentUnavailableView("앱 준비 실패", systemImage: "exclamationmark.triangle", description: Text(owner.failure)).preferredColorScheme(colorScheme) }
         }
     }
 }
@@ -20,9 +22,12 @@ final class AppOwner: ObservableObject {
     init() { do { model = try AppModel(); failure = "" } catch { model = nil; failure = error.localizedDescription } }
 }
 enum Theme {
-    static let bg = Color(red: 23/255, green: 24/255, blue: 26/255)
-    static let surface = Color(red: 34/255, green: 35/255, blue: 38/255)
-    static let muted = Color(red: 174/255, green: 178/255, blue: 183/255)
+    static let bg = adaptive(dark: UIColor(red: 23/255, green: 24/255, blue: 26/255, alpha: 1), light: UIColor(red: 242/255, green: 242/255, blue: 247/255, alpha: 1))
+    static let surface = adaptive(dark: UIColor(red: 34/255, green: 35/255, blue: 38/255, alpha: 1), light: UIColor.white)
+    static let muted = adaptive(dark: UIColor(red: 174/255, green: 178/255, blue: 183/255, alpha: 1), light: UIColor(red: 99/255, green: 99/255, blue: 102/255, alpha: 1))
+    /// Card fill: the old `Color(white:)` value in dark mode, plain white in light mode.
+    static func fill(_ white: CGFloat) -> Color { adaptive(dark: UIColor(white: white, alpha: 1), light: UIColor.white) }
+    static func adaptive(dark: UIColor, light: UIColor) -> Color { Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light }) }
     static let green = Color(red: 93/255, green: 205/255, blue: 144/255)
 }
 /// v90: one route per screen. Cases the 5-tab layout reaches through its own
@@ -107,7 +112,7 @@ struct MainView: View {
             .toggleStyle(CompanionToggleStyle())
             .environment(\.vehicleUnits, VehicleUnits(distance: distance, temperature: temperature, pressure: pressure))
             .animation(reduced ? nil : .easeInOut(duration: 0.25), value: navigation.presented)
-            .tint(.white)
+            .tint(Color.primary)
             .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
             .onOpenURL { url in model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
             .task { if phase == .active { model.resume(); consumeNotificationRoute() } }
@@ -135,8 +140,8 @@ struct MainView: View {
             }
             .opacity(navigation.presented ? 0 : 1).allowsHitTesting(!navigation.presented).accessibilityHidden(navigation.presented)
 
-            if navigation.presented { DrivingWorkspace(navigation: navigation, link: link).transition(.opacity).zIndex(1) }
-            if model.chargingPresented { ChargingWorkspace(link: link, isPresented: $model.chargingPresented).transition(.opacity).zIndex(2) }
+            if navigation.presented { DrivingWorkspace(navigation: navigation, link: link).environment(\.colorScheme, .dark).transition(.opacity).zIndex(1) }
+            if model.chargingPresented { ChargingWorkspace(link: link, isPresented: $model.chargingPresented).environment(\.colorScheme, .dark).transition(.opacity).zIndex(2) }
         }
     }
 
@@ -388,7 +393,7 @@ struct TripsView: View {
                                     if dist > 0 {
                                         Text(String(format: "%.1f", dist))
                                             .font(.system(size: 9, weight: .bold))
-                                            .foregroundStyle(Color.white.opacity(0.85))
+                                            .foregroundStyle(Color.primary.opacity(0.85))
                                             .padding(.bottom, 2)
                                     }
                                 }
@@ -403,10 +408,10 @@ struct TripsView: View {
                                         VStack(spacing: 2) {
                                             Text(Self.shortMonthDayFormatter.string(from: date))
                                                 .font(.system(size: 9, weight: .semibold))
-                                                .foregroundStyle(Color.white.opacity(0.9))
+                                                .foregroundStyle(Color.primary.opacity(0.9))
                                             Text(Self.shortTimeFormatter.string(from: date))
                                                 .font(.system(size: 8, weight: .regular))
-                                                .foregroundStyle(Color.white.opacity(0.55))
+                                                .foregroundStyle(Color.primary.opacity(0.55))
                                         }
                                         .fixedSize()
                                     }
@@ -416,7 +421,7 @@ struct TripsView: View {
                         .chartYAxis {
                             AxisMarks(position: .leading) { value in
                                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
-                                    .foregroundStyle(Color.white.opacity(0.12))
+                                    .foregroundStyle(Color.primary.opacity(0.12))
                                 AxisValueLabel {
                                     if let v = value.as(Double.self) {
                                         Text("\(Int(v))")
