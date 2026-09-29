@@ -12,7 +12,7 @@ struct PublicChargingSetupView: View {
                 Section("한국환경공단 충전소") {
                     SecureField(registered ? "인증키 변경" : "공공데이터포털 인증키", text: $key)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    NavigationLink(region.isEmpty ? "조회 지역 · 자동(차량 위치)" : PublicChargingRegions.names[region] ?? "조회 지역 선택") { PublicChargingRegionPicker(region: $region) }
+                    NavigationLink(region.isEmpty ? "조회 지역 · 자동(차량 위치+인접)" : "조회 지역 · " + PublicChargingRegions.summary(region)) { PublicChargingRegionPicker(region: $region) }
                     Text("인증키는 이 기기에 보안 저장됩니다.").font(.caption).foregroundStyle(.secondary)
                 }
                 if !message.isEmpty { Text(message).foregroundStyle(.orange) }
@@ -36,12 +36,17 @@ struct PublicChargingRegionPicker: View {
     @State private var query = ""
     var body: some View {
         List {
-            Button { region = ""; dismiss() } label: {
-                HStack { Text("자동 · 차량 위치 기준"); Spacer(); if region.isEmpty { Image(systemName: "checkmark") } }
+            Button { region = "" } label: {
+                HStack { Text("자동 · 차량 위치와 인접 지역"); Spacer(); if region.isEmpty { Image(systemName: "checkmark") } }
             }
+            if !region.isEmpty { Text("여러 지역을 선택할 수 있습니다 (최대 8곳)").font(.caption).foregroundStyle(.secondary) }
             ForEach(PublicChargingRegions.names.keys.sorted().filter { query.isEmpty || (PublicChargingRegions.names[$0] ?? "").contains(query) }, id: \.self) { code in
-            Button { region = code; dismiss() } label: {
-                HStack { Text(PublicChargingRegions.names[code] ?? code); Spacer(); if region == code { Image(systemName: "checkmark") } }
+            Button {
+                var set = region.split(separator: ",").map(String.init)
+                if let i = set.firstIndex(of: code) { set.remove(at: i) } else if set.count < 8 { set.append(code) }
+                region = set.joined(separator: ",")
+            } label: {
+                HStack { Text(PublicChargingRegions.names[code] ?? code); Spacer(); if region.split(separator: ",").contains(Substring(code)) { Image(systemName: "checkmark") } }
             }
             }
         }.searchable(text: $query, prompt: "시·군·구 검색").navigationTitle("조회 지역")
