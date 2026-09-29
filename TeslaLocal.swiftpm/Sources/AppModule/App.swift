@@ -25,9 +25,6 @@ enum Theme {
     static let bg = adaptive(dark: UIColor(red: 23/255, green: 24/255, blue: 26/255, alpha: 1), light: UIColor(red: 242/255, green: 242/255, blue: 247/255, alpha: 1))
     static let surface = adaptive(dark: UIColor(red: 34/255, green: 35/255, blue: 38/255, alpha: 1), light: UIColor.white)
     static let muted = adaptive(dark: UIColor(red: 174/255, green: 178/255, blue: 183/255, alpha: 1), light: UIColor(red: 99/255, green: 99/255, blue: 102/255, alpha: 1))
-    /// Card fill: the old `Color(white:)` value in dark mode, plain white in light mode.
-    static func fill(_ white: CGFloat) -> Color { adaptive(dark: UIColor(white: white, alpha: 1), light: UIColor.white) }
-    static func adaptive(dark: UIColor, light: UIColor) -> Color { Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light }) }
     static let green = Color(red: 93/255, green: 205/255, blue: 144/255)
 }
 /// v90: one route per screen. Cases the 5-tab layout reaches through its own
