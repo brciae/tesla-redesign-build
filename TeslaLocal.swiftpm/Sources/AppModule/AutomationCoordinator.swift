@@ -70,6 +70,26 @@ final class AutomationCoordinator: ObservableObject {
         catch { policy.document = old; throw error }
     }
     func resetObservation() { sample = nil; physicalExpiresAt = 0; policy.reset(); presence = "탑승 신호 미수신" }
+    /// Parked with nobody aboard, yet still unlocked or a window open for 3+ minutes: warn once per parking.
+    @MainActor private func checkLeftUnsecured(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator) {
+        guard snapshot.sectionIsRecent("vehicle_state") else { return }
+        let vehicle = snapshot.payload["vehicle_state"] as? Object ?? [:]
+        let gear = (snapshot.payload["drive_state"] as? Object)?["shift_state"] as? String
+        let windowOpen = ["fd_window", "fp_window", "rd_window", "rp_window"].contains { ((vehicle[$0] as? NSNumber)?.doubleValue ?? 0) > 0 }
+        let unlocked = snapshot.locked == false
+        let latch = "automation.unsecured." + snapshot.vin
+        let defaults = UserDefaults.standard
+        guard gear == nil || gear == "P", vehicle["is_user_present"] as? Bool == false, unlocked || windowOpen else {
+            unsecuredSince = nil; defaults.removeObject(forKey: latch); return
+        }
+        let now = Date()
+        if unsecuredSince == nil { unsecuredSince = now }
+        guard now.timeIntervalSince(unsecuredSince ?? now) >= 180, !defaults.bool(forKey: latch) else { return }
+        defaults.set(true, forKey: latch)
+        let text = unlocked && windowOpen ? "차량이 잠기지 않았고 창문도 열려 있습니다." : unlocked ? "하차 후 차량이 잠기지 않았습니다." : "하차 후 창문이 열려 있습니다."
+        onNotification?(UUID().uuidString, "차량 보안 확인", text)
+        voice.say(text, key: "unsecured:" + snapshot.vin, category: "voiceAutomations", priority: 3, ttl: 60, manual: false)
+    }
     private var preparedBoardingText = ""
     /// Mirrors the boarding announcement assembled below; any mismatch only costs a cache miss.
     private func prepareBoardingSpeech(_ s: AutomationSample, charge: Object, units: VehicleUnits, voice: VoiceCoordinator) {
@@ -97,6 +117,7 @@ final class AutomationCoordinator: ObservableObject {
         do { try persist(); publish() } catch { blocked = true; status = "자동화 실행기록 저장 실패 · 추가 실행 중단" }
     }
     private var fleetPrevious: [String: ChargeObservation] = [:]
+    private var unsecuredSince: Date?
     @MainActor func observeFleetSpeech(_ snapshot: FleetVehicleSnapshot, history: Object = [:], previousTrips: Int = 0, link: VehicleLink, voice: VoiceCoordinator) {
         guard (!link.authentic || history.rows("trips").count > previousTrips), snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
         let at = snapshot.number("vehicle_state", "timestamp") ?? 0
@@ -122,6 +143,7 @@ final class AutomationCoordinator: ObservableObject {
     }
     @MainActor func observeFleet(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator, bleActive: Bool) {
         guard !blocked, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
+        checkLeftUnsecured(snapshot, voice: voice)
         let charge = snapshot.payload["charge_state"] as? Object ?? [:]
         if snapshot.sectionIsRecent("charge_state"), let at = snapshot.number("charge_state", "timestamp"), let state = charge["charging_state"] as? String {
             let current = ChargeObservation(vin: snapshot.vin, at: Date(timeIntervalSince1970: at / 1000), state: state, soc: snapshot.soc, limit: snapshot.number("charge_state", "charge_limit_soc"))
