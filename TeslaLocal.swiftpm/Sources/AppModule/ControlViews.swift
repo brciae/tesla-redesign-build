@@ -34,13 +34,13 @@ struct ControlPanel: View {
                     ProgressView().controlSize(.small)
                     Text(link.controlBusy ? "차량에 명령 전송 중…" : "제어 세션 준비 중…")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(Color.primary.opacity(0.9))
                     Spacer()
                 }
                 .padding(.vertical, 8)
                 .padding(.horizontal, 14)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.12), lineWidth: 0.8))
             }
 
             // Body & Security Control Grid
@@ -81,11 +81,11 @@ struct ControlPanel: View {
                         HStack {
                             Text("희망 실내 온도")
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.7))
+                                .foregroundStyle(Color.primary.opacity(0.7))
                             Spacer()
                             Text(units.format(temperature, suffix: "°C", digits: 1))
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color.primary)
                         }
 
                         HStack(spacing: 12) {
@@ -99,7 +99,7 @@ struct ControlPanel: View {
                                     .font(.system(size: 16, weight: .bold))
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 42)
-                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(PlainButtonStyle())
                             .disabled(blocked || temperature <= 16.0)
@@ -114,7 +114,7 @@ struct ControlPanel: View {
                                     .font(.system(size: 16, weight: .bold))
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 42)
-                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(PlainButtonStyle())
                             .disabled(blocked || temperature >= 28.0)
@@ -135,8 +135,8 @@ struct ControlPanel: View {
                         }
                     }
                     .padding(14)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.10), lineWidth: 0.8))
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.10), lineWidth: 0.8))
                 }
             }
 
@@ -156,7 +156,7 @@ struct ControlPanel: View {
                         HStack {
                             Text("충전 한도")
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.7))
+                                .foregroundStyle(Color.primary.opacity(0.7))
                             Spacer()
                             Text("\(limit)%")
                                 .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -174,7 +174,7 @@ struct ControlPanel: View {
                                     .font(.system(size: 16, weight: .bold))
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 42)
-                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(PlainButtonStyle())
                             .disabled(blocked || limit <= 50)
@@ -189,7 +189,7 @@ struct ControlPanel: View {
                                     .font(.system(size: 16, weight: .bold))
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 42)
-                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(PlainButtonStyle())
                             .disabled(blocked || limit >= 100)
@@ -210,8 +210,8 @@ struct ControlPanel: View {
                         }
                     }
                     .padding(14)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.10), lineWidth: 0.8))
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.10), lineWidth: 0.8))
                 }
             }
 
@@ -233,13 +233,13 @@ struct ControlPanel: View {
                     .foregroundStyle(accent)
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.primary)
                 Spacer()
             }
             .padding(.horizontal, 14)
             .frame(height: 52)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.12), lineWidth: 0.8))
         }
         .buttonStyle(MotionButtonStyle())
         .disabled(blocked || (!model.fleet.isAuthenticated && !link.controlsReady(category: category)))
