@@ -143,9 +143,17 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         if samePlace, var existing = latestRecord {
             existing.vehicleID = vin
             existing.vehicleUpdatedAt = coordinateAt
-            existing.vehicle = vehicle
+            // A later report without heading/lock (car asleep, BLE out of range) must not erase what was known.
+            var merged = vehicle
+            let old = existing.vehicle
+            if merged.heading == nil { merged.heading = old.heading; merged.headingDescription = old.headingDescription }
+            if merged.isLocked == nil { merged.isLocked = old.isLocked }
+            if merged.areDoorsClosed == nil { merged.areDoorsClosed = old.areDoorsClosed }
+            if merged.isTrunkClosed == nil { merged.isTrunkClosed = old.isTrunkClosed }
+            if merged.isFrunkClosed == nil { merged.isFrunkClosed = old.isFrunkClosed }
+            existing.vehicle = merged
             existing.refreshLocationType()
-            existing.verification = performCrossVerification(vehicle: vehicle, mobile: existing.mobile, ocr: nil)
+            existing.verification = performCrossVerification(vehicle: merged, mobile: existing.mobile, ocr: nil)
             saveRecord(existing) // Preserve capture time, ID, photo, floor and pillar.
             fleetParkingStatus = "저장된 주차 위치의 차량 상태 갱신됨"
             return
@@ -360,7 +368,8 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             let group = telemetry.object(name)
             guard let at = group.number("at"), at.isFinite else { return [:] }
             let age = Date().timeIntervalSince1970 * 1000 - at
-            let cachedPosition = preserveParkedLocation && ["location", "drive"].contains(name)
+            // Parked: the last reported position and lock state stay the best available facts.
+            let cachedPosition = preserveParkedLocation && ["location", "drive", "closures"].contains(name)
             return age >= -5000 && (age <= 120000 || cachedPosition) ? group : [:]
         }
         let drive = recent("drive"), loc = recent("location"), closures = recent("closures")
