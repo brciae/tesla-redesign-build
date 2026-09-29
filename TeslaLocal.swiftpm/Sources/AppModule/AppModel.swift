@@ -259,7 +259,10 @@ final class AppModel: ObservableObject {
         lastArchiveSync = Date()
         let vin = fleet.selectedVin
             await FleetArchiveClient.shared.sync(vin: vin)
-            if let observation = FleetTelemetryData.chargeObservation(FleetTelemetryStore.shared.records, vin: vin) { ChargeNotificationManager.shared.observe(observation) }
+            if let observation = FleetTelemetryData.chargeObservation(FleetTelemetryStore.shared.records, vin: vin) {
+                ChargeNotificationManager.shared.observe(observation)
+                self.automations.observeTelemetryCharge(observation, voice: self.voice, bleActive: self.link.authentic)
+            }
             guard !self.demo, self.fleet.selectedVin == vin else { return }
             do { try self.mergeArchiveHistory(vin: vin); self.saveRecordsWhenAvailable() }
             catch { self.storageStatus = "NAS 기록 통합: " + error.localizedDescription }
