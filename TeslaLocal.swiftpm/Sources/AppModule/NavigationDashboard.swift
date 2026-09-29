@@ -224,7 +224,9 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     /// portrait only the top. Bottom (home indicator) and the far side stay full-bleed.
     private func overlayInset(_ m: NavMetrics) -> EdgeInsets {
         if m.w > m.h {
-            return EdgeInsets(top: 0, leading: (safeArea.leading * 0.55).rounded(), bottom: 0, trailing: (safeArea.trailing * 0.55).rounded())
+            // Sides keep the full cutout inset (UI tests require clearance on both camera orientations);
+            // top/bottom stay full-bleed so nothing is cut under the home indicator.
+            return EdgeInsets(top: 0, leading: safeArea.leading, bottom: 0, trailing: safeArea.trailing)
         }
         return EdgeInsets(top: safeArea.top, leading: 0, bottom: 0, trailing: 0)
     }
