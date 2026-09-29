@@ -415,6 +415,14 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
             trace("백그라운드 조회 유지 · 제어 취소")
             return
         }
+        // Not connected right now (car out of range, link dropped earlier): still leave a pending
+        // CoreBluetooth connect to the known car, so walking back to it wakes the app for boarding.
+        if supportsBackgroundRead, !controlBusy, !commandInFlight, !userDisconnected, !wantedVIN.isEmpty, central?.state == .poweredOn,
+           UserDefaults.standard.object(forKey: "backgroundBLERead") == nil || UserDefaults.standard.bool(forKey: "backgroundBLERead"),
+           let p = peripheral ?? knownPeripheral() {
+            backgroundReconnect(p)
+            return
+        }
         resetTransport(); status = "백그라운드 일시 중지 · 다시 열면 자동 최신화"
     }
     func resignActive() {
@@ -455,7 +463,16 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         central.connect(p)
         timeout(20) { [weak self] in self?.recoverTransport("BLE 연결 시간 초과") }
     }
-    func centralManager(_ central: CBCentralManager, didConnect p: CBPeripheral) { guard p == peripheral else { return }; status = "차량 서비스 확인 중"; p.discoverServices([service]) }
+    func centralManager(_ central: CBCentralManager, didConnect p: CBPeripheral) {
+        guard p == peripheral else { return }
+        if !wantedVIN.isEmpty { UserDefaults.standard.set(p.identifier.uuidString, forKey: "blePeripheral." + wantedVIN) }
+        status = "차량 서비스 확인 중"; p.discoverServices([service])
+    }
+    /// The car's peripheral from an earlier session; background scans without service UUIDs never report it.
+    private func knownPeripheral() -> CBPeripheral? {
+        guard let raw = UserDefaults.standard.string(forKey: "blePeripheral." + wantedVIN), let id = UUID(uuidString: raw) else { return nil }
+        return central?.retrievePeripherals(withIdentifiers: [id]).first
+    }
     func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) { guard p == peripheral else { return }; recoverTransport("차량 연결 실패") }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
         guard p == peripheral else { return }
