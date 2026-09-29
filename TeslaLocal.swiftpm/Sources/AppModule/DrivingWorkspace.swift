@@ -449,6 +449,7 @@ struct NavigationDisplaySettings: View {
     @ObservedObject var navigation: EmbeddedNavigation
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
+    @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
     var body: some View { Group {
                     Section("지도 표시") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
@@ -463,8 +464,15 @@ struct NavigationDisplaySettings: View {
                         }
                         if preferredMapEngine == "kakao" {
                             Picker("카카오 지도 밝기", selection: $mapAppearance) {
+                                Text("자동").tag("auto")
                                 Text("주간").tag("day")
                                 Text("야간").tag("night")
+                            }.pickerStyle(.segmented)
+                            Picker("내 차 표시", selection: $markerStyle) {
+                                Text("파랑").tag("arrow.blue")
+                                Text("초록").tag("arrow.green")
+                                Text("주황").tag("arrow.orange")
+                                Text("차량").tag("car")
                             }.pickerStyle(.segmented)
                         }
                         Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
