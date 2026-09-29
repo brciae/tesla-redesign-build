@@ -9,6 +9,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) double junctionDistance;
 - (void)configureMapAnchorX:(double)x y:(double)y NS_SWIFT_NAME(configureMapAnchor(x:y:));
 - (void)configureMapTheme:(NSString *)theme NS_SWIFT_NAME(configureMapTheme(_:));
+/// "arrow.blue" | "arrow.green" | "arrow.orange" | "car" — the map's own-vehicle marker.
+- (void)configureMarkerStyle:(NSString *)style NS_SWIFT_NAME(configureMarkerStyle(_:));
 - (void)configureVoice:(BOOL)enabled safety:(BOOL)safety volume:(float)volume duck:(BOOL)duck
     NS_SWIFT_NAME(configureVoice(enabled:safety:volume:duck:));
 /// Official SDK frequency: 0 = Rare, 1 = Often, 2 = Always.
