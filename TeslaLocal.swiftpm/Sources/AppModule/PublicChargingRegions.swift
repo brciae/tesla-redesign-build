@@ -244,6 +244,24 @@ enum PublicChargingRegions {
         "52800": "전북특별자치도 부안군",
     ]
 
+    /// "경기도 용인시 외 2" style label for a comma-separated code list.
+    static func summary(_ codes: String) -> String {
+        let list = codes.split(separator: ",").map { names[String($0)] ?? String($0) }
+        guard let first = list.first else { return "지역 선택" }
+        return list.count == 1 ? first : first + " 외 \(list.count - 1)"
+    }
+
+    /// The car's sigungu plus the ones within ~5 km, so chargers just across a boundary are included.
+    static func codes(around location: CLLocation) async -> [String] {
+        var result: [String] = []
+        let d = 0.045, c = location.coordinate
+        let points = [(0.0, 0.0), (d, 0), (-d, 0), (0, d * 1.25), (0, -d * 1.25)]
+        for (dy, dx) in points {
+            if let code = await code(near: CLLocation(latitude: c.latitude + dy, longitude: c.longitude + dx)), !result.contains(code) { result.append(code) }
+        }
+        return result
+    }
+
     /// Maps a coordinate to the KECO sigungu code through reverse geocoding (e.g. 경기도 + 용인시 → 41460).
     static func code(near location: CLLocation) async -> String? {
         guard let mark = try? await CLGeocoder().reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ko_KR")).first,
