@@ -140,20 +140,20 @@ struct ParkingDrainView: View {
             guard p.string("classification") == "parking", let s = HistoryData.date(p, "start"), let e = HistoryData.date(p, "end"),
                   let d = p.number("deltaSOC"), d >= 0 else { return nil }
             let h = e.timeIntervalSince(s) / 3600
-            return h >= 3 ? Drain(id: i, start: s, hours: h, loss: d) : nil
+            return h >= 6 && d / h * 24 <= 8 ? Drain(id: i, start: s, hours: h, loss: d) : nil
         }.sorted { $0.start > $1.start }
     }
     var body: some View {
         let list = rows
-        let avg = list.isEmpty ? nil : list.map(\.loss).reduce(0, +) / list.map(\.hours).reduce(0, +) * 24
+        let sorted = list.map(\.perDay).sorted(), avg: Double? = sorted.isEmpty ? nil : sorted[sorted.count / 2]
         List {
             Section {
-                Text(avg.map { String(format: "평균 하루 %.1f%% 감소", $0) } ?? "3시간 이상 주차 기록이 아직 없습니다").font(.headline)
-                Text("감시 모드·공조·저온 대기에 따라 달라집니다. 주차 시작과 끝의 배터리 차이로 계산합니다.").font(.caption).foregroundStyle(.secondary)
+                Text(avg.map { String(format: "하루 %.1f%% 감소 (중앙값)", $0) } ?? "6시간 이상 주차 기록이 아직 없습니다").font(.headline)
+                Text("6시간 이상 주차만 사용합니다. 중간에 운행·충전이 끼어 하루 8%를 넘는 기록은 제외합니다.").font(.caption).foregroundStyle(.secondary)
             }
             if list.count > 1 {
                 Section("하루 환산 감소 (%)") {
-                    Chart(list.prefix(60)) { BarMark(x: .value("날짜", $0.start, unit: .day), y: .value("%/일", $0.perDay)).foregroundStyle(.purple) }.frame(height: 180)
+                    Chart(list.prefix(60)) { BarMark(x: .value("날짜", $0.start, unit: .day), y: .value("%/일", $0.perDay)).foregroundStyle($0.perDay < 1 ? Color.green : ($0.perDay < 2 ? .yellow : .red)) }.frame(height: 180)
                 }
             }
             Section("주차별") {
@@ -172,42 +172,56 @@ struct ParkingDrainView: View {
 struct MonthlyStatsView: View {
     let trips: [Object]
     let charges: [Object]
-    private struct Month: Identifiable { let id: Date; var km = 0.0; var kwh = 0.0; var cost = 0.0; var ac = 0.0; var dc = 0.0 }
-    private var months: [Month] {
-        var map: [Date: Month] = [:]
-        let cal = Calendar.current
-        func key(_ d: Date) -> Date { cal.dateInterval(of: .month, for: d)?.start ?? d }
-        for t in trips { if let d = HistoryData.date(t, "start") { let k = key(d); map[k, default: Month(id: k)].km += t.number("distanceKm") ?? 0 } }
+    private struct Bucket: Identifiable { let id: Date; var km = 0.0; var cost = 0.0; var ac = 0.0; var dc = 0.0 }
+    /// Fewer than 3 months of data → weekly bars, so one month is not a single wall-sized block.
+    private var weekly: Bool {
+        let firsts = (trips.compactMap { HistoryData.date($0, "start") } + charges.compactMap { HistoryData.date($0, "at") })
+        guard let first = firsts.min() else { return true }
+        return Date().timeIntervalSince(first) < 90 * 86_400
+    }
+    private var buckets: [Bucket] {
+        let cal = Calendar.current, unit: Calendar.Component = weekly ? .weekOfYear : .month
+        var map: [Date: Bucket] = [:]
+        func key(_ d: Date) -> Date { cal.dateInterval(of: unit, for: d)?.start ?? d }
+        for t in trips { if let d = HistoryData.date(t, "start") { let k = key(d); map[k, default: Bucket(id: k)].km += t.number("distanceKm") ?? 0 } }
         for c in charges {
             guard let d = HistoryData.date(c, "at") else { continue }
             let k = key(d), e = HistoryData.energy(c) ?? 0
-            map[k, default: Month(id: k)].kwh += e
-            map[k, default: Month(id: k)].cost += HistoryData.cost(c) ?? 0
-            if ["dc", "supercharger"].contains(c.string("chargeType")) { map[k, default: Month(id: k)].dc += e } else { map[k, default: Month(id: k)].ac += e }
+            map[k, default: Bucket(id: k)].cost += HistoryData.cost(c) ?? 0
+            if ["dc", "supercharger"].contains(c.string("chargeType")) { map[k, default: Bucket(id: k)].dc += e } else { map[k, default: Bucket(id: k)].ac += e }
         }
         return Array(map.values.sorted { $0.id < $1.id }.suffix(12))
     }
     var body: some View {
-        let list = months
-        List {
-            Section("주행거리 (km)") { Chart(list) { BarMark(x: .value("월", $0.id, unit: .month), y: .value("km", $0.km)).foregroundStyle(.blue) }.frame(height: 170) }
-            Section("충전량 (kWh) · 완속/급속") {
-                Chart(list) { m in
-                    BarMark(x: .value("월", m.id, unit: .month), y: .value("kWh", m.ac)).foregroundStyle(by: .value("종류", "완속"))
-                    BarMark(x: .value("월", m.id, unit: .month), y: .value("kWh", m.dc)).foregroundStyle(by: .value("종류", "급속"))
-                }.chartForegroundStyleScale(["완속": Color.green, "급속": Color.orange]).frame(height: 170)
-            }
-            Section("충전 비용") { Chart(list) { BarMark(x: .value("월", $0.id, unit: .month), y: .value("원", $0.cost)).foregroundStyle(.pink) }.frame(height: 170) }
-            Section("월별 요약") {
-                ForEach(Array(list.reversed())) { m in
-                    HStack {
-                        Text(m.id.formatted(.dateTime.year().month())).font(.subheadline)
-                        Spacer()
-                        Text(String(format: "%.0f km · %.0f kWh · ", m.km, m.kwh) + HistoryData.won(m.cost)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                    }
+        let list = buckets, unit: Calendar.Component = weekly ? .weekOfYear : .month
+        let label = weekly ? "주" : "월"
+        ScrollView {
+            VStack(spacing: 14) {
+                chartCard("\(label)별 주행거리", "km", String(format: "합계 %.0f km", list.map(\.km).reduce(0, +))) {
+                    Chart(list) { b in
+                        BarMark(x: .value(label, b.id, unit: unit), y: .value("km", b.km), width: .ratio(0.6)).foregroundStyle(Color.blue.gradient).cornerRadius(4)
+                    }.chartXAxis { AxisMarks(values: .automatic(desiredCount: 6)) { _ in AxisGridLine(); AxisValueLabel(format: weekly ? .dateTime.month(.defaultDigits).day() : .dateTime.month(.abbreviated)) } }
                 }
-            }
-        }.navigationTitle("월별 통계")
+                chartCard("\(label)별 충전량", "kWh", String(format: "완속 %.0f · 급속 %.0f kWh", list.map(\.ac).reduce(0, +), list.map(\.dc).reduce(0, +))) {
+                    Chart(list) { b in
+                        BarMark(x: .value(label, b.id, unit: unit), y: .value("kWh", b.ac), width: .ratio(0.6)).foregroundStyle(by: .value("종류", "완속"))
+                        BarMark(x: .value(label, b.id, unit: unit), y: .value("kWh", b.dc), width: .ratio(0.6)).foregroundStyle(by: .value("종류", "급속"))
+                    }.chartForegroundStyleScale(["완속": Color.green, "급속": Color.orange])
+                        .chartXAxis { AxisMarks(values: .automatic(desiredCount: 6)) { _ in AxisGridLine(); AxisValueLabel(format: weekly ? .dateTime.month(.defaultDigits).day() : .dateTime.month(.abbreviated)) } }
+                }
+                chartCard("\(label)별 충전 비용", "원", "합계 " + HistoryData.won(list.map(\.cost).reduce(0, +))) {
+                    Chart(list) { b in
+                        BarMark(x: .value(label, b.id, unit: unit), y: .value("원", b.cost), width: .ratio(0.6)).foregroundStyle(Color.pink.gradient).cornerRadius(4)
+                    }.chartXAxis { AxisMarks(values: .automatic(desiredCount: 6)) { _ in AxisGridLine(); AxisValueLabel(format: weekly ? .dateTime.month(.defaultDigits).day() : .dateTime.month(.abbreviated)) } }
+                }
+            }.padding(16)
+        }.navigationTitle(weekly ? "주별 통계" : "월별 통계")
+    }
+    private func chartCard<C: View>(_ title: String, _ unit: String, _ caption: String, @ViewBuilder _ chart: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) { Text(title).font(.subheadline.bold()); Text(unit).font(.caption).foregroundStyle(.secondary); Spacer(); Text(caption).font(.caption).foregroundStyle(.secondary).monospacedDigit() }
+            chart().frame(height: 150)
+        }.padding(12).background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -422,6 +436,7 @@ struct TeslaMateView: View {
             content.frame(maxHeight: .infinity)
         }
         .navigationTitle("TeslaMate").navigationBarTitleDisplayMode(.inline)
+        .environment(\.locale, Locale(identifier: "ko_KR"))
     }
     @ViewBuilder private var content: some View {
         switch section {
@@ -490,13 +505,17 @@ struct TeslaMateOverview: View {
             return Point(id: i, at: d, whPerKm: w)
         }
     }
+    /// Median of per-parking rates (%/day). Periods with an unobserved drive or charge give absurd rates and are dropped.
     private var drainPerDay: Double? {
-        let rows = parking.compactMap { p -> (Double, Double)? in
+        let rates = parking.compactMap { p -> Double? in
             guard p.string("classification") == "parking", let s = p.number("start"), let e = p.number("end"), let d = p.number("deltaSOC"), d >= 0 else { return nil }
-            let h = (e - s) / 3_600_000; return h >= 3 ? (d, h) : nil
-        }
-        let hours = rows.map { $0.1 }.reduce(0, +)
-        return hours > 0 ? rows.map { $0.0 }.reduce(0, +) / hours * 24 : nil
+            let h = (e - s) / 3_600_000
+            guard h >= 6 else { return nil }
+            let r = d / h * 24
+            return r <= 8 ? r : nil
+        }.sorted()
+        guard !rates.isEmpty else { return nil }
+        return rates[rates.count / 2]
     }
     var body: some View {
         let t = monthTrips, c = monthCharges
@@ -513,17 +532,17 @@ struct TeslaMateOverview: View {
                     kpi("충전", shown ? kwh : 0, "%.0f", "kWh", .green, .charges)
                     kpi("비용", shown ? cost / 10000 : 0, "%.1f", "만원", .pink, .usage)
                 }
-                card("최근 30일 주행·충전", .stats) {
-                    Chart {
-                        ForEach(days) { d in
-                            BarMark(x: .value("날짜", d.id, unit: .day), y: .value("km", shown ? d.km : 0)).foregroundStyle(Color.blue.gradient)
-                        }
-                        ForEach(days.filter { $0.kwh > 0 }) { d in
-                            PointMark(x: .value("날짜", d.id, unit: .day), y: .value("km", shown ? d.kwh : 0))
-                                .symbol { Image(systemName: "bolt.fill").font(.caption2).foregroundStyle(.green) }
-                        }
-                    }.frame(height: 150).chartXAxis { AxisMarks(values: .stride(by: .day, count: 7)) { AxisValueLabel(format: .dateTime.month().day()) } }
-                    HStack(spacing: 12) { legend(.blue, "주행 km"); legend(.green, "충전 kWh") }.font(.caption2)
+                card("최근 30일", .stats) {
+                    // Separate axes: km and kWh never share one scale.
+                    HStack { legend(.blue, "주행 km"); Spacer(); Text(String(format: "%.0f km", days.map(\.km).reduce(0, +))).font(.caption).monospacedDigit().foregroundStyle(.secondary) }.font(.caption2)
+                    Chart(days) { d in
+                        BarMark(x: .value("날짜", d.id, unit: .day), y: .value("km", shown ? d.km : 0), width: .ratio(0.7)).foregroundStyle(Color.blue.gradient).cornerRadius(2)
+                    }.frame(height: 90).chartXAxis(.hidden).chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) }
+                    HStack { legend(.green, "충전 kWh"); Spacer(); Text(String(format: "%.0f kWh", days.map(\.kwh).reduce(0, +))).font(.caption).monospacedDigit().foregroundStyle(.secondary) }.font(.caption2)
+                    Chart(days) { d in
+                        BarMark(x: .value("날짜", d.id, unit: .day), y: .value("kWh", shown ? d.kwh : 0), width: .ratio(0.7)).foregroundStyle(Color.green.gradient).cornerRadius(2)
+                    }.frame(height: 60).chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) }
+                        .chartXAxis { AxisMarks(values: .stride(by: .day, count: 7)) { AxisValueLabel(format: .dateTime.month(.defaultDigits).day()) } }
                 }
                 HStack(spacing: 10) {
                     card("이번 달 충전 구성", .charges) {
@@ -536,11 +555,16 @@ struct TeslaMateOverview: View {
                         }
                     }
                     card("주차 중 방전", .parking) {
-                        Gauge(value: min(shown ? (drainPerDay ?? 0) : 0, 5), in: 0...5) {
-                            Text("%/일")
-                        } currentValueLabel: { Text(drainPerDay.map { String(format: "%.1f", $0) } ?? "—").monospacedDigit() }
-                            .gaugeStyle(.accessoryCircular).tint(Gradient(colors: [.green, .yellow, .red])).scaleEffect(1.5).frame(height: 120)
-                        Text("하루 평균 감소").font(.caption2).foregroundStyle(.secondary)
+                        let v = drainPerDay ?? 0, color: Color = v < 1 ? .green : (v < 2 ? .yellow : .red)
+                        ZStack {
+                            Circle().stroke(Color.secondary.opacity(0.2), lineWidth: 12)
+                            Circle().trim(from: 0, to: shown ? min(v / 3, 1) : 0).stroke(color.gradient, style: StrokeStyle(lineWidth: 12, lineCap: .round)).rotationEffect(.degrees(-90))
+                            VStack(spacing: 0) {
+                                Text(drainPerDay.map { String(format: "%.1f", $0) } ?? "—").font(.title2.bold()).monospacedDigit()
+                                Text("%/일").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }.frame(width: 110, height: 110).frame(maxWidth: .infinity)
+                        Text(drainPerDay == nil ? "6시간 이상 주차 기록 필요" : "주차 중 하루 감소 (중앙값)").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
                 card("주행 효율 추이 (Wh/km)", .trips) {
