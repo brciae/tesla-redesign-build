@@ -123,15 +123,6 @@ struct FleetSupplementView: View {
     private var chargingMap: some View {
         Map(position: $mapPosition, selection: $selectedSite) {
             UserAnnotation()
-            if let origin {
-                Annotation("내 차", coordinate: origin.coordinate) {
-                    // Same top-view art as the controls screen (nose up after the 180° turn), turned to the car's heading.
-                    Image("TeslaTopExterior").resizable().scaledToFit().frame(height: 34)
-                        .rotationEffect(.degrees(180 + (carHeading ?? 0)))
-                        .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
-                        .accessibilityLabel("내 차 위치")
-                }.annotationTitles(.hidden)
-            }
             ForEach(visibleSites) { site in
                 stationAnnotation(site)
             }
