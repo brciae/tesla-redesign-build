@@ -200,8 +200,11 @@ static NSArray *YLLifecycleObservers;
     self.routeColor = [UIColor colorWithRed:0.10 green:0.48 blue:1.0 alpha:1];
     self.routeStrokeColor = [UIColor colorWithWhite:0.12 alpha:0.95];
     self.routeColors = [KNRouteColors routeColors];
-    self.routeColors.normal = self.routeColor; self.routeColors.trafficJamModerate = self.routeColor;
-    self.routeColors.trafficJamHeavy = self.routeColor; self.routeColors.trafficJamVeryHeavy = self.routeColor;
+    // Live traffic on the route: free flow stays brand blue, congestion reads yellow / orange / red.
+    self.routeColors.normal = self.routeColor;
+    self.routeColors.trafficJamModerate = [UIColor colorWithRed:1.0 green:0.80 blue:0.10 alpha:1];
+    self.routeColors.trafficJamHeavy = [UIColor colorWithRed:1.0 green:0.50 blue:0.08 alpha:1];
+    self.routeColors.trafficJamVeryHeavy = [UIColor colorWithRed:0.92 green:0.16 blue:0.14 alpha:1];
     self.routeColors.unknown = self.routeColor; self.routeColors.blocked = UIColor.systemRedColor;
     self.routeStyle.lineColors = self.routeColors;
     self.routeStrokeColors = [KNRouteColors routeColors];
