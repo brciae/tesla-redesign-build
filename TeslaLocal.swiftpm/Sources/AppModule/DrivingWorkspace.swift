@@ -12,7 +12,6 @@ struct DrivingWorkspace: View {
     @State private var settings = false
     @State private var destinationSearch = false
     @State private var carError: String?
-    @AppStorage("navigation.character") private var characterMode = false
     var body: some View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width > proxy.size.height
@@ -27,9 +26,7 @@ struct DrivingWorkspace: View {
                         }
                     } car: {
                         ZStack {
-                            if characterMode {
-                                CharacterRunnerView(speedKmh: readout.speedKmh)
-                            } else if let camera = navigation.theme.carCamera {
+                            if let camera = navigation.theme.carCamera {
                                 RealityVehicleView(runtime: model.runtime, presentation: readout.scenePresentation(theme: navigation.theme),
                                     command: VehicleCameraCommand(serial: NavigationTheme.allCases.firstIndex(of: navigation.theme) ?? 0, action: "angle", yaw: camera.yaw, pitch: camera.pitch, zoom: navigation.theme.carZoom),
                                     reducedMotion: true, appearance: appearance.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)),
@@ -453,7 +450,6 @@ struct NavigationDisplaySettings: View {
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
-    @AppStorage("navigation.character") private var characterMode = false
     var body: some View { Group {
                     Section("지도 표시") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
@@ -472,7 +468,6 @@ struct NavigationDisplaySettings: View {
                                 Text("주간").tag("day")
                                 Text("야간").tag("night")
                             }.pickerStyle(.segmented)
-                            Toggle("대시보드 차량 대신 캐릭터", isOn: $characterMode)
                             Picker("내 차 표시", selection: $markerStyle) {
                                 Text("파랑").tag("arrow.blue")
                                 Text("초록").tag("arrow.green")
