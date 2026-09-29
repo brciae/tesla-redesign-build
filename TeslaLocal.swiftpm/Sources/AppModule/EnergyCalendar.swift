@@ -83,7 +83,7 @@ struct EnergyCalendarView: View {
     private var energyChart: some View {
         Chart(days) { day in
             bars(for: day)
-        }
+        }.chartReveal()
         .chartForegroundStyleScale(["주행": Color.orange, "주차": Color.purple])
         .chartLegend(.hidden)
         .chartYAxis {
