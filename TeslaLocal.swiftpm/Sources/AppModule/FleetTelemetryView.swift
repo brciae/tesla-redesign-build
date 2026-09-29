@@ -134,7 +134,7 @@ struct FleetTelemetryView: View {
                     if trend.count > 1 {
                         Chart(trend) { point in
                             PointMark(x: .value("시각", point.at), y: .value("수신값", point.number!)).foregroundStyle(.mint)
-                        }.frame(height: 180)
+                        }.chartReveal().frame(height: 180)
                         Caption("최근 유효 표본 최대 240개 · 미수신 구간은 연결하지 않습니다.")
                     } else { Caption("시계열 표본이 쌓이면 온도·잔량·충전 추이를 표시합니다.") }
                 }
