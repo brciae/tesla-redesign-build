@@ -1299,6 +1299,7 @@ struct EnergyTabRootView: View {
                 Text("배터리 분석").tag(1)
                 Text("소비·비용").tag(2)
                 Text("달력").tag(3)
+                Text("기록").tag(4)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1312,6 +1313,8 @@ struct EnergyTabRootView: View {
                 DrivingInsightsView()
             } else if selectedSection == 3 {
                 EnergyCalendarView()
+            } else if selectedSection == 4 {
+                HistoryDashboardView()
             } else {
                 // v90: this segment used to be a thinner copy of BatteryView.
                 // It now shows the real screen, so the analysis exists once.
