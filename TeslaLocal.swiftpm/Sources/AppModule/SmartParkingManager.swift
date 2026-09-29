@@ -92,6 +92,8 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
     func observeVehicleTelemetry(_ telemetry: Object, vin: String, receivedAt: Date = Date()) {
         guard !vin.isEmpty, vin == selectedVehicleID else { return }
+        // BLE and Fleet alternate here; merge per group by report time instead of letting one erase the other.
+        let telemetry = telemetryVIN == vin ? VehicleStateMerge.merge(vehicleTelemetry, telemetry) : telemetry
         guard telemetryVIN != vin || !NSDictionary(dictionary: vehicleTelemetry).isEqual(to: telemetry) else { return }
         vehicleTelemetry = telemetry; telemetryVIN = vin
         let gear = telemetry.object("drive").string("gear")
@@ -391,6 +393,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
         // Closures & Security
         snap.isLocked = closures["locked"] as? Bool
+        snap.lockSourceConflict = closures["sourceConflict"] as? Bool
         let doors = ["driverFront", "driverRear", "passengerFront", "passengerRear"].compactMap { closures[$0] as? Bool }
         snap.areDoorsClosed = doors.contains(true) ? false : (doors.count == 4 ? true : nil)
         snap.isTrunkClosed = (closures["trunk"] as? Bool).map { !$0 }
@@ -610,4 +613,26 @@ private func headingToCardinal(_ deg: Double) -> String {
     ]
     let index = Int((normalized + 22.5) / 45.0) % 8
     return "\(directions[index]) \(Int(normalized))°"
+}
+
+/// Unified vehicle state: per data group the most recently reported source wins, and fields the newer
+/// report lacks are filled from the older one. Disagreeing lock reports close in time are flagged.
+enum VehicleStateMerge {
+    static func merge(_ older: Object, _ newer: Object) -> Object {
+        var result = older
+        for (name, value) in newer {
+            guard let incoming = value as? Object else { result[name] = value; continue }
+            let fresh = incoming.filter { !($0.value is NSNull) }
+            let existing = older.object(name).filter { !($0.value is NSNull) }
+            let inAt = fresh.number("at") ?? 0, exAt = existing.number("at") ?? 0
+            var merged = inAt >= exAt ? existing.merging(fresh) { _, new in new } : fresh.merging(existing) { _, old in old }
+            if name == "closures", let a = fresh["locked"] as? Bool, let b = existing["locked"] as? Bool, a != b, abs(inAt - exAt) <= 60000 {
+                merged["sourceConflict"] = true
+            } else if name == "closures" {
+                merged["sourceConflict"] = nil
+            }
+            result[name] = merged
+        }
+        return result
+    }
 }
