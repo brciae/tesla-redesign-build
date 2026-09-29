@@ -88,7 +88,7 @@ struct EnergyCalendarView: View {
         .chartLegend(.hidden)
         .chartYAxis {
             AxisMarks(values: [0]) {
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [1, 3])).foregroundStyle(Color.white.opacity(0.35))
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [1, 3])).foregroundStyle(Color.primary.opacity(0.35))
             }
         }
         .chartXAxis {
@@ -172,12 +172,12 @@ struct EnergyCalendarView: View {
         return VStack(spacing: 3) {
             Text(String(Calendar.current.component(.day, from: day.date)))
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.primary)
             dayDelta(day)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 64)
-        .background(isSelected ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+        .background(isSelected ? Color.primary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
     }
 
     @ViewBuilder private func dayDelta(_ day: EnergyCalendarDay) -> some View {
@@ -219,7 +219,7 @@ struct EnergyCalendarView: View {
         HStack(alignment: .firstTextBaseline) {
             Text(label).font(.system(size: 14)).foregroundStyle(Theme.muted)
             Spacer()
-            Text(value).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(.white)
+            Text(value).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Color.primary)
             if !unit.isEmpty { Text(unit).font(.system(size: 12)).foregroundStyle(Theme.muted) }
         }
     }
