@@ -29,13 +29,30 @@ enum PublicChargingKey {
 actor PublicChargingAPI {
     static let shared = PublicChargingAPI()
     private struct Cache: Codable { var region: String; var catalogAt: Date; var fetchedAt: Date; var rows: [PublicCharger] }
-    private var cache: Cache?
+    private var caches: [String: Cache] = [:]
+    private var cacheLoaded = false
     private var loading = false
-    private let cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("public-charging.json")
+    private let cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("public-charging-regions.json")
+    /// Several sigungu at once ("41460,41130"); each keeps its own cache. Rows are merged by charger ID.
+    func sites(regions: String) async throws -> [NearbyChargingSite] {
+        let codes = regions.split(separator: ",").map(String.init).filter { !$0.isEmpty }
+        guard !codes.isEmpty else { throw PublicChargingData.failure("조회할 시·군·구를 선택하세요.") }
+        var merged: [String: NearbyChargingSite] = [:]
+        var firstError: Error?
+        for code in codes.prefix(8) {
+            do { for site in try await sites(region: code) { merged[site.id] = site } }
+            catch is CancellationError { throw CancellationError() }
+            catch { firstError = firstError ?? error }
+        }
+        if merged.isEmpty, let firstError { throw firstError }
+        return Array(merged.values)
+    }
     func sites(region: String) async throws -> [NearbyChargingSite] {
         guard region.range(of: "^[0-9]{5}$", options: .regularExpression) != nil else { throw PublicChargingData.failure("조회할 시·군·구를 선택하세요.") }
         guard let key = PublicChargingKey.read() else { throw PublicChargingData.failure("공공데이터 인증키를 등록하세요.") }
-        if cache == nil, let data = try? Data(contentsOf: cacheURL) { cache = try? JSONDecoder().decode(Cache.self, from: data) }
+        if !cacheLoaded, let data = try? Data(contentsOf: cacheURL) { caches = (try? JSONDecoder().decode([String: Cache].self, from: data)) ?? [:] }
+        cacheLoaded = true
+        let cache = caches[region]
         let now = Date()
         if let cache, cache.region == region, now.timeIntervalSince(cache.fetchedAt) < 60 { return PublicChargingData.sites(cache.rows, fetchedAt: cache.fetchedAt) }
         guard !loading else { throw PublicChargingData.failure("충전소 조회 중입니다. 잠시 후 다시 확인하세요.") }
@@ -51,8 +68,8 @@ actor PublicChargingAPI {
         try Task.checkCancellation()
         let rows = PublicChargingData.merge(delta ? cache?.rows ?? [] : [], updates)
         let next = Cache(region: region, catalogAt: delta ? cache!.catalogAt : now, fetchedAt: now, rows: rows)
-        cache = next
-        if let data = try? JSONEncoder().encode(next) { try? data.write(to: cacheURL, options: .atomic) }
+        caches[region] = next
+        if let data = try? JSONEncoder().encode(caches) { try? data.write(to: cacheURL, options: .atomic) }
         return PublicChargingData.sites(rows, fetchedAt: now)
     }
     private func pages(region: String, key: String, delta: Bool) async throws -> [PublicCharger] {
