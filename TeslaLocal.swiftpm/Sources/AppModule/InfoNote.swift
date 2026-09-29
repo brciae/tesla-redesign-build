@@ -46,8 +46,13 @@ struct ChartReveal: ViewModifier {
     @State private var progress: CGFloat = 0
     func body(content: Content) -> some View {
         content
+            // The wipe only masks horizontally: 40 pt of slack above and below keeps
+            // top annotations, a 100 % line's stroke and axis labels from being clipped.
             .mask(alignment: .leading) {
-                GeometryReader { g in Rectangle().frame(width: g.size.width * progress) }
+                GeometryReader { g in
+                    Rectangle().frame(width: progress >= 1 ? g.size.width + 80 : g.size.width * progress, height: g.size.height + 80)
+                        .offset(x: progress >= 1 ? -40 : 0, y: -40)
+                }
             }
             .opacity(0.35 + 0.65 * Double(progress))
             .onAppear {
@@ -57,6 +62,13 @@ struct ChartReveal: ViewModifier {
     }
 }
 extension View { func chartReveal() -> some View { modifier(ChartReveal()) } }
+
+/// Light/dark helpers live here (not in App.swift) so the interface probe, which has its own Theme, compiles too.
+extension Theme {
+    /// Card fill: the old `Color(white:)` value in dark mode, plain white in light mode.
+    static func fill(_ white: CGFloat) -> Color { adaptive(dark: UIColor(white: white, alpha: 1), light: UIColor.white) }
+    static func adaptive(dark: UIColor, light: UIColor) -> Color { Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light }) }
+}
 
 /// iOS 18 zoom navigation (card grows into its detail screen); plain push on iOS 17.
 extension View {
