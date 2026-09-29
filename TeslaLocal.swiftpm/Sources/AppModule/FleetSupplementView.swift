@@ -152,6 +152,7 @@ struct FleetSupplementView: View {
                 if !error.isEmpty { Text(error).font(.subheadline).foregroundStyle(.orange) }
                 if let site = visibleSites.first(where: { $0.id == selectedSite }) {
                     Text(site.name).font(.headline)
+                    if !site.address.isEmpty, site.address != site.name { Text(site.address).font(.caption).foregroundStyle(.secondary) }
                     if let origin { Text(String(format: "차량 위치에서 %.1f km", origin.distance(from: CLLocation(latitude: site.latitude, longitude: site.longitude)) / 1000)).font(.caption).foregroundStyle(.secondary) }
                     HStack {
                         Text(site.category)
@@ -163,8 +164,9 @@ struct FleetSupplementView: View {
                     if !site.chargingDetail.isEmpty { Text(site.chargingDetail).font(.caption) }
                     if !site.restriction.isEmpty { Text(site.restriction).font(.caption).foregroundStyle(.orange) }
                     if let at = site.fetchedAt { Text("조회 " + at.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
-                    Button("목적지로 선택") { destination = SavedNavigationPlace(name: site.name, address: site.address, latitude: site.latitude, longitude: site.longitude) }
-                        .buttonStyle(.borderedProminent).frame(maxWidth: .infinity).accessibilityIdentifier("charging.destination")
+                    Button { destination = SavedNavigationPlace(name: site.name, address: site.address, latitude: site.latitude, longitude: site.longitude) } label: {
+                        Label("목적지로 선택", systemImage: "location.fill").font(.headline).frame(maxWidth: .infinity, minHeight: 36)
+                    }.buttonStyle(.borderedProminent).tint(.blue).foregroundStyle(.white).accessibilityIdentifier("charging.destination")
                 } else if !busy && error.isEmpty {
                     Text(visibleSites.isEmpty ? "이 종류의 충전소가 조회되지 않았습니다" : "지도에서 충전소를 선택하세요").font(.subheadline)
                 }
