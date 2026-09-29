@@ -87,7 +87,7 @@ struct BatteryOverview: View {
                     Chart {
                         socMarks(cleanedTrend)
                     }.chartReveal()
-                    .chartYScale(domain: 0...100)
+                    .chartYScale(domain: 0...104)
                     // v90: 100 / 50 / 0 on both edges and no gridlines — the
                     // reference reading, where the shape carries the meaning.
                     .chartYAxis {
