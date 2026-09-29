@@ -281,7 +281,7 @@ struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: V
     private func styled<Content: View>(_ content: Content) -> some View {
         content
             .safeAreaPadding(.bottom, 8)
-            .toolbarBackground(Color(white: 0.12).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
+            .toolbarBackground(Theme.adaptive(dark: UIColor(white: 0.12, alpha: 1), light: UIColor.white).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
     }
 }
