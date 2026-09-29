@@ -143,9 +143,15 @@ struct NavigationSpeechCue: Decodable {
     var incidental: Bool? = nil
     static func parse(_ message: String, now: Date) -> NavigationSpeechCue? {
         if message.hasPrefix("{") {
-            guard let data = message.data(using: .utf8), let cue = try? JSONDecoder().decode(Self.self, from: data),
-                  cue.validUntil.isFinite, cue.validUntil > now.timeIntervalSince1970,
-                  cue.validUntil <= now.timeIntervalSince1970 + 12.1, !cue.text.isEmpty else { return nil }
+            // Lenient read: the bridge's booleans may arrive as true/false or 0/1.
+            guard let data = message.data(using: .utf8),
+                  let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let text = raw["text"] as? String, !text.isEmpty,
+                  let until = (raw["validUntil"] as? NSNumber)?.doubleValue, until.isFinite,
+                  until > now.timeIntervalSince1970, until <= now.timeIntervalSince1970 + 12.1 else { return nil }
+            var cue = Self(text: text, validUntil: until, targetID: raw["targetID"] as? String)
+            cue.stateChange = (raw["stateChange"] as? NSNumber)?.boolValue
+            cue.incidental = (raw["incidental"] as? NSNumber)?.boolValue
             return cue
         }
         return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 12, targetID: nil)
