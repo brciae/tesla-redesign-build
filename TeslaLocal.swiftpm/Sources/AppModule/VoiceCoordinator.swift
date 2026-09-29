@@ -161,7 +161,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
-        guard let cue = NavigationSpeechCue.parse(text, now: now) else { automaticTrace("길안내 수신 · 기한 만료 또는 형식 오류"); return }
+        guard let cue = NavigationSpeechCue.parse(text, now: now) else { automaticTrace(text.hasPrefix("{") && text.contains("\"text\"") ? "길안내 수신 · 안내 지점 통과 후 도착 (건너뜀)" : "길안내 수신 · 형식 오류"); return }
         let text = cue.text
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { automaticTrace("길안내 수신 · 음성 설정 꺼짐"); return }
         automaticTrace("길안내 요청 수신")
