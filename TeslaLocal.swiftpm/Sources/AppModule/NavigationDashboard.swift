@@ -32,7 +32,7 @@ enum NavInk {
 // MARK: - Public model
 
 enum NavigationTheme: String, CaseIterable, Identifiable {
-    case cluster, touring, minimal, panorama, focus, fleet
+    case cluster, touring, minimal, panorama, focus, fleet, running
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -42,6 +42,7 @@ enum NavigationTheme: String, CaseIterable, Identifiable {
         case .panorama: return "파노라마"
         case .focus: return "포커스"
         case .fleet: return "관제"
+        case .running: return "러닝"
         }
     }
     /// Camera for the vehicle view, nil when the layout shows no vehicle model.
@@ -50,7 +51,7 @@ enum NavigationTheme: String, CaseIterable, Identifiable {
         case .touring: return (-0.72, 0.42)          // Tesla-app front three-quarter
         case .minimal, .panorama: return (.pi, 0.30) // chase view over the neon road
         case .focus: return (.pi, 0.62)              // driving visualisation, high behind
-        case .cluster, .fleet: return nil
+        case .cluster, .fleet, .running: return nil
         }
     }
     /// Camera distance multiplier. Road and car live in the same 3D scene, so scale always matches.
@@ -315,12 +316,16 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             return m.wide
                 ? CGRect(x: m.w - m.w * 0.25 - m.pad, y: m.pad, width: m.w * 0.25, height: m.h * 0.48)
                 : CGRect(x: m.pad, y: m.h * 0.56, width: m.w - m.pad * 2, height: m.h * 0.22)
+        case .running:
+            return m.wide
+                ? CGRect(x: m.w - m.w * 0.25 - m.pad, y: m.pad, width: m.w * 0.25, height: m.h * 0.48)
+                : CGRect(x: m.pad, y: m.h * 0.66, width: m.w - m.pad * 2, height: m.h * 0.18)
         }
     }
 
     @ViewBuilder private func mapMask(rect: CGRect, m: NavMetrics) -> some View {
         switch theme {
-        case .touring, .focus:
+        case .touring, .focus, .running:
             RoundedRectangle(cornerRadius: 24 * m.u, style: .continuous)
         case .panorama:
             LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.7), .init(color: .clear, location: 1)],
@@ -353,6 +358,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         case .panorama: panoramaLayer(m)
         case .focus: focusLayer(m)
         case .fleet: fleetLayer(m)
+        case .running: runningLayer(m)
         }
     }
 
@@ -686,6 +692,43 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             EnergyLine(powerKW: data.powerKW, u: m.u)
                 .frame(width: stage.width * 0.8, height: 20 * m.u)
                 .offset(x: stage.minX + stage.width * 0.1, y: stage.maxY - 26 * m.u)
+        }
+        .frame(width: m.w, height: m.h, alignment: .topLeading)
+    }
+
+    // MARK: Running — the character runs in place facing the viewer, paced by the car's speed
+
+    private func runningLayer(_ m: NavMetrics) -> some View {
+        let rect = mapRect(m)
+        let colW = m.wide ? m.w * 0.25 : m.w - m.pad * 2
+        let stage = m.wide
+            ? CGRect(x: colW + m.pad * 2, y: 0, width: m.w - (colW + m.pad * 2) * 2, height: m.h)
+            : CGRect(x: 0, y: m.h * 0.16, width: m.w, height: m.h * 0.50)
+        return ZStack(alignment: .topLeading) {
+            RadialGradient(colors: [Color(red: 0.10, green: 0.14, blue: 0.26), .black], center: UnitPoint(x: 0.5, y: 0.75), startRadius: 4, endRadius: stage.width * 0.75)
+                .frame(width: stage.width, height: stage.height)
+                .offset(x: stage.minX, y: stage.minY)
+                .allowsHitTesting(false)
+            CharacterRunnerView(speedKmh: data.speedKmh)
+                .frame(width: stage.width, height: stage.height * 0.9)
+                .offset(x: stage.minX, y: stage.minY + stage.height * 0.08)
+                .allowsHitTesting(false)
+            FocusTurnPill(data: data, u: m.u)
+                .frame(maxWidth: stage.width - m.pad * 2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: stage.width)
+                .offset(x: stage.minX, y: stage.minY + m.pad)
+            FocusSpeedColumn(data: data, u: m.u, media: m.wide && data.showsMedia ? media(.mini, m) : nil)
+                .frame(width: colW, height: m.wide ? m.h - m.pad * 2 : m.h * 0.16 - m.pad * 1.5)
+                .offset(x: m.pad, y: m.pad)
+            if data.laneCount > 0 {
+                LaneStrip(data: data, u: m.u)
+                    .frame(width: rect.width)
+                    .offset(x: rect.minX, y: m.wide ? rect.maxY + 8 * m.u : rect.maxY - 46 * m.u)
+            }
+            FocusArrival(data: data, u: m.u)
+                .frame(width: rect.width)
+                .offset(x: rect.minX, y: rect.maxY + 8 * m.u)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
