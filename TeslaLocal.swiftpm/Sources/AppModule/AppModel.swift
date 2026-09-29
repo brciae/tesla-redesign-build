@@ -78,6 +78,7 @@ final class AppModel: ObservableObject {
     private var fleetObservation: AnyCancellable?
     private var archiveObservation: AnyCancellable?
     private var lastArchiveSync = Date.distantPast
+    private var lastFleetPoll = Date.distantPast
     private var protectedDataObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
@@ -235,7 +236,9 @@ final class AppModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
             self?.syncArchiveIfNeeded()
-            if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active {
+            // Fleet API is billed per call and can wake the car: poll every 30 s, not every 5 s timer tick.
+            if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active, Date().timeIntervalSince(self.lastFleetPoll) >= 30 {
+                self.lastFleetPoll = Date()
                 Task { @MainActor in await self.fleet.refreshVehicleSnapshot() }
             }
             if self?.savePending == true { self?.saveRecordsWhenAvailable() }
