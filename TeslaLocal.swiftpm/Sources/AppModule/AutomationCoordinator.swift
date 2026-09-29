@@ -70,6 +70,21 @@ final class AutomationCoordinator: ObservableObject {
         catch { policy.document = old; throw error }
     }
     func resetObservation() { sample = nil; physicalExpiresAt = 0; policy.reset(); presence = "탑승 신호 미수신" }
+    /// The car's own route estimate says arrival below 15 %: warn once per destination so charging can be planned.
+    @MainActor private func checkArrivalEnergy(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator) {
+        guard snapshot.sectionIsRecent("drive_state") else { return }
+        let key = "automation.arrivalLow." + snapshot.vin
+        let defaults = UserDefaults.standard
+        let destination = (snapshot.payload["drive_state"] as? Object)?["active_route_destination"] as? String ?? ""
+        guard let arrival = snapshot.number("drive_state", "active_route_energy_at_arrival"), arrival.isFinite, !destination.isEmpty else {
+            defaults.removeObject(forKey: key); return
+        }
+        guard (0...100).contains(arrival), arrival < 15, defaults.string(forKey: key) != destination else { return }
+        defaults.set(destination, forKey: key)
+        let text = String(format: "%@ 도착 예상 배터리가 %.0f퍼센트로 낮습니다. 경로 중 충전을 계획하세요.", destination, arrival)
+        onNotification?(UUID().uuidString, "도착 배터리 부족 예상", text)
+        voice.say(text, key: "arrivalLow:" + snapshot.vin, category: "voiceAutomations", priority: 3, ttl: 60, manual: false)
+    }
     /// Parked with nobody aboard, yet still unlocked or a window open for 3+ minutes: warn once per parking.
     @MainActor private func checkLeftUnsecured(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator) {
         guard snapshot.sectionIsRecent("vehicle_state") else { return }
@@ -167,6 +182,7 @@ final class AutomationCoordinator: ObservableObject {
     @MainActor func observeFleet(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator, bleActive: Bool) {
         guard !blocked, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
         checkLeftUnsecured(snapshot, voice: voice)
+        checkArrivalEnergy(snapshot, voice: voice)
         let charge = snapshot.payload["charge_state"] as? Object ?? [:]
         if snapshot.sectionIsRecent("charge_state"), let at = snapshot.number("charge_state", "timestamp"), let state = charge["charging_state"] as? String {
             let current = ChargeObservation(vin: snapshot.vin, at: Date(timeIntervalSince1970: at / 1000), state: state, soc: snapshot.soc, limit: snapshot.number("charge_state", "charge_limit_soc"))
