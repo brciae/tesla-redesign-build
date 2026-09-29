@@ -170,7 +170,8 @@ struct NavigationSpeechPolicy {
         return true
     }
     static func shouldInterrupt(stateChange: Bool, navigationBusy: Bool, incidental: Bool, priority: Int, activePriority: Int) -> Bool {
-        stateChange || (!incidental && (!navigationBusy || priority > activePriority))
+        // A sentence already playing always finishes; the newer cue waits in the queue (older queued ones are pruned).
+        !navigationBusy && (stateChange || !incidental)
     }
 }
 
