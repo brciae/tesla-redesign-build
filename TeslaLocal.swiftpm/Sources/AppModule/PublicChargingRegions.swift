@@ -262,6 +262,22 @@ enum PublicChargingRegions {
         return result
     }
 
+    /// Sigungu codes covering the visible map area: a grid of sample points, denser when zoomed out (max 12 regions).
+    static func codes(in center: CLLocationCoordinate2D, latitudeDelta: Double, longitudeDelta: Double) async -> [String] {
+        let steps = max(latitudeDelta, longitudeDelta) > 0.25 ? 3 : 2
+        var points = [center]
+        for i in 0...steps { for j in 0...steps {
+            points.append(CLLocationCoordinate2D(latitude: center.latitude - latitudeDelta / 2 + latitudeDelta * Double(i) / Double(steps),
+                                                 longitude: center.longitude - longitudeDelta / 2 + longitudeDelta * Double(j) / Double(steps)))
+        } }
+        var result: [String] = []
+        for p in points where result.count < 12 {
+            if Task.isCancelled { break }
+            if let code = await code(near: CLLocation(latitude: p.latitude, longitude: p.longitude)), !result.contains(code) { result.append(code) }
+        }
+        return result
+    }
+
     /// Maps a coordinate to the KECO sigungu code through reverse geocoding (e.g. 경기도 + 용인시 → 41460).
     static func code(near location: CLLocation) async -> String? {
         guard let mark = try? await CLGeocoder().reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ko_KR")).first,
