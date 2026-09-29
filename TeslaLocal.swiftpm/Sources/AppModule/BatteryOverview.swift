@@ -94,14 +94,14 @@ struct BatteryOverview: View {
                         AxisMarks(position: .leading, values: [0, 50, 100]) { value in
                             AxisValueLabel {
                                 if let intVal = value.as(Int.self) {
-                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.45))
+                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.primary.opacity(0.45))
                                 }
                             }
                         }
                         AxisMarks(position: .trailing, values: [0, 50, 100]) { value in
                             AxisValueLabel {
                                 if let intVal = value.as(Int.self) {
-                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.45))
+                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.primary.opacity(0.45))
                                 }
                             }
                         }
@@ -112,7 +112,7 @@ struct BatteryOverview: View {
                                 if let date = value.as(Date.self) {
                                     Text(Self.batteryChartDateFormatter.string(from: date))
                                         .font(.system(size: 9))
-                                        .foregroundStyle(Color.white.opacity(0.55))
+                                        .foregroundStyle(Color.primary.opacity(0.55))
                                 }
                             }
                         }
@@ -174,7 +174,7 @@ struct BatteryOverview: View {
                     }
                 }
             }
-        }.padding(18).background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
+        }.padding(18).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
             .accessibilityIdentifier("battery.overview")
     }
 
@@ -184,12 +184,12 @@ struct BatteryOverview: View {
             let start = trip.number("at") ?? 0
             Text(Self.tripRowDateFormatter.string(from: Date(timeIntervalSince1970: start / 1000)))
                 .lineLimit(1)
-                .foregroundStyle(Color.white.opacity(0.85))
+                .foregroundStyle(Color.primary.opacity(0.85))
             Spacer(minLength: 4)
             Text(number(trip.number("km")) + " km · " + number(trip.number("soc")) + "%p")
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-                .foregroundStyle(Color.white.opacity(0.7))
+                .foregroundStyle(Color.primary.opacity(0.7))
             if trip.flag("partial") { Image(systemName: "exclamationmark.circle").foregroundStyle(.orange).accessibilityLabel("부분 기록") }
         }.font(.caption).monospacedDigit()
     }
