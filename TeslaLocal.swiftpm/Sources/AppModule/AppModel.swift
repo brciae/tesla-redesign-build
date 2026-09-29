@@ -250,8 +250,11 @@ final class AppModel: ObservableObject {
     }
     private func syncArchiveIfNeeded() {
         Task { @MainActor in
-        guard !demo, UIApplication.shared.applicationState == .active,
-              Date().timeIntervalSince(lastArchiveSync) >= 30, !FleetArchiveClient.shared.address.isEmpty,
+        // Also sync while iOS keeps the app alive in the background (BLE/location wake), less often,
+        // so NAS telemetry (charge state, lock, sessions) keeps flowing without the app on screen.
+        let active = UIApplication.shared.applicationState == .active
+        guard !demo,
+              Date().timeIntervalSince(lastArchiveSync) >= (active ? 30 : 120), !FleetArchiveClient.shared.address.isEmpty,
               !fleet.selectedVin.isEmpty else { return }
         lastArchiveSync = Date()
         let vin = fleet.selectedVin
