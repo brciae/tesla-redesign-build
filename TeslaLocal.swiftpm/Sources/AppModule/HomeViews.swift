@@ -835,7 +835,6 @@ struct ChargeStatusView: View {
         let isCharging = c.chargingNow
         let isPlugged = isCharging || c.flag("plugged")
         PageBody(title: "충전", briefing: .charging) {
-            NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .chargingHistory) } label: { Label("Tesla 충전 이력", systemImage: "bolt.fill") }
             VStack(spacing: 16) {
                 // 3D Charging Vehicle (only connects cable/energy when plugged/charging)
                 Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: isCharging, isPlugged: isPlugged)
@@ -1291,7 +1290,7 @@ struct ControlsTabRootView: View {
 struct EnergyTabRootView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
-    @State private var selectedSection = 0
+    @AppStorage("energy.section") private var selectedSection = 0
     var body: some View {
         VStack(spacing: 0) {
             Picker("에너지 구분", selection: $selectedSection) {
@@ -1325,7 +1324,6 @@ struct DriveTabRootView: View {
             Picker("운행 구분", selection: $selectedSection) {
                 Text("길안내").tag(0)
                 Text("위치·주차").tag(1)
-                Text("운행 기록").tag(2)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1335,10 +1333,8 @@ struct DriveTabRootView: View {
 
             if selectedSection == 0 {
                 NavigationLandingView(navigation: navigation)
-            } else if selectedSection == 1 {
-                LocationStatusView(link: link)
             } else {
-                TripsView()
+                LocationStatusView(link: link)
             }
         }
         .background(Theme.bg)
