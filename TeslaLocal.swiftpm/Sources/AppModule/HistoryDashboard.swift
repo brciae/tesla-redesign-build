@@ -431,3 +431,123 @@ enum TeslaExportParser {
         return out
     }
 }
+
+/// One home for every record/analysis screen, TeslaMate-style: pick a sub-tab, drill into details.
+struct TeslaMateView: View {
+    enum Section: String, CaseIterable, Identifiable {
+        case overview = "개요", charges = "충전", trips = "주행", battery = "배터리", usage = "소비·비용"
+        case parking = "주차·방전", calendar = "달력", stats = "통계", places = "장소", data = "자료"
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .overview: return "square.grid.2x2"
+            case .charges: return "bolt.car"
+            case .trips: return "car.side"
+            case .battery: return "battery.75percent"
+            case .usage: return "wonsign.circle"
+            case .parking: return "moon.zzz"
+            case .calendar: return "calendar"
+            case .stats: return "chart.bar"
+            case .places: return "mappin.and.ellipse"
+            case .data: return "square.and.arrow.down"
+            }
+        }
+    }
+    @EnvironmentObject private var model: AppModel
+    @AppStorage("teslamate.section") private var raw = Section.overview.rawValue
+    private var section: Section { Section(rawValue: raw) ?? .overview }
+    private var charges: [Object] {
+        let priced = model.output.object("charging").rows("rows")
+        return (priced.isEmpty ? model.state.rows("charges") : priced).sorted { ($0.number("at") ?? 0) > ($1.number("at") ?? 0) }
+    }
+    private var trips: [Object] { model.state.rows("trips").sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) } }
+    private var capacity: Double { model.output.object("energy").number("capacityKWh") ?? 75 }
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Section.allCases) { s in
+                            Button { raw = s.rawValue } label: {
+                                Label(s.rawValue, systemImage: s.icon).font(.subheadline.weight(s == section ? .bold : .regular))
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(s == section ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.12), in: Capsule())
+                            }.buttonStyle(.plain).id(s.id)
+                        }
+                    }.padding(.horizontal, 16).padding(.vertical, 8)
+                }
+                .onChange(of: raw) { _, value in withAnimation { proxy.scrollTo(value, anchor: .center) } }
+            }
+            Divider()
+            content.frame(maxHeight: .infinity)
+        }
+        .navigationTitle("TeslaMate").navigationBarTitleDisplayMode(.inline)
+    }
+    @ViewBuilder private var content: some View {
+        switch section {
+        case .overview: overview
+        case .charges: ChargeHistoryList(charges: charges).safeAreaInset(edge: .bottom) {
+            NavigationLink { ChargeListView(charges: model.state.rows("charges")) } label: { Label("원본 충전 기록 수정·추가", systemImage: "pencil") }
+                .font(.subheadline).padding(10).frame(maxWidth: .infinity).background(.regularMaterial)
+        }
+        case .trips: TripHistoryList(trips: trips, capacity: capacity)
+        case .battery: BatteryView()
+        case .usage: DrivingInsightsView()
+        case .parking: ParkingDrainView(periods: model.state.rows("parkingPeriods")).safeAreaInset(edge: .bottom) {
+            NavigationLink { ParkingHistoryView() } label: { Label("주차 위치·메모 기록", systemImage: "parkingsign") }
+                .font(.subheadline).padding(10).frame(maxWidth: .infinity).background(.regularMaterial)
+        }
+        case .calendar: EnergyCalendarView()
+        case .stats: MonthlyStatsView(trips: trips, charges: charges)
+        case .places: VisitedPlacesView(trips: trips, charges: charges)
+        case .data: List {
+            NavigationLink { TeslaExportImportView() } label: { Label("Tesla 충전 데이터 가져오기 (CSV)", systemImage: "square.and.arrow.down") }
+            NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .chargingHistory) } label: { Label("Tesla 슈퍼차저 이력 (서버)", systemImage: "bolt.fill") }
+        }
+        }
+    }
+    private var overview: some View {
+        let start = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+        let t = trips.filter { (HistoryData.date($0, "start") ?? .distantPast) >= start }
+        let c = charges.filter { (HistoryData.date($0, "at") ?? .distantPast) >= start }
+        let km = t.compactMap { $0.number("distanceKm") }.reduce(0, +)
+        let kwh = c.compactMap(HistoryData.energy).reduce(0, +)
+        let cost = c.compactMap(HistoryData.cost).reduce(0, +)
+        let used = t.compactMap { r -> Double? in guard let a = r.number("startSOC"), let b = r.number("endSOC"), a > b else { return nil }; return (a - b) / 100 * capacity }.reduce(0, +)
+        return List {
+            SwiftUI.Section("이번 달") {
+                HStack { tile("주행", String(format: "%.0f km", km), .trips); tile("충전", String(format: "%.0f kWh", kwh), .charges); tile("비용", HistoryData.won(cost), .usage) }
+                if km > 5, used > 0 { Text(String(format: "평균 효율 %.0f Wh/km · 운행 %d회 · 충전 %d회", used * 1000 / km, t.count, c.count)).font(.caption).foregroundStyle(.secondary) }
+            }
+            SwiftUI.Section("최근 충전") {
+                ForEach(Array(charges.prefix(3).enumerated()), id: \.offset) { _, row in
+                    NavigationLink { ChargeDetailView(charge: row) } label: {
+                        HStack { Text(HistoryData.date(row, "at")?.formatted(date: .abbreviated, time: .shortened) ?? "—"); Spacer()
+                            Text("\(HistoryData.typeName(row)) · " + (HistoryData.energy(row).map { String(format: "%.1f kWh", $0) } ?? "—")).foregroundStyle(.secondary) }.font(.subheadline)
+                    }
+                }
+                Button("충전 전체 보기") { raw = Section.charges.rawValue }
+            }
+            SwiftUI.Section("최근 주행") {
+                ForEach(Array(trips.prefix(3).enumerated()), id: \.offset) { _, row in
+                    NavigationLink { TripDetailView(trip: row, capacity: capacity) } label: {
+                        HStack { Text(HistoryData.date(row, "start")?.formatted(date: .abbreviated, time: .shortened) ?? "—"); Spacer()
+                            Text(String(format: "%.1f km", row.number("distanceKm") ?? 0)).foregroundStyle(.secondary) }.font(.subheadline)
+                    }
+                }
+                Button("주행 전체 보기") { raw = Section.trips.rawValue }
+            }
+            SwiftUI.Section("바로 가기") {
+                ForEach([Section.battery, .parking, .calendar, .stats, .places, .data]) { s in
+                    Button { raw = s.rawValue } label: { Label(s.rawValue, systemImage: s.icon) }
+                }
+            }
+        }
+    }
+    private func tile(_ title: String, _ value: String, _ target: Section) -> some View {
+        Button { raw = target.rawValue } label: {
+            VStack(alignment: .leading) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.headline).monospacedDigit() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }.buttonStyle(.plain)
+    }
+}
