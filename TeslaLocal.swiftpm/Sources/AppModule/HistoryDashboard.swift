@@ -94,7 +94,7 @@ struct ChargeDetailView: View {
             }
             if soc.count > 2 {
                 Section("배터리 (%)") {
-                    Chart(soc, id: \.id) { LineMark(x: .value("시각", $0.at), y: .value("%", $0.number ?? 0)).foregroundStyle(.green) }.chartReveal().chartYScale(domain: 0...100).frame(height: 160)
+                    Chart(soc, id: \.id) { LineMark(x: .value("시각", $0.at), y: .value("%", $0.number ?? 0)).foregroundStyle(.green) }.chartReveal().chartYScale(domain: 0...104).frame(height: 160)
                 }
             }
             if let spot {
