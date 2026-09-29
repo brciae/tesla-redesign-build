@@ -21,6 +21,7 @@ struct FleetSupplementView: View {
     /// Region resolved from the car position; used when no region was chosen by hand ("" = automatic).
     @State private var autoRegion = ""
     @State private var centeredOnOrigin = false
+    @State private var locator = CLLocationManager()
     private var effectiveRegion: String { region.isEmpty ? autoRegion : region }
     private var origin: CLLocation? {
         let location = homePresentation(model, model.link).object("location")
@@ -120,6 +121,8 @@ struct FleetSupplementView: View {
                 stationAnnotation(site)
             }
         }.accessibilityIdentifier("charging.map")
+        .mapControls { MapUserLocationButton(); MapCompass(); MapScaleView() }
+        .onAppear { if locator.authorizationStatus == .notDetermined { locator.requestWhenInUseAuthorization() } }
         .safeAreaInset(edge: .top) { mapFilters }
         .onChange(of: category) { _, _ in selectedSite = visibleSites.first?.id }
         .onChange(of: visibleSites.map(\.id)) { _, _ in fitChargingMap() }
@@ -147,7 +150,7 @@ struct FleetSupplementView: View {
             ChargingStationMapPin(site: site, filter: category, selected: site.id == selectedSite) {
                 selectedSite = site.id
             }
-        }.tag(site.id)
+        }.annotationTitles(site.id == selectedSite ? .automatic : .hidden).tag(site.id)
     }
     private var mapFilters: some View {
             VStack(spacing: 8) {
@@ -235,16 +238,18 @@ private struct ChargingStationMapPin: View {
     }
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: symbol)
+            HStack(spacing: 2) {
+                Image(systemName: symbol).font(.system(size: selected ? 12 : 9, weight: .bold))
                 if let count = site.availability(for: filter) {
-                    Text(count).font(.caption.bold()).monospacedDigit()
+                    Text(count).font(.system(size: selected ? 12 : 10, weight: .bold)).monospacedDigit()
                 }
             }
-            .padding(9)
+            .padding(.horizontal, selected ? 7 : 4).padding(.vertical, selected ? 5 : 3)
+            .dynamicTypeSize(.large)
             .foregroundStyle(Color.white)
             .background(color, in: Capsule())
-            .overlay(Capsule().stroke(Color.white, lineWidth: selected ? 3 : 0))
+            .overlay(Capsule().stroke(Color.white, lineWidth: selected ? 2 : 1))
+            .shadow(radius: selected ? 3 : 1)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityText)
