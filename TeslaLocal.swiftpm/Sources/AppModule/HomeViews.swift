@@ -584,7 +584,7 @@ struct FleetStatusCard: View {
     private func lockChip(_ locked: Bool?) -> some View {
         HStack(spacing: 5) {
             Image(systemName: locked == nil ? "lock.slash" : (locked! ? "lock.fill" : "lock.open.fill"))
-                .font(.system(size: 11, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace)).font(.system(size: 11, weight: .semibold))
             Text(locked.map { $0 ? "도어 잠김" : "도어 잠금 해제" } ?? "잠금 미수신")
                 .font(.system(size: 12, weight: .medium))
         }
@@ -1277,12 +1277,16 @@ struct ControlsTabRootView: View {
             .padding(.bottom, 8)
             .background(Theme.bg)
 
-            if selectedSection == 0 {
-                ControlsView(link: link)
-            } else {
-                ClimateStatusView(link: link)
-            }
+            Group {
+                if selectedSection == 0 {
+                    ControlsView(link: link)
+                } else {
+                    ClimateStatusView(link: link)
+                }
+            }.id(selectedSection).transition(.blurReplace)
         }
+        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
 }
@@ -1303,13 +1307,17 @@ struct EnergyTabRootView: View {
             .padding(.bottom, 8)
             .background(Theme.bg)
 
-            if selectedSection == 0 {
-                ChargeStatusView(link: link)
-            } else {
-                // Battery analysis, cost, calendar and all history live under one TeslaMate section.
-                TeslaMateView()
-            }
+            Group {
+                if selectedSection == 0 {
+                    ChargeStatusView(link: link)
+                } else {
+                    // Battery analysis, cost, calendar and all history live under one TeslaMate section.
+                    TeslaMateView()
+                }
+            }.id(selectedSection).transition(.blurReplace)
         }
+        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
 }
@@ -1331,12 +1339,16 @@ struct DriveTabRootView: View {
             .padding(.bottom, 8)
             .background(Theme.bg)
 
-            if selectedSection == 0 {
-                NavigationLandingView(navigation: navigation)
-            } else {
-                LocationStatusView(link: link)
-            }
+            Group {
+                if selectedSection == 0 {
+                    NavigationLandingView(navigation: navigation)
+                } else {
+                    LocationStatusView(link: link)
+                }
+            }.id(selectedSection).transition(.blurReplace)
         }
+        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
 }
