@@ -298,8 +298,8 @@ struct TypecastSettingsSection: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(isSelected ? Color.blue : Color.white.opacity(0.12), in: Capsule())
-                        .foregroundStyle(.white)
+                        .background(isSelected ? Color.blue : Color.primary.opacity(0.12), in: Capsule())
+                        .foregroundStyle(isSelected ? Color.white : Color.primary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -393,7 +393,17 @@ struct DisplaySettingsView: View {
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
     @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
+    @AppStorage("appearance") private var appearance = "dark"
     var body: some View { Form {
+            Section("화면 모드") {
+                Picker("화면 모드", selection: $appearance) {
+                    Text("시스템").tag("system")
+                    Text("다크").tag("dark")
+                    Text("라이트").tag("light")
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("display.appearance")
+            }
             Section("하단 메뉴 표시") {
                 HStack {
                     Text("배경 불투명도")
