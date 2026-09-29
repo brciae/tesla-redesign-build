@@ -386,7 +386,7 @@ struct TripsView: View {
                                     }
                                 }
                             }
-                        }
+                        }.chartReveal()
                         .chartXAxis {
                             AxisMarks(values: recentTrips.map(\.selfID)) { value in
                                 if let id = value.as(String.self),
