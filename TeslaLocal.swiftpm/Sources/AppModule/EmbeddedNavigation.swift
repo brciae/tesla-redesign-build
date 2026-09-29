@@ -489,14 +489,58 @@ struct KakaoMapPanel: View {
     }
 }
 
-struct KakaoMapSurface: UIViewControllerRepresentable {
+/// "auto" follows the sun: day between sunrise and sunset at the Korean peninsula's centre, re-checked every minute.
+struct KakaoMapSurface: View {
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
+    @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
     let controller: YLKakaoController
     var theme: NavigationTheme = .cluster
     var anchorX: Double = 0.52
     var anchorY: Double = 0.72
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            KakaoMapSurfaceController(controller: controller, theme: theme.rawValue + ":" + resolvedAppearance(context.date),
+                                      marker: markerStyle, anchorX: anchorX, anchorY: anchorY)
+        }
+    }
+    private func resolvedAppearance(_ date: Date) -> String {
+        guard mapAppearance == "auto" else { return mapAppearance }
+        return SunClock.isDaytime(date) ? "day" : "night"
+    }
+}
+private struct KakaoMapSurfaceController: UIViewControllerRepresentable {
+    let controller: YLKakaoController
+    let theme: String
+    let marker: String
+    let anchorX: Double
+    let anchorY: Double
     func makeUIViewController(context: Context) -> YLKakaoController { controller }
-    func updateUIViewController(_ controller: YLKakaoController, context: Context) { controller.configureMapAnchor(x: anchorX, y: anchorY); controller.configureMapTheme(theme.rawValue + ":" + mapAppearance) }
+    func updateUIViewController(_ controller: YLKakaoController, context: Context) {
+        controller.configureMapAnchor(x: anchorX, y: anchorY)
+        controller.configureMapTheme(theme)
+        controller.configureMarkerStyle(marker)
+    }
+}
+/// NOAA sunrise/sunset approximation (±2 min), evaluated for central Korea.
+enum SunClock {
+    static func isDaytime(_ date: Date, latitude: Double = 36.5, longitude: Double = 127.8) -> Bool {
+        var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(identifier: "UTC")!
+        let day = Double(utc.ordinality(of: .day, in: .year, for: date) ?? 1)
+        let c = utc.dateComponents([.hour, .minute], from: date)
+        let minutesUTC = Double((c.hour ?? 0) * 60 + (c.minute ?? 0))
+        let g = 2 * Double.pi / 365 * (day - 1)
+        let eqTime = 229.18 * (0.000075 + 0.001868 * cos(g) - 0.032077 * sin(g) - 0.014615 * cos(2 * g) - 0.040849 * sin(2 * g))
+        let decl = 0.006918 - 0.399912 * cos(g) + 0.070257 * sin(g) - 0.006758 * cos(2 * g) + 0.000907 * sin(2 * g) - 0.002697 * cos(3 * g) + 0.00148 * sin(3 * g)
+        let lat = latitude * Double.pi / 180
+        let cosHA = cos(90.833 * Double.pi / 180) / (cos(lat) * cos(decl)) - tan(lat) * tan(decl)
+        let ha = acos(max(-1, min(1, cosHA))) * 180 / Double.pi
+        let sunrise = 720 - 4 * (longitude + ha) - eqTime
+        let sunset = 720 - 4 * (longitude - ha) - eqTime
+        var m = minutesUTC
+        if m < sunrise - 720 { m += 1440 }
+        if m > sunset + 720 { m -= 1440 }
+        return m >= sunrise && m <= sunset
+    }
 }
 struct EmbeddedNavigationScreen: View {
     @ObservedObject var navigation: EmbeddedNavigation
