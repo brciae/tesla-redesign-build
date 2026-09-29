@@ -15,7 +15,7 @@ struct CareView: View {
             InfoCard {
                 TirePressureDiagram()
                 if !tirePoints.isEmpty {
-                    Chart(tirePoints) { point in LineMark(x: .value("측정 시각", point.date), y: .value(units.pressure, units.pressureValue(point.pressure))).foregroundStyle(by: .value("타이어", point.sensor)) }.frame(height: 180)
+                    Chart(tirePoints) { point in LineMark(x: .value("측정 시각", point.date), y: .value(units.pressure, units.pressureValue(point.pressure))).foregroundStyle(by: .value("타이어", point.sensor)) }.chartReveal().frame(height: 180)
                 }
             }
             InfoCard {
