@@ -36,3 +36,21 @@ struct CardTitle: View {
         }
     }
 }
+
+/// Charts draw in with a left-to-right wipe and a soft fade the first time they appear.
+struct ChartReveal: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var progress: CGFloat = 0
+    func body(content: Content) -> some View {
+        content
+            .mask(alignment: .leading) {
+                GeometryReader { g in Rectangle().frame(width: g.size.width * progress) }
+            }
+            .opacity(0.35 + 0.65 * Double(progress))
+            .onAppear {
+                guard progress < 1 else { return }
+                if reduceMotion { progress = 1 } else { withAnimation(.smooth(duration: 1.1).delay(0.08)) { progress = 1 } }
+            }
+    }
+}
+extension View { func chartReveal() -> some View { modifier(ChartReveal()) } }
