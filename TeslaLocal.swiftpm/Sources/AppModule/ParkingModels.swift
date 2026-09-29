@@ -38,6 +38,7 @@ struct VehicleParkingSnapshot: Codable, Equatable {
     var soc: Double?
     var rangeKm: Double?
     var isLocked: Bool?
+    var lockSourceConflict: Bool?
     var areDoorsClosed: Bool?
     var isTrunkClosed: Bool?
     var isFrunkClosed: Bool?
@@ -52,6 +53,7 @@ struct VehicleParkingSnapshot: Codable, Equatable {
     var positionStatus: String?
 
     var securityText: String {
+        if lockSourceConflict == true { return "잠금 확인 필요 · BLE·서버 값 불일치" }
         if isLocked == false { return "차량 미잠금" }
         if areDoorsClosed == false || isTrunkClosed == false || isFrunkClosed == false { return "도어 또는 트렁크 열림" }
         if isLocked == true && areDoorsClosed == true && isTrunkClosed == true && isFrunkClosed == true { return "잠김 · 도어 닫힘" }
