@@ -101,7 +101,7 @@ struct ParkingDetail: View {
             Text(note.string("note", "주차 위치")).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
             if let lat = note.number("latitude"), let lng = note.number("longitude") {
                 Label(locator.address(lat, lng) ?? "주소 확인 중", systemImage: "mappin.and.ellipse")
-                    .font(.subheadline).foregroundStyle(.white.opacity(0.9))
+                    .font(.subheadline).foregroundStyle(Color.primary.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
