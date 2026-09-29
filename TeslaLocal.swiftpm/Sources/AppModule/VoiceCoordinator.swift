@@ -30,6 +30,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var nativeActive = false
     private var quietUntil = Date.distantPast
     private var interrupted = false
+    private var interruptedAt = Date.distantPast
     private var observer: NSObjectProtocol?
     private var routeObserver: NSObjectProtocol?
     private var activeManual = false
@@ -122,6 +123,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         observer = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             guard let self, let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
             self.interrupted = raw == AVAudioSession.InterruptionType.began.rawValue
+            if self.interrupted { self.interruptedAt = Date() }
             if self.interrupted {
                 self.stop()
                 self.notice = "통화·다른 오디오로 안내 일시 중지"
@@ -232,6 +234,12 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     private func drain() {
+        // iOS often never delivers the matching "ended" notification (e.g. while this session is
+        // inactive), which silently blocked every later announcement. Recover after 20 s.
+        if interrupted, Date().timeIntervalSince(interruptedAt) > 20 {
+            interrupted = false
+            automaticTrace("오디오 중단 해제 · 안내 재개")
+        }
         guard !interrupted, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
         guard let item = queue.next(now: Date()) else { return }
         navigationSpeaking = item.key.hasPrefix("navigation.")
