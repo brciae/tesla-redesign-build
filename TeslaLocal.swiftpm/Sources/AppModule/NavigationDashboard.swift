@@ -10,19 +10,19 @@ import UIKit
 // MARK: - Palette
 
 enum NavInk {
-    static let blue = Color(red: 0.094, green: 0.471, blue: 1.0)            // #1878FF
+    static let blue = Color(red: 0.039, green: 0.518, blue: 1.0)            // iOS systemBlue (dark) #0A84FF
     static let blueDeep = Color(red: 0.137, green: 0.318, blue: 0.918)      // #2351EA
-    static let arc = Color(red: 0.118, green: 0.502, blue: 1.0)             // #1E80FF
-    static let green = Color(red: 0.204, green: 0.780, blue: 0.349)         // #34C759
-    static let red = Color(red: 0.898, green: 0.192, blue: 0.180)           // #E5312E
-    static let amber = Color(red: 1.0, green: 0.690, blue: 0.180)           // #FFB02E
+    static let arc = Color(red: 0.039, green: 0.518, blue: 1.0)             // #0A84FF
+    static let green = Color(red: 0.188, green: 0.820, blue: 0.345)         // iOS systemGreen (dark) #30D158
+    static let red = Color(red: 1.0, green: 0.271, blue: 0.227)             // iOS systemRed (dark) #FF453A
+    static let amber = Color(red: 1.0, green: 0.624, blue: 0.039)           // iOS systemOrange (dark) #FF9F0A
     static let canvas = Color(red: 0.043, green: 0.047, blue: 0.055)        // #0B0C0E
     static let mapBase = Color(red: 0.165, green: 0.173, blue: 0.192)       // #2A2C31
-    static let card = Color(red: 0.137, green: 0.145, blue: 0.169)          // #23252B
-    static let cardHi = Color(red: 0.180, green: 0.192, blue: 0.220)        // #2E3138
+    static let card = Color(red: 0.110, green: 0.110, blue: 0.118)          // secondarySystemBackground #1C1C1E
+    static let cardHi = Color(red: 0.173, green: 0.173, blue: 0.180)        // tertiarySystemBackground #2C2C2E
     static let slate = Color(red: 0.118, green: 0.125, blue: 0.145)         // #1E2025
     static let pill = Color(red: 0.039, green: 0.043, blue: 0.051)          // #0A0B0D
-    static let muted = Color(red: 0.62, green: 0.64, blue: 0.67)            // brighter than v29 for legibility
+    static let muted = Color(red: 0.596, green: 0.596, blue: 0.624)         // secondaryLabel (dark) #98989F
     static let gearOff = Color(red: 0.420, green: 0.439, blue: 0.471)
     static let neon = Color(red: 0.231, green: 0.576, blue: 1.0)            // #3B93FF
     static let navy = Color(red: 0.035, green: 0.071, blue: 0.200)          // #091233
@@ -905,27 +905,8 @@ private struct TurnBanner: View {
             }
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 12 * u)
-        .background(
-            LinearGradient(
-                colors: [Color(red: 0.08, green: 0.44, blue: 0.98), Color(red: 0.05, green: 0.30, blue: 0.85)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 16 * u, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16 * u, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.40), Color.white.opacity(0.10)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .shadow(color: Color.blue.opacity(0.35), radius: 14 * u, y: 6 * u)
-        .shadow(color: .black.opacity(0.4), radius: 8 * u, y: 4 * u)
+        .background(NavInk.blue, in: RoundedRectangle(cornerRadius: 16 * u, style: .continuous))
+        .shadow(color: .black.opacity(0.3), radius: 10 * u, y: 4 * u)
         .accessibilityElement(children: .contain)
     }
 }
@@ -1040,41 +1021,10 @@ private struct TripPill: View {
 private struct GlassFill: View {
     let radius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
-    var isNight: Bool { colorScheme == .dark }
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .fill(isNight ? .ultraThinMaterial : .regularMaterial)
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: isNight
-                            ? [Color.black.opacity(0.25), Color.black.opacity(0.42)]
-                            : [Color.white.opacity(0.85), Color.white.opacity(0.95)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        stops: isNight
-                            ? [
-                                .init(color: .white.opacity(0.28), location: 0),
-                                .init(color: .white.opacity(0.09), location: 0.35),
-                                .init(color: .white.opacity(0.02), location: 1.0)
-                              ]
-                            : [
-                                .init(color: .black.opacity(0.08), location: 0),
-                                .init(color: .black.opacity(0.04), location: 0.5),
-                                .init(color: .black.opacity(0.02), location: 1.0)
-                              ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        }
+        // iOS Maps-style sheet: system material only, no gradient rim.
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(colorScheme == .dark ? .regularMaterial : .thickMaterial)
     }
 }
 
@@ -1086,9 +1036,8 @@ private struct SoftPanel: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return ZStack {
-            shape.fill(Color(white: 0.12).opacity(0.78))
-            shape.fill(.ultraThinMaterial)
-            shape.stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            shape.fill(.regularMaterial)
+            shape.fill(NavInk.card.opacity(0.55))
         }
         .environment(\.colorScheme, .dark)
         .allowsHitTesting(false)
@@ -1217,31 +1166,9 @@ private struct VehicleCard<CarContent: View>: View {
             .frame(width: w, height: h)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous).fill(.ultraThinMaterial)
-                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.12, green: 0.13, blue: 0.16).opacity(0.85), Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.92)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous).fill(.regularMaterial)
+                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous).fill(NavInk.card.opacity(0.6))
                 }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 26 * u, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .white.opacity(0.24), location: 0),
-                                .init(color: .white.opacity(0.08), location: 0.35),
-                                .init(color: .white.opacity(0.02), location: 1.0)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
             )
             .shadow(color: .black.opacity(0.4), radius: 16 * u, y: 8 * u)
         }
@@ -1406,9 +1333,8 @@ private struct FocusTurnPill: View {
             Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 8 * u).frame(minHeight: 50 * u)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 25 * u, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 25 * u, style: .continuous))
         .environment(\.colorScheme, .dark)
-        .overlay(RoundedRectangle(cornerRadius: 25 * u, style: .continuous).stroke(.white.opacity(0.08)))
         .accessibilityElement(children: .contain)
     }
 }
@@ -1497,9 +1423,8 @@ private struct FleetPanel: View {
         }
         .padding(14 * u)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18 * u, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18 * u, style: .continuous))
         .environment(\.colorScheme, .dark)
-        .overlay(RoundedRectangle(cornerRadius: 18 * u, style: .continuous).stroke(.white.opacity(0.1)))
         .shadow(color: .black.opacity(0.35), radius: 16 * u, y: 8 * u)
         .accessibilityElement(children: .contain)
     }
@@ -1616,9 +1541,8 @@ private struct Chip: View {
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 11 * u).frame(height: 30 * u)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(.regularMaterial, in: Capsule())
         .environment(\.colorScheme, .dark)
-        .overlay(Capsule().stroke(.white.opacity(0.08)))
         .lineLimit(1).minimumScaleFactor(0.65)
     }
 }
