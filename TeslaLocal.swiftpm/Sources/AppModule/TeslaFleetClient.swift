@@ -467,6 +467,12 @@ final class TeslaFleetClient: ObservableObject {
             SmartParkingManager.shared.observeFleet(snapshot)
             let factoryPaint = (snapshot.payload["vehicle_config"] as? [String: Any])?["exterior_color"] as? String
             Task { @MainActor in VehicleAppearanceStore.shared.adoptFactoryPaint(factoryPaint, vin: requestVin) }
+            // Adopt the car's own display units once, unless the user already chose units in the app.
+            if let gui = snapshot.payload["gui_settings"] as? [String: Any] {
+                let units = UserDefaults.standard
+                if units.object(forKey: "unitDistance") == nil, let distance = gui["gui_distance_units"] as? String { units.set(distance.lowercased().hasPrefix("mi") ? "mi" : "km", forKey: "unitDistance") }
+                if units.object(forKey: "unitTemperature") == nil, let temperature = gui["gui_temperature_units"] as? String { units.set(temperature.uppercased().hasPrefix("F") ? "F" : "C", forKey: "unitTemperature") }
+            }
             lastRemoteChargeData = data["charge_state"] as? [String: Any]
             vehicleReadStatus = snapshot.isRecent() ? "Fleet 상태 수신" : "Fleet 저장값 수신"
         } catch {
