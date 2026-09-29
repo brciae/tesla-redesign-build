@@ -152,7 +152,10 @@ struct MainView: View {
         defaults.removeObject(forKey: "YL.notificationDestination"); defaults.removeObject(forKey: "YL.openChargingPending")
         navigation.dismissWorkspace(); model.chargingPresented = false
         switch destination {
-        case "trips": selectedTab = .drive; drivePath = NavigationPath()
+        case "trips":
+            // Trip records live in TeslaMate › 주행.
+            defaults.set(1, forKey: "energy.section"); defaults.set("주행", forKey: "teslamate.section")
+            selectedTab = .energy; energyPath = NavigationPath()
         case "automation": selectedTab = .menu; menuPath = NavigationPath(); menuPath.append(Page.automation)
         default: selectedTab = .energy; energyPath = NavigationPath(); energyPath.append(Page.charging)
         }
@@ -495,6 +498,9 @@ struct TripListView: View {
                         Spacer(minLength: 4)
                         InfoNote("이 회차의 관측 근거", tripDetail(trip))
                     }
+                    NavigationLink { TripDetailView(trip: trip, capacity: model.output.object("energy").number("capacityKWh") ?? 75) } label: {
+                        Label("경로·속도 상세", systemImage: "map").font(.subheadline)
+                    }
                 }
             }
         }
@@ -667,6 +673,7 @@ struct ChargeListView: View {
                         Caption("충전 종료: \(dateText(c.number("end"), time: true))")
                     }
                     if c.flag("endSOCLastObserved") { Caption("종료 잔량에는 충전 중 마지막으로 수신한 값을 보존했습니다.") }
+                    NavigationLink { ChargeDetailView(charge: c) } label: { Label("출력 곡선·위치 상세", systemImage: "chart.xyaxis.line").font(.subheadline) }
                 }
             }
         }
