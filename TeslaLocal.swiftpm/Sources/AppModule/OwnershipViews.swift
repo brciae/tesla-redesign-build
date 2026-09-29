@@ -31,7 +31,7 @@ struct DrivingInsightsView: View {
                     Chart {
                         if let value = energy.number("drivingKmPerKWh") { BarMark(x: .value("전비", value), y: .value("구분", "주행")).foregroundStyle(.mint.gradient).cornerRadius(5) }
                         if let value = energy.number("overallKmPerKWh") { BarMark(x: .value("전비", value), y: .value("구분", "종합")).foregroundStyle(.cyan.gradient).cornerRadius(5) }
-                    }.frame(height: 105)
+                    }.chartReveal().frame(height: 105)
                     Caption("최근 \(days)일 · km/kWh")
                 }
                 InfoCard {
@@ -46,7 +46,7 @@ struct DrivingInsightsView: View {
                     Chart {
                         if let value = energy.number("drivingKWh"), value > 0 { SectorMark(angle: .value("소비", value), innerRadius: .ratio(0.68), angularInset: 3).foregroundStyle(.mint).annotation(position: .overlay) { Text("주행").font(.caption2.bold()).foregroundStyle(.black) } }
                         if let value = energy.number("parkingKWh"), value > 0 { SectorMark(angle: .value("소비", value), innerRadius: .ratio(0.68), angularInset: 3).foregroundStyle(.orange) }
-                    }.frame(height: 170)
+                    }.chartReveal().frame(height: 170)
                     HStack { Label("주행", systemImage: "circle.fill").foregroundStyle(.mint); Label("주차", systemImage: "circle.fill").foregroundStyle(.orange) }.font(.caption)
 
                     if parking.contains(where: { ["sentry", "climate", "combined"].contains($0.id) }) {
@@ -68,7 +68,7 @@ struct DrivingInsightsView: View {
                         Chart {
                             BarMark(x: .value("차량", "전기차"), y: .value("비용", comparison.electric)).foregroundStyle(.mint.gradient).cornerRadius(6)
                             BarMark(x: .value("차량", "가솔린"), y: .value("비용", comparison.gasoline)).foregroundStyle(.gray.gradient).cornerRadius(6)
-                        }.frame(height: 180)
+                        }.chartReveal().frame(height: 180)
                         number("전기 사용 비용 추정", comparison.electric, "원", digits: 0)
                         number("가솔린 비교 비용", comparison.gasoline, "원", digits: 0)
                         Text(String(format: "동일 거리 에너지 비용 차이 %.0f원", comparison.savings)).font(.headline).foregroundStyle(.mint)
