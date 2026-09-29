@@ -43,6 +43,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var navigationPreparationTimes: [Date] = []
 
     private var preparedAutomatic = Set<String>()
+    private var routeWaitSince: [String: Date] = [:]
     /// Pre-synthesizes a predictable automatic announcement (e.g. the boarding greeting) into the Typecast cache.
     func prepareAutomatic(_ text: String, category: String) {
         let tc = TypecastClient.shared, d = UserDefaults.standard
@@ -116,6 +117,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.refreshOutput()
+            self?.drain() // car audio just connected: play any announcement waiting for it
         }
         observer = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             guard let self, let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
@@ -242,6 +244,25 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             return
         }
         guard item.manual || d.bool(forKey: "voiceEnabled") else { return }
+        #if !targetEnvironment(simulator)
+        // Boarding-time announcements usually fire before the phone joins the car's Bluetooth audio;
+        // on the iPhone speaker at media volume they are effectively silent. Wait briefly for the car.
+        if !item.manual, !item.key.hasPrefix("navigation."), (d.string(forKey: "voiceOutput") ?? "system") == "system",
+           AVAudioSession.sharedInstance().currentRoute.outputs.allSatisfy({ $0.portType == .builtInSpeaker }) {
+            let first = routeWaitSince[item.key] ?? Date()
+            routeWaitSince[item.key] = first
+            if Date().timeIntervalSince(first) < 15, item.canStartPlayback(at: Date().addingTimeInterval(1)) {
+                queue.items.insert(item, at: 0)
+                navigationSpeaking = false; activePriority = 0
+                if playbackState != "차량 오디오 연결 대기" {
+                    playbackState = "차량 오디오 연결 대기"
+                    automaticTrace("차량 Bluetooth 오디오 연결 대기 · 최대 15초")
+                }
+                return
+            }
+        }
+        routeWaitSince[item.key] = nil
+        #endif
         if !item.manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: Date()), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
 
         let tc = TypecastClient.shared
