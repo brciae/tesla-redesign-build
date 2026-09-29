@@ -305,8 +305,11 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // MARK: - Cache Management
 
+    static func presetTone(_ text: String) -> Bool { text.count <= 40 }
+
     private func cacheKey(for text: String, voiceId: String) -> String {
-        let input = "\(voiceId)_\(text)"
+        // Short cues use a fixed normal tone; the salt drops cached clips synthesised with inferred emotion.
+        let input = Self.presetTone(text) ? "tone2|\(voiceId)_\(text)" : "\(voiceId)_\(text)"
         let digest = SHA256.hash(data: Data(input.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
@@ -491,9 +494,10 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     "voice_id": resolvedVoice,
                     "text": cleanText,
                     "model": "ssfm-v30",
-                    "prompt": [
-                        "emotion_type": "smart"
-                    ],
+                    // "smart" guesses emotion from context; terse cues such as "계속 직진하세요." came back whispered.
+                    "prompt": Self.presetTone(cleanText)
+                        ? ["emotion_type": "preset", "emotion_preset": "normal", "emotion_intensity": 1.0] as [String: Any]
+                        : ["emotion_type": "smart"] as [String: Any],
                     "output": [
                         "audio_format": "wav",
                         "volume": 100
