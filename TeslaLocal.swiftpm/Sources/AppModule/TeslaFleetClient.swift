@@ -465,6 +465,8 @@ final class TeslaFleetClient: ObservableObject {
                 ChargeNotificationManager.shared.observe(ChargeObservation(vin: requestVin, at: Date(timeIntervalSince1970: at / 1000), state: status, soc: snapshot.soc, limit: snapshot.number("charge_state", "charge_limit_soc")))
             }
             SmartParkingManager.shared.observeFleet(snapshot)
+            let factoryPaint = (snapshot.payload["vehicle_config"] as? [String: Any])?["exterior_color"] as? String
+            Task { @MainActor in VehicleAppearanceStore.shared.adoptFactoryPaint(factoryPaint, vin: requestVin) }
             lastRemoteChargeData = data["charge_state"] as? [String: Any]
             vehicleReadStatus = snapshot.isRecent() ? "Fleet 상태 수신" : "Fleet 저장값 수신"
         } catch {
