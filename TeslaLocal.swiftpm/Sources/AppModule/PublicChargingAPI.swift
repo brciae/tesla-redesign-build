@@ -39,7 +39,7 @@ actor PublicChargingAPI {
         guard !codes.isEmpty else { throw PublicChargingData.failure("조회할 시·군·구를 선택하세요.") }
         var merged: [String: NearbyChargingSite] = [:]
         var firstError: Error?
-        for code in codes.prefix(8) {
+        for code in codes.prefix(12) {
             do { for site in try await sites(region: code) { merged[site.id] = site } }
             catch is CancellationError { throw CancellationError() }
             catch { firstError = firstError ?? error }
