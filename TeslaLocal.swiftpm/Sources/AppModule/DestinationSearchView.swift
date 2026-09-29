@@ -116,7 +116,8 @@ struct DestinationSearchView: View {
     private func preview(_ place: SavedNavigationPlace) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Button("검색 결과로 돌아가기") { selected = nil; route = nil; task?.cancel(); busy = false }
-            Text(place.name).font(.title2.bold()); Text(place.address).font(.subheadline)
+            Text(place.name).font(.title2.bold())
+            if !place.address.isEmpty, place.address != place.name { Text(place.address).font(.subheadline).foregroundStyle(Theme.muted) }
             if let route {
                 Map(initialPosition: .rect(route.polyline.boundingMapRect)) {
                     MapPolyline(route.polyline).stroke(.blue, lineWidth: 5)
@@ -125,8 +126,8 @@ struct DestinationSearchView: View {
                 Text(String(format: "약 %.0f분 · %.1f km", route.expectedTravelTime / 60, route.distance / 1000)).font(.headline)
                 Caption("미리보기는 Apple 지도 기준이며 실제 카카오 안내 경로와 다를 수 있습니다.")
             }
-            Button("차량으로 전송하고 안내 시작") { sendAndNavigate(place) }
-                .buttonStyle(.borderedProminent).frame(minHeight: 48).accessibilityIdentifier("destination.send")
+            Button { sendAndNavigate(place) } label: { Text("차량으로 전송하고 안내 시작").font(.headline).frame(maxWidth: .infinity, minHeight: 36) }
+                .buttonStyle(.borderedProminent).tint(.blue).foregroundStyle(.white).accessibilityIdentifier("destination.send")
             Button(sendFailed ? "앱에서만 안내 시작" : "앱 길안내만 사용") { startGuidance(place, vehicleAccepted: false) }
                 .accessibilityIdentifier("destination.appOnly")
             HStack {
