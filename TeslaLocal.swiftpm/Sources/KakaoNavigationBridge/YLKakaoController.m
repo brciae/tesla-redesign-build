@@ -520,7 +520,7 @@ static NSArray *YLLifecycleObservers;
     NSMutableArray *objects = [NSMutableArray array];
     if (self.voiceEnabled && self.routeGuide.curDirection) [objects addObject:self.routeGuide.curDirection];
     if (self.safetyVoiceEnabled && self.safetyGuide.safetiesOnGuide.count) [objects addObjectsFromArray:self.safetyGuide.safetiesOnGuide];
-    id nearest = nil; SInt32 nearestDistance = 2001;
+    id nearest = nil; SInt32 nearestDistance = 2500;
     for (id object in objects) {
         KNLocation *target = [self speechLocation:object];
         if (!target) continue;
@@ -540,7 +540,8 @@ static NSArray *YLLifecycleObservers;
     // Re-offer as the vehicle advances: Swift may have been busy or rate-limited.
     // Cached phrases incur no network request; the shared synthesis budget remains bounded.
     NSMutableArray *phrases = [NSMutableArray array];
-    for (NSNumber *distance in @[@1000, @700, @500, @300, @200, @100, @0]) {
+    // Must match YLNavigationDistancePrefix bands exactly so live cues are cache hits.
+    for (NSNumber *distance in @[@2000, @1000, @700, @500, @300, @200, @100, @0]) {
         if (distance.intValue <= nearestDistance) [phrases addObject:[YLNavigationDistancePrefix(distance.intValue) stringByAppendingString:body]];
         if (phrases.count == 3) break;
     }
