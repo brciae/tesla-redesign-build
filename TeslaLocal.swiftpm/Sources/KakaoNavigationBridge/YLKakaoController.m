@@ -508,8 +508,8 @@ static NSArray *YLLifecycleObservers;
         message[@"targetID"] = identifier;
         KNGPSData *gps = self.locationGuide.gpsMatched;
         double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-        double lifetime = speed > 1 ? fmin(12, fmax(0, distance / speed - 1.5)) : 12;
-        if (lifetime <= 0) return;
+        // Keep at least 3 s so a close maneuver survives the bridge and synthesis hop.
+        double lifetime = speed > 1 ? fmin(12, fmax(3, distance / speed - 1.5)) : 12;
         message[@"validUntil"] = @(NSDate.date.timeIntervalSince1970 + lifetime);
     }
     NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
