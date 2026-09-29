@@ -174,12 +174,55 @@ extension FleetVehicleSnapshot {
                 metric("drive_state", "active_route_energy_at_arrival", "차량 예상 도착 배터리", " %"), metric("drive_state", "active_route_minutes_to_arrival", "남은 시간", " 분", digits: 0),
                 metric("drive_state", "active_route_miles_to_arrival", "남은 거리", " km", scale: 1.609344), metric("drive_state", "active_route_traffic_minutes_delay", "교통 지연", " 분", digits: 0)]),
             FleetInsightSection(title: "주차·보안 확인", source: "vehicle_state", rows: security),
-            FleetInsightSection(title: "소프트웨어·주행거리", source: "vehicle_state", rows: firmware)
+            FleetInsightSection(title: "소프트웨어·주행거리", source: "vehicle_state", rows: firmware),
+            FleetInsightSection(title: "충전 준비·출발 준비", source: "charge_state", rows: readiness()),
+            FleetInsightSection(title: "차량 사양·표시 설정", source: "vehicle_config", rows: configuration())
+        ]
+    }
+
+    private func readiness() -> [FleetInsightRow] {
+        let charge = payload["charge_state"] as? [String: Any] ?? [:]
+        func yes(_ value: Bool?, _ on: String, _ off: String) -> String { value.map { $0 ? on : off } ?? "미수신" }
+        var rows = [
+            FleetInsightRow(label: "충전 케이블", value: (charge["conn_charge_cable"] as? String).map { $0 == "<invalid>" ? "연결 안 됨" : $0 + " 연결" } ?? "미수신"),
+            FleetInsightRow(label: "충전 포트", value: yes(charge["charge_port_door_open"] as? Bool, "열림", "닫힘")),
+            FleetInsightRow(label: "충전 상태", value: charge["charging_state"] as? String ?? "미수신"),
+            FleetInsightRow(label: "예약 충전", value: yes(charge["scheduled_charging_pending"] as? Bool, "대기 중", "없음")),
+            FleetInsightRow(label: "배터리 히터", value: yes(charge["battery_heater_on"] as? Bool, "작동 중", "꺼짐")),
+            FleetInsightRow(label: "사전 공조", value: yes(flag("climate_state", "is_preconditioning"), "작동 중", "꺼짐")),
+            FleetInsightRow(label: "공조", value: yes(flag("climate_state", "is_climate_on"), "켜짐", "꺼짐"))
+        ]
+        if let start = number("charge_state", "scheduled_charging_start_time"), start > 0 {
+            let time = Date(timeIntervalSince1970: start).formatted(date: .omitted, time: .shortened)
+            rows.insert(FleetInsightRow(label: "예약 충전 시작", value: time), at: 4)
+        }
+        return rows
+    }
+
+    private func configuration() -> [FleetInsightRow] {
+        let config = payload["vehicle_config"] as? [String: Any] ?? [:]
+        let gui = payload["gui_settings"] as? [String: Any] ?? [:]
+        func text(_ source: [String: Any], _ key: String) -> String { (source[key] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "미수신" }
+        return [
+            FleetInsightRow(label: "차종", value: text(config, "car_type")), FleetInsightRow(label: "트림", value: text(config, "trim_badging")),
+            FleetInsightRow(label: "외장 색상", value: text(config, "exterior_color")), FleetInsightRow(label: "휠", value: text(config, "wheel_type")),
+            FleetInsightRow(label: "거리 단위", value: text(gui, "gui_distance_units")), FleetInsightRow(label: "온도 단위", value: text(gui, "gui_temperature_units"))
         ]
     }
 
     func insightSummary() -> [String] {
         var lines: [String] = []
+        if sectionIsRecent("vehicle_state") {
+            let warned = [("fl", "앞 왼쪽"), ("fr", "앞 오른쪽"), ("rl", "뒤 왼쪽"), ("rr", "뒤 오른쪽")].filter { flag("vehicle_state", "tpms_hard_warning_" + $0.0) == true }.map { $0.1 }
+            if !warned.isEmpty { lines.append("타이어 공기압 경고: " + warned.joined(separator: ", ") + ". 안전한 곳에서 확인하세요.") }
+            if locked == false, flag("vehicle_state", "is_user_present") == false { lines.append("차량이 잠기지 않았고 탑승자가 없습니다.") }
+            let windows = ["fd_window", "fp_window", "rd_window", "rp_window"].compactMap { number("vehicle_state", $0) }.filter { $0 > 0 }.count
+            if windows > 0 { lines.append("창문이 \(windows)곳 열려 있습니다.") }
+        }
+        let cable = (payload["charge_state"] as? [String: Any])?["conn_charge_cable"] as? String
+        if sectionIsRecent("charge_state"), let cable, cable != "<invalid>", !charging, (payload["charge_state"] as? [String: Any])?["scheduled_charging_pending"] as? Bool != true {
+            lines.append("충전 케이블이 연결돼 있지만 충전하지 않고 있습니다.")
+        }
         if sectionIsRecent("vehicle_state") {
             let open = ["df", "pf", "dr", "pr", "ft", "rt"].compactMap { number("vehicle_state", $0) }.filter { $0 > 0 }.count
             if open > 0 { lines.append("문이나 트렁크가 \(open)곳 열려 있습니다. 출발 전에 확인하세요.") }
