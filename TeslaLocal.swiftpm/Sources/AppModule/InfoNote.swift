@@ -25,13 +25,16 @@ struct CardTitle: View {
         HStack(spacing: 10) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .font(.system(size: 15, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28, height: 28)
+                    .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .accessibilityHidden(true)
             }
             Text(title)
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(.white)
+                .font(.headline)
+                .foregroundStyle(.primary)
             Spacer(minLength: 4)
         }
     }
@@ -54,3 +57,21 @@ struct ChartReveal: ViewModifier {
     }
 }
 extension View { func chartReveal() -> some View { modifier(ChartReveal()) } }
+
+/// iOS 18 zoom navigation (card grows into its detail screen); plain push on iOS 17.
+extension View {
+    @ViewBuilder func zoomSource(_ id: String, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 18.0, *) { self.matchedTransitionSource(id: id, in: namespace) } else { self }
+    }
+    @ViewBuilder func zoomDestination(_ id: String, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 18.0, *) { self.navigationTransition(.zoom(sourceID: id, in: namespace)) } else { self }
+    }
+    /// Cards settle in as they scroll into view: slight scale, fade and blur at the edges.
+    func cardScrollEffect() -> some View {
+        scrollTransition(.interactive, axis: .vertical) { content, phase in
+            content.opacity(phase.isIdentity ? 1 : 0.55)
+                .scaleEffect(phase.isIdentity ? 1 : 0.95)
+                .blur(radius: phase.isIdentity ? 0 : 1.5)
+        }
+    }
+}
