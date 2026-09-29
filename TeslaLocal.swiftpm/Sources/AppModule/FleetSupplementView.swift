@@ -22,6 +22,10 @@ struct FleetSupplementView: View {
     @State private var autoRegion = ""
     @State private var centeredOnOrigin = false
     @State private var locator = CLLocationManager()
+    /// Last map area the user settled on; drives automatic region selection once they pan or zoom.
+    @State private var viewedArea: MKCoordinateRegion?
+    @State private var userMovedMap = false
+    @State private var areaTooWide = false
     private var effectiveRegion: String { region.isEmpty ? autoRegion : region }
     private var origin: CLLocation? {
         let location = homePresentation(model, model.link).object("location")
@@ -32,7 +36,8 @@ struct FleetSupplementView: View {
     private var carHeading: Double? { homePresentation(model, model.link).object("location").number("heading") }
     private var visibleSites: [NearbyChargingSite] {
         let filtered = sites.filter { $0.matches(category) }
-        guard let origin else { return Array(filtered.prefix(300)) }
+        let focus = viewedArea.map { CLLocation(latitude: $0.center.latitude, longitude: $0.center.longitude) } ?? origin
+        guard let origin = focus else { return Array(filtered.prefix(300)) }
         return Array(filtered.sorted { a, b in
             origin.distance(from: CLLocation(latitude: a.latitude, longitude: a.longitude)) < origin.distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
         }.prefix(300))
@@ -85,7 +90,7 @@ struct FleetSupplementView: View {
         .task(id: origin.map { "\(Int($0.coordinate.latitude * 100)),\(Int($0.coordinate.longitude * 100))" } ?? "") {
             guard kind == .nearbyCharging, let origin else { return }
             let codes = await PublicChargingRegions.codes(around: origin).joined(separator: ",")
-            if !codes.isEmpty, autoRegion != codes { autoRegion = codes }
+            if !userMovedMap, !codes.isEmpty, autoRegion != codes { autoRegion = codes }
         }
         .task(id: effectiveRegion) {
             guard kind == .nearbyCharging else { return }
@@ -133,6 +138,21 @@ struct FleetSupplementView: View {
         }.accessibilityIdentifier("charging.map")
         .mapControls { MapUserLocationButton(); MapCompass(); MapScaleView() }
         .onAppear { if locator.authorizationStatus == .notDetermined { locator.requestWhenInUseAuthorization() } }
+        .onMapCameraChange(frequency: .onEnd) { context in
+            if viewedArea != nil { userMovedMap = true }
+            viewedArea = context.region
+        }
+        .task(id: viewedArea.map { "\(Int($0.center.latitude * 200)),\(Int($0.center.longitude * 200)),\(Int($0.span.latitudeDelta * 100))" } ?? "") {
+            // Regions visible on screen become the lookup set (debounced; skipped when zoomed out too far).
+            guard kind == .nearbyCharging, userMovedMap, let area = viewedArea else { return }
+            do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
+            areaTooWide = area.span.latitudeDelta > 0.6 || area.span.longitudeDelta > 0.6
+            guard !areaTooWide else { return }
+            let codes = await PublicChargingRegions.codes(in: area.center, latitudeDelta: area.span.latitudeDelta, longitudeDelta: area.span.longitudeDelta)
+            guard !Task.isCancelled, !codes.isEmpty else { return }
+            let joined = codes.joined(separator: ",")
+            if autoRegion != joined { autoRegion = joined }
+        }
         .safeAreaInset(edge: .top) { mapFilters }
         .onChange(of: category) { _, _ in selectedSite = visibleSites.first?.id }
         .onChange(of: visibleSites.map(\.id)) { _, _ in fitChargingMap() }
@@ -140,14 +160,15 @@ struct FleetSupplementView: View {
     }
     private func fitChargingMap() {
         // Show the area around the car in detail instead of zooming out to every charger in the region.
+        guard !centeredOnOrigin, !userMovedMap else { return }
         if let origin {
-            guard !centeredOnOrigin else { return }
             centeredOnOrigin = true
             mapPosition = .region(MKCoordinateRegion(center: origin.coordinate, latitudinalMeters: 6000, longitudinalMeters: 6000))
             return
         }
         let values = visibleSites
         guard let first = values.first else { return }
+        centeredOnOrigin = true
         let latitudes = values.map(\.latitude), longitudes = values.map(\.longitude)
         let lowLat = latitudes.min() ?? first.latitude, highLat = latitudes.max() ?? first.latitude
         let lowLon = longitudes.min() ?? first.longitude, highLon = longitudes.max() ?? first.longitude
@@ -165,7 +186,7 @@ struct FleetSupplementView: View {
     private var mapFilters: some View {
             VStack(spacing: 8) {
             HStack {
-                Button { showSetup = true } label: { Label(PublicChargingKey.read() == nil ? "공공 충전소 연결" : (region.isEmpty ? "자동 · " + (autoRegion.isEmpty ? "차량 위치 확인 중" : PublicChargingRegions.summary(autoRegion)) : PublicChargingRegions.summary(region)), systemImage: "slider.horizontal.3") }.font(.caption)
+                Button { showSetup = true } label: { Label(PublicChargingKey.read() == nil ? "공공 충전소 연결" : (region.isEmpty ? (userMovedMap ? "지도 영역 · " : "자동 · ") + (autoRegion.isEmpty ? "차량 위치 확인 중" : PublicChargingRegions.summary(autoRegion)) : PublicChargingRegions.summary(region)), systemImage: "slider.horizontal.3") }.font(.caption)
                 Spacer()
                 Button { Task { await refresh() } } label: {
                     Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
@@ -179,6 +200,7 @@ struct FleetSupplementView: View {
     private var stationPanel: some View {
             VStack(alignment: .leading, spacing: 10) {
                 if busy { ProgressView("충전소 조회 중…") }
+                if areaTooWide && region.isEmpty { Text("지도를 더 확대하면 보이는 지역의 공공 충전소를 불러옵니다").font(.caption).foregroundStyle(.secondary) }
                 if !error.isEmpty { Text(error).font(.subheadline).foregroundStyle(.orange) }
                 if let site = visibleSites.first(where: { $0.id == selectedSite }) {
                     Text(site.name).font(.headline)
