@@ -38,6 +38,26 @@ import UniformTypeIdentifiers
         default: return "충전"
         }
     }
+    /// One definition of parking drain (%/day) for every screen: parkings of 6 h+, rates above 8 %/day
+    /// (an unseen drive or charge in between) dropped, median of the rest.
+    static func drainRates(_ periods: [Object]) -> [(start: Date, hours: Double, loss: Double, perDay: Double)] {
+        periods.compactMap { p in
+            guard p.string("classification") == "parking", let s = date(p, "start"), let e = date(p, "end"),
+                  let d = p.number("deltaSOC"), d >= 0 else { return nil }
+            let h = e.timeIntervalSince(s) / 3600, r = d / h * 24
+            return h >= 6 && r <= 8 ? (s, h, d, r) : nil
+        }
+    }
+    static func drainPerDay(_ periods: [Object]) -> Double? {
+        let r = drainRates(periods).map(\.perDay).sorted()
+        return r.isEmpty ? nil : r[r.count / 2]
+    }
+    /// One efficiency definition (km/kWh, same as 운행 기록): distance ÷ estimated energy.
+    static func kmPerKWh(_ trips: [Object]) -> Double? {
+        let rows = trips.filter { ($0.number("estimatedKWh") ?? 0) > 0 }
+        let km = rows.compactMap { $0.number("distanceKm") }.reduce(0, +), kwh = rows.compactMap { $0.number("estimatedKWh") }.reduce(0, +)
+        return km > 5 && kwh > 0 ? km / kwh : nil
+    }
     static func won(_ v: Double?) -> String { v.map { "\(Int($0.rounded()).formatted())원" } ?? "—" }
     static func duration(_ from: Date?, _ to: Date?) -> String {
         guard let from, let to, to > from else { return "—" }
@@ -118,7 +138,7 @@ struct TripDetailView: View {
                 if let top = speed.compactMap(\.number).max() { row("최고 속도", String(format: "%.0f km/h", top * 1.609344)) }
                 if let a = trip.number("startSOC"), let b = trip.number("endSOC") { row("배터리", "\(Int(a))% → \(Int(b))%") }
                 if let used = usedKWh { row("소모", String(format: "%.1f kWh (추정)", used)) }
-                if let used = usedKWh, km > 1 { row("효율", String(format: "%.0f Wh/km", used * 1000 / km)) }
+                if let used = usedKWh, used > 0, km > 1 { row("전비", String(format: "%.2f km/kWh", km / used)) }
             }
             if speed.count > 2 {
                 Section("속도 (km/h)") {
@@ -136,12 +156,8 @@ struct ParkingDrainView: View {
     let periods: [Object]
     private struct Drain: Identifiable { let id: Int; let start: Date; let hours: Double; let loss: Double; var perDay: Double { loss / hours * 24 } }
     private var rows: [Drain] {
-        periods.enumerated().compactMap { i, p in
-            guard p.string("classification") == "parking", let s = HistoryData.date(p, "start"), let e = HistoryData.date(p, "end"),
-                  let d = p.number("deltaSOC"), d >= 0 else { return nil }
-            let h = e.timeIntervalSince(s) / 3600
-            return h >= 6 && d / h * 24 <= 8 ? Drain(id: i, start: s, hours: h, loss: d) : nil
-        }.sorted { $0.start > $1.start }
+        HistoryData.drainRates(periods).enumerated().map { Drain(id: $0.offset, start: $0.element.start, hours: $0.element.hours, loss: $0.element.loss) }
+            .sorted { $0.start > $1.start }
     }
     var body: some View {
         let list = rows
@@ -432,8 +448,9 @@ struct TeslaMateView: View {
             }.padding(4).background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 13)).padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
             content.frame(maxHeight: .infinity)
-                .id(raw).transition(.opacity.combined(with: .move(edge: .bottom)).animation(.smooth(duration: 0.28)))
+                .id(raw).transition(.blurReplace.animation(.smooth(duration: 0.3)))
         }
+        .sensoryFeedback(.selection, trigger: raw)
         .navigationTitle("TeslaMate").navigationBarTitleDisplayMode(.inline)
         .environment(\.locale, Locale(identifier: "ko_KR"))
     }
@@ -449,8 +466,9 @@ struct TeslaMateView: View {
                    ("주별·월별 통계", "chart.bar", AnyView(MonthlyStatsView(trips: trips, charges: charges)))])
         }
         case .battery: BatteryView().safeAreaInset(edge: .top) {
+            // Parking location/notes live in 운행 › 위치·주차; only the battery-related drain view is here.
             links([("주차 중 방전", "moon.zzz", AnyView(ParkingDrainView(periods: model.state.rows("parkingPeriods")))),
-                   ("주차 위치·메모", "parkingsign", AnyView(ParkingHistoryView()))])
+                   ("충전 단가", "wonsign.circle", AnyView(ChargeRateSettingsView()))])
         }
         case .usage:
             VStack(spacing: 0) {
@@ -484,6 +502,7 @@ struct TeslaMateOverview: View {
     let capacity: Double
     let open: (TeslaMateView.Section) -> Void
     @State private var shown = false
+    @Namespace private var zoom
     private struct Day: Identifiable { let id: Date; var km = 0.0; var kwh = 0.0 }
     private struct Slice: Identifiable { let id: String; let kwh: Double; let color: Color }
     private struct Point: Identifiable { let id: Int; let at: Date; let whPerKm: Double }
@@ -508,30 +527,17 @@ struct TeslaMateOverview: View {
     }
     private var efficiency: [Point] {
         trips.prefix(40).enumerated().compactMap { i, t in
-            guard let w = t.number("estimatedWhPerKm"), (50...400).contains(w), (t.number("distanceKm") ?? 0) >= 2, let d = HistoryData.date(t, "start") else { return nil }
-            return Point(id: i, at: d, whPerKm: w)
+            guard let e = t.number("estimatedKmPerKWh"), (1.5...15).contains(e), (t.number("distanceKm") ?? 0) >= 2, let d = HistoryData.date(t, "start") else { return nil }
+            return Point(id: i, at: d, whPerKm: e)
         }
     }
-    /// Median of per-parking rates (%/day). Periods with an unobserved drive or charge give absurd rates and are dropped.
-    private var drainPerDay: Double? {
-        let rates = parking.compactMap { p -> Double? in
-            guard p.string("classification") == "parking", let s = p.number("start"), let e = p.number("end"), let d = p.number("deltaSOC"), d >= 0 else { return nil }
-            let h = (e - s) / 3_600_000
-            guard h >= 6 else { return nil }
-            let r = d / h * 24
-            return r <= 8 ? r : nil
-        }.sorted()
-        guard !rates.isEmpty else { return nil }
-        return rates[rates.count / 2]
-    }
+    private var drainPerDay: Double? { HistoryData.drainPerDay(parking) }
     var body: some View {
         let t = monthTrips, c = monthCharges
         let km = t.compactMap { $0.number("distanceKm") }.reduce(0, +)
         let kwh = c.compactMap(HistoryData.energy).reduce(0, +)
         let cost = c.compactMap(HistoryData.cost).reduce(0, +)
-        let est = t.filter { $0.number("estimatedKWh") != nil }
-        let usedKm = est.compactMap { $0.number("distanceKm") }.reduce(0, +)
-        let wh = usedKm > 5 ? est.compactMap { $0.number("estimatedKWh") }.reduce(0, +) * 1000 / usedKm : nil
+        let wh = HistoryData.kmPerKWh(t)
         ScrollView {
             VStack(spacing: 14) {
                 HStack(spacing: 10) {
@@ -574,19 +580,19 @@ struct TeslaMateOverview: View {
                         Text(drainPerDay == nil ? "6시간 이상 주차 기록 필요" : "주차 중 하루 감소 (중앙값)").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
-                card("주행 효율 추이 (Wh/km)", .trips) {
+                card("전비 추이 (km/kWh)", .trips) {
                     if efficiency.count < 2 { Text("주행 기록이 더 쌓이면 표시됩니다").font(.caption).foregroundStyle(.secondary).frame(height: 120) }
                     else {
                         let avg = efficiency.map(\.whPerKm).reduce(0, +) / Double(efficiency.count)
                         Chart {
                             ForEach(efficiency) { p in
-                                LineMark(x: .value("시각", p.at), y: .value("Wh/km", shown ? p.whPerKm : avg)).interpolationMethod(.catmullRom).foregroundStyle(.teal)
-                                PointMark(x: .value("시각", p.at), y: .value("Wh/km", shown ? p.whPerKm : avg)).foregroundStyle(.teal).symbolSize(18)
+                                LineMark(x: .value("시각", p.at), y: .value("km/kWh", shown ? p.whPerKm : avg)).interpolationMethod(.catmullRom).foregroundStyle(.teal)
+                                PointMark(x: .value("시각", p.at), y: .value("km/kWh", shown ? p.whPerKm : avg)).foregroundStyle(.teal).symbolSize(18)
                             }
                             RuleMark(y: .value("평균", avg)).foregroundStyle(.secondary).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                                .annotation(position: .top, alignment: .leading) { Text(String(format: "평균 %.0f", avg)).font(.caption2).foregroundStyle(.secondary) }
+                                .annotation(position: .top, alignment: .leading) { Text(String(format: "평균 %.2f", avg)).font(.caption2).foregroundStyle(.secondary) }
                         }.chartReveal().frame(height: 140)
-                        if let wh { Text(String(format: "이번 달 %.0f Wh/km · 운행 %d회 · 충전 %d회", wh, t.count, c.count)).font(.caption2).foregroundStyle(.secondary) }
+                        if let wh { Text(String(format: "이번 달 %.2f km/kWh · 운행 %d회 · 충전 %d회", wh, t.count, c.count)).font(.caption2).foregroundStyle(.secondary) }
                     }
                 }
                 HStack(spacing: 10) {
@@ -619,12 +625,13 @@ struct TeslaMateOverview: View {
                 content()
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).cardScrollEffect()
     }
     private func shortcut<D: View>(_ title: String, _ icon: String, @ViewBuilder _ destination: @escaping () -> D) -> some View {
-        NavigationLink { destination() } label: {
+        NavigationLink { destination().zoomDestination(title, in: zoom) } label: {
             VStack(spacing: 6) { Image(systemName: icon).font(.title3); Text(title).font(.caption2) }
                 .frame(maxWidth: .infinity, minHeight: 64).background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                .zoomSource(title, in: zoom)
         }.buttonStyle(.plain)
     }
     private func legend(_ color: Color, _ text: String) -> some View {
