@@ -118,6 +118,9 @@ static NSArray *YLLifecycleObservers;
     KNGuidance_RouteGuideDelegate, KNGuidance_SafetyGuideDelegate, KNGuidance_VoiceGuideDelegate, KNGuidance_CitsGuideDelegate, KNMapViewEventListener>
 @property(nonatomic, strong) KNGuidance *guidance;
 @property(nonatomic, strong) KNMapView *map;
+@property(nonatomic, copy) NSString *markerStyle;
+/// KNMapUserLocation.icon is an `assign` property, so the image must be owned here.
+@property(nonatomic, strong) UIImage *markerIcon;
 @property(nonatomic, strong) KNGuide_Route *routeGuide;
 @property(nonatomic, strong) KNGuide_Location *locationGuide;
 @property(nonatomic, strong) KNGuide_Safety *safetyGuide;
@@ -335,6 +338,7 @@ static NSArray *YLLifecycleObservers;
         self.map.isVisibleTraffic = YES;
         self.map.userLocation.isVisible = NO;
         self.map.viewEventListener = self;
+        [self applyMarkerIcon];
         self.following = YES;
         self.userZooming = NO;
         self.map.translatesAutoresizingMaskIntoConstraints = NO;
@@ -392,6 +396,7 @@ static NSArray *YLLifecycleObservers;
     self.map.isVisibleTraffic = NO;
     self.map.userLocation.isVisible = NO;
     self.map.viewEventListener = self;
+    [self applyMarkerIcon];
     self.following = YES; self.userZooming = NO;
     self.map.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.map];
@@ -412,6 +417,46 @@ static NSArray *YLLifecycleObservers;
 }
 - (void)viewDidAppear:(BOOL)animated { [super viewDidAppear:animated]; self.map.paused = NO; [self emit:@"visible" message:@""]; }
 - (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; self.map.paused = YES; }
+static NSString *const YLCarMarkerPNG = @"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";
+/// Top-down navigation arrow with a white rim, drawn once per colour.
+static UIImage *YLArrowIcon(UIColor *fill) {
+    CGSize size = CGSizeMake(44, 44);
+    UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:size];
+    return [r imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+        UIBezierPath *p = [UIBezierPath bezierPath];
+        [p moveToPoint:CGPointMake(22, 4)];
+        [p addLineToPoint:CGPointMake(38, 38)];
+        [p addLineToPoint:CGPointMake(22, 30)];
+        [p addLineToPoint:CGPointMake(6, 38)];
+        [p closePath];
+        p.lineJoinStyle = kCGLineJoinRound;
+        CGContextSetShadowWithColor(ctx.CGContext, CGSizeMake(0, 1), 3, [UIColor colorWithWhite:0 alpha:0.45].CGColor);
+        [fill setFill]; [p fill];
+        CGContextSetShadowWithColor(ctx.CGContext, CGSizeZero, 0, NULL);
+        p.lineWidth = 3; [[UIColor whiteColor] setStroke]; [p stroke];
+    }];
+}
+- (void)applyMarkerIcon {
+    if (!self.map) return;
+    NSString *style = self.markerStyle ?: @"arrow.blue";
+    UIImage *icon = nil;
+    if ([style isEqualToString:@"car"]) {
+        NSData *data = [[NSData alloc] initWithBase64EncodedString:YLCarMarkerPNG options:0];
+        icon = data ? [UIImage imageWithData:data scale:3] : nil;
+    } else if ([style isEqualToString:@"arrow.green"]) {
+        icon = YLArrowIcon([UIColor colorWithRed:0.19 green:0.82 blue:0.35 alpha:1]);
+    } else if ([style isEqualToString:@"arrow.orange"]) {
+        icon = YLArrowIcon([UIColor colorWithRed:1.0 green:0.62 blue:0.04 alpha:1]);
+    } else {
+        icon = YLArrowIcon([UIColor colorWithRed:0.04 green:0.52 blue:1.0 alpha:1]);
+    }
+    if (icon) { self.markerIcon = icon; self.map.userLocation.icon = self.markerIcon; self.map.userLocation.isFlat = YES; }
+}
+- (void)configureMarkerStyle:(NSString *)style {
+    if ([self.markerStyle isEqualToString:style]) return;
+    self.markerStyle = style;
+    [self applyMarkerIcon];
+}
 - (void)configureMapAnchorX:(double)x y:(double)y {
     if (!isfinite(x) || !isfinite(y)) return;
     self.mapAnchor = FloatPointMake(fmax(0.2, fmin(0.8, x)), fmax(0.3, fmin(0.85, y)));
