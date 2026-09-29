@@ -28,7 +28,7 @@ import UniformTypeIdentifiers
             return CLLocationCoordinate2D(latitude: lat, longitude: lng)
         }
     }
-    static func cost(_ c: Object) -> Double? { c.number("cost") ?? c.number("estimatedCost") }
+    static func cost(_ c: Object) -> Double? { c.number("totalCost") ?? c.number("cost") ?? c.number("estimatedCost") }
     static func energy(_ c: Object) -> Double? { c.number("chargedKWh") ?? c.number("supplyKWh") ?? c.number("storedKWh") }
     static func typeName(_ c: Object) -> String {
         switch c.string("chargeType") {
@@ -43,68 +43,6 @@ import UniformTypeIdentifiers
         guard let from, let to, to > from else { return "—" }
         let m = Int(to.timeIntervalSince(from) / 60)
         return m >= 60 ? "\(m / 60)시간 \(m % 60)분" : "\(m)분"
-    }
-}
-
-struct HistoryDashboardView: View {
-    @EnvironmentObject private var model: AppModel
-    private var charges: [Object] {
-        let priced = model.output.object("charging").rows("rows")
-        return (priced.isEmpty ? model.state.rows("charges") : priced).sorted { ($0.number("at") ?? 0) > ($1.number("at") ?? 0) }
-    }
-    private var trips: [Object] { model.state.rows("trips").sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) } }
-    private var capacity: Double { model.output.object("energy").number("capacityKWh") ?? 75 }
-    var body: some View {
-        List {
-            Section("이번 달") { monthSummary }
-            Section("기록") {
-                NavigationLink { ChargeHistoryList(charges: charges) } label: { Label("충전 기록 · \(charges.count)건", systemImage: "bolt.car") }
-                NavigationLink { TripHistoryList(trips: trips, capacity: capacity) } label: { Label("주행 기록 · \(trips.count)건", systemImage: "car.side") }
-                NavigationLink { ParkingDrainView(periods: model.state.rows("parkingPeriods")) } label: { Label("주차 중 방전", systemImage: "moon.zzz") }
-                NavigationLink { MonthlyStatsView(trips: trips, charges: charges) } label: { Label("월별 통계", systemImage: "chart.bar") }
-                NavigationLink { VisitedPlacesView(trips: trips, charges: charges) } label: { Label("자주 가는 장소", systemImage: "mappin.and.ellipse") }
-            }
-            Section { NavigationLink { TeslaExportImportView() } label: { Label("Tesla 요청 자료 가져오기", systemImage: "square.and.arrow.down") } }
-                footer: { Text("Tesla 계정 개인정보 메뉴에서 받은 충전 데이터(Charging Data.csv)를 기존 기록과 합칩니다. 비용은 설정한 충전 단가로 추정합니다.") }
-        }.navigationTitle("차량 기록")
-    }
-    private var monthSummary: some View {
-        let start = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
-        let t = trips.filter { (HistoryData.date($0, "start") ?? .distantPast) >= start }
-        let c = charges.filter { (HistoryData.date($0, "at") ?? .distantPast) >= start }
-        let km = t.compactMap { $0.number("distanceKm") }.reduce(0, +)
-        let kwh = c.compactMap(HistoryData.energy).reduce(0, +)
-        let cost = c.compactMap(HistoryData.cost).reduce(0, +)
-        let used = t.compactMap { r -> Double? in guard let a = r.number("startSOC"), let b = r.number("endSOC"), a > b else { return nil }; return (a - b) / 100 * capacity }.reduce(0, +)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack { stat("주행", String(format: "%.0f km", km)); stat("충전", String(format: "%.1f kWh", kwh)); stat("비용", HistoryData.won(cost)) }
-            if km > 5, used > 0 { Text(String(format: "평균 효율 %.0f Wh/km · 운행 %d회 · 충전 %d회", used * 1000 / km, t.count, c.count)).font(.caption).foregroundStyle(.secondary) }
-        }
-    }
-    private func stat(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.headline).monospacedDigit() }.frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct ChargeHistoryList: View {
-    let charges: [Object]
-    var body: some View {
-        List(Array(charges.enumerated()), id: \.offset) { _, c in
-            NavigationLink { ChargeDetailView(charge: c) } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(HistoryData.date(c, "at")?.formatted(date: .abbreviated, time: .shortened) ?? "—").font(.subheadline.bold())
-                        Spacer(); Text(HistoryData.typeName(c)).font(.caption).foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        if let a = c.number("startSOC"), let b = c.number("endSOC") { Text("\(Int(a))→\(Int(b))%") }
-                        if let e = HistoryData.energy(c) { Text(String(format: "%.1f kWh", e)) }
-                        Spacer(); Text(HistoryData.won(HistoryData.cost(c)))
-                    }.font(.caption).monospacedDigit()
-                    if !c.string("place").isEmpty { Text(c.string("place")).font(.caption2).foregroundStyle(.secondary) }
-                }
-            }
-        }.navigationTitle("충전 기록").overlay { if charges.isEmpty { ContentUnavailableView("충전 기록 없음", systemImage: "bolt.slash") } }
     }
 }
 
@@ -153,25 +91,6 @@ struct ChargeDetailView: View {
     }
 }
 
-struct TripHistoryList: View {
-    let trips: [Object]
-    let capacity: Double
-    var body: some View {
-        List(Array(trips.enumerated()), id: \.offset) { _, t in
-            NavigationLink { TripDetailView(trip: t, capacity: capacity) } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(HistoryData.date(t, "start")?.formatted(date: .abbreviated, time: .shortened) ?? "—").font(.subheadline.bold())
-                    HStack {
-                        Text(String(format: "%.1f km", t.number("distanceKm") ?? 0))
-                        Text(HistoryData.duration(HistoryData.date(t, "start"), HistoryData.date(t, "end")))
-                        if let a = t.number("startSOC"), let b = t.number("endSOC") { Text("\(Int(a))→\(Int(b))%") }
-                    }.font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                }
-            }
-        }.navigationTitle("주행 기록").overlay { if trips.isEmpty { ContentUnavailableView("주행 기록 없음", systemImage: "car") } }
-    }
-}
-
 struct TripDetailView: View {
     let trip: Object
     let capacity: Double
@@ -180,7 +99,8 @@ struct TripDetailView: View {
         let route = HistoryData.points(trip)
         let speed = HistoryData.readings(["VehicleSpeed"], from: start, to: end)
         let km = trip.number("distanceKm") ?? 0
-        let usedKWh: Double? = { guard let a = trip.number("startSOC"), let b = trip.number("endSOC"), a >= b else { return nil }; return (a - b) / 100 * capacity }()
+        // Same estimate as the 운행 기록 cards (engine energyPeriods), so numbers match everywhere.
+        let usedKWh: Double? = trip.number("estimatedKWh") ?? { guard let a = trip.number("startSOC"), let b = trip.number("endSOC"), a >= b else { return nil }; return (a - b) / 100 * capacity }()
         List {
             if route.count > 1 {
                 Section {
@@ -460,7 +380,8 @@ struct TeslaMateView: View {
         let priced = model.output.object("charging").rows("rows")
         return (priced.isEmpty ? model.state.rows("charges") : priced).sorted { ($0.number("at") ?? 0) > ($1.number("at") ?? 0) }
     }
-    private var trips: [Object] { model.state.rows("trips").sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) } }
+    /// Trips with the engine's energy estimates (the same rows 운행 기록 shows).
+    private var trips: [Object] { model.output.object("energyPeriods").object("36500").rows("trips").sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) } }
     private var capacity: Double { model.output.object("energy").number("capacityKWh") ?? 75 }
     var body: some View {
         VStack(spacing: 0) {
@@ -486,11 +407,8 @@ struct TeslaMateView: View {
     @ViewBuilder private var content: some View {
         switch section {
         case .overview: overview
-        case .charges: ChargeHistoryList(charges: charges).safeAreaInset(edge: .bottom) {
-            NavigationLink { ChargeListView(charges: model.state.rows("charges")) } label: { Label("원본 충전 기록 수정·추가", systemImage: "pencil") }
-                .font(.subheadline).padding(10).frame(maxWidth: .infinity).background(.regularMaterial)
-        }
-        case .trips: TripHistoryList(trips: trips, capacity: capacity)
+        case .charges: ChargeListView(charges: charges)
+        case .trips: TripsView()
         case .battery: BatteryView()
         case .usage: DrivingInsightsView()
         case .parking: ParkingDrainView(periods: model.state.rows("parkingPeriods")).safeAreaInset(edge: .bottom) {
@@ -513,7 +431,7 @@ struct TeslaMateView: View {
         let km = t.compactMap { $0.number("distanceKm") }.reduce(0, +)
         let kwh = c.compactMap(HistoryData.energy).reduce(0, +)
         let cost = c.compactMap(HistoryData.cost).reduce(0, +)
-        let used = t.compactMap { r -> Double? in guard let a = r.number("startSOC"), let b = r.number("endSOC"), a > b else { return nil }; return (a - b) / 100 * capacity }.reduce(0, +)
+        let used = t.compactMap { $0.number("estimatedKWh") }.reduce(0, +)
         return List {
             SwiftUI.Section("이번 달") {
                 HStack { tile("주행", String(format: "%.0f km", km), .trips); tile("충전", String(format: "%.0f kWh", kwh), .charges); tile("비용", HistoryData.won(cost), .usage) }
