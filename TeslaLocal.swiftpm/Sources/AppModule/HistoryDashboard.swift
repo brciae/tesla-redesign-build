@@ -444,49 +444,156 @@ struct TeslaMateView: View {
         }
     }
     private var overview: some View {
-        let start = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
-        let t = trips.filter { (HistoryData.date($0, "start") ?? .distantPast) >= start }
-        let c = charges.filter { (HistoryData.date($0, "at") ?? .distantPast) >= start }
-        let km = t.compactMap { $0.number("distanceKm") }.reduce(0, +)
-        let kwh = c.compactMap(HistoryData.energy).reduce(0, +)
-        let cost = c.compactMap(HistoryData.cost).reduce(0, +)
-        let estimated = t.filter { $0.number("estimatedKWh") != nil }
-        let used = estimated.compactMap { $0.number("estimatedKWh") }.reduce(0, +)
-        let usedKm = estimated.compactMap { $0.number("distanceKm") }.reduce(0, +)
-        return List {
-            SwiftUI.Section("이번 달") {
-                HStack { tile("주행", String(format: "%.0f km", km), .trips); tile("충전", String(format: "%.0f kWh", kwh), .charges); tile("비용", HistoryData.won(cost), .usage) }
-                if usedKm > 5, used > 0 { Text(String(format: "평균 효율 %.0f Wh/km · 운행 %d회 · 충전 %d회", used * 1000 / usedKm, t.count, c.count)).font(.caption).foregroundStyle(.secondary) }
-            }
-            SwiftUI.Section("최근 충전") {
-                ForEach(Array(charges.prefix(3).enumerated()), id: \.offset) { _, row in
-                    NavigationLink { ChargeDetailView(charge: row) } label: {
-                        HStack { Text(dateText(row.number("at"))); Spacer()
-                            Text("\(HistoryData.typeName(row)) · " + (HistoryData.energy(row).map { String(format: "%.1f kWh", $0) } ?? "—")).foregroundStyle(.secondary) }.font(.subheadline)
-                    }
-                }
-                Button("충전 전체 보기") { raw = Section.charges.rawValue }
-            }
-            SwiftUI.Section("최근 주행") {
-                ForEach(Array(trips.prefix(3).enumerated()), id: \.offset) { _, row in
-                    NavigationLink { TripDetailView(trip: row, capacity: capacity) } label: {
-                        HStack { Text(dateText(row.number("start"))); Spacer()
-                            Text(String(format: "%.1f km", row.number("distanceKm") ?? 0)).foregroundStyle(.secondary) }.font(.subheadline)
-                    }
-                }
-                Button("주행 전체 보기") { raw = Section.trips.rawValue }
-            }
-            SwiftUI.Section("바로 가기") {
-                ForEach([Section.battery, .parking, .calendar, .stats, .places, .data]) { s in
-                    Button { raw = s.rawValue } label: { Label(s.rawValue, systemImage: s.icon) }
-                }
-            }
-        }
+        TeslaMateOverview(trips: trips, charges: charges, parking: model.state.rows("parkingPeriods"), capacity: capacity) { raw = $0.rawValue }
     }
     private func tile(_ title: String, _ value: String, _ target: Section) -> some View {
         Button { raw = target.rawValue } label: {
             VStack(alignment: .leading) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.headline).monospacedDigit() }
                 .frame(maxWidth: .infinity, alignment: .leading)
         }.buttonStyle(.plain)
+    }
+}
+
+/// Visual dashboard: animated KPIs, 30-day activity, charge mix, efficiency trend, parking drain gauge.
+struct TeslaMateOverview: View {
+    let trips: [Object]
+    let charges: [Object]
+    let parking: [Object]
+    let capacity: Double
+    let open: (TeslaMateView.Section) -> Void
+    @State private var shown = false
+    private struct Day: Identifiable { let id: Date; var km = 0.0; var kwh = 0.0 }
+    private struct Slice: Identifiable { let id: String; let kwh: Double; let color: Color }
+    private struct Point: Identifiable { let id: Int; let at: Date; let whPerKm: Double }
+    private var monthStart: Date { Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date() }
+    private var monthTrips: [Object] { trips.filter { (HistoryData.date($0, "start") ?? .distantPast) >= monthStart } }
+    private var monthCharges: [Object] { charges.filter { (HistoryData.date($0, "at") ?? .distantPast) >= monthStart } }
+    private var days: [Day] {
+        let cal = Calendar.current, today = cal.startOfDay(for: Date())
+        var map: [Date: Day] = [:]
+        for i in 0..<30 { if let d = cal.date(byAdding: .day, value: -i, to: today) { map[d] = Day(id: d) } }
+        for t in trips { if let d = HistoryData.date(t, "start"), map[cal.startOfDay(for: d)] != nil { map[cal.startOfDay(for: d)]!.km += t.number("distanceKm") ?? 0 } }
+        for c in charges { if let d = HistoryData.date(c, "at"), map[cal.startOfDay(for: d)] != nil { map[cal.startOfDay(for: d)]!.kwh += HistoryData.energy(c) ?? 0 } }
+        return map.values.sorted { $0.id < $1.id }
+    }
+    private var mix: [Slice] {
+        var ac = 0.0, dc = 0.0, sc = 0.0
+        for c in monthCharges {
+            let e = HistoryData.energy(c) ?? 0
+            switch c.string("chargeType") { case "supercharger": sc += e; case "dc": dc += e; default: ac += e }
+        }
+        return [Slice(id: "완속", kwh: ac, color: .green), Slice(id: "급속", kwh: dc, color: .orange), Slice(id: "슈퍼차저", kwh: sc, color: .red)].filter { $0.kwh > 0 }
+    }
+    private var efficiency: [Point] {
+        trips.prefix(40).enumerated().compactMap { i, t in
+            guard let w = t.number("estimatedWhPerKm"), (50...400).contains(w), (t.number("distanceKm") ?? 0) >= 2, let d = HistoryData.date(t, "start") else { return nil }
+            return Point(id: i, at: d, whPerKm: w)
+        }
+    }
+    private var drainPerDay: Double? {
+        let rows = parking.compactMap { p -> (Double, Double)? in
+            guard p.string("classification") == "parking", let s = p.number("start"), let e = p.number("end"), let d = p.number("deltaSOC"), d >= 0 else { return nil }
+            let h = (e - s) / 3_600_000; return h >= 3 ? (d, h) : nil
+        }
+        let hours = rows.map { $0.1 }.reduce(0, +)
+        return hours > 0 ? rows.map { $0.0 }.reduce(0, +) / hours * 24 : nil
+    }
+    var body: some View {
+        let t = monthTrips, c = monthCharges
+        let km = t.compactMap { $0.number("distanceKm") }.reduce(0, +)
+        let kwh = c.compactMap(HistoryData.energy).reduce(0, +)
+        let cost = c.compactMap(HistoryData.cost).reduce(0, +)
+        let est = t.filter { $0.number("estimatedKWh") != nil }
+        let usedKm = est.compactMap { $0.number("distanceKm") }.reduce(0, +)
+        let wh = usedKm > 5 ? est.compactMap { $0.number("estimatedKWh") }.reduce(0, +) * 1000 / usedKm : nil
+        ScrollView {
+            VStack(spacing: 14) {
+                HStack(spacing: 10) {
+                    kpi("주행", shown ? km : 0, "%.0f", "km", .blue, .trips)
+                    kpi("충전", shown ? kwh : 0, "%.0f", "kWh", .green, .charges)
+                    kpi("비용", shown ? cost / 10000 : 0, "%.1f", "만원", .pink, .usage)
+                }
+                card("최근 30일 주행·충전", .stats) {
+                    Chart {
+                        ForEach(days) { d in
+                            BarMark(x: .value("날짜", d.id, unit: .day), y: .value("km", shown ? d.km : 0)).foregroundStyle(Color.blue.gradient)
+                        }
+                        ForEach(days.filter { $0.kwh > 0 }) { d in
+                            PointMark(x: .value("날짜", d.id, unit: .day), y: .value("km", shown ? d.kwh : 0))
+                                .symbol { Image(systemName: "bolt.fill").font(.caption2).foregroundStyle(.green) }
+                        }
+                    }.frame(height: 150).chartXAxis { AxisMarks(values: .stride(by: .day, count: 7)) { AxisValueLabel(format: .dateTime.month().day()) } }
+                    HStack(spacing: 12) { legend(.blue, "주행 km"); legend(.green, "충전 kWh") }.font(.caption2)
+                }
+                HStack(spacing: 10) {
+                    card("이번 달 충전 구성", .charges) {
+                        if mix.isEmpty { Text("충전 없음").font(.caption).foregroundStyle(.secondary).frame(height: 120) }
+                        else {
+                            Chart(mix) { s in
+                                SectorMark(angle: .value("kWh", shown ? s.kwh : 0.001), innerRadius: .ratio(0.62), angularInset: 2).foregroundStyle(s.color).cornerRadius(3)
+                            }.frame(height: 120).overlay { VStack(spacing: 0) { Text(String(format: "%.0f", kwh)).font(.headline).monospacedDigit(); Text("kWh").font(.caption2).foregroundStyle(.secondary) } }
+                            HStack(spacing: 8) { ForEach(mix) { legend($0.color, $0.id) } }.font(.caption2)
+                        }
+                    }
+                    card("주차 중 방전", .parking) {
+                        Gauge(value: min(shown ? (drainPerDay ?? 0) : 0, 5), in: 0...5) {
+                            Text("%/일")
+                        } currentValueLabel: { Text(drainPerDay.map { String(format: "%.1f", $0) } ?? "—").monospacedDigit() }
+                            .gaugeStyle(.accessoryCircular).tint(Gradient(colors: [.green, .yellow, .red])).scaleEffect(1.5).frame(height: 120)
+                        Text("하루 평균 감소").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                card("주행 효율 추이 (Wh/km)", .trips) {
+                    if efficiency.count < 2 { Text("주행 기록이 더 쌓이면 표시됩니다").font(.caption).foregroundStyle(.secondary).frame(height: 120) }
+                    else {
+                        let avg = efficiency.map(\.whPerKm).reduce(0, +) / Double(efficiency.count)
+                        Chart {
+                            ForEach(efficiency) { p in
+                                LineMark(x: .value("시각", p.at), y: .value("Wh/km", shown ? p.whPerKm : avg)).interpolationMethod(.catmullRom).foregroundStyle(.teal)
+                                PointMark(x: .value("시각", p.at), y: .value("Wh/km", shown ? p.whPerKm : avg)).foregroundStyle(.teal).symbolSize(18)
+                            }
+                            RuleMark(y: .value("평균", avg)).foregroundStyle(.secondary).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                .annotation(position: .top, alignment: .leading) { Text(String(format: "평균 %.0f", avg)).font(.caption2).foregroundStyle(.secondary) }
+                        }.frame(height: 140)
+                        if let wh { Text(String(format: "이번 달 %.0f Wh/km · 운행 %d회 · 충전 %d회", wh, t.count, c.count)).font(.caption2).foregroundStyle(.secondary) }
+                    }
+                }
+                HStack(spacing: 10) {
+                    ForEach([TeslaMateView.Section.battery, .calendar, .places, .data]) { s in
+                        Button { open(s) } label: {
+                            VStack(spacing: 6) { Image(systemName: s.icon).font(.title3); Text(s.rawValue).font(.caption2) }
+                                .frame(maxWidth: .infinity, minHeight: 64).background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }.padding(16)
+        }
+        .onAppear { withAnimation(.spring(duration: 0.9)) { shown = true } }
+        .onDisappear { shown = false }
+    }
+    private func kpi(_ title: String, _ value: Double, _ format: String, _ unit: String, _ color: Color, _ target: TeslaMateView.Section) -> some View {
+        Button { open(target) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(String(format: format, value)).font(.title2.bold()).monospacedDigit().contentTransition(.numericText(value: value))
+                    Text(unit).font(.caption).foregroundStyle(.secondary)
+                }
+                Capsule().fill(color.gradient).frame(height: 4)
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+    }
+    private func card<C: View>(_ title: String, _ target: TeslaMateView.Section, @ViewBuilder _ content: () -> C) -> some View {
+        Button { open(target) } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Text(title).font(.subheadline.bold()); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
+                content()
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+    }
+    private func legend(_ color: Color, _ text: String) -> some View {
+        HStack(spacing: 4) { Circle().fill(color).frame(width: 7, height: 7); Text(text).foregroundStyle(.secondary) }
     }
 }
