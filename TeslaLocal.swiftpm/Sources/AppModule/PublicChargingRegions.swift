@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 // Administrative codes from KECO EvCharger guide v1.25 (2026-07-01).
 enum PublicChargingRegions {
@@ -242,4 +243,19 @@ enum PublicChargingRegions {
         "52790": "전북특별자치도 고창군",
         "52800": "전북특별자치도 부안군",
     ]
+
+    /// Maps a coordinate to the KECO sigungu code through reverse geocoding (e.g. 경기도 + 용인시 → 41460).
+    static func code(near location: CLLocation) async -> String? {
+        guard let mark = try? await CLGeocoder().reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ko_KR")).first,
+              let area = mark.administrativeArea else { return nil }
+        let parts = [mark.locality, mark.subLocality, mark.subAdministrativeArea].compactMap { $0 }
+        let inArea = names.filter { $0.value.hasPrefix(area) || area.hasPrefix(String($0.value.split(separator: " ").first ?? "")) }
+        for part in parts {
+            if let hit = inArea.first(where: { $0.value.split(separator: " ").dropFirst().joined(separator: " ") == part }) { return hit.key }
+        }
+        for part in parts where part.count > 1 {
+            if let hit = inArea.sorted(by: { $0.key < $1.key }).first(where: { $0.value.contains(part) }) { return hit.key }
+        }
+        return inArea.count == 1 ? inArea.first?.key : nil
+    }
 }
