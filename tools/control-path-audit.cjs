@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-const read = name => fs.readFileSync(`TeslaLocal.swiftpm/Sources/AppModule/${name}.swift`, 'utf8');
+const read = name => fs.readFileSync(`TeslaLocal.swiftpm/Sources/AppModule/${name}.swift`, 'utf8').replace(/\r\n/g, '\n');
 const client = read('TeslaFleetClient');
 assert(!client.includes('(res?["result"] as? Bool) ?? true'), 'Missing result must not become success');
 assert(client.includes('FleetCommandPolicy.accepted(data)'));
