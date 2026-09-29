@@ -28,17 +28,17 @@ struct SmartParkingCard: View {
                         Text("확인된 차량 위치를 주차 위치로 저장").font(.system(size: 14, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(ready ? Color(red: 0.18, green: 0.50, blue: 0.95) : Color.white.opacity(0.07),
+                    .background(ready ? Color(red: 0.18, green: 0.50, blue: 0.95) : Color.primary.opacity(0.07),
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .foregroundStyle(ready ? .white : Color.white.opacity(0.35))
+                    .foregroundStyle(ready ? Color.white : Color.primary.opacity(0.35))
                 }
                 .disabled(!ready)
             }
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(white: 0.12).opacity(0.75))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                    .fill(Theme.fill(0.12).opacity(0.75))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 1))
             )
         }
         if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
@@ -337,22 +337,22 @@ struct SmartParkingCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("주차 위치 촬영 및 자동 기록")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                         Text("기둥 번호 또는 야외 건물 촬영 시 차량+모바일 자동 검증")
                             .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(Color.primary.opacity(0.6))
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(Color.primary.opacity(0.4))
                 }
                 .padding(14)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.primary.opacity(0.06))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
                                 .stroke(Color.cyan.opacity(0.25), lineWidth: 1)
