@@ -106,6 +106,8 @@ struct AutomationDocument: Codable, Equatable {
     var boardingLatched = false
     var boardingVoiceLatched: Bool?
     var motionLatched = false
+    /// Last fresh presence receipt, persisted so a long unobserved gap can rearm boarding.
+    var lastPresenceSeenAt: Double?
 }
 struct AutomationSample {
     var now: Double
@@ -265,6 +267,13 @@ struct AutomationPolicy {
         let presenceAt = sample.closuresAt ?? sample.now
         if sample.closuresFresh && (sample.driveFresh || sample.speechOnly) && presenceAt.isFinite && presenceAt <= sample.now && sample.now - presenceAt <= presenceGap {
             if lastPresenceAt == nil || presenceAt > lastPresenceAt! {
+                // The exit is usually never observed (phone away, app closed, BLE out of range), so the latch
+                // would stay set forever. Ten unobserved minutes while parked counts as a new visit.
+                if let seen = document.lastPresenceSeenAt, presenceAt - seen > 600, !sample.moving {
+                    document.boardingLatched = false; document.boardingVoiceLatched = false
+                    occupancySince = nil; absentSince = nil; exitDoorAt = nil
+                }
+                if document.lastPresenceSeenAt.map({ presenceAt - $0 >= 60 || presenceAt < $0 }) ?? true { document.lastPresenceSeenAt = presenceAt }
                 if let last = lastPresenceAt, presenceAt - last > presenceGap { occupancySince = nil; absentSince = nil; exitDoorAt = nil }
                 lastPresenceAt = presenceAt
                 if sample.parked && sample.driverDoor == true { exitDoorAt = presenceAt }
