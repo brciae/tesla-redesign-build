@@ -1296,10 +1296,7 @@ struct EnergyTabRootView: View {
         VStack(spacing: 0) {
             Picker("에너지 구분", selection: $selectedSection) {
                 Text("충전 제어").tag(0)
-                Text("배터리 분석").tag(1)
-                Text("소비·비용").tag(2)
-                Text("달력").tag(3)
-                Text("기록").tag(4)
+                Text("TeslaMate").tag(1)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1309,16 +1306,9 @@ struct EnergyTabRootView: View {
 
             if selectedSection == 0 {
                 ChargeStatusView(link: link)
-            } else if selectedSection == 2 {
-                DrivingInsightsView()
-            } else if selectedSection == 3 {
-                EnergyCalendarView()
-            } else if selectedSection == 4 {
-                HistoryDashboardView()
             } else {
-                // v90: this segment used to be a thinner copy of BatteryView.
-                // It now shows the real screen, so the analysis exists once.
-                BatteryView()
+                // Battery analysis, cost, calendar and all history live under one TeslaMate section.
+                TeslaMateView()
             }
         }
         .background(Theme.bg)
