@@ -29,6 +29,7 @@ struct FleetSupplementView: View {
               CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)) else { return nil }
         return CLLocation(latitude: lat, longitude: lon)
     }
+    private var carHeading: Double? { homePresentation(model, model.link).object("location").number("heading") }
     private var visibleSites: [NearbyChargingSite] {
         let filtered = sites.filter { $0.matches(category) }
         guard let origin else { return Array(filtered.prefix(300)) }
@@ -82,8 +83,9 @@ struct FleetSupplementView: View {
         }.background(Theme.bg).navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
         .task(id: fleet.selectedVin + "|" + effectiveRegion) { await refresh() }
         .task(id: origin.map { "\(Int($0.coordinate.latitude * 100)),\(Int($0.coordinate.longitude * 100))" } ?? "") {
-            guard kind == .nearbyCharging, let origin, let code = await PublicChargingRegions.code(near: origin) else { return }
-            if autoRegion != code { autoRegion = code }
+            guard kind == .nearbyCharging, let origin else { return }
+            let codes = await PublicChargingRegions.codes(around: origin).joined(separator: ",")
+            if !codes.isEmpty, autoRegion != codes { autoRegion = codes }
         }
         .task(id: effectiveRegion) {
             guard kind == .nearbyCharging else { return }
@@ -93,7 +95,7 @@ struct FleetSupplementView: View {
                 if PublicChargingKey.read() != nil, !effectiveRegion.isEmpty, !model.demo {
                     let requestedRegion = effectiveRegion
                     do {
-                        let values = try await PublicChargingAPI.shared.sites(region: requestedRegion)
+                        let values = try await PublicChargingAPI.shared.sites(regions: requestedRegion)
                         guard !Task.isCancelled, requestedRegion == effectiveRegion else { return }
                         publicSites = values
                         self.error = ""
@@ -116,7 +118,15 @@ struct FleetSupplementView: View {
     private var chargingMap: some View {
         Map(position: $mapPosition, selection: $selectedSite) {
             UserAnnotation()
-            if let origin { Marker("내 차", systemImage: "car.fill", coordinate: origin.coordinate).tint(.red) }
+            if let origin {
+                Annotation("내 차", coordinate: origin.coordinate) {
+                    // Same top-view art as the controls screen (nose up after the 180° turn), turned to the car's heading.
+                    Image("TeslaTopExterior").resizable().scaledToFit().frame(height: 34)
+                        .rotationEffect(.degrees(180 + (carHeading ?? 0)))
+                        .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
+                        .accessibilityLabel("내 차 위치")
+                }.annotationTitles(.hidden)
+            }
             ForEach(visibleSites) { site in
                 stationAnnotation(site)
             }
@@ -155,7 +165,7 @@ struct FleetSupplementView: View {
     private var mapFilters: some View {
             VStack(spacing: 8) {
             HStack {
-                Button { showSetup = true } label: { Label(PublicChargingKey.read() == nil ? "공공 충전소 연결" : (region.isEmpty ? "자동 · " + (PublicChargingRegions.names[autoRegion] ?? "차량 위치 확인 중") : PublicChargingRegions.names[region] ?? region), systemImage: "slider.horizontal.3") }.font(.caption)
+                Button { showSetup = true } label: { Label(PublicChargingKey.read() == nil ? "공공 충전소 연결" : (region.isEmpty ? "자동 · " + (autoRegion.isEmpty ? "차량 위치 확인 중" : PublicChargingRegions.summary(autoRegion)) : PublicChargingRegions.summary(region)), systemImage: "slider.horizontal.3") }.font(.caption)
                 Spacer()
                 Button { Task { await refresh() } } label: {
                     Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
@@ -209,7 +219,7 @@ struct FleetSupplementView: View {
         catch { if requestID == request && !Task.isCancelled { self.error = error.localizedDescription } }
         if kind == .nearbyCharging, PublicChargingKey.read() != nil, !effectiveRegion.isEmpty, !model.demo {
             do {
-                let values = try await PublicChargingAPI.shared.sites(region: effectiveRegion)
+                let values = try await PublicChargingAPI.shared.sites(regions: effectiveRegion)
                 guard requestID == request, !Task.isCancelled else { return }
                 publicSites = values
                 if selectedSite == nil { selectedSite = visibleSites.first?.id }
