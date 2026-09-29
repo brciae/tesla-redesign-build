@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// TeslaMate-style history built from records the app already keeps (trips, charges, parking periods)
 /// plus the NAS Telemetry samples for curves. No extra Tesla API calls.
-enum HistoryData {
+@MainActor enum HistoryData {
     static func date(_ row: Object, _ key: String) -> Date? { row.number(key).map { Date(timeIntervalSince1970: $0 / 1000) } }
     static func readings(_ fields: [String], from: Date, to: Date) -> [FleetTelemetryReading] {
         let vin = TeslaFleetClient.shared.selectedVin
