@@ -142,7 +142,7 @@ struct SmartParkingCard: View {
                         iconColor: .cyan,
                         title: "위치 기록 경과",
                         value: elapsedTimeString(since: record.timestamp),
-                        caption: formatTime(record.timestamp) + " 기록"
+                        caption: formatTime(record.timestamp) + " 기록" + gpsNote(record.vehicle.positionStatus)
                     )
 
                     // Tile 2: Vehicle Heading & Orientation
@@ -375,6 +375,15 @@ struct SmartParkingCard: View {
     }
 
     // MARK: - Subviews
+
+    private func gpsNote(_ status: String?) -> String {
+        switch status {
+        case "gpsOld": return " · GPS 측정값 오래됨"
+        case "estimated": return " · 추정 위치"
+        case "gpsUnavailable": return " · GPS 확인 중"
+        default: return ""
+        }
+    }
 
     private func tileView(icon: String, iconColor: Color, title: String, value: String, caption: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
