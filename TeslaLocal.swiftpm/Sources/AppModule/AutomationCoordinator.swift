@@ -70,6 +70,27 @@ final class AutomationCoordinator: ObservableObject {
         catch { policy.document = old; throw error }
     }
     func resetObservation() { sample = nil; physicalExpiresAt = 0; policy.reset(); presence = "탑승 신호 미수신" }
+    private var preparedBoardingText = ""
+    /// Mirrors the boarding announcement assembled below; any mismatch only costs a cache miss.
+    private func prepareBoardingSpeech(_ s: AutomationSample, charge: Object, units: VehicleUnits, voice: VoiceCoordinator) {
+        let defaults = UserDefaults.standard
+        var texts = defaults.bool(forKey: "voiceAutomations") ? rules.filter {
+            $0.enabled && $0.trigger == .boarding && $0.speech && $0.cabinCondition == "always"
+                && AutomationPolicy.allowsHour($0, hour: s.hour) && ($0.action == .speech || $0.vehicle == s.vehicle)
+        }.map { AutomationPolicy.renderedText(for: $0, sample: s) } : []
+        if defaults.bool(forKey: "voiceConnection"), s.chargeFresh, let soc = s.soc, soc.isFinite, (0...100).contains(soc) {
+            texts.append("배터리 \(Int(soc))퍼센트입니다.")
+            if defaults.bool(forKey: "voiceBriefDetail"), let range = charge.number("rangeKm"), range.isFinite, (0...2000).contains(range) {
+                texts.append("표시 주행 가능 거리 \(units.format(range, suffix: " km"))입니다.")
+            }
+        }
+        var seen = Set<String>()
+        texts = texts.filter { seen.insert($0).inserted }
+        let text = texts.joined(separator: " ")
+        guard !text.isEmpty, text != preparedBoardingText else { return }
+        preparedBoardingText = text
+        voice.prepareAutomatic(text, category: defaults.bool(forKey: "voiceAutomations") ? "voiceAutomations" : "voiceConnection")
+    }
     private func report(_ id: String, _ message: String) {
         guard let i = policy.document.logs.firstIndex(where: { $0.id == id }) else { return }
         policy.document.logs[i].status = message
@@ -230,6 +251,9 @@ final class AutomationCoordinator: ObservableObject {
         physicalExpiresAt = [d.number("at"), d.number("receivedAt"), c.number("at"), c.number("receivedAt")].map { ($0 ?? 0) / 1000 + 15 }.min() ?? 0
         climateExpiresAt = [groups.object("climate").number("at"), groups.object("climate").number("receivedAt")].map { ($0 ?? 0) / 1000 + 30 }.min() ?? 0
         presence = !s.closuresFresh || s.present == nil ? "탑승 신호 미수신 · 자동 공조 실행 안 함" : s.present == true ? "차량 탑승 신호 있음" : "차량 탑승 신호 없음"
+        // Parked and nobody aboard: synthesize the exact greeting now, so boarding plays from cache
+        // instantly even when iOS only wakes the app briefly in the background.
+        if s.active, s.present != true, !s.moving { prepareBoardingSpeech(s, charge: charge, units: units, voice: voice) }
         let before = policy.document
         let effects = policy.evaluate(s)
         if !s.active { status = "탑승 인사 대기 · 차량 인증 연결 필요" }
