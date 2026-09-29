@@ -29,13 +29,13 @@ import UniformTypeIdentifiers
         }
     }
     static func cost(_ c: Object) -> Double? { c.number("totalCost") ?? c.number("cost") ?? c.number("estimatedCost") }
-    static func energy(_ c: Object) -> Double? { c.number("chargedKWh") ?? c.number("supplyKWh") ?? c.number("storedKWh") }
+    static func energy(_ c: Object) -> Double? { c.number("chargedKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh") }
     static func typeName(_ c: Object) -> String {
         switch c.string("chargeType") {
         case "supercharger": return "슈퍼차저"
         case "dc": return "급속"
         case "ac": return "완속"
-        default: return c.string("source") == "NAS" ? "충전" : c.string("source", "충전")
+        default: return "충전"
         }
     }
     static func won(_ v: Double?) -> String { v.map { "\(Int($0.rounded()).formatted())원" } ?? "—" }
@@ -57,7 +57,7 @@ struct ChargeDetailView: View {
         let spot = HistoryData.location(near: from)
         List {
             Section {
-                row("시작", start?.formatted(date: .abbreviated, time: .shortened))
+                row("시작", dateText(charge.number("at")))
                 row("소요", HistoryData.duration(start, end))
                 row("종류", HistoryData.typeName(charge))
                 if let a = charge.number("startSOC"), let b = charge.number("endSOC") { row("배터리", "\(Int(a))% → \(Int(b))% (+\(Int(b - a))%)") }
@@ -111,7 +111,7 @@ struct TripDetailView: View {
                 }
             }
             Section {
-                row("출발", start.formatted(date: .abbreviated, time: .shortened))
+                row("출발", dateText(trip.number("start")))
                 row("소요", HistoryData.duration(start, end))
                 row("거리", String(format: "%.1f km", km))
                 if end > start, km > 0 { row("평균 속도", String(format: "%.0f km/h", km / end.timeIntervalSince(start) * 3600)) }
@@ -159,7 +159,7 @@ struct ParkingDrainView: View {
             Section("주차별") {
                 ForEach(list.prefix(100)) { d in
                     HStack {
-                        Text(d.start.formatted(date: .abbreviated, time: .shortened)).font(.subheadline)
+                        Text(dateText(d.start.timeIntervalSince1970 * 1000)).font(.subheadline)
                         Spacer()
                         Text(String(format: "%.0f시간 · -%.0f%% · 하루 %.1f%%", d.hours, d.loss, d.perDay)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
                     }
@@ -274,7 +274,7 @@ struct TeslaExportImportView: View {
         List {
             Section {
                 Text("1. Tesla 계정 → 설정 → 개인정보 → 데이터 요청에서 충전 데이터(Charging Data)를 요청합니다. 슈퍼차저와 집·완속 충전이 모두 들어 있습니다.")
-                Text("2. 받은 파일(CSV 또는 JSON)을 이 화면에서 선택하면 충전 기록에 합칩니다. 같은 시각·금액 기록은 건너뜁니다.")
+                Text("2. 받은 파일을 선택하면 충전 기록에 합칩니다. 앱이 이미 기록한 같은 충전은 건너뛰고, 예전에 가져온 자료는 새로 바꿉니다.")
             }.font(.subheadline)
             Button { picking = true } label: { Label("파일 선택", systemImage: "doc.badge.plus") }
             if !result.isEmpty { Text(result).font(.subheadline).foregroundStyle(.secondary) }
@@ -286,9 +286,16 @@ struct TeslaExportImportView: View {
             guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { result = "파일을 읽지 못했습니다."; return }
             let rows = TeslaExportParser.rows(text)
             var added = 0, skipped = 0
+            // Re-import replaces what an earlier import added, so fixes to the importer apply to old rows too.
+            for old in model.state.rows("charges") where old.string("note") == "Tesla 요청 자료" { model.mutate("deleteCharge", ["id": old.selfID]) }
             for row in rows {
-                let at = row.number("at") ?? 0
-                if model.state.rows("charges").contains(where: { abs(($0.number("at") ?? 0) - at) < 600_000 }) { skipped += 1; continue }
+                let at = row.number("at") ?? 0, end = row.number("end") ?? at + 600_000
+                // Same session already recorded by BLE/NAS/Fleet: its start or its (late) collection time falls in this session.
+                if model.state.rows("charges").contains(where: { c in
+                    guard c.string("note") != "Tesla 요청 자료" else { return false }
+                    let s = c.number("at") ?? 0, e = c.number("end") ?? s
+                    return (s < end + 7_200_000 && e > at - 600_000)
+                }) { skipped += 1; continue }
                 let before = model.state.rows("charges").count
                 model.mutate("addCharge", row)
                 if model.state.rows("charges").count > before { added += 1 } else { skipped += 1 }
@@ -350,7 +357,7 @@ enum TeslaExportParser {
     private static func record(_ row: [String: Any]) -> Object? {
         guard let at = date(find(row, ["charge start time", "start time", "chargestartdatetime", "start_time", "starttime", "start date", "date", "시작"])),
               let kwh = number(find(row, ["energy", "kwh", "usage", "충전량"])), kwh > 0.1, kwh < 300 else { return nil }
-        var out: Object = ["at": at.timeIntervalSince1970 * 1000, "supplyKWh": (kwh * 100).rounded() / 100,
+        var out: Object = ["at": at.timeIntervalSince1970 * 1000, "storedKWh": (kwh * 100).rounded() / 100, "storageVerified": true,
                            "note": "Tesla 요청 자료"]
         // "Europe Supercharger" / "General - AC power" (Tesla Charging Data export).
         let kind = (find(row, ["charger type", "charger_type", "chargertype", "type"]) as? String ?? "Supercharger").lowercased()
@@ -443,16 +450,18 @@ struct TeslaMateView: View {
         let km = t.compactMap { $0.number("distanceKm") }.reduce(0, +)
         let kwh = c.compactMap(HistoryData.energy).reduce(0, +)
         let cost = c.compactMap(HistoryData.cost).reduce(0, +)
-        let used = t.compactMap { $0.number("estimatedKWh") }.reduce(0, +)
+        let estimated = t.filter { $0.number("estimatedKWh") != nil }
+        let used = estimated.compactMap { $0.number("estimatedKWh") }.reduce(0, +)
+        let usedKm = estimated.compactMap { $0.number("distanceKm") }.reduce(0, +)
         return List {
             SwiftUI.Section("이번 달") {
                 HStack { tile("주행", String(format: "%.0f km", km), .trips); tile("충전", String(format: "%.0f kWh", kwh), .charges); tile("비용", HistoryData.won(cost), .usage) }
-                if km > 5, used > 0 { Text(String(format: "평균 효율 %.0f Wh/km · 운행 %d회 · 충전 %d회", used * 1000 / km, t.count, c.count)).font(.caption).foregroundStyle(.secondary) }
+                if usedKm > 5, used > 0 { Text(String(format: "평균 효율 %.0f Wh/km · 운행 %d회 · 충전 %d회", used * 1000 / usedKm, t.count, c.count)).font(.caption).foregroundStyle(.secondary) }
             }
             SwiftUI.Section("최근 충전") {
                 ForEach(Array(charges.prefix(3).enumerated()), id: \.offset) { _, row in
                     NavigationLink { ChargeDetailView(charge: row) } label: {
-                        HStack { Text(HistoryData.date(row, "at")?.formatted(date: .abbreviated, time: .shortened) ?? "—"); Spacer()
+                        HStack { Text(dateText(row.number("at"))); Spacer()
                             Text("\(HistoryData.typeName(row)) · " + (HistoryData.energy(row).map { String(format: "%.1f kWh", $0) } ?? "—")).foregroundStyle(.secondary) }.font(.subheadline)
                     }
                 }
@@ -461,7 +470,7 @@ struct TeslaMateView: View {
             SwiftUI.Section("최근 주행") {
                 ForEach(Array(trips.prefix(3).enumerated()), id: \.offset) { _, row in
                     NavigationLink { TripDetailView(trip: row, capacity: capacity) } label: {
-                        HStack { Text(HistoryData.date(row, "start")?.formatted(date: .abbreviated, time: .shortened) ?? "—"); Spacer()
+                        HStack { Text(dateText(row.number("start"))); Spacer()
                             Text(String(format: "%.1f km", row.number("distanceKm") ?? 0)).foregroundStyle(.secondary) }.font(.subheadline)
                     }
                 }
