@@ -141,6 +141,29 @@ final class AutomationCoordinator: ObservableObject {
                               "state": ["settings": ["vin": snapshot.vin], "trips": history.rows("trips"), "groups": ["closures": closures, "drive": snapshot.driveDisplay(), "charge": charge, "tire": tires, "climate": climate]]]
         observe(output: output, previousTrips: previousTrips, previousCharges: 0, link: link, voice: voice, demo: false, speechOnly: true)
     }
+    /// NAS telemetry charge state (synced in background too) drives the same charge speech as Fleet polling.
+    /// Shares the Fleet event history, so one real charge change is announced once.
+    @MainActor func observeTelemetryCharge(_ current: ChargeObservation, voice: VoiceCoordinator, bleActive: Bool) {
+        guard !blocked, current.vin == TeslaFleetClient.shared.selectedVin else { return }
+        if let previous = fleetPrevious[current.vin], previous.at >= current.at { return }
+        let event = ChargeEventPolicy.event(previous: fleetPrevious[current.vin], current: current)
+        fleetPrevious[current.vin] = current
+        guard !bleActive, let event, ["start", "complete", "stop"].contains(event.kind) else { return }
+        let trigger: AutomationTrigger = event.kind == "start" ? .chargeStart : .chargeEnd
+        for rule in rules where rule.enabled && rule.trigger == trigger && rule.speech && rule.cabinCondition == "always" && AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: Date())) {
+            guard (try? rule.validate()) != nil else { continue }
+            let now = Date().timeIntervalSince1970, key = current.vin + ":" + rule.id
+            if let fired = policy.document.lastFired[key], now - fired < Double(rule.cooldownMinutes * 60) { continue }
+            var sample = AutomationSample(now: now, vehicle: current.vin)
+            sample.hour = Calendar.current.component(.hour, from: Date()); sample.chargeFresh = current.soc != nil; sample.soc = current.soc
+            let message = rule.message.isEmpty ? event.title + ". " + event.body : AutomationPolicy.renderedText(for: rule, sample: sample)
+            policy.document.lastFired[key] = now
+            policy.document.logs.insert(AutomationLog(id: UUID().uuidString, at: now, rule: rule.name, message: message, status: "NAS 충전 상태 확인 · 음성 요청"), at: 0)
+            policy.document.logs = Array(policy.document.logs.prefix(80))
+            do { try persist(); publish() } catch { blocked = true; status = "음성 실행 기록 저장 실패"; return }
+            voice.say(message, key: "auto:" + rule.id, category: "voiceAutomations", priority: 2, ttl: 60, manual: false)
+        }
+    }
     @MainActor func observeFleet(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator, bleActive: Bool) {
         guard !blocked, snapshot.vin == TeslaFleetClient.shared.selectedVin else { return }
         checkLeftUnsecured(snapshot, voice: voice)
