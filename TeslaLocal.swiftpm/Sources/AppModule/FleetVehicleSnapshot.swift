@@ -57,6 +57,7 @@ struct FleetVehicleSnapshot {
         let coordinates = lat != nil && lon != nil && (-90...90).contains(lat!) && (-180...180).contains(lon!) && !(lat == 0 && lon == 0)
         location["hasCoordinates"] = coordinates
         if coordinates { location["latitude"] = lat; location["longitude"] = lon }
+        if let heading = number("drive_state", "heading"), heading.isFinite, (0...360).contains(heading) { location["heading"] = heading }
         location["gpsAt"] = number("drive_state", "timestamp")
         if let at = number("drive_state", "timestamp"), now.timeIntervalSince1970 * 1000 - at <= 120000, at <= now.timeIntervalSince1970 * 1000 + 5000 {
             location["mode"] = sectionIsRecent("drive_state", now: now) ? "recent" : "cached"
