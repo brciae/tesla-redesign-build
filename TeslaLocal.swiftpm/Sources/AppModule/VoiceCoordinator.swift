@@ -42,6 +42,26 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var navigationPreparation: Task<Void, Never>?
     private var navigationPreparationTimes: [Date] = []
 
+    private var preparedAutomatic = Set<String>()
+    /// Pre-synthesizes a predictable automatic announcement (e.g. the boarding greeting) into the Typecast cache.
+    func prepareAutomatic(_ text: String, category: String) {
+        let tc = TypecastClient.shared, d = UserDefaults.standard
+        guard tc.isEnabled, !tc.synthesisPaused, d.bool(forKey: "voiceEnabled") else { return }
+        let prepared = SpeechText.prepare(BriefingStyle.selected.phrase(text, category: category))
+        guard !prepared.isEmpty else { return }
+        let selection = d.string(forKey: "voiceIdentifier") ?? ""
+        let voice = selection.hasPrefix("typecast:") ? String(selection.dropFirst(9))
+            : (tc.selectedVoiceId.isEmpty ? TypecastClient.defaultVoiceId : tc.selectedVoiceId)
+        let key = voice + "|" + prepared
+        guard !preparedAutomatic.contains(key), tc.cachedURL(for: prepared, voiceId: voice) == nil else { return }
+        preparedAutomatic.insert(key)
+        automaticTrace("자동 안내 미리 합성 요청")
+        Task { @MainActor in
+            do { _ = try await tc.synthesize(text: prepared, voiceId: voice, preparation: true) }
+            catch { self.preparedAutomatic.remove(key) }
+        }
+    }
+
     func prepareNavigation(_ message: String) {
         let tc = TypecastClient.shared, d = UserDefaults.standard
         guard navigationPreparation == nil, !navigationSpeaking, tc.isEnabled, !tc.synthesisPaused,
