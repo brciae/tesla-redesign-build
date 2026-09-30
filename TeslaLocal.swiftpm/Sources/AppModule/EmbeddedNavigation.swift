@@ -53,7 +53,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var canPresent: () -> Bool = { UIApplication.shared.applicationState == .active }
     var willStart: (() -> Void)?
     var onVoiceActivity: ((Bool) -> Void)?
-    var onGuidanceEnd: (() -> Void)?
+    var onGuidanceEnd: ((_ arrived: Bool) -> Void)?
     var onSpokenGuide: ((String, Bool) -> Void)?
     var onPrepareGuide: ((String) -> Void)?
     func isSpeechTargetAhead(_ identifier: String) -> Bool { controller?.isSpeechTargetAhead(identifier) == true }
@@ -257,7 +257,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene); return
                     }
                     if event == "error" { self.failed(message, ticket: ticket); return }
-                    if event == "ended" { self.endGuidance(); return }
+                    if event == "ended" { self.endGuidance(arrived: true); return }
                     if event == "ready" || event == "started" {
                         // v29: a start that completes under the lock screen keeps running; UI appears on return.
                         if UIApplication.shared.applicationState == .active, !self.userDismissed { self.presented = true }
@@ -338,18 +338,18 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if !keepDisplay { presented = false }
     }
     func stop() { manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
-    func endGuidance() {
+    func endGuidance(arrived: Bool = false) {
         manualRouteToken = nil; manualDestination = ""
         _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
-        returnToFreeDrive()
+        returnToFreeDrive(arrived: arrived)
     }
-    private func returnToFreeDrive() {
+    private func returnToFreeDrive(arrived: Bool = false) {
         guard guiding || busy else { return }
         let keepDisplay = presented
         stopNative(keepDisplay: keepDisplay)
         if keepDisplay { startStandbyKakaoMap() }
         status = "자유주행 · 경로 안내 종료"
-        onGuidanceEnd?() // End announcement follows cleanup, so cleanup cannot cancel it.
+        onGuidanceEnd?(arrived) // End announcement follows cleanup, so cleanup cannot cancel it.
     }
     func retry() {
         guard !ownsAudio else { return }
