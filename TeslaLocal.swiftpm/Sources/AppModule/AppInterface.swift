@@ -8,7 +8,7 @@ struct CompanionToggleStyle: ToggleStyle {
             HStack(spacing: 16) {
                 configuration.label.frame(maxWidth: .infinity, alignment: .leading)
                 ZStack {
-                    Capsule().fill(configuration.isOn ? Color(red: 0.38, green: 0.16, blue: 0.87) : Color(white: 0.15))
+                    Capsule().fill(configuration.isOn ? Color(uiColor: .systemGreen) : Color(uiColor: .systemGray4))
                     HStack {
                         if configuration.isOn { Text("I").font(.caption).foregroundStyle(.white.opacity(0.8)); Spacer(minLength: 0) }
                         Circle().fill(.white).frame(width: 30, height: 30).shadow(color: .black.opacity(0.16), radius: 2, y: 1)
