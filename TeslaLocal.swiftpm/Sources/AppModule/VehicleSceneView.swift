@@ -33,7 +33,7 @@ struct RealityVehicleView: UIViewRepresentable {
     let command: VehicleCameraCommand
     let reducedMotion: Bool
     var appearance: VehicleAppearance = .original
-    var backgroundColor = UIColor(red: 23/255, green: 24/255, blue: 26/255, alpha: 1)
+    var backgroundColor = UIColor.clear // transparent so the car sits on the light or dark page
     let onError: (String?) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(runtime: runtime, onError: onError) }
     func makeUIView(context: Context) -> VehicleARView {
