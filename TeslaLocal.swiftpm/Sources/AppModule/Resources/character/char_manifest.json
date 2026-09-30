@@ -1,0 +1,1 @@
+{"frame": [260, 360], "run": {"file": "char_run", "cols": 8, "count": 31, "fps": 24, "contacts": [9, 25]}, "stop": {"files": ["char_stop1", "char_stop2"], "cols": 12, "perFile": 60, "count": 120, "fps": 12}}
