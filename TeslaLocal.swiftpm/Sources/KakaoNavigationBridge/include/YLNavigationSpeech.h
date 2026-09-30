@@ -4,14 +4,13 @@
 // Negative means no fresh distance. Never turn it into an imminent maneuver.
 static inline NSString *YLNavigationDistancePrefix(NSInteger metres) {
     if (metres < 0) return @"";
-    if (metres < 75) return @"잠시 후, ";
-    // Snap to the same few bands the app pre-synthesizes, so live cues hit the Typecast cache
-    // instead of needing network synthesis that can outlive the maneuver.
+    // Conventional wording: "잠시 후" when close, otherwise whole 100 m steps (never "35미터").
+    if (metres < 80) return @"잠시 후, ";
     if (metres < 950) {
-        NSInteger band = metres < 150 ? 100 : metres < 250 ? 200 : metres < 400 ? 300 : metres < 600 ? 500 : 700;
-        return [NSString stringWithFormat:@"약 %ld미터 앞, ", (long)band];
+        NSInteger band = MAX(100, ((metres + 50) / 100) * 100);
+        return [NSString stringWithFormat:@"%ld미터 앞, ", (long)band];
     }
-    return [NSString stringWithFormat:@"약 %ld킬로미터 앞, ", (long)((metres + 500) / 1000)];
+    return [NSString stringWithFormat:@"%ld킬로미터 앞, ", (long)((metres + 500) / 1000)];
 }
 
 static inline NSString *YLNavigationCompactNumber(double value) {
