@@ -884,7 +884,8 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     NSString *symbol = @"location.north", *action = @"진행", *highway = @"";
     NSInteger exitClock = 0;
     switch (direction.rgCode) {
-        case KNRGCode_LeftTurn: case KNRGCode_UnprotectedLeftTurn: symbol = @"arrow.turn.up.left"; action = @"좌회전"; break;
+        case KNRGCode_LeftTurn: symbol = @"arrow.turn.up.left"; action = @"좌회전"; break;
+        case KNRGCode_UnprotectedLeftTurn: symbol = @"arrow.turn.up.left"; action = @"비보호 좌회전"; break;
         case KNRGCode_RightTurn: symbol = @"arrow.turn.up.right"; action = @"우회전"; break;
         case KNRGCode_UTurn: symbol = @"arrow.uturn.down"; action = @"유턴"; break;
         case KNRGCode_LeftDirection: case KNRGCode_LeftStraight: symbol = @"arrow.up.left"; action = @"왼쪽 방향"; break;
