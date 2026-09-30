@@ -93,8 +93,8 @@ struct HomeView: View {
                 vehicleCard(p)
                 batteryCard(c, charging: isCharging)
                 HStack(spacing: 12) {
-                    tile(.security, lockIcon, lockTitle, lockSubtitle, tint: lockTint)
-                    tile(.climate, "fanblades.fill", climate.number("insideC").map { "실내 \(Int($0.rounded()))°" } ?? "실내 온도",
+                    tile(Page.security, lockIcon, lockTitle, lockSubtitle, tint: lockTint)
+                    tile(Page.climate, "fanblades.fill", climate.number("insideC").map { "실내 \(Int($0.rounded()))°" } ?? "실내 온도",
                          climateSubtitle(climate), tint: climate.flag("isOn") ? .cyan : .secondary)
                 }
                 weekCard
@@ -133,6 +133,7 @@ struct HomeView: View {
             HStack {
                 metric("누적 주행", model.displayOdometerKm.map { "\(Int($0).formatted()) km" } ?? "—")
                 NavigationLink(value: Page.care) { metric("차량 관리", "타이어·보증") }.buttonStyle(.plain)
+                NavigationLink(value: Page.controls) { metric("컨트롤", "트렁크·창문") }.buttonStyle(.plain)
             }
         }
         .padding(18)
