@@ -82,13 +82,13 @@ struct SmartParkingCard: View {
                         // Main Title (OCR Floor & Pillar or Building Name)
                         Text(record.displayTitle)
                             .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                             .lineLimit(2)
 
                         // Subtitle (Address & Landmark)
                         Text(record.displaySubtitle)
                             .font(.system(size: 13))
-                            .foregroundStyle(.white.opacity(0.65))
+                            .foregroundStyle(Color.primary.opacity(0.65))
                             .lineLimit(1)
                     }
 
@@ -107,7 +107,7 @@ struct SmartParkingCard: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 14))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 14)
-                                        .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                                        .stroke(Color.primary.opacity(0.25), lineWidth: 1)
                                 )
                         }
                     }
@@ -132,7 +132,7 @@ struct SmartParkingCard: View {
                     )
                 }
 
-                LinearGradient(colors: [.clear, Color.white.opacity(0.18), .clear], startPoint: .leading, endPoint: .trailing).frame(height: 1)
+                LinearGradient(colors: [.clear, Color.primary.opacity(0.18), .clear], startPoint: .leading, endPoint: .trailing).frame(height: 1)
 
                 // 6-Tile Comprehensive Synthesis Grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -235,12 +235,12 @@ struct SmartParkingCard: View {
                             Text("다시 촬영")
                         }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(Color.primary.opacity(0.85))
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.12))
+                                .fill(Color.primary.opacity(0.12))
                         )
                     }
 
@@ -249,11 +249,11 @@ struct SmartParkingCard: View {
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 14))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Color.primary.opacity(0.5))
                             .frame(width: 44, height: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.08))
+                                    .fill(Color.primary.opacity(0.08))
                             )
                     }
                 }
@@ -265,7 +265,7 @@ struct SmartParkingCard: View {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color(red: 0.09, green: 0.11, blue: 0.16).opacity(0.92), Color(red: 0.05, green: 0.06, blue: 0.09).opacity(0.96)],
+                                colors: [Theme.adaptive(dark: UIColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 1), light: .white).opacity(0.92), Theme.adaptive(dark: UIColor(red: 0.05, green: 0.06, blue: 0.09, alpha: 1), light: .white).opacity(0.96)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -393,30 +393,30 @@ struct SmartParkingCard: View {
                     .font(.system(size: 11))
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(Color.primary.opacity(0.55))
             }
 
             Text(value)
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.primary)
                 .lineLimit(1)
 
             Text(caption)
                 .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(Color.primary.opacity(0.45))
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.primary.opacity(0.05))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.14), Color.white.opacity(0.03)],
+                        colors: [Color.primary.opacity(0.14), Color.primary.opacity(0.03)],
                         startPoint: .top,
                         endPoint: .bottom
                     ),
