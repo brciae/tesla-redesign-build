@@ -83,7 +83,7 @@ struct TeslaInteractiveClimateView: View {
         GeometryReader { geometry in
             let offset = min(68.0, geometry.size.width * 0.21)
             ZStack {
-                RoundedRectangle(cornerRadius: 26).fill(LinearGradient(colors: [Color(white: 0.11), Color(white: 0.06)], startPoint: .top, endPoint: .bottom))
+                RoundedRectangle(cornerRadius: 26).fill(LinearGradient(colors: [Theme.fill(0.11), Theme.fill(0.06)], startPoint: .top, endPoint: .bottom))
                 Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490).accessibilityHidden(true)
                 if currentAppearance.enabled && currentAppearance.interiorColor.uppercased() != "17191B" {
                     Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490)
@@ -101,12 +101,12 @@ struct TeslaInteractiveClimateView: View {
     }
     private func seatControl(_ title: String, position: Int, field: String, coolField: String? = nil) -> some View {
         VStack(spacing: 4) {
-            Text(title).font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 3).background(Color.black.opacity(0.8), in: Capsule())
+            Text(title).font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 3).background(.regularMaterial, in: Capsule())
             HStack(spacing: 3) {
                 seatButton(title, position: position, field: field, cooling: false)
                 if let coolField { seatButton(title, position: position, field: coolField, cooling: true) }
             }
-        }.padding(3).background(Color(white: 0.12).opacity(0.88), in: RoundedRectangle(cornerRadius: 10))
+        }.padding(3).background(Theme.fill(0.12).opacity(0.88), in: RoundedRectangle(cornerRadius: 10))
     }
     private func seatButton(_ title: String, position: Int, field: String, cooling: Bool) -> some View {
         let measuredLevel = measured.number(field).flatMap { (0...3).contains($0) ? Int($0) : nil }
@@ -122,7 +122,7 @@ struct TeslaInteractiveClimateView: View {
             VStack(spacing: 3) {
                 Image(systemName: cooling ? "fanblades.fill" : "flame.fill")
                 Text(level.map { $0 == 0 ? "끔" : String(repeating: "∿", count: $0) } ?? "—").font(.caption2.bold())
-            }.frame(width: 36, height: 44).foregroundStyle((level ?? 0) > 0 ? tint : Color.white.opacity(0.7))
+            }.frame(width: 36, height: 44).foregroundStyle((level ?? 0) > 0 ? tint : Color.primary.opacity(0.7))
                 .background(tint.opacity((level ?? 0) > 0 ? 0.25 : 0.07), in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).accessibilityLabel(title + (cooling ? " 통풍" : " 열선") + (level.map { " \($0)단계, 다음 단계로 변경" } ?? " 상태 미수신, 1단계 요청"))
     }
@@ -148,7 +148,7 @@ struct TeslaInteractiveClimateView: View {
         Button(action: action) {
             VStack(spacing: 4) { Image(systemName: icon); Text(title).font(.caption2.bold()) }
                 .frame(maxWidth: .infinity).frame(minHeight: 48).padding(.vertical, 4)
-                .background(active ? Color.blue.opacity(0.7) : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+                .background(active ? Color.blue.opacity(0.7) : Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(MotionButtonStyle())
     }
     private func run(_ title: String, accepted: @escaping () -> Void = {}, action: @escaping () async throws -> Bool) {
@@ -185,7 +185,7 @@ struct VehicleStateButton: View {
             Text(title).font(.caption2.bold())
             Text(state.map { $0 ? onState : offState } ?? "상태 확인 필요").font(.caption2)
         }.frame(maxWidth: .infinity).frame(minHeight: 58).padding(.vertical, 4)
-            .background(state == true ? Color.blue.opacity(0.7) : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+            .background(state == true ? Color.blue.opacity(0.7) : Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
     }
     var body: some View {
         if let state {
