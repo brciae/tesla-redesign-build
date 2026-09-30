@@ -69,14 +69,13 @@ struct TeslaInteractiveControlsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.18, green: 0.50, blue: 0.95).opacity(0.4), lineWidth: 1))
                 }
 
+                // v1.22: canvas layout — status card, big lock button, 4×2 action grid.
+                closureStatusCard
+                lockButton
+                actionGrid
+
                 // Hybrid Connection Scope Notice Card
                 hybridConnectionNotice
-
-                // Centerpiece Interactive Vehicle Body Stage
-                interactiveVehicleStage
-
-                // Secondary Quick Controls Grid (LTE & Hybrid)
-                secondaryControlsGrid
 
                 // Tesla Fleet Cloud & BLE Authentication Management
 
@@ -85,7 +84,7 @@ struct TeslaInteractiveControlsView: View {
             .padding(.top, 10)
             .padding(.bottom, 32)
         }
-        .background(Theme.bg)
+        .background(Color(uiColor: .systemGroupedBackground))
         .confirmationDialog("별도 BLE 제어 키 등록을 요청하시겠습니까?", isPresented: $enrollment, titleVisibility: .visible) {
             Button("등록 요청") { link.enrollControlKey() }
             Button("취소", role: .cancel) {}
@@ -103,6 +102,125 @@ struct TeslaInteractiveControlsView: View {
         .sheet(isPresented: $tokenSheet) {
             NavigationStack { ConnectionView(link: link) }.environmentObject(model)
         }
+    }
+
+    // MARK: - v1.22 Canvas Layout
+
+    private var snapshot: FleetVehicleSnapshot? {
+        guard let s = model.fleet.vehicleSnapshot, s.vin == model.fleet.selectedVin else { return nil }
+        return s
+    }
+    private var lockState: Bool? {
+        if model.output.object("fresh").flag("closures"), let v = model.groups.object("closures")["locked"] as? Bool { return v }
+        return snapshot?.locked
+    }
+    private func openCount(_ keys: [String]) -> Int? {
+        guard let s = snapshot else { return nil }
+        let values = keys.compactMap { s.number("vehicle_state", $0) }
+        return values.isEmpty ? nil : values.filter { $0 > 0 }.count
+    }
+    private func closureText(_ keys: [String], all: Bool) -> (String, Color) {
+        guard let n = openCount(keys) else { return ("미수신", Color.secondary) }
+        if n == 0 { return (all ? "모두 닫힘" : "닫힘", Color.primary) }
+        return (keys.count > 1 ? "\(n)개 열림" : "열림", Color.orange)
+    }
+    private var portText: (String, Color) {
+        guard let s = snapshot else { return ("미수신", Color.secondary) }
+        let charge = s.payload.object("charge_state")
+        if let cable = charge["conn_charge_cable"] as? String, !cable.isEmpty, cable != "<invalid>" { return ("연결", Color.green) }
+        if let open = charge["charge_port_door_open"] as? Bool { return open ? ("열림", Color.orange) : ("닫힘", Color.primary) }
+        return ("미수신", Color.secondary)
+    }
+
+    private var closureStatusCard: some View {
+        let rows: [(String, (String, Color))] = [
+            ("문", closureText(["df", "pf", "dr", "pr"], all: true)),
+            ("창문", closureText(["fd_window", "fp_window", "rd_window", "rp_window"], all: true)),
+            ("프렁크", closureText(["ft"], all: false)),
+            ("트렁크", closureText(["rt"], all: false)),
+            ("충전구", portText)
+        ]
+        return HStack(spacing: 14) {
+            vehicleTopSilhouette
+                .frame(width: 130, height: 210)
+                .clipped()
+            VStack(spacing: 10) {
+                ForEach(rows, id: \.0) { row in
+                    HStack {
+                        Text(row.0).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(row.1.0).foregroundStyle(row.1.1).fontWeight(.medium)
+                    }
+                    .font(.system(size: 15))
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var lockButton: some View {
+        let locked = lockState
+        let unlocked = locked == false
+        return Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            if locked == false {
+                dispatchHybridAction(title: "차량 잠금", bleAction: "lock", fleetAction: { try await model.fleet.doorLock() })
+            } else {
+                dispatchHybridAction(title: "잠금 해제", bleAction: "unlock", fleetAction: { try await model.fleet.doorUnlock() })
+            }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: unlocked ? "lock.open.fill" : "lock.fill").font(.system(size: 26, weight: .semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(locked == nil ? "잠금 상태 미수신" : (unlocked ? "잠금 해제됨" : "잠김")).font(.system(size: 17, weight: .semibold))
+                    Text(unlocked ? "눌러서 잠그기" : "눌러서 잠금 해제").font(.system(size: 13)).opacity(0.75)
+                }
+                Spacer()
+            }
+            .foregroundStyle(unlocked ? Color.white : Color.primary)
+            .padding(.horizontal, 18).padding(.vertical, 16)
+            .background(unlocked ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(MotionButtonStyle())
+    }
+
+    private var actionGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 2 : 4), spacing: 10) {
+            gridButton("프렁크", "car.side.front.open.fill") { dispatchHybridAction(title: "프렁크 열기", bleAction: "frunkOpen", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }) }
+            gridButton("트렁크", "car.side.rear.open.fill") { dispatchHybridAction(title: "트렁크 동작", bleAction: "trunkMove", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }) }
+            Menu {
+                Button("충전구 열기") { dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
+                Button("충전구 닫기") { dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
+            } label: { gridLabel("충전구", "bolt.fill") }
+            gridButton("전조등", "headlight.high.beam.fill") { executeFleetAction(title: "전조등 깜빡임") { try await model.fleet.flashLights() } }
+            gridButton("경적", "speaker.wave.3.fill") { executeFleetAction(title: "경적 울리기") { try await model.fleet.honkHorn() } }
+            gridButton("성에 제거", "snowflake") { executeFleetAction(title: "최대 성에 제거") { try await model.fleet.setPreconditioningMax(on: true) } }
+            gridButton("원격 시동", "key.fill") {
+                model.voice.say("원격 시동을 준비합니다.", key: "controls.remotestart", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                if model.fleet.isAuthenticated { remoteStartAlert = true }
+                else { statusToast = "원격 시동(LTE)을 위해 테슬라 Fleet API 토큰 설정이 필요합니다."; tokenSheet = true }
+            }
+            gridButton("공조 켜기", "fanblades.fill") { dispatchHybridAction(title: "공조 가동", bleAction: "climateOn", fleetAction: { try await model.fleet.setAutoConditioning(on: true) }) }
+        }
+    }
+
+    private func gridButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            action()
+        } label: { gridLabel(title, icon) }
+        .buttonStyle(MotionButtonStyle())
+    }
+
+    private func gridLabel(_ title: String, _ icon: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 20, weight: .medium))
+            Text(title).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(Color.primary)
+        .frame(maxWidth: .infinity, minHeight: 76)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     // MARK: - Hybrid Connection Notice

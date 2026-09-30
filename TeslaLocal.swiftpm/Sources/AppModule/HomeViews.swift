@@ -481,9 +481,20 @@ struct ReadOnlyNotice: View {
 }
 struct ControlsView: View {
     @ObservedObject var link: VehicleLink
+    @State private var climate = false
     var body: some View {
-        TeslaInteractiveControlsView(link: link)
-            .navigationTitle("차량 제어")
+        // v1.22: one 컨트롤 screen with a 차량 제어 / 실내 공조 segment, as on the canvas.
+        VStack(spacing: 0) {
+            Picker("컨트롤", selection: $climate) {
+                Text("차량 제어").tag(false)
+                Text("실내 공조").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            if climate { TeslaInteractiveClimateView(link: link) } else { TeslaInteractiveControlsView(link: link) }
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .navigationTitle("컨트롤")
     }
 }
 
