@@ -588,21 +588,21 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     // Cached phrases incur no network request; the shared synthesis budget remains bounded.
     NSMutableArray *phrases = [NSMutableArray array];
     // Must match YLNavigationDistancePrefix bands exactly so live cues are cache hits.
-    for (NSNumber *distance in @[@2000, @1000, @700, @500, @300, @200, @100, @0]) {
+    for (NSNumber *distance in @[@2000, @1000, @900, @800, @700, @600, @500, @400, @300, @200, @100, @0]) {
         if (distance.intValue <= nearestDistance) [phrases addObject:[YLNavigationDistancePrefix(distance.intValue) stringByAppendingString:body]];
         if (phrases.count == 3) break;
     }
     NSData *data = [NSJSONSerialization dataWithJSONObject:phrases options:0 error:nil];
     if (data) [self emit:@"prepareSpeech" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
 }
-/// Distance the driver will be at when the sentence is actually heard (~2 s bridge + playback lead).
+/// Distance the driver will be at when the sentence is actually heard (~3 s bridge + playback lead).
 - (SInt32)spokenMetres:(KNLocation *)target {
     SInt32 raw = [self.locationGuide.location distToLocation:target];
     if (raw <= 0) return raw;
     if (self.forceImminent) return 40;
     KNGPSData *gps = self.locationGuide.gpsMatched;
     double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-    return (SInt32)fmax(1, raw - speed * 2.0);
+    return (SInt32)fmax(1, raw - speed * 3.0);
 }
 /// "잠시 후" cue a few seconds before the maneuver; the SDK's own last call comes too early for it.
 - (void)emitImminentTurn {
