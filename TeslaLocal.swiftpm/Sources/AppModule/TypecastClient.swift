@@ -320,6 +320,29 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     // MARK: - Cache Management
 
     static func presetTone(_ text: String) -> Bool { text.count <= 40 }
+    /// Appends 0.6 s of silence so car/Bluetooth output latency never clips the last syllable.
+    static func paddedTail(_ wav: Data, seconds: Double = 0.6) -> Data {
+        var d = wav
+        func u32(_ o: Int) -> UInt32 { d[d.startIndex + o ..< d.startIndex + o + 4].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) } }
+        func put(_ v: UInt32, _ o: Int) { withUnsafeBytes(of: v.littleEndian) { d.replaceSubrange(d.startIndex + o ..< d.startIndex + o + 4, with: $0) } }
+        var o = 12, byteRate: UInt32 = 0, blockAlign = 0
+        while o + 8 <= d.count {
+            let id = String(data: d[d.startIndex + o ..< d.startIndex + o + 4], encoding: .ascii) ?? ""
+            let size = Int(u32(o + 4))
+            if id == "fmt " { byteRate = u32(o + 16); blockAlign = Int(d[d.startIndex + o + 20]) | Int(d[d.startIndex + o + 21]) << 8 }
+            if id == "data" {
+                guard byteRate > 0, o + 8 + size == d.count else { return wav }
+                var extra = Int(Double(byteRate) * seconds)
+                if blockAlign > 0 { extra -= extra % blockAlign }
+                d.append(Data(count: extra))
+                put(UInt32(size + extra), o + 4)
+                put(UInt32(d.count - 8), 4)
+                return d
+            }
+            o += 8 + size + (size & 1)
+        }
+        return wav
+    }
 
     private func cacheKey(for text: String, voiceId: String) -> String {
         let input = "\(voiceId)_\(text)"

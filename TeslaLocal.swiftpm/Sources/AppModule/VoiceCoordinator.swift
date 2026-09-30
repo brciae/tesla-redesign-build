@@ -387,7 +387,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             try activateAudio(defaults)
             let volumeKey = item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume"
             let volume = Float(min(1, max(0, defaults.double(forKey: volumeKey))))
-            let p = try AVAudioPlayer(contentsOf: url)
+            // Trailing silence keeps car/Bluetooth latency from swallowing the last syllable.
+            let p = try AVAudioPlayer(data: TypecastClient.paddedTail(try Data(contentsOf: url)))
             p.delegate = self
             p.volume = volume
             p.prepareToPlay()
