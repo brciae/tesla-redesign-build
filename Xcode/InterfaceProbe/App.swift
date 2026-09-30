@@ -163,7 +163,7 @@ struct NavigationProbe: View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
-                    Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                    Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases.filter { $0 != .running }) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
                     Button(blank ? "수신됨" : "미수신") { blank.toggle() }
                         .buttonStyle(.bordered).accessibilityIdentifier("navigation.empty")
                     if theme == .minimal && ProcessInfo.processInfo.arguments.contains("motion-probe") {
