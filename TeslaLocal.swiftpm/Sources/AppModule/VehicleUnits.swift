@@ -158,6 +158,21 @@ struct NavigationSpeechCue: Decodable {
     }
 }
 
+/// Navigation distances are voiced only as "잠시 후" or whole 100 m steps, whatever the source text says.
+enum NavigationDistanceWording {
+    private static let pattern = try! NSRegularExpression(pattern: #"(?:약\s*)?(\d+)\s*(?:m|미터)\s*앞"#)
+    static func normalize(_ text: String) -> String {
+        let ns = text as NSString
+        var out = text
+        for match in pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+            guard let n = Int(ns.substring(with: match.range(at: 1))) else { continue }
+            let spoken = n < 80 ? "잠시 후" : n < 950 ? "\(max(100, (n + 50) / 100 * 100))미터 앞" : "\((n + 500) / 1000)킬로미터 앞"
+            out = (out as NSString).replacingCharacters(in: match.range, with: spoken)
+        }
+        return out
+    }
+}
+
 /// Repeated safety callbacks must not restart a sentence already being spoken.
 struct NavigationSpeechPolicy {
     private var recent: [String: Date] = [:]
