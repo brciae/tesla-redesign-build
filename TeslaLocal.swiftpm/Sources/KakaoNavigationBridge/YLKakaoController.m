@@ -627,7 +627,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         if (d <= 0 || d > fmax(150, fmin(400, speed * 12)) || [self.announcedPoints containsObject:key]) continue;
         [self.announcedPoints addObject:key];
         NSString *name = (zone.safetyZoneType & KNSafetyZoneType_SchoolZone) ? @"어린이 보호구역" : (zone.safetyZoneType & KNSafetyZoneType_SilverZone) ? @"노인 보호구역" : @"장애인 보호구역";
-        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name] safety:YES];
+        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다. 속도를 줄이고 주의하세요.", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name] safety:YES];
     }
     for (KNSafety *point in self.safetyGuide.safetiesOnGuide ?: @[]) {
         if (point.code != KNSafetyCode_Hump || !point.location) continue;
@@ -647,9 +647,9 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         [self.announcedPoints addObject:key];
         SInt32 len = f.toLocation ? [f.fromLocation distToLocation:f.toLocation] : 0;
         NSString *name = f.name.length ? ([f.name hasSuffix:@"터널"] ? f.name : [f.name stringByAppendingString:@" 터널"]) : @"터널";
-        NSString *length = len >= 1000 ? [NSString stringWithFormat:@", 길이 %@킬로미터", YLNavigationCompactNumber(round(len / 100.0) / 10.0)]
-                                       : len >= 100 ? [NSString stringWithFormat:@", 길이 %d미터", (int)(len / 100 * 100)] : @"";
-        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@%@입니다.", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name, length] safety:YES];
+        NSString *length = len >= 1000 ? [NSString stringWithFormat:@" 길이 %@킬로미터.", YLNavigationCompactNumber(round(len / 100.0) / 10.0)]
+                                       : len >= 100 ? [NSString stringWithFormat:@" 길이 %d미터.", (int)(len / 100 * 100)] : @"";
+        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.%@", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name, length] safety:YES];
     }
 }
 - (void)emitImminentTurn {
@@ -685,10 +685,10 @@ static UIImage *YLArrowIcon(UIColor *fill) {
                                     @693:@"구간 단속 종료 지점입니다.", @706:@"후면 구간 단속 종료 지점입니다.",
                                     @90:@"신호 위반 단속 지점입니다.", @98:@"차로 변경 단속 시작 지점입니다.",
                                     @12:@"도로 폭이 좁아집니다.", @15:@"졸음쉼터가 있습니다.",
-                                    @6:@"과속 방지턱이 있습니다.",
-                                    @11:@"어린이 보호구역입니다.",
-                                    @14:@"야생동물 보호구역입니다.",
-                                    @23:@"어린이 사고 다발 구간입니다."};
+                                    @6:@"과속 방지턱이 있습니다. 속도를 줄이세요.",
+                                    @11:@"어린이 보호구역입니다. 속도를 줄이고 주의하세요.",
+                                    @14:@"야생동물 보호구역입니다. 주의하세요.",
+                                    @23:@"어린이 사고 다발 구간입니다. 주의하세요."};
         // Speed cameras: "N미터 앞, 과속 단속 카메라가 있습니다. 제한 속도는 … 과속에 주의하세요."
         NSSet *speedCameras = [NSSet setWithArray:@[@81, @82, @86, @91, @100, @102, @103]];
         if ([speedCameras containsObject:@(point.code)]) {
