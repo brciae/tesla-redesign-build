@@ -48,7 +48,7 @@ static inline NSString *YLNavigationAction(NSInteger code) {
         case 49: return @"분기점에서 오른쪽으로 가세요.";
         case 61: return @"페리 승선 지점입니다.";
         case 62: return @"페리 하선 지점입니다.";
-        case 63: return @"비보호 좌회전하세요.";
+        case 63: return @"비보호 좌회전하세요. 반대편 차량과 신호에 주의하세요.";
         case 64: return @"터널로 진입하세요.";
         case 65: return @"터널 옆길로 가세요.";
         case 66: return @"왼쪽 터널로 진입하세요.";
