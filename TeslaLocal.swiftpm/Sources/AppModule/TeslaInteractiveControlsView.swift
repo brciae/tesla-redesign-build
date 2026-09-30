@@ -38,19 +38,19 @@ struct TeslaInteractiveControlsView: View {
                             .foregroundStyle(.cyan)
                         Text(statusToast)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                         Spacer()
                         Button {
                             self.statusToast = nil
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.caption2)
-                                .foregroundStyle(Color.white.opacity(0.6))
+                                .foregroundStyle(Color.primary.opacity(0.6))
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color(white: 0.14).opacity(0.9), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Theme.fill(0.14).opacity(0.9), in: RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.cyan.opacity(0.35), lineWidth: 1))
                 }
 
@@ -60,7 +60,7 @@ struct TeslaInteractiveControlsView: View {
                         ProgressView().controlSize(.small)
                         Text(link.controlBusy ? "BLE 근거리 명령 전송 중…" : (isExecutingRemote || model.fleet.isSendingCommand ? "LTE 클라우드 원격 전송 중…" : "제어 세션 준비 중…"))
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                         Spacer()
                     }
                     .padding(.horizontal, 16)
@@ -125,7 +125,7 @@ struct TeslaInteractiveControlsView: View {
                             ? "BLE 근거리 직통 연결됨"
                             : (fleetActive ? "Fleet 인증됨 · 제어 준비 별도" : "차량 통신 대기 중")))
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.primary)
 
                     if fleetActive {
                         Text("LTE Fleet")
@@ -147,7 +147,7 @@ struct TeslaInteractiveControlsView: View {
 
                 Text(fleetActive ? model.fleet.commandStatus : "근거리 제어는 BLE 제어 키, 원격 제어는 Fleet 인증·서명 서버·차량 가상키 등록이 필요합니다.")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.white.opacity(0.68))
+                .foregroundStyle(Color.primary.opacity(0.68))
                 .lineSpacing(3)
             }
             Spacer()
@@ -155,11 +155,11 @@ struct TeslaInteractiveControlsView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(white: 0.10).opacity(0.85))
+                .fill(Theme.fill(0.10).opacity(0.85))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
     }
 
@@ -172,14 +172,14 @@ struct TeslaInteractiveControlsView: View {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Color(white: 0.10), Color(white: 0.05)],
+                            colors: [Theme.fill(0.10), Theme.fill(0.05)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
                     )
 
                 // Top-View Vehicle Body Graphic (Rotated 180° so Front Hood is at Top)
@@ -296,8 +296,8 @@ struct TeslaInteractiveControlsView: View {
             }
         }
         .padding(10)
-        .background(Color(white: 0.10).opacity(0.85), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .background(Theme.fill(0.10).opacity(0.85), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.12), lineWidth: 1))
     }
 
     private func teslaQuickButton(
@@ -322,13 +322,13 @@ struct TeslaInteractiveControlsView: View {
                     .foregroundStyle(accent)
                 Text(title)
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(Color.primary.opacity(0.85))
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     .minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: 56)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - Secondary Quick Controls Grid (Fleet LTE & Hybrid)
@@ -338,7 +338,7 @@ struct TeslaInteractiveControlsView: View {
             HStack {
                 Text("빠른 실행 (LTE 원격 & 공조)")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .foregroundStyle(Color.primary.opacity(0.7))
                 Spacer()
                 if model.fleet.isAuthenticated {
                     Text("Fleet 인증됨")
@@ -380,11 +380,11 @@ struct TeslaInteractiveControlsView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(white: 0.10).opacity(0.85))
+                .fill(Theme.fill(0.10).opacity(0.85))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
     }
 
@@ -404,13 +404,13 @@ struct TeslaInteractiveControlsView: View {
                     .foregroundStyle(accent)
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.primary)
                 Spacer()
             }
             .padding(.horizontal, 14)
             .frame(height: 50)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 0.8))
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.1), lineWidth: 0.8))
         }
         .buttonStyle(MotionButtonStyle())
     }
@@ -620,14 +620,14 @@ struct TeslaFleetTokenSheet: View {
                                     .autocorrectionDisabled()
                                     .textInputAutocapitalization(.never)
                                     .padding(6)
-                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                                     .onChange(of: clientSecretText) { newVal in
                                         fleet.saveClientSecret(newVal)
                                     }
                             }
                         }
                         .padding(8)
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
                         // Step 1: Web Login Button (Generates fresh PKCE and opens Safari)
                         Button {
@@ -675,7 +675,7 @@ struct TeslaFleetTokenSheet: View {
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                                 .padding(8)
-                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
                         }
 
                         // Step 3: Automatic Token Exchange
