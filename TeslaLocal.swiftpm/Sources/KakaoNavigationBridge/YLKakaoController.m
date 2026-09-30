@@ -128,7 +128,6 @@ static NSArray *YLLifecycleObservers;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDate *> *preparedSpeechPoints;
 @property(nonatomic) BOOL forceImminent;
 @property(nonatomic, strong) NSMutableSet<NSString *> *announcedPoints;
-@property(nonatomic) BOOL inTunnel;
 @property(nonatomic, strong) KNLocation *imminentTarget;
 @property(nonatomic) FloatPoint mapAnchor;
 @property(nonatomic) BOOL cameraReady;
@@ -638,9 +637,20 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         [self.announcedPoints addObject:key];
         [self emitTimedSpeech:KNVoiceCode_Safety object:point safety:YES];
     }
-    BOOL tunnel = self.locationGuide.location.facilityType == KNFacilityType_Tunnel;
-    if (tunnel && !self.inTunnel) [self emitPlainSpeech:@"터널에 진입합니다." safety:YES];
-    self.inTunnel = tunnel;
+    // Tunnels ahead come from the route's facility list: "500미터 앞, OO터널입니다. 길이 1.2킬로미터."
+    KNRoute *route = self.guidance.routesOnGuide.firstObject;
+    for (KNRoadInfo_Facility *f in [route mainFacilityList] ?: @[]) {
+        if (f.facilityType != KNFacilityType_Tunnel || !f.fromLocation) continue;
+        SInt32 d = [self.locationGuide.location distToLocation:f.fromLocation];
+        NSString *key = [NSString stringWithFormat:@"tunnel:%d:%d", (int)f.fromLocation.pos.x, (int)f.fromLocation.pos.y];
+        if (d <= 0 || d > fmax(300, fmin(700, speed * 15)) || [self.announcedPoints containsObject:key]) continue;
+        [self.announcedPoints addObject:key];
+        SInt32 len = f.toLocation ? [f.fromLocation distToLocation:f.toLocation] : 0;
+        NSString *name = f.name.length ? ([f.name hasSuffix:@"터널"] ? f.name : [f.name stringByAppendingString:@" 터널"]) : @"터널";
+        NSString *length = len >= 1000 ? [NSString stringWithFormat:@" 길이 %@킬로미터.", YLNavigationCompactNumber(round(len / 100.0) / 10.0)]
+                                       : len >= 100 ? [NSString stringWithFormat:@" 길이 %d미터.", (int)(len / 100 * 100)] : @"";
+        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.%@", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name, length] safety:YES];
+    }
 }
 - (void)emitImminentTurn {
     if (!self.voiceEnabled || ![self locationIsFresh] || YLGuidanceOwner != self) return;
