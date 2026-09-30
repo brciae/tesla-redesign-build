@@ -9,7 +9,7 @@ enum ChargeKind: String, CaseIterable, Identifiable {
     var color: Color {
         switch self { case .home: return .blue; case .ac: return .green; case .dc: return .orange; case .supercharger: return .red }
     }
-    static func of(_ c: Object) -> ChargeKind {
+    @MainActor static func of(_ c: Object) -> ChargeKind {
         switch c.string("chargeType") {
         case "supercharger": return .supercharger
         case "dc": return .dc
