@@ -73,145 +73,181 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var summaryOpen = false
 
+    @State private var selectedDay = 6
+    private var card: Color { Color(uiColor: .secondarySystemGroupedBackground) }
+
+    // v1.14: the iOS-style home from the approved design — vehicle card with the rotating
+    // model, battery ring, lock/climate tiles, 7-day driving bars, then the driving dashboard.
     var body: some View {
         let p = homePresentation(model, link), c = p.object("charge")
         let climate = p.object("climate")
         let isCharging = (c.string("mode") == "recent" || model.demo) && c.chargingNow
-
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                // Top Header Bar
-                headerView(p: p, c: c)
-                if !model.demo, model.fleet.isAuthenticated { fleetStatusCard }
-
-                // 3D Vehicle Hero Panel
-                Vehicle3DPanel(link: link, compact: true)
-                    .background(
-                        RadialGradient(
-                            colors: [Color.cyan.opacity(0.12), Color.clear],
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 180
-                        )
-                    )
-                    .padding(.top, 2)
-
-                // Quick Controls: 4 Tactile Glass Action Tiles (Official Tesla App layout)
-                HStack(spacing: 10) {
-                    quickControlTile(
-                        .security,
-                        "lock.fill",
-                        "도어 잠금",
-                        highlight: false
-                    )
-                    let insideC = climate.number("insideC")
-                    quickControlTile(
-                        .climate,
-                        "fanblades.fill",
-                        insideC != nil ? "\(Int(round(insideC!)))°C" : "실내온도",
-                        highlight: false
-                    )
-                    quickControlTile(
-                        .charging,
-                        "bolt.fill",
-                        isCharging ? "충전 중" : "충전",
-                        highlight: isCharging
-                    )
-                    quickControlTile(
-                        .controls,
-                        "car.side.rear.open.fill",
-                        "트렁크",
-                        highlight: false
-                    )
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    connectionChip
+                    Spacer()
+                    ScreenBriefingControls(scope: .home, compact: true)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Theme.fill(0.12).opacity(0.72))
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(LinearGradient(colors: [Color.primary.opacity(0.16), Color.primary.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8)
-                )
-
-                // Driving Dashboard Banner
+                if !model.demo, model.fleet.isAuthenticated, !model.fleet.isReadingVehicle, model.fleet.vehicleSnapshot == nil { fleetStatusCard }
+                vehicleCard(p)
+                batteryCard(c, charging: isCharging)
+                HStack(spacing: 12) {
+                    tile(.security, lockIcon, lockTitle, lockSubtitle, tint: lockTint)
+                    tile(.climate, "fanblades.fill", climate.number("insideC").map { "실내 \(Int($0.rounded()))°" } ?? "실내 온도",
+                         climateSubtitle(climate), tint: climate.flag("isOn") ? .cyan : .secondary)
+                }
+                weekCard
                 driveButton
-
-                // Active Charging Indicator (Only shown when vehicle is charging)
-                if isCharging {
-                    let soc = c.number("soc")
-                    NavigationLink(value: Page.charging) {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.2))
-                                    .frame(width: 38, height: 38)
-                                Image(systemName: "bolt.fill")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundStyle(Color(red: 0.28, green: 0.88, blue: 0.42))
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(soc != nil ? "충전 중 · \(Int(round(soc!)))%" : "충전 중")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(Color.primary)
-                                if let kmH = c.number("chargeKmH"), kmH > 0 {
-                                    Text("+\(Int(kmH)) km/h · 충전 설정 보기")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.primary.opacity(0.6))
-                                } else {
-                                    Text("충전 상세 설정 보기")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.primary.opacity(0.6))
-                                }
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.primary.opacity(0.4))
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Theme.fill(0.12).opacity(0.75))
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.35), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(MotionButtonStyle())
-                }
-
-                // Minimal Vehicle Footer
                 VStack(spacing: 4) {
-                    Text(model.settings.string("model", "Model Y L").uppercased())
-                        .font(.system(size: 16, weight: .light, design: .rounded))
-                        .tracking(4)
-                        .foregroundStyle(Color.primary.opacity(0.6))
                     Caption("YL COMPANION · v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
-                    if model.demo {
-                        Button("예시 모드 종료") { model.exitDemo() }
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.orange)
-                            .padding(.top, 4)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                    if model.demo { Button("예시 모드 종료") { model.exitDemo() }.font(.caption.weight(.semibold)).foregroundStyle(.orange) }
+                }.frame(maxWidth: .infinity).padding(.vertical, 16)
             }
             .frame(maxWidth: HomeVisualStyle.contentWidth)
-            .padding(.horizontal, HomeVisualStyle.gutter)
+            .padding(.horizontal, 16)
             .padding(.top, HomeVisualStyle.headerTop)
             .padding(.bottom, 40)
             .frame(maxWidth: .infinity)
         }
-        .background(Theme.bg)
+        .background(Color(uiColor: .systemGroupedBackground))
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { model.refreshVehicle() }
+    }
+
+    private func vehicleCard(_ p: Object) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                NavigationLink(value: Page.connection) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.settings.string("name", "내 차")).font(.system(size: 28, weight: .bold)).foregroundStyle(Color.primary)
+                        Text(model.settings.string("model", "Model YL")).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }.buttonStyle(.plain).accessibilityLabel("차량 프로필 및 연결 설정")
+                Spacer()
+                VehicleMotionBadge(drive: p.object("drive"), compact: true)
+            }
+            Vehicle3DPanel(link: link, compact: true)
+                .frame(maxWidth: .infinity)
+            Divider()
+            HStack {
+                metric("누적 주행", model.displayOdometerKm.map { "\(Int($0).formatted()) km" } ?? "—")
+                NavigationLink(value: Page.care) { metric("차량 관리", "타이어·보증") }.buttonStyle(.plain)
+            }
+        }
+        .padding(18)
+        .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func batteryCard(_ c: Object, charging: Bool) -> some View {
+        let soc = c.number("soc"), frac = min(1, max(0, (soc ?? 0) / 100))
+        let color: Color = (soc ?? 100) <= 20 ? .red : (soc ?? 100) <= 50 ? .orange : .green
+        return NavigationLink(value: Page.charging) {
+            HStack(spacing: 20) {
+                ZStack {
+                    Circle().stroke(Color(uiColor: .tertiarySystemFill), lineWidth: 12)
+                    Circle().trim(from: 0, to: frac).stroke(color, style: StrokeStyle(lineWidth: 12, lineCap: .round)).rotationEffect(.degrees(-90))
+                        .animation(.smooth(duration: 0.8), value: frac)
+                    VStack(spacing: 2) {
+                        Text(soc.map { "\(Int($0.rounded()))%" } ?? "—").font(.system(size: 30, weight: .bold)).monospacedDigit()
+                        Text(c.number("rangeKm").map { "\(Int($0)) km" } ?? "").font(.caption).foregroundStyle(.secondary)
+                    }
+                }.frame(width: 118, height: 118)
+                VStack(alignment: .leading, spacing: 6) {
+                    if charging {
+                        Label("충전 중", systemImage: "bolt.fill").font(.subheadline.weight(.semibold)).foregroundStyle(color)
+                            .symbolEffect(.pulse)
+                        Text(c.number("chargerKW").map { String(format: "%.1f kW", $0) } ?? "—").font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        if let m = c.number("minutesToLimit"), m > 0 {
+                            Text("\(Int(c.number("limit") ?? 80))%까지 \(Int(m) / 60)시간 \(Int(m) % 60)분").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Label(c.flag("plugged") ? "연결됨 · 대기" : "배터리", systemImage: c.flag("plugged") ? "powerplug.fill" : "battery.75percent")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(c.number("rangeKm").map { "\(Int($0)) km" } ?? "—").font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        Text("충전 한도 \(Int(c.number("limit") ?? 80))%").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(18)
+            .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }.buttonStyle(MotionButtonStyle())
+    }
+
+    private var lockState: Bool? {
+        if model.output.object("fresh").flag("closures"), let v = model.groups.object("closures")["locked"] as? Bool { return v }
+        guard let s = model.fleet.vehicleSnapshot, s.vin == model.fleet.selectedVin else { return nil }
+        return s.locked
+    }
+    private var lockIcon: String { lockState == false ? "lock.open.fill" : "lock.fill" }
+    private var lockTitle: String { lockState == nil ? "잠금 상태" : lockState! ? "잠김" : "열림" }
+    private var lockSubtitle: String { lockState == nil ? "미수신" : lockState! ? "문 잠금 확인" : "탭하여 잠그기" }
+    private var lockTint: Color { lockState == false ? .orange : Color.primary }
+    private func climateSubtitle(_ c: Object) -> String {
+        let target = c.number("targetC").map { "목표 \(Int($0.rounded()))°" } ?? "목표 —"
+        return target + (c.flag("isOn") ? " · 켜짐" : " · 꺼짐")
+    }
+
+    private func tile(_ page: Page, _ icon: String, _ title: String, _ subtitle: String, tint: Color) -> some View {
+        NavigationLink(value: page) {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: icon).font(.system(size: 22, weight: .semibold)).foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline).foregroundStyle(Color.primary)
+                    Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18).padding(.vertical, 16)
+            .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }.buttonStyle(MotionButtonStyle())
+    }
+
+    private var weekKm: [(label: String, km: Double)] {
+        let cal = Calendar.current, today = cal.startOfDay(for: Date())
+        let trips = model.output.object("energyPeriods").object("36500").rows("trips")
+        let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = "E"
+        return (0..<7).map { i in
+            let day = cal.date(byAdding: .day, value: i - 6, to: today) ?? today
+            let km = trips.filter { t in (t.number("start").map { cal.isDate(Date(timeIntervalSince1970: $0 / 1000), inSameDayAs: day) } ?? false) }
+                .reduce(0) { $0 + ($1.number("distanceKm") ?? 0) }
+            return (i == 6 ? "오늘" : f.string(from: day), km)
+        }
+    }
+
+    private var weekCard: some View {
+        let days = weekKm, maxKm = max(1, days.map(\.km).max() ?? 1)
+        let sel = days[min(selectedDay, days.count - 1)]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("최근 7일 주행").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(sel.label) \(Int(sel.km.rounded())) km").font(.footnote).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                ForEach(days.indices, id: \.self) { i in
+                    Button { withAnimation(.snappy) { selectedDay = i } } label: {
+                        VStack(spacing: 4) {
+                            Text("\(Int(days[i].km.rounded()))").font(.caption2.weight(.semibold)).foregroundStyle(i == selectedDay ? Color.primary : .secondary)
+                            RoundedRectangle(cornerRadius: 4).fill(i == selectedDay ? Color.blue : Color(uiColor: .tertiarySystemFill))
+                                .frame(height: max(4, CGFloat(days[i].km / maxKm) * 70))
+                            Text(days[i].label).font(.caption2).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity)
+                    }.buttonStyle(.plain).accessibilityLabel("\(days[i].label) \(Int(days[i].km)) km")
+                }
+            }.frame(height: 104, alignment: .bottom)
+        }
+        .padding(18)
+        .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .sensoryFeedback(.selection, trigger: selectedDay)
     }
 
     private var fleetStatusCard: some View { FleetStatusCard() }
