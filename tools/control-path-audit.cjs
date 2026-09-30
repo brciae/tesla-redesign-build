@@ -14,14 +14,14 @@ assert(!/func (pause|resignActive)\(\)[^\n]*resetObservation/.test(read('AppMode
 assert(read('AutomationCoordinator').includes('UIApplication.shared.applicationState == .active,\n'), 'Background speech must not unlock physical automation');
 assert(read('VehicleCommandRouting').includes('guard !demo'));
 const navigation = read('EmbeddedNavigation');
-assert(navigation.includes('func endGuidance()'));
+assert(navigation.includes('func endGuidance(arrived: Bool = false)'));
 assert(navigation.includes('stopNative(keepDisplay: keepDisplay)'));
 assert(navigation.includes('if keepDisplay { startStandbyKakaoMap() }'));
 assert(read('DrivingWorkspace').includes('navigation.endGuidance()'));
 const endCallback = read('AppModel').split('navigation.onGuidanceEnd = ')[1].split('navigation.onSpokenGuide')[0];
 assert(endCallback.indexOf('voice.stop()') >= 0 && endCallback.indexOf('voice.stop()') < endCallback.indexOf('voice.navigationGuide('), 'Clear stale speech before the final end announcement');
-const endCleanup = navigation.split('private func returnToFreeDrive()')[1].split('func retry()')[0];
-assert(endCleanup.indexOf('stopNative(') < endCleanup.indexOf('onGuidanceEnd?()'), 'Cleanup must precede the end announcement');
+const endCleanup = navigation.split('private func returnToFreeDrive(arrived: Bool = false)')[1].split('func retry()')[0];
+assert(endCleanup.indexOf('stopNative(') < endCleanup.indexOf('onGuidanceEnd?(arrived)'), 'Cleanup must precede the end announcement');
 const bridge = fs.readFileSync('TeslaLocal.swiftpm/Sources/KakaoNavigationBridge/YLKakaoController.m', 'utf8');
 assert(!bridge.includes('shouldSpeak:'), 'SDK voice timing must not be suppressed by app timers');
 assert(!bridge.includes('YLSpokenDistance'), 'No legacy recording distance buckets');
