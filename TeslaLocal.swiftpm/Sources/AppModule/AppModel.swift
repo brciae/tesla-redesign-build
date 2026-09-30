@@ -183,7 +183,7 @@ final class AppModel: ObservableObject {
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
         navigation.onGuidanceEnd = { [weak self] in
             self?.voice.stop()
-            self?.voice.navigationGuide("경로 안내 종료.", safety: false)
+            self?.voice.navigationGuide("목적지에 도착했습니다. 안내를 종료합니다.", safety: false)
         }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
         navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
