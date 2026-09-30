@@ -27,9 +27,9 @@ struct TeslaInteractiveClimateView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 ScreenBriefingControls(scope: .climate)
-                cabinStage
-                temperatureBanner
                 topControls
+                temperatureBanner
+                cabinStage
                 modeControls
                 if !result.isEmpty { Text(result).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading) }
                 Text(model.fleet.commandStatus).font(.caption).foregroundStyle(Theme.muted)
