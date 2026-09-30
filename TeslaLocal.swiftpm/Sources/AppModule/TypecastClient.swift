@@ -130,6 +130,19 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return dir
     }
 
+    /// One-time purge of short clips synthesised with "smart" emotion (some came back whispered).
+    /// Short cues are tiny WAVs; long reports are kept so they need no re-synthesis.
+    private func purgeWhisperedShortClipsOnce() {
+        let flag = "typecastToneV2Purged"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        UserDefaults.standard.set(true, forKey: flag)
+        let dir = cacheDirectory
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        for url in files where url.pathExtension == "wav" {
+            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 260_000 { try? FileManager.default.removeItem(at: url) }
+        }
+    }
+
     private func migrateLegacyCacheIfNeeded() {
         let paths = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
         let legacyDir = paths[0].appendingPathComponent("TypecastAudioCache", isDirectory: true)
@@ -166,6 +179,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         super.init()
         removeLegacyOfflineData()
         migrateLegacyCacheIfNeeded()
+        purgeWhisperedShortClipsOnce()
         updateCacheCount()
         if hasKey && voiceCatalog.isEmpty {
             Task { await refreshVoiceCatalog() }
@@ -308,8 +322,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static func presetTone(_ text: String) -> Bool { text.count <= 40 }
 
     private func cacheKey(for text: String, voiceId: String) -> String {
-        // Short cues use a fixed normal tone; the salt drops cached clips synthesised with inferred emotion.
-        let input = Self.presetTone(text) ? "tone2|\(voiceId)_\(text)" : "\(voiceId)_\(text)"
+        let input = "\(voiceId)_\(text)"
         let digest = SHA256.hash(data: Data(input.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
