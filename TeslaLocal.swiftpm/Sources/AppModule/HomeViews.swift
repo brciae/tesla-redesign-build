@@ -999,7 +999,7 @@ struct PowerFlowGraphView: View {
                 )
             }
             .frame(height: 52)
-            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.06), lineWidth: 0.8))
         }
     }
@@ -1393,8 +1393,8 @@ struct MenuTabRootView: View {
                         glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내", colors: [Color.purple, Color.pink])
                         glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "상황별 음성 안내 · 자동 제어", colors: [Color.green, Color.mint])
                         glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 알림 · 권한", colors: [Color.purple, Color.blue])
-                        glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "배경 · 거리 · 온도 단위", colors: [Color.gray, Color.white])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color.white], isLast: true)
+                        glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "배경 · 거리 · 온도 단위", colors: [Color.gray, Color(uiColor: .systemGray2)])
+                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color(uiColor: .systemGray2)], isLast: true)
                     }
                 }
             }
