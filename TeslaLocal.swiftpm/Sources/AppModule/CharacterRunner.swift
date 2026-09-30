@@ -12,7 +12,12 @@ struct CharacterRunnerView: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
             let s = advance(to: context.date)
-            Canvas { g, size in draw(g, size: size, speed: s) }
+            if let frames = CharacterAtlas.shared, let img = frames.frame(for: clock, speed: s, now: context.date) {
+                Image(uiImage: img).resizable().interpolation(.high).scaledToFit()
+                    .scaleEffect(y: s < 2 ? 1 + 0.006 * sin(context.date.timeIntervalSinceReferenceDate * 2.2) : 1, anchor: .bottom)
+            } else {
+                Canvas { g, size in draw(g, size: size, speed: s) }
+            }
         }
         .accessibilityLabel(speedKmh < 3 ? "캐릭터 대기 중" : "캐릭터 달리는 중")
     }
@@ -84,4 +89,63 @@ final class RunnerClock {
     var phase: Double = 0
     var smoothed: Double = 0
     var last: Date?
+    var runFrame: Double = 0
+    var stopStart: Date?
+    var wasRunning = false
+    var lastContact = -1
+}
+
+/// Frames cut from the character video: a 31-frame run loop (24 fps, two foot contacts) and a
+/// 120-frame slow-down-to-standing clip (12 fps). Stored as sprite atlases in the "character" folder.
+final class CharacterAtlas {
+    static let shared: CharacterAtlas? = CharacterAtlas()
+    private let run: [UIImage]
+    private let stop: [UIImage]
+    private let runFPS: Double, stopFPS: Double
+    let contacts: [Int]
+    private init?() {
+        guard let dir = Bundle.main.url(forResource: "character", withExtension: nil),
+              let data = try? Data(contentsOf: dir.appendingPathComponent("char_manifest.json")),
+              let m = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let size = m["frame"] as? [Double], size.count == 2,
+              let r = m["run"] as? [String: Any], let st = m["stop"] as? [String: Any] else { return nil }
+        func slice(_ file: String, cols: Int, count: Int) -> [UIImage] {
+            guard let sheet = UIImage(contentsOfFile: dir.appendingPathComponent(file + ".webp").path)?.cgImage else { return [] }
+            let w = Int(size[0]), h = Int(size[1])
+            return (0..<count).compactMap { i in
+                sheet.cropping(to: CGRect(x: (i % cols) * w, y: (i / cols) * h, width: w, height: h)).map { UIImage(cgImage: $0) }
+            }
+        }
+        run = slice(r["file"] as? String ?? "", cols: r["cols"] as? Int ?? 8, count: r["count"] as? Int ?? 0)
+        let per = st["perFile"] as? Int ?? 60, total = st["count"] as? Int ?? 0
+        stop = (st["files"] as? [String] ?? []).enumerated().flatMap { i, f in slice(f, cols: st["cols"] as? Int ?? 12, count: min(per, total - i * per)) }
+        runFPS = r["fps"] as? Double ?? 24; stopFPS = st["fps"] as? Double ?? 12
+        contacts = r["contacts"] as? [Int] ?? []
+        guard !run.isEmpty, !stop.isEmpty else { return nil }
+    }
+    /// Run loop plays faster with speed; when the car stops the slow-down clip plays once and holds.
+    func frame(for c: RunnerClock, speed: Double, now: Date) -> UIImage? {
+        if speed >= 3 {
+            c.wasRunning = true; c.stopStart = nil
+            let rate = min(1.7, max(0.55, speed / 45))
+            c.runFrame = (c.runFrame + runFPS * rate / 60).truncatingRemainder(dividingBy: Double(run.count))
+            let i = Int(c.runFrame)
+            if contacts.contains(i), c.lastContact != i { c.lastContact = i; CharacterFootstep.play() } else if !contacts.contains(i) { c.lastContact = -1 }
+            return run[i]
+        }
+        if c.wasRunning, c.stopStart == nil { c.stopStart = now }
+        guard let start = c.stopStart else { return stop.last }
+        let i = min(stop.count - 1, Int(now.timeIntervalSince(start) * stopFPS))
+        return stop[i]
+    }
+}
+
+/// Soft footstep synced to the frames where a foot lands.
+enum CharacterFootstep {
+    static var enabled: Bool { UserDefaults.standard.object(forKey: "running.footsteps") as? Bool ?? true }
+    private static let generator = UIImpactFeedbackGenerator(style: .soft)
+    static func play() {
+        guard enabled else { return }
+        generator.impactOccurred(intensity: 0.35)
+    }
 }
