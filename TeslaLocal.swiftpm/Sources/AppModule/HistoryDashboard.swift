@@ -461,11 +461,11 @@ struct TeslaMateView: View {
     @ViewBuilder private var content: some View {
         switch section {
         case .overview: overview
-        case .charges: ChargeListView(charges: charges).safeAreaInset(edge: .top) {
+        case .charges: ChargeInsightsView(charges: charges).safeAreaInset(edge: .top) {
             links([("Tesla 충전 데이터 가져오기", "square.and.arrow.down", AnyView(TeslaExportImportView())),
                    ("슈퍼차저 이력", "bolt.fill", AnyView(FleetSupplementView(fleet: model.fleet, kind: .chargingHistory)))])
         }
-        case .trips: TripsView().safeAreaInset(edge: .top) {
+        case .trips: TripInsightsView(trips: trips).safeAreaInset(edge: .top) {
             links([("자주 가는 장소", "mappin.and.ellipse", AnyView(VisitedPlacesView(trips: trips, charges: charges))),
                    ("주별·월별 통계", "chart.bar", AnyView(MonthlyStatsView(trips: trips, charges: charges)))])
         }
