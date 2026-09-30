@@ -21,6 +21,8 @@ import Foundation
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 4))
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: true, navigationBusy: true, incidental: false, priority: 4, activePriority: 5))
         precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: false, incidental: false, priority: 4, activePriority: 3))
+        precondition(NavigationDistanceWording.normalize("35미터 앞, 좌회전하세요.") == "잠시 후, 좌회전하세요.")
+        precondition(NavigationDistanceWording.normalize("약 240 m 앞, 우회전하세요.") == "200미터 앞, 우회전하세요.")
         let expired = Date(timeIntervalSince1970: 10)
         let afterSynthesis = Date(timeIntervalSince1970: 45)
         let cueTime = Date(timeIntervalSince1970: 100)
