@@ -29,12 +29,16 @@ import UniformTypeIdentifiers
         }
     }
     static func cost(_ c: Object) -> Double? { c.number("totalCost") ?? c.number("cost") ?? c.number("estimatedCost") }
-    static func energy(_ c: Object) -> Double? { c.number("chargedKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh") }
+    static func energy(_ c: Object) -> Double? { c.number("chargedKWh") ?? c.number("vehicleReportedKWh") ?? c.number("estimatedStoredKWh") ?? c.number("supplyKWh") ?? c.number("nasSupplyKWh") }
+    /// Home charging as the cost engine decided it (saved home point within 35 m, or a place named 집).
+    static func isHome(_ c: Object) -> Bool {
+        c.string("chargeTypeLabel") == "집 완속" || ["집", "집완속", "자택", "home"].contains(c.string("place").lowercased())
+    }
     static func typeName(_ c: Object) -> String {
         switch c.string("chargeType") {
         case "supercharger": return "슈퍼차저"
         case "dc": return "급속"
-        case "ac": return "완속"
+        case "ac": return isHome(c) ? "집 완속" : "외부 완속"
         default: return "충전"
         }
     }
@@ -518,12 +522,16 @@ struct TeslaMateOverview: View {
         return map.values.sorted { $0.id < $1.id }
     }
     private var mix: [Slice] {
-        var ac = 0.0, dc = 0.0, sc = 0.0
+        var home = 0.0, ac = 0.0, dc = 0.0, sc = 0.0
         for c in monthCharges {
             let e = HistoryData.energy(c) ?? 0
-            switch c.string("chargeType") { case "supercharger": sc += e; case "dc": dc += e; default: ac += e }
+            switch c.string("chargeType") {
+            case "supercharger": sc += e
+            case "dc": dc += e
+            default: if HistoryData.isHome(c) { home += e } else { ac += e }
+            }
         }
-        return [Slice(id: "완속", kwh: ac, color: .green), Slice(id: "급속", kwh: dc, color: .orange), Slice(id: "슈퍼차저", kwh: sc, color: .red)].filter { $0.kwh > 0 }
+        return [Slice(id: "집", kwh: home, color: .blue), Slice(id: "외부 완속", kwh: ac, color: .green), Slice(id: "급속", kwh: dc, color: .orange), Slice(id: "슈퍼차저", kwh: sc, color: .red)].filter { $0.kwh > 0 }
     }
     private var efficiency: [Point] {
         trips.prefix(40).enumerated().compactMap { i, t in
