@@ -120,9 +120,21 @@ struct FleetSupplementView: View {
         .sheet(item: $destination) { place in DestinationSearchView(navigation: model.navigation, initialPlace: place).environmentObject(model) }
         .sheet(isPresented: $showSetup, onDismiss: { Task { await refresh() } }) { PublicChargingSetupView(region: $region) }
     }
+    @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
+    /// The car's own last reported position, drawn with the same marker the navigation map uses.
+    private var vehicleMarker: (coordinate: CLLocationCoordinate2D, heading: Double)? {
+        guard let snap = fleet.vehicleSnapshot, let lat = snap.number("drive_state", "latitude"), let lon = snap.number("drive_state", "longitude"),
+              (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0) else { return nil }
+        return (CLLocationCoordinate2D(latitude: lat, longitude: lon), snap.number("drive_state", "heading") ?? 0)
+    }
     private var chargingMap: some View {
         Map(position: $mapPosition, selection: $selectedSite) {
             UserAnnotation()
+            if let car = vehicleMarker {
+                Annotation("내 차", coordinate: car.coordinate, anchor: .center) {
+                    ChargingMapCarMarker(style: markerStyle, heading: car.heading)
+                }
+            }
             ForEach(visibleSites) { site in
                 stationAnnotation(site)
             }
@@ -276,5 +288,24 @@ private struct ChargingStationMapPin: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityText)
+    }
+}
+
+
+/// Same choices as the navigation "내 차 표시" setting: coloured arrow or a car.
+struct ChargingMapCarMarker: View {
+    let style: String
+    let heading: Double
+    var body: some View {
+        let color: Color = style == "arrow.green" ? .green : style == "arrow.orange" ? .orange : .blue
+        ZStack {
+            Circle().fill(.white).frame(width: 34, height: 34).shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+            if style == "car" {
+                Image(systemName: "car.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(Color.primary).colorScheme(.light)
+            } else {
+                Image(systemName: "location.north.fill").font(.system(size: 18, weight: .bold)).foregroundStyle(color)
+                    .rotationEffect(.degrees(heading))
+            }
+        }.accessibilityLabel("내 차 위치")
     }
 }
