@@ -441,7 +441,10 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 }
 - (void)applyMarkerIcon {
     if (!self.map) return;
-    NSString *style = self.markerStyle ?: @"arrow.blue";
+    NSArray<NSString *> *parts = [(self.markerStyle ?: @"arrow.blue") componentsSeparatedByString:@"@"];
+    NSString *style = parts.firstObject;
+    double scale = parts.count > 1 ? parts[1].doubleValue : 2.0;
+    if (!isfinite(scale) || scale < 1) scale = 1; if (scale > 3) scale = 3;
     UIImage *icon = nil;
     if ([style isEqualToString:@"car"]) {
         NSData *data = [[NSData alloc] initWithBase64EncodedString:YLCarMarkerPNG options:0];
@@ -452,6 +455,11 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         icon = YLArrowIcon([UIColor colorWithRed:1.0 green:0.62 blue:0.04 alpha:1]);
     } else {
         icon = YLArrowIcon([UIColor colorWithRed:0.04 green:0.52 blue:1.0 alpha:1]);
+    }
+    if (icon && scale != 1) {
+        CGSize size = CGSizeMake(icon.size.width * scale, icon.size.height * scale);
+        UIImage *source = icon;
+        icon = [[[UIGraphicsImageRenderer alloc] initWithSize:size] imageWithActions:^(UIGraphicsImageRendererContext *ctx) { [source drawInRect:CGRectMake(0, 0, size.width, size.height)]; }];
     }
     if (icon) { self.markerIcon = icon; self.map.userLocation.icon = self.markerIcon; self.map.userLocation.isFlat = YES; }
 }
