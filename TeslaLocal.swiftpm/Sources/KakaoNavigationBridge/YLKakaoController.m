@@ -688,7 +688,46 @@ static UIImage *YLArrowIcon(UIColor *fill) {
                                     @6:@"과속 방지턱이 있습니다. 속도를 줄이세요.",
                                     @11:@"어린이 보호구역입니다. 속도를 줄이고 주의하세요.",
                                     @14:@"야생동물 보호구역입니다. 주의하세요.",
-                                    @23:@"어린이 사고 다발 구간입니다. 주의하세요."};
+                                    @23:@"어린이 사고 다발 구간입니다. 주의하세요.",
+                                    @0:@"사고 다발 구간입니다. 주의해서 운전하세요.",
+                                    @1:@"급커브 구간입니다. 속도를 줄이세요.",
+                                    @2:@"낙석 위험 구간입니다. 주의해서 운전하세요.",
+                                    @3:@"안개가 잦은 구간입니다. 주의해서 운전하세요.",
+                                    @4:@"추락 위험 구간입니다. 주의해서 운전하세요.",
+                                    @5:@"미끄러운 도로입니다. 속도를 줄이세요.",
+                                    @10:@"철도 건널목이 있습니다. 일시 정지 후 통과하세요.",
+                                    @13:@"급경사 내리막 구간입니다. 속도를 줄이세요.",
+                                    @16:@"졸음운전 사고 다발 구간입니다. 주의해서 운전하세요.",
+                                    @17:@"오르막 구간입니다.",
+                                    @18:@"신호등이 있습니다. 신호에 주의하세요.",
+                                    @20:@"무정차 요금소입니다.",
+                                    @21:@"차량 사고 다발 구간입니다. 주의해서 운전하세요.",
+                                    @22:@"보행자 사고 다발 구간입니다. 보행자에 주의하세요.",
+                                    @24:@"상습 결빙 구간입니다. 속도를 줄이세요.",
+                                    @26:@"교통사고 다발 지점입니다. 주의해서 운전하세요.",
+                                    @28:@"높이 제한 구간입니다.",
+                                    @29:@"중량 제한 구간입니다.",
+                                    @31:@"안개가 잦은 구간입니다. 주의해서 운전하세요.",
+                                    @32:@"상습 결빙 구간입니다. 속도를 줄이세요.",
+                                    @40:@"침수 위험 지하차도입니다. 주의해서 운전하세요.",
+                                    @80:@"단속 지점이 있습니다.",
+                                    @83:@"교통 정보 수집 카메라가 있습니다.",
+                                    @84:@"버스 전용 차로 단속 구간입니다.",
+                                    @85:@"과적 단속 지점이 있습니다.",
+                                    @87:@"주정차 단속 구간입니다.",
+                                    @88:@"적재 불량 단속 지점이 있습니다.",
+                                    @89:@"버스 전용 차로 및 신호 단속 구간입니다.",
+                                    @92:@"구간 단속 시작 지점입니다.",
+                                    @94:@"갓길 단속 지점이 있습니다.",
+                                    @95:@"끼어들기 단속 지점이 있습니다.",
+                                    @96:@"구간 단속 구간입니다.",
+                                    @97:@"지정 차로 단속 지점이 있습니다.",
+                                    @101:@"안전띠 착용 단속 지점이 있습니다.",
+                                    @104:@"노후 경유차 운행 제한 단속 지점이 있습니다.",
+                                    @105:@"후면 구간 단속 시작 지점입니다.",
+                                    @692:@"구간 단속 시작 지점입니다.",
+                                    @696:@"구간 단속 구간입니다.",
+                                    @705:@"후면 구간 단속 시작 지점입니다."};
         // Speed cameras: "N미터 앞, 과속 단속 카메라가 있습니다. 제한 속도는 … 과속에 주의하세요."
         NSSet *speedCameras = [NSSet setWithArray:@[@81, @82, @86, @91, @100, @102, @103]];
         if ([speedCameras containsObject:@(point.code)]) {
@@ -700,6 +739,11 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         NSString *limitSentence = @"";
         if ([point isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)point).speedLimit > 0)
             limitSentence = [NSString stringWithFormat:@" 제한 속도는 시속 %d킬로미터입니다.", (int)((KNSafety_Camera *)point).speedLimit];
+        if ([point isKindOfClass:KNSafety_Caution.class] && ((KNSafety_Caution *)point).limit > 0 && (point.code == KNSafetyCode_HeightLimitPos || point.code == KNSafetyCode_WeightLimitPos)) {
+            SInt32 limit = ((KNSafety_Caution *)point).limit;
+            NSString *v = point.code == KNSafetyCode_HeightLimitPos ? [NSString stringWithFormat:@"높이 %@미터", YLNavigationCompactNumber(limit/100.0)] : [NSString stringWithFormat:@"중량 %@톤", YLNavigationCompactNumber(limit/10.0)];
+            return [NSString stringWithFormat:@"%@%@ 제한 구간입니다.", prefix, v];
+        }
         NSString *whole = sentences[@(point.code)];
         if (whole) return [[prefix stringByAppendingString:whole] stringByAppendingString:limitSentence];
         NSString *label = labels[@(point.code)];
@@ -718,13 +762,13 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         case KNVoiceCode_MultiRoute:
             return @""; // SDK does not expose the source sentence for these audio-only events.
         case KNVoiceCode_SchoolZone: return @"어린이 보호 구역입니다.";
-        case KNVoiceCode_Alert: return @"주의하세요.";
+        case KNVoiceCode_Alert: return @""; // A bare "주의하세요" is not a complete instruction; hazards speak via their own sentence.
         case KNVoiceCode_Hipass: return @"하이패스 차로를 확인하세요.";
         case KNVoiceCode_StrateToNext: return @"계속 직진하세요.";
         case KNVoiceCode_CheckingRouteChange: return @"교통 상황을 확인합니다.";
         case KNVoiceCode_RouteChanged: return @"새로운 경로로 안내합니다.";
         case KNVoiceCode_RouteUnchanged: return @"현재 경로를 유지합니다.";
-        case KNVoiceCode_OutOfRoute: return @"경로 이탈. 재탐색 중입니다.";
+        case KNVoiceCode_OutOfRoute: return @"경로를 이탈했습니다. 경로를 다시 탐색합니다.";
         case KNVoiceCode_GPSConnected: return @"위치 신호가 연결되었습니다.";
         case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로입니다.";
         case KNVoiceCode_Alram: return @"";
