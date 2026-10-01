@@ -21,6 +21,7 @@ struct TeslaInteractiveControlsView: View {
     @State private var tokenSheet = false
     @State private var statusToast: String? = nil
     @State private var isExecutingRemote = false
+    @State private var focus: VehicleCameraCommand? = nil
 
     private var currentAppearance: VehicleAppearance {
         appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))
@@ -140,11 +141,12 @@ struct TeslaInteractiveControlsView: View {
             ("트렁크", closureText(["rt"], all: false)),
             ("충전구", portText)
         ]
-        return HStack(spacing: 14) {
-            vehicleTopSilhouette
-                .frame(width: 130, height: 210)
-                .clipped()
-            VStack(spacing: 10) {
+        return VStack(spacing: 12) {
+            // v1.26: live 3D model (same as home) on a white card; actions swing the camera to the part.
+            Vehicle3DPanel(link: link, compact: true, focus: focus)
+                .frame(maxWidth: .infinity)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            VStack(spacing: 8) {
                 ForEach(rows, id: \.0) { row in
                     HStack {
                         Text(row.0).foregroundStyle(.secondary)
@@ -185,13 +187,17 @@ struct TeslaInteractiveControlsView: View {
         .buttonStyle(MotionButtonStyle())
     }
 
+    private func focusCamera(yaw: Float, pitch: Float) {
+        focus = VehicleCameraCommand(serial: (focus?.serial ?? 0) + 1, action: "angle", yaw: yaw, pitch: pitch, zoom: nil)
+    }
+
     private var actionGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 2 : 4), spacing: 10) {
-            gridButton("프렁크", "car.side.front.open.fill") { dispatchHybridAction(title: "프렁크 열기", bleAction: "frunkOpen", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }) }
-            gridButton("트렁크", "car.side.rear.open.fill") { dispatchHybridAction(title: "트렁크 동작", bleAction: "trunkMove", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }) }
+            gridButton("프렁크", "car.side.front.open.fill") { focusCamera(yaw: 0, pitch: 1.1); dispatchHybridAction(title: "프렁크 열기", bleAction: "frunkOpen", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }) }
+            gridButton("트렁크", "car.side.rear.open.fill") { focusCamera(yaw: .pi, pitch: 1.1); dispatchHybridAction(title: "트렁크 동작", bleAction: "trunkMove", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }) }
             Menu {
-                Button("충전구 열기") { dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
-                Button("충전구 닫기") { dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
+                Button("충전구 열기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
+                Button("충전구 닫기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
             } label: { gridLabel("충전구", "bolt.fill") }
             gridButton("전조등", "headlight.high.beam.fill") { executeFleetAction(title: "전조등 깜빡임") { try await model.fleet.flashLights() } }
             gridButton("경적", "speaker.wave.3.fill") { executeFleetAction(title: "경적 울리기") { try await model.fleet.honkHorn() } }
@@ -385,8 +391,8 @@ struct TeslaInteractiveControlsView: View {
             }
 
             Menu {
-                Button("충전구 열기") { dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
-                Button("충전구 닫기") { dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
+                Button("충전구 열기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
+                Button("충전구 닫기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
             } label: { quickLabel("충전구", icon: "bolt.fill", accent: .green) }
 
             teslaQuickButton(

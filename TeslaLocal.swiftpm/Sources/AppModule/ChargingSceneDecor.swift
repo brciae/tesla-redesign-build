@@ -105,7 +105,7 @@ import simd
         // Distance-based travel stays smooth around bends; wrap happens outside the cable.
         let tail: Float = 0.85
         let travel = length + 2 * tail
-        let head = length + tail - (elapsed * 0.85).truncatingRemainder(dividingBy: travel)
+        let head = length + tail - (elapsed * 1.7).truncatingRemainder(dividingBy: travel)
         for index in cores.indices {
             let delta = distances[index] - head
             let width: Float = delta >= 0 ? 0.48 : 0.13

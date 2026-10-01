@@ -15,6 +15,8 @@ struct Vehicle3DPanel: View {
     var chargingMode = false
     var isCharging = false
     var isPlugged = false
+    /// v1.26: a control screen can steer the camera (e.g. top view toward the frunk when it is opened).
+    var focus: VehicleCameraCommand? = nil
     @State private var preview = false
     @State private var confirmPreview = false
     @State private var overrides: [String: Bool] = [:]
@@ -109,6 +111,7 @@ struct Vehicle3DPanel: View {
             sceneVisible = true
         }
         .onDisappear { sceneVisible = false }
+        .onChange(of: focus?.serial ?? -1) { _, _ in if let focus { var c = focus; c.serial = camera.serial + 1; camera = c } }
     }
     private func cameraButton(_ title: String, yaw: Float) -> some View { Button(title) { camera.serial += 1; camera.action = "angle"; camera.yaw = yaw } }
 }

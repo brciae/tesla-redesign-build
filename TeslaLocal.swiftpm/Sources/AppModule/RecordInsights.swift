@@ -33,10 +33,19 @@ struct ChargeInsightsView: View {
             let k = ChargeKind.of(c), e = HistoryData.energy(c) ?? 0
             var s = m[k] ?? KindStat(id: k)
             s.kwh += e; s.count += 1
-            if let cost = HistoryData.cost(c), cost > 0, e > 0 { s.cost += cost; s.pricedKWh += e }
+            // v1.26: the rate shown is the rate actually applied (user-set tariff or paid unit price),
+            // not cost ÷ battery kWh — that ratio inflates by charging loss (210 → 221원).
+            if e > 0, let rate = Self.rate(c), rate > 0 { s.cost += rate * e; s.pricedKWh += e }
             m[k] = s
         }
         return ChargeKind.allCases.compactMap { m[$0] }
+    }
+    static func rate(_ c: Object) -> Double? {
+        if let r = c.number("unitPrice") ?? c.number("estimatedUnitPrice"), r.isFinite { return r }
+        guard let cost = HistoryData.cost(c), cost > 0 else { return nil }
+        let supply = c.number("supplyKWh") ?? c.number("nasSupplyKWh") ?? HistoryData.energy(c)
+        guard let supply, supply > 0 else { return nil }
+        return cost / supply
     }
     private var months: [MonthBar] {
         let cal = Calendar.current
@@ -97,20 +106,31 @@ struct ChargeInsightsView: View {
                 card("최근 6개월 추이", "방식별 충전량 kWh") {
                     if months.isEmpty { empty } else {
                         Chart(months) { b in
-                            BarMark(x: .value("월", b.month, unit: .month), y: .value("kWh", b.kwh))
+                            BarMark(x: .value("월", b.month, unit: .month), y: .value("kWh", b.kwh), width: .fixed(28))
                                 .foregroundStyle(by: .value("방식", b.kind.rawValue))
+                                .cornerRadius(4)
                         }
+                        .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in AxisGridLine(); AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))") } } } }
+                        .chartLegend(position: .top, alignment: .leading)
                         .chartForegroundStyleScale(domain: ChargeKind.allCases.map(\.rawValue), range: ChargeKind.allCases.map(\.color))
                         .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in AxisValueLabel(format: .dateTime.month(.abbreviated)) } }
                         .frame(height: 180).chartReveal()
                     }
                 }
-                card("충전 시작 시간대", "최근 200회") {
+                card("충전 시작 시간대", "최근 200회 · 막대 높이 = 충전 시작 횟수") {
                     let peak = hours.max { $0.count < $1.count }
                     Chart(hours) { h in
-                        BarMark(x: .value("시", h.id), y: .value("횟수", h.count))
-                            .foregroundStyle(h.id >= 23 || h.id < 9 ? Color.indigo : Color.teal)
-                    }.chartXScale(domain: 0...23).frame(height: 140)
+                        BarMark(x: .value("시", h.id), y: .value("횟수", h.count), width: .ratio(0.7))
+                            .foregroundStyle(by: .value("구분", h.id >= 23 || h.id < 9 ? "심야 23~9시" : "주간 9~23시"))
+                            .cornerRadius(3)
+                            .annotation(position: .top) { if h.count > 0 { Text("\(h.count)").font(.system(size: 9).monospacedDigit()).foregroundStyle(.secondary) } }
+                    }
+                    .chartForegroundStyleScale(["심야 23~9시": Color.indigo, "주간 9~23시": Color.teal])
+                    .chartLegend(position: .top, alignment: .leading)
+                    .chartXScale(domain: -0.5...23.5)
+                    .chartXAxis { AxisMarks(values: [0, 6, 12, 18, 23]) { v in AxisGridLine(); AxisValueLabel { if let i = v.as(Int.self) { Text("\(i)시") } } } }
+                    .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+                    .frame(height: 170)
                     if let peak, peak.count > 0 {
                         let night = hours.filter { $0.id >= 23 || $0.id < 9 }.reduce(0) { $0 + $1.count }
                         let sum = max(1, hours.reduce(0) { $0 + $1.count })
