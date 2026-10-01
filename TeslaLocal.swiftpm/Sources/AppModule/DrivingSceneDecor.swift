@@ -195,7 +195,7 @@ final class DrivingSceneDecor {
     /// The samples arrive every 10 m; a Catmull–Rom spline through them keeps the drawn road curved
     /// instead of showing a kink at every sample.
     private func rawPose(_ s: Float) -> (point: SIMD2<Float>, heading: Float) {
-        guard pathNow.count >= 2 else { return (SIMD2(0, s), 0) }
+        guard pathNow.count >= 2, s.isFinite else { return (SIMD2(0, s.isFinite ? s : 0), 0) }
         let last = pathNow.count - 1
         if s <= 0 {
             let h = heading(pathNow[0], pathNow[1])

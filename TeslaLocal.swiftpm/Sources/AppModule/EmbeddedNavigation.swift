@@ -129,7 +129,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func setDirection(_ value: NavigationDirection) {
         directionNotice = ""
         orientation = value; UserDefaults.standard.set(value.rawValue, forKey: "navigationOrientation")
-        if heldOrientation { NavigationOrientation.apply(value.mask, scene: navigationScene) }
+        if heldOrientation { NavigationOrientation.apply(value.mask, scene: navigationScene); DeviceTiltOrientation.follow(value == .auto, scene: navigationScene) }
     }
     func observe(_ event: Object, vin: String) {
         if vehicleIdentity != vin { reset(); vehicleIdentity = vin }
@@ -452,11 +452,12 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         heldOrientation = true
         navigationScene = controller?.view.window?.windowScene
         NavigationOrientation.apply(orientation.mask, scene: navigationScene)
+        DeviceTiltOrientation.follow(orientation == .auto, scene: navigationScene)
         UIApplication.shared.isIdleTimerDisabled = true
     }
     func screenDisappeared() {
         guard heldOrientation else { return }
-        heldOrientation = false; NavigationOrientation.apply(.all, scene: navigationScene)
+        heldOrientation = false; DeviceTiltOrientation.follow(false, scene: nil); NavigationOrientation.apply(.all, scene: navigationScene)
         navigationScene = nil; UIApplication.shared.isIdleTimerDisabled = previousIdleTimer
     }
 }

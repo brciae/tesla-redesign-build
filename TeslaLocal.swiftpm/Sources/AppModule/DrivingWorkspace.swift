@@ -179,7 +179,7 @@ struct DrivingWorkspace: View {
             r.turn = dest
             r.turnSymbol = "arrow.triangle.turn.up.right.diamond.fill"
             if let arrMin = d.number("arrivalMinutes"), arrMin.isFinite, arrMin > 0 {
-                r.remaining = "\(Int(round(arrMin)))분 남음"
+                r.remaining = "\(finiteInt(round(arrMin)))분 남음"
                 r.arrival = Date().addingTimeInterval(arrMin * 60).formatted(date: .omitted, time: .shortened)
             }
             if let arrKm = d.number("arrivalKm"), arrKm.isFinite, arrKm > 0 {
@@ -272,7 +272,7 @@ struct DrivingWorkspace: View {
                 r.routeProgress = max(0, min(1, 1 - remain / total))
             }
             if let seconds = n["remainSeconds"] as? Double, seconds.isFinite, seconds >= 0 {
-                r.remaining = "\(Int(ceil(seconds / 60)))분 남음"
+                r.remaining = "\(finiteInt(ceil(seconds / 60)))분 남음"
                 r.arrival = Date(timeIntervalSinceNow: seconds).formatted(date: .omitted, time: .shortened)
             }
         }

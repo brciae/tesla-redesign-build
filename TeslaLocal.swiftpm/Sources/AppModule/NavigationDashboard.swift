@@ -77,6 +77,7 @@ enum NavigationTheme: String, CaseIterable, Identifiable {
         switch self {
         case .minimal, .focus: return .black
         case .panorama: return NavInk.navy
+        case .running: return Color(white: 0.97)
         default: return NavInk.canvas
         }
     }
@@ -318,8 +319,8 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 : CGRect(x: m.pad, y: m.h * 0.56, width: m.w - m.pad * 2, height: m.h * 0.22)
         case .running:
             return m.wide
-                ? CGRect(x: m.w - m.w * 0.25 - m.pad, y: m.pad, width: m.w * 0.25, height: m.h * 0.48)
-                : CGRect(x: m.pad, y: m.h * 0.66, width: m.w - m.pad * 2, height: m.h * 0.18)
+                ? CGRect(x: m.w * 0.56, y: m.h * 0.50, width: m.w * 0.44 - m.pad, height: m.h * 0.50 - m.pad)
+                : CGRect(x: m.w * 0.50, y: m.h * 0.71, width: m.w * 0.50 - m.pad, height: m.h * 0.29 - m.pad)
         }
     }
 
@@ -699,36 +700,26 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     // MARK: Running — the character runs in place facing the viewer, paced by the car's speed
 
     private func runningLayer(_ m: NavMetrics) -> some View {
+        // v1.24: light theme. Portrait — character fills the top 70 %, info + map share the bottom 30 %.
+        // Landscape — character on the left, info above the map on the right.
         let rect = mapRect(m)
-        let colW = m.wide ? m.w * 0.25 : m.w - m.pad * 2
         let stage = m.wide
-            ? CGRect(x: colW + m.pad * 2, y: 0, width: m.w - (colW + m.pad * 2) * 2, height: m.h)
-            : CGRect(x: 0, y: m.h * 0.16, width: m.w, height: m.h * 0.50)
+            ? CGRect(x: 0, y: 0, width: m.w * 0.54, height: m.h)
+            : CGRect(x: 0, y: 0, width: m.w, height: m.h * 0.70)
+        let info = m.wide
+            ? CGRect(x: rect.minX, y: m.pad + 40 * m.u, width: rect.width, height: rect.minY - m.pad * 2 - 40 * m.u)
+            : CGRect(x: m.pad, y: rect.minY, width: rect.minX - m.pad * 2, height: rect.height)
         return ZStack(alignment: .topLeading) {
-            RadialGradient(colors: [Color(red: 0.10, green: 0.14, blue: 0.26), .black], center: UnitPoint(x: 0.5, y: 0.75), startRadius: 4, endRadius: stage.width * 0.75)
-                .frame(width: stage.width, height: stage.height)
-                .offset(x: stage.minX, y: stage.minY)
-                .allowsHitTesting(false)
             CharacterRunnerView(speedKmh: data.speedKmh)
-                .frame(width: stage.width, height: stage.height * 0.9)
-                .offset(x: stage.minX, y: stage.minY + stage.height * 0.08)
+                .frame(width: stage.width, height: stage.height * 0.94)
+                .offset(x: stage.minX, y: stage.minY + stage.height * 0.04)
                 .allowsHitTesting(false)
-            FocusTurnPill(data: data, u: m.u)
-                .frame(maxWidth: stage.width - m.pad * 2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: stage.width)
-                .offset(x: stage.minX, y: stage.minY + m.pad)
-            FocusSpeedColumn(data: data, u: m.u, media: m.wide && data.showsMedia ? media(.mini, m) : nil)
-                .frame(width: colW, height: m.wide ? m.h - m.pad * 2 : m.h * 0.16 - m.pad * 1.5)
-                .offset(x: m.pad, y: m.pad)
-            if data.laneCount > 0 {
-                LaneStrip(data: data, u: m.u)
-                    .frame(width: rect.width)
-                    .offset(x: rect.minX, y: m.wide ? rect.maxY + 8 * m.u : rect.maxY - 46 * m.u)
-            }
-            FocusArrival(data: data, u: m.u)
-                .frame(width: rect.width)
-                .offset(x: rect.minX, y: rect.maxY + 8 * m.u)
+            RunningTurnCard(data: data, u: m.u)
+                .frame(width: m.wide ? rect.width : m.w - m.pad * 2)
+                .offset(x: m.wide ? rect.minX : m.pad, y: m.wide ? m.pad + 40 * m.u : m.pad + 40 * m.u)
+            RunningInfoPanel(data: data, u: m.u)
+                .frame(width: info.width, height: max(0, info.height))
+                .offset(x: info.minX, y: m.wide ? info.minY + 96 * m.u : info.minY)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -1105,11 +1096,11 @@ private struct DestinationCard: View {
                     .lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if let soc = data.arrivalSOC, soc.isFinite {
-                    Label("\(Int(soc.rounded()))%", systemImage: "bolt.fill")
+                    Label("\(finiteInt(soc.rounded()))%", systemImage: "bolt.fill")
                         .font(.system(size: 14 * u, weight: .semibold)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.7).layoutPriority(1)
                         .foregroundStyle(soc < 15 ? NavInk.amber : NavInk.green)
-                        .accessibilityLabel("도착 시 배터리 \(Int(soc.rounded()))%")
+                        .accessibilityLabel("도착 시 배터리 \(finiteInt(soc.rounded()))%")
                 }
             }
             if !data.destination.isEmpty {
@@ -1247,8 +1238,8 @@ private struct TickBar: View {
     let u: CGFloat
     var body: some View {
         GeometryReader { g in
-            let count = max(10, Int(g.size.width / (5 * u)))
-            let on = Int(Double(count) * min(1, max(0, value ?? 0)))
+            let count = max(10, finiteInt(Double(g.size.width / max(0.01, 5 * u)), 10))
+            let on = finiteInt(Double(count) * min(1, max(0, value ?? 0)))
             HStack(spacing: 2 * u) {
                 ForEach(0..<count, id: \.self) { i in
                     Capsule()
@@ -1514,7 +1505,7 @@ private struct FleetPanel: View {
                 HStack {
                     Text("경로 진행").font(.system(size: 13 * u, weight: .semibold)).foregroundStyle(NavInk.muted)
                     Spacer()
-                    Text(data.routeProgress.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
+                    Text(data.routeProgress.map { "\(finiteInt(($0 * 100).rounded()))%" } ?? "—")
                         .font(.system(size: 13 * u, weight: .semibold)).monospacedDigit()
                 }
                 ProgressTrack(value: data.routeProgress, u: u * 1.4)
@@ -1560,8 +1551,8 @@ private struct SegmentBar: View {
     let u: CGFloat
     var body: some View {
         GeometryReader { g in
-            let count = max(12, Int(g.size.width / (6 * u)))
-            let on = Int(Double(count) * min(1, max(0, value ?? 0)))
+            let count = max(12, finiteInt(Double(g.size.width / max(0.01, 6 * u)), 12))
+            let on = finiteInt(Double(count) * min(1, max(0, value ?? 0)))
             HStack(spacing: 2 * u) {
                 ForEach(0..<count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1).fill(i < on ? NavInk.green : Color.white.opacity(0.12))
@@ -1910,7 +1901,9 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                 }.foregroundStyle(.white).padding(.horizontal, 8)
                     .padding(.leading, geometry.safeAreaInsets.leading)
                     .padding(.trailing, geometry.safeAreaInsets.trailing)
-                    .padding(.top, geometry.safeAreaInsets.top)
+                    .padding(.top, max(8, geometry.safeAreaInsets.top))
+                    // v1.24: pin the panel to the screen's top edge in every orientation.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .task(id: activity) {
                 guard expanded, !voiceOver else { return }
@@ -1943,5 +1936,69 @@ struct NavigationJunctionCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18)))
             .accessibilityIdentifier("navigation.junction")
+    }
+}
+
+/// Int(x) traps on NaN/±infinity (zero-size layout during theme or rotation changes). Clamp instead.
+func finiteInt(_ x: Double, _ fallback: Int = 0) -> Int {
+    guard x.isFinite else { return fallback }
+    return Int(max(-1_000_000, min(1_000_000, x)))
+}
+
+/// Light cards for the running theme (white canvas).
+private struct RunningTurnCard: View {
+    let data: NavigationReadout
+    let u: CGFloat
+    var body: some View {
+        HStack(spacing: 12 * u) {
+            Image(systemName: data.turnSymbol).font(.system(size: 30 * u, weight: .bold)).foregroundStyle(NavInk.blue)
+                .frame(width: 44 * u)
+            VStack(alignment: .leading, spacing: 2 * u) {
+                Text(data.turnDistance).font(.system(size: 24 * u, weight: .bold)).monospacedDigit()
+                Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 0)
+            if let limit = data.speedLimit {
+                Text("\(limit)").font(.system(size: 18 * u, weight: .heavy)).monospacedDigit().foregroundStyle(.black)
+                    .frame(width: 44 * u, height: 44 * u)
+                    .background(Circle().fill(.white)).overlay(Circle().stroke(Color.red, lineWidth: 5 * u))
+            }
+        }
+        .foregroundStyle(Color.black)
+        .padding(12 * u)
+        .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20 * u, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 10 * u, y: 3 * u)
+    }
+}
+
+private struct RunningInfoPanel: View {
+    let data: NavigationReadout
+    let u: CGFloat
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8 * u) {
+            HStack(alignment: .firstTextBaseline, spacing: 4 * u) {
+                Text(data.speed).font(.system(size: 46 * u, weight: .bold)).monospacedDigit()
+                Text(data.speedUnit).font(.system(size: 14 * u, weight: .semibold)).foregroundStyle(Color.black.opacity(0.5))
+                Spacer(minLength: 0)
+                Text(data.gear).font(.system(size: 18 * u, weight: .bold)).foregroundStyle(Color.black.opacity(0.55))
+            }
+            Divider()
+            row("도착", data.arrival)
+            row("남은 거리", data.remainingDistance)
+            row("배터리", data.battery)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.black)
+        .lineLimit(1).minimumScaleFactor(0.7)
+        .padding(12 * u)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20 * u, style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 8 * u, y: 2 * u)
+    }
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title).font(.system(size: 13 * u)).foregroundStyle(Color.black.opacity(0.5))
+            Spacer(minLength: 4)
+            Text(value).font(.system(size: 15 * u, weight: .semibold)).monospacedDigit()
+        }
     }
 }
