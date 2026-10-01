@@ -450,6 +450,7 @@ struct NavigationDisplaySettings: View {
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
+    @AppStorage("navigation.markerScale") private var markerScale = 2.0
     var body: some View { Group {
                     Section("지도 표시") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
@@ -474,6 +475,11 @@ struct NavigationDisplaySettings: View {
                                 Text("주황").tag("arrow.orange")
                                 Text("차량").tag("car")
                             }.pickerStyle(.segmented)
+                            HStack {
+                                Text("내 차 크기")
+                                Slider(value: $markerScale, in: 1...3, step: 0.25)
+                                Text(String(format: "%.1f×", markerScale)).monospacedDigit().frame(width: 44)
+                            }
                         }
                         Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
                     }

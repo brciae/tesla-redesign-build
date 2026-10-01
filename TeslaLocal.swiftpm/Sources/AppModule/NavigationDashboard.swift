@@ -319,8 +319,8 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 : CGRect(x: m.pad, y: m.h * 0.56, width: m.w - m.pad * 2, height: m.h * 0.22)
         case .running:
             return m.wide
-                ? CGRect(x: m.w * 0.56, y: m.h * 0.50, width: m.w * 0.44 - m.pad, height: m.h * 0.50 - m.pad)
-                : CGRect(x: m.w * 0.50, y: m.h * 0.71, width: m.w * 0.50 - m.pad, height: m.h * 0.29 - m.pad)
+                ? CGRect(x: m.w * 0.54, y: m.pad + 44 * m.u, width: m.w * 0.46 - m.pad, height: m.h * 0.40)
+                : CGRect(x: m.w * 0.50, y: m.h * 0.62 + 72 * m.u + m.pad * 0.6, width: m.w * 0.50 - m.pad, height: m.h * 0.38 - 72 * m.u - m.pad * 1.6)
         }
     }
 
@@ -700,14 +700,18 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     // MARK: Running — the character runs in place facing the viewer, paced by the car's speed
 
     private func runningLayer(_ m: NavMetrics) -> some View {
-        // v1.24: light theme. Portrait — character fills the top 70 %, info + map share the bottom 30 %.
-        // Landscape — character on the left, info above the map on the right.
+        // v1.25: every readout sits at the bottom. Portrait — character top 62 %, turn card then
+        // info + map below. Landscape — character left, map upper-right, turn + info lower-right.
         let rect = mapRect(m)
+        let turnH = 72 * m.u
         let stage = m.wide
-            ? CGRect(x: 0, y: 0, width: m.w * 0.54, height: m.h)
-            : CGRect(x: 0, y: 0, width: m.w, height: m.h * 0.70)
+            ? CGRect(x: 0, y: 0, width: m.w * 0.52, height: m.h)
+            : CGRect(x: 0, y: 0, width: m.w, height: m.h * 0.62)
+        let turn = m.wide
+            ? CGRect(x: rect.minX, y: rect.maxY + m.pad * 0.6, width: rect.width, height: turnH)
+            : CGRect(x: m.pad, y: m.h * 0.62, width: m.w - m.pad * 2, height: turnH)
         let info = m.wide
-            ? CGRect(x: rect.minX, y: m.pad + 40 * m.u, width: rect.width, height: rect.minY - m.pad * 2 - 40 * m.u)
+            ? CGRect(x: rect.minX, y: turn.maxY + m.pad * 0.6, width: rect.width, height: m.h - turn.maxY - m.pad * 1.6)
             : CGRect(x: m.pad, y: rect.minY, width: rect.minX - m.pad * 2, height: rect.height)
         return ZStack(alignment: .topLeading) {
             CharacterRunnerView(speedKmh: data.speedKmh)
@@ -715,11 +719,11 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .offset(x: stage.minX, y: stage.minY + stage.height * 0.04)
                 .allowsHitTesting(false)
             RunningTurnCard(data: data, u: m.u)
-                .frame(width: m.wide ? rect.width : m.w - m.pad * 2)
-                .offset(x: m.wide ? rect.minX : m.pad, y: m.wide ? m.pad + 40 * m.u : m.pad + 40 * m.u)
+                .frame(width: turn.width, height: turn.height)
+                .offset(x: turn.minX, y: turn.minY)
             RunningInfoPanel(data: data, u: m.u)
                 .frame(width: info.width, height: max(0, info.height))
-                .offset(x: info.minX, y: m.wide ? info.minY + 96 * m.u : info.minY)
+                .offset(x: info.minX, y: info.minY)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -1901,9 +1905,10 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                 }.foregroundStyle(.white).padding(.horizontal, 8)
                     .padding(.leading, geometry.safeAreaInsets.leading)
                     .padding(.trailing, geometry.safeAreaInsets.trailing)
-                    .padding(.top, max(8, geometry.safeAreaInsets.top))
+                    .padding(.top, geometry.size.width > geometry.size.height ? 6 : 48)
                     // v1.24: pin the panel to the screen's top edge in every orientation.
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea()
             }
             .task(id: activity) {
                 guard expanded, !voiceOver else { return }

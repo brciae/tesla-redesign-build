@@ -494,6 +494,7 @@ struct KakaoMapPanel: View {
 struct KakaoMapSurface: View {
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
+    @AppStorage("navigation.markerScale") private var markerScale = 2.0
     let controller: YLKakaoController
     var theme: NavigationTheme = .cluster
     var anchorX: Double = 0.52
@@ -501,7 +502,7 @@ struct KakaoMapSurface: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             KakaoMapSurfaceController(controller: controller, theme: theme.rawValue + ":" + resolvedAppearance(context.date),
-                                      marker: markerStyle, anchorX: anchorX, anchorY: anchorY)
+                                      marker: markerStyle + "@" + String(format: "%.2f", markerScale), anchorX: anchorX, anchorY: anchorY)
         }
     }
     private func resolvedAppearance(_ date: Date) -> String {
