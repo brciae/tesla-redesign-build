@@ -10,7 +10,7 @@ struct CharacterRunnerView: View {
     private var phase: Double { clock.phase }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 120.0)) { context in
             let s = advance(to: context.date)
             if let frames = CharacterAtlas.shared, let img = frames.frame(for: clock, speed: s, now: context.date) {
                 Image(uiImage: img).resizable().interpolation(.high).scaledToFit()
@@ -93,50 +93,64 @@ final class RunnerClock {
     var stopStart: Date?
     var wasRunning = false
     var lastContact = -1
+    var lastFrameTime: Date?
 }
 
-/// Frames cut from the character video: a 31-frame run loop (24 fps, two foot contacts) and a
-/// 120-frame slow-down-to-standing clip (12 fps). Stored as sprite atlases in the "character" folder.
+/// v1.27: frames are 520×720 (native video resolution). The run loop is motion-interpolated to
+/// 72 fps (93 frames, 3× the source) and the slow-down clip plays at its full 24 fps (240 frames).
+/// Frames stay WebP-compressed in memory and are decoded on demand, so memory stays small.
 final class CharacterAtlas {
     static let shared: CharacterAtlas? = CharacterAtlas()
-    private let run: [UIImage]
-    private let stop: [UIImage]
+    private let runBlob: Data, stopBlob: Data
+    private let run: [[Int]], stop: [[Int]]
     private let runFPS: Double, stopFPS: Double
     let contacts: [Int]
+    private var cache: [Int: UIImage] = [:]
+    private var cacheOrder: [Int] = []
     private init?() {
         guard let dir = Bundle.main.url(forResource: "character", withExtension: nil),
               let data = try? Data(contentsOf: dir.appendingPathComponent("char_manifest.json")),
               let m = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let size = m["frame"] as? [Double], size.count == 2,
-              let r = m["run"] as? [String: Any], let st = m["stop"] as? [String: Any] else { return nil }
-        func slice(_ file: String, cols: Int, count: Int) -> [UIImage] {
-            guard let sheet = UIImage(contentsOfFile: dir.appendingPathComponent(file + ".webp").path)?.cgImage else { return [] }
-            let w = Int(size[0]), h = Int(size[1])
-            return (0..<count).compactMap { i in
-                sheet.cropping(to: CGRect(x: (i % cols) * w, y: (i / cols) * h, width: w, height: h)).map { UIImage(cgImage: $0) }
-            }
+              let r = m["run"] as? [String: Any], let st = m["stop"] as? [String: Any],
+              let rb = try? Data(contentsOf: dir.appendingPathComponent(r["blob"] as? String ?? "")),
+              let sb = try? Data(contentsOf: dir.appendingPathComponent(st["blob"] as? String ?? "")) else { return nil }
+        runBlob = rb; stopBlob = sb
+        func valid(_ list: Any?, _ blob: Data) -> [[Int]] {
+            ((list as? [[Int]]) ?? []).filter { $0.count == 2 && $0[0] >= 0 && $0[1] > 0 && $0[0] + $0[1] <= blob.count }
         }
-        run = slice(r["file"] as? String ?? "", cols: r["cols"] as? Int ?? 8, count: r["count"] as? Int ?? 0)
-        let per = st["perFile"] as? Int ?? 60, total = st["count"] as? Int ?? 0
-        stop = (st["files"] as? [String] ?? []).enumerated().flatMap { i, f in slice(f, cols: st["cols"] as? Int ?? 12, count: min(per, total - i * per)) }
-        runFPS = r["fps"] as? Double ?? 24; stopFPS = st["fps"] as? Double ?? 12
+        run = valid(r["frames"], rb); stop = valid(st["frames"], sb)
+        runFPS = r["fps"] as? Double ?? 72; stopFPS = st["fps"] as? Double ?? 24
         contacts = r["contacts"] as? [Int] ?? []
         guard !run.isEmpty, !stop.isEmpty else { return nil }
     }
+    private func image(_ list: [[Int]], _ blob: Data, _ index: Int, key: Int) -> UIImage? {
+        if let hit = cache[key] { return hit }
+        let e = list[max(0, min(list.count - 1, index))]
+        guard let img = UIImage(data: blob.subdata(in: e[0] ..< e[0] + e[1])) else { return nil }
+        cache[key] = img; cacheOrder.append(key)
+        if cacheOrder.count > 24 { cache[cacheOrder.removeFirst()] = nil }
+        return img
+    }
+    /// Standing pose used as the chat avatar.
+    var portrait: UIImage? { image(stop, stopBlob, stop.count - 1, key: 100_000 + stop.count - 1) }
     /// Run loop plays faster with speed; when the car stops the slow-down clip plays once and holds.
     func frame(for c: RunnerClock, speed: Double, now: Date) -> UIImage? {
         if speed >= 3 {
             c.wasRunning = true; c.stopStart = nil
             let rate = min(1.7, max(0.55, speed / 45))
-            c.runFrame = (c.runFrame + runFPS * rate / 60).truncatingRemainder(dividingBy: Double(run.count))
-            let i = Int(c.runFrame)
-            if contacts.contains(i), c.lastContact != i { c.lastContact = i; CharacterFootstep.play() } else if !contacts.contains(i) { c.lastContact = -1 }
-            return run[i]
+            let dt = c.lastFrameTime.map { min(0.1, max(0, now.timeIntervalSince($0))) } ?? 0
+            c.lastFrameTime = now
+            c.runFrame = (c.runFrame + runFPS * rate * dt).truncatingRemainder(dividingBy: Double(run.count))
+            let i = max(0, min(run.count - 1, Int(c.runFrame)))
+            let near = contacts.contains { abs($0 - i) <= 1 }
+            if near, c.lastContact < 0 { c.lastContact = i; CharacterFootstep.play() } else if !near { c.lastContact = -1 }
+            return image(run, runBlob, i, key: i)
         }
+        c.lastFrameTime = now
         if c.wasRunning, c.stopStart == nil { c.stopStart = now }
-        guard let start = c.stopStart else { return stop.last }
-        let i = min(stop.count - 1, Int(now.timeIntervalSince(start) * stopFPS))
-        return stop[i]
+        guard let start = c.stopStart else { return portrait }
+        let i = max(0, min(stop.count - 1, Int(max(0, now.timeIntervalSince(start)) * stopFPS)))
+        return image(stop, stopBlob, i, key: 100_000 + i)
     }
 }
 

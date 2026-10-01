@@ -73,6 +73,7 @@ struct MainView: View {
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
     @State private var selectedTab: AppTab = .home
+    @StateObject private var characterChat = CharacterChat()
     @State private var homePath = NavigationPath()
     @State private var controlsPath = NavigationPath()
     @State private var energyPath = NavigationPath()
@@ -136,6 +137,12 @@ struct MainView: View {
                 NavigationStack(path: $menuPath) { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
             }
             .opacity(navigation.presented ? 0 : 1).allowsHitTesting(!navigation.presented).accessibilityHidden(navigation.presented)
+            .overlay(alignment: .bottomTrailing) {
+                if !navigation.presented && !model.chargingPresented {
+                    CharacterChatButton(chat: characterChat).padding(.trailing, 16).padding(.bottom, 96)
+                }
+            }
+            .sheet(isPresented: $characterChat.presented) { CharacterChatView(chat: characterChat).environmentObject(model) }
 
             if navigation.presented { DrivingWorkspace(navigation: navigation, link: link).environment(\.colorScheme, .dark).transition(.opacity).zIndex(1) }
             if model.chargingPresented { ChargingWorkspace(link: link, isPresented: $model.chargingPresented).environment(\.colorScheme, .dark).transition(.opacity).zIndex(2) }
