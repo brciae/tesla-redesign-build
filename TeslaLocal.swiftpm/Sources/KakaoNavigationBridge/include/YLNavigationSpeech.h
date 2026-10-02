@@ -59,7 +59,7 @@ static inline NSString *YLNavigationAction(NSInteger code) {
         case 83: return @"오른쪽 도로로 직진하세요.";
         case 84: return @"요금소입니다.";
         case 85: return @"무정차 요금소입니다.";
-        case 86: return @"분기 후 합류 구간입니다.";
+        case 86: return @"도로가 갈라졌다가 다시 합쳐지는 구간입니다. 차로를 유지하세요.";
         case 87: return @"왼쪽 고가도로로 진입하세요.";
         case 88: return @"고가도로 왼쪽 옆길로 가세요.";
         case 89: return @"오른쪽 고가도로로 진입하세요.";
@@ -90,6 +90,19 @@ static inline NSString *YLNavigationAction(NSInteger code) {
     }
 }
 
+// v1.35: the SDK sometimes puts maneuver words ("분기후 합류", "분기점", "진출") in the direction
+// names. Those are not places, so "분기후 합류 방면, …" must never be spoken.
+static inline BOOL YLNavigationIsPlaceName(NSString *name) {
+    NSString *flat = [[name stringByReplacingOccurrencesOfString:@" " withString:@""] stringByReplacingOccurrencesOfString:@"·" withString:@""];
+    if (flat.length < 2) return NO;
+    NSArray<NSString *> *generic = @[@"분기", @"합류", @"분기점", @"진입", @"진출", @"출구", @"입구", @"방향", @"방면", @"직진", @"좌회전", @"우회전",
+                                     @"유턴", @"후", @"고속도로", @"도시고속도로", @"고가도로", @"지하차도", @"터널", @"요금소", @"옆길", @"왼쪽", @"오른쪽"];
+    NSString *rest = flat;
+    for (NSString *w in [generic sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) { return a.length > b.length ? NSOrderedAscending : NSOrderedDescending; }])
+        rest = [rest stringByReplacingOccurrencesOfString:w withString:@""];
+    return rest.length >= 2; // something besides maneuver vocabulary remains → a real road/place name
+}
+
 static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArray<NSString *> *towards, NSInteger metres) {
     if (metres == 0 && code == 101) return @"목적지에 도착했습니다.";
     if (metres == 0 && code == 1000) return @"경유지에 도착했습니다.";
@@ -99,13 +112,13 @@ static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArr
     for (NSString *raw in towards) {
         if (![raw isKindOfClass:NSString.class]) continue;
         NSString *name = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (name.length && ![names containsObject:name]) [names addObject:name];
+        if (name.length && YLNavigationIsPlaceName(name) && ![names containsObject:name]) [names addObject:name];
     }
     NSString *context = @"";
     // Destinations/facilities already identify the point. Road signs help at forks.
     if (code != 101 && code != 1000 && code != 84 && code != 85) {
         if (names.count) context = [NSString stringWithFormat:@"%@ 방면, ", [names componentsJoinedByString:@", "]];
-        else if (node.length) context = [NSString stringWithFormat:@"%@, ", node];
+        else if (node.length && YLNavigationIsPlaceName(node)) context = [NSString stringWithFormat:@"%@, ", node];
     }
     NSString *prefix = YLNavigationDistancePrefix(metres);
     return [NSString stringWithFormat:@"%@%@%@", prefix, context, action];
