@@ -16,10 +16,11 @@
   const text=(v,max=300)=>typeof v==='string'?v.slice(0,max):'';
   function initial(){return {schema:1,settings:{name:'Model Y',model:'Model Y L',vin:'',reserveSOC:20,dailyLimit:null,tariff:null,plannedKm:null},batteryBaseline:null,groups:{},trips:[],charges:[],maintenance:[],parkingNotes:[],parkingPeriods:[],tires:[],activeTrip:null,activeCharge:null,lastPark:null,navSent:null,weather:null,lastBrief:'차량에 연결하면 최신 상태를 안내함.'};}
   // Two parking records describe the same spot when they are within ~35 m.
-  function nearby(a,b){
+  function nearby(a,b,r=35){
     if(!validCoordinates(a?.latitude,a?.longitude)||!validCoordinates(b?.latitude,b?.longitude))return false;
     const dLat=(a.latitude-b.latitude)*111320,dLng=(a.longitude-b.longitude)*111320*Math.cos(a.latitude*Math.PI/180);
-    return Math.sqrt(dLat*dLat+dLng*dLng)<=35;
+    // v1.41: a geocoded home address can sit 50-150 m from the actual parking bay (apartment complexes).
+    return Math.sqrt(dLat*dLat+dLng*dLng)<=r;
   }
   function validCoordinates(lat,lng){return num(lat,-90,90)&&num(lng,-180,180)&&!(lat===0&&lng===0);}
   const freshLocation=(g,now)=>fresh(g,now)&&validCoordinates(g.latitude,g.longitude)&&(!g.positionStatus||g.positionStatus==='available')&&g.estimatedGPSValid!==false;
@@ -183,7 +184,7 @@
   function chargeIdentity(c,s){
     const place=rateKey(c.place), provider=rateKey(c.chargeOperator);
     const supercharger=c.chargeType==='supercharger'||/supercharger|슈퍼차저|수퍼차저/.test(place+provider);
-    const home=(!supercharger&&c.chargeType!=='dc')&&((place&&['집','집완속','자택','home'].includes(place))||nearby(c,s.homePoint));
+    const home=(!supercharger&&c.chargeType!=='dc')&&((place&&['집','집완속','자택','home'].includes(place))||nearby(c,s.homePoint,200));
     const kind=supercharger?'supercharger':c.chargeType==='dc'?'dc':c.chargeType==='ac'||home||num(c.nasSupplyKWh,0.01,300)||num(c.supplyKWh,0.01,300)&&c.source==='NAS'?'ac':'unknown';
     const operator=provider||(/채비|chaevi/.test(place)?'채비':/환경부|기후부/.test(place)?'환경부':/한전|한국전력/.test(place)?'한국전력':/에버온/.test(place)?'에버온':/파워큐브/.test(place)?'파워큐브':/차지비/.test(place)?'차지비':/플러그링크/.test(place)?'플러그링크':supercharger?'tesla':'');
     return {place,operator,kind,home};
