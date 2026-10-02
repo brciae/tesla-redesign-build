@@ -61,14 +61,15 @@ struct VoiceCacheProbe: View {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/TypecastAudioCache")
         let urls = voices.map { voice in
             let digest = SHA256.hash(data: Data("\(voice)_\(text)".utf8)).map { String(format: "%02x", $0) }.joined()
-            return dir.appendingPathComponent(digest + ".wav")
+            // v1.34: each voice has its own sub-folder.
+            return dir.appendingPathComponent("v_" + voice, isDirectory: true).appendingPathComponent(digest + ".wav")
         }
         defer {
             client.selectedVoiceId = previous
             for url in urls { try? FileManager.default.removeItem(at: url) }
         }
         do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for url in urls { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) }
             for (index, url) in urls.enumerated() { try Data(repeating: UInt8(index + 1), count: 256).write(to: url) }
             for index in [0, 1, 0] {
                 client.selectedVoiceId = voices[index]
