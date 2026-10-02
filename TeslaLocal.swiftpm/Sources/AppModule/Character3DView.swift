@@ -11,6 +11,11 @@ struct CharacterOption: Identifiable, Hashable {
     static let all: [CharacterOption] = [
         CharacterOption(id: "yl", name: "유엘 (기본)", folder: ""),
         CharacterOption(id: "wolf", name: "늑대 소녀", folder: "c_wolf"),
+        CharacterOption(id: "c346796a2", name: "흑발 셔츠", folder: "c_346796a2"),
+        CharacterOption(id: "c5ef8c3d7", name: "땋은 머리 후드", folder: "c_5ef8c3d7"),
+        CharacterOption(id: "c6914c96a", name: "붉은 머리 원피스", folder: "c_6914c96a"),
+        CharacterOption(id: "cc5766977", name: "망토 기사", folder: "c_c5766977"),
+        CharacterOption(id: "cdd67ef9a", name: "붉은 드레스", folder: "c_dd67ef9a"),
     ]
     static var selectedID: String { UserDefaults.standard.string(forKey: "character.id") ?? "yl" }
     var thumbnail: UIImage? {
