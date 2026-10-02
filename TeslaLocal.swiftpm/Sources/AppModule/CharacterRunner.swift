@@ -10,6 +10,15 @@ struct CharacterRunnerView: View {
     private var phase: Double { clock.phase }
 
     var body: some View {
+        if CharacterRig.shared.available {
+            Character3DView(speedKmh: speedKmh)
+                .accessibilityLabel(speedKmh < 3 ? "캐릭터 대기 중" : "캐릭터 달리는 중")
+        } else {
+            atlasBody
+        }
+    }
+
+    private var atlasBody: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 120.0)) { context in
             let s = advance(to: context.date)
             if let frames = CharacterAtlas.shared, let img = frames.frame(for: clock, speed: s, now: context.date) {

@@ -111,7 +111,10 @@ struct CharacterChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 12) {
-                            if let img = CharacterAtlas.shared?.portrait {
+                            if CharacterRig.shared.available {
+                                Character3DView(speedKmh: 0, clipOverride: "idle", yaw: 0)
+                                    .frame(height: 240).padding(.top, 8)
+                            } else if let img = CharacterAtlas.shared?.portrait {
                                 Image(uiImage: img).resizable().scaledToFit().frame(height: 220)
                                     .padding(.top, 8)
                             }
