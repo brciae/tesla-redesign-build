@@ -10,6 +10,9 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.39 (139)", date: "2026-10-03", items: [
+            "1.38에서 새 캐릭터 5종 파일이 앱에 포함되지 않던 문제 수정 — 이제 메뉴 → 캐릭터에서 7종 모두 선택 가능",
+        ]),
         ReleaseNote(version: "1.38 (138)", date: "2026-10-03", items: [
             "캐릭터 5종 추가(흑발 셔츠·땋은 머리 후드·붉은 머리 원피스·망토 기사·붉은 드레스) — 직접 리깅해서 19가지 동작 모두 적용",
             "메뉴 → 캐릭터에서 총 7종 중 선택 가능",
