@@ -15,6 +15,7 @@ final class CharacterRig {
         guard let dir = Bundle.main.url(forResource: "character", withExtension: nil) else { failed = true; loadError = "character 폴더 없음"; return }
         do {
             let body = try Entity.load(contentsOf: dir.appendingPathComponent("character.usdz"))
+            Self.matte(body)
             model = body
             if let idle = body.availableAnimations.first { clips["idle"] = idle }
             for name in ["walk", "run", "jump", "turnL", "turnR", "strafeL", "strafeR", "strafeWalkL", "strafeWalkR"] {
@@ -23,6 +24,26 @@ final class CharacterRig {
             }
         } catch { failed = true; loadError = String(describing: error) }
         if model != nil && clips["idle"] == nil { loadError = "대기 동작 없음 (애니메이션 \(model?.availableAnimations.count ?? 0)개)" }
+    }
+    /// v1.32: the exported PBR read as chrome on device (metallic ≈ 1). Force a skin/cloth look:
+    /// keep the base-colour texture, metallic 0, high roughness, no clearcoat.
+    private static func matte(_ e: Entity) {
+        if var model = e.components[ModelComponent.self] {
+            model.materials = model.materials.map { m -> RealityKit.Material in
+                if var pbr = m as? PhysicallyBasedMaterial {
+                    pbr.metallic = .init(floatLiteral: 0)
+                    pbr.roughness = .init(floatLiteral: 0.85)
+                    pbr.specular = .init(floatLiteral: 0.2)
+                    pbr.clearcoat = .init(floatLiteral: 0)
+                    pbr.blending = .opaque          // opacity was wired to the colour map
+                    pbr.normal = .init(texture: nil) // normal map was over-scaled (2×) → wavy chrome streaks
+                    return pbr
+                }
+                return m
+            }
+            e.components.set(model)
+        }
+        for c in e.children { matte(c) }
     }
     var available: Bool { model != nil && clips["idle"] != nil }
 }

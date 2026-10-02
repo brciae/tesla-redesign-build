@@ -10,6 +10,9 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.32 (132)", date: "2026-10-02", items: [
+            "3D 캐릭터가 금속처럼 번쩍이던 문제 수정 (모델 변환 시 금속도 100%로 잘못 들어간 재질을 무광 피부·옷 재질로 교정)",
+        ]),
         ReleaseNote(version: "1.31 (131)", date: "2026-10-02", items: [
             "과속 경고: 제한속도를 넘으면 속도 숫자가 빨간색으로 바뀜",
             "과속 경고: 10km/h 이상 초과 시 화면 가장자리 붉은 점멸과 2초 간격 경고음",
