@@ -318,9 +318,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 ? CGRect(x: m.w - m.w * 0.25 - m.pad, y: m.pad, width: m.w * 0.25, height: m.h * 0.48)
                 : CGRect(x: m.pad, y: m.h * 0.56, width: m.w - m.pad * 2, height: m.h * 0.22)
         case .running:
-            return m.wide
-                ? CGRect(x: m.w * 0.54, y: m.pad + 44 * m.u, width: m.w * 0.46 - m.pad, height: m.h * 0.40)
-                : CGRect(x: m.w * 0.50, y: m.h * 0.62 + 72 * m.u + m.pad * 0.6, width: m.w * 0.50 - m.pad, height: m.h * 0.38 - 72 * m.u - m.pad * 1.6)
+            return runningRects(m).map
         }
     }
 
@@ -699,20 +697,31 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
 
     // MARK: Running — the character runs in place facing the viewer, paced by the car's speed
 
+    /// v1.30: one source of truth for every running-theme rect, so the map never overlaps the cards.
+    /// Portrait: character top 58 %, turn card, then info | map side by side.
+    /// Landscape: character left half; right column = turn card, map, info.
+    private func runningRects(_ m: NavMetrics) -> (stage: CGRect, turn: CGRect, map: CGRect, info: CGRect) {
+        let gap = m.pad
+        if m.wide {
+            let colX = m.w * 0.50, colW = m.w * 0.50 - gap
+            let turn = CGRect(x: colX, y: gap, width: colW, height: 66 * m.u)
+            let rest = m.h - turn.maxY - gap * 3
+            let map = CGRect(x: colX, y: turn.maxY + gap, width: colW, height: max(0, rest * 0.56))
+            let info = CGRect(x: colX, y: map.maxY + gap, width: colW, height: max(0, m.h - map.maxY - gap * 2))
+            return (CGRect(x: 0, y: 0, width: m.w * 0.48, height: m.h), turn, map, info)
+        }
+        let stageH = m.h * 0.58
+        let turn = CGRect(x: gap, y: stageH, width: m.w - gap * 2, height: 76 * m.u)
+        let lowerY = turn.maxY + gap, lowerH = max(0, m.h - lowerY - gap)
+        let infoW = (m.w - gap * 3) * 0.48
+        let info = CGRect(x: gap, y: lowerY, width: infoW, height: lowerH)
+        let map = CGRect(x: info.maxX + gap, y: lowerY, width: m.w - info.maxX - gap * 2, height: lowerH)
+        return (CGRect(x: 0, y: 0, width: m.w, height: stageH), turn, map, info)
+    }
+
     private func runningLayer(_ m: NavMetrics) -> some View {
-        // v1.25: every readout sits at the bottom. Portrait — character top 62 %, turn card then
-        // info + map below. Landscape — character left, map upper-right, turn + info lower-right.
-        let rect = mapRect(m)
-        let turnH = 72 * m.u
-        let stage = m.wide
-            ? CGRect(x: 0, y: 0, width: m.w * 0.52, height: m.h)
-            : CGRect(x: 0, y: 0, width: m.w, height: m.h * 0.62)
-        let turn = m.wide
-            ? CGRect(x: rect.minX, y: rect.maxY + m.pad * 0.6, width: rect.width, height: turnH)
-            : CGRect(x: m.pad, y: m.h * 0.62, width: m.w - m.pad * 2, height: turnH)
-        let info = m.wide
-            ? CGRect(x: rect.minX, y: turn.maxY + m.pad * 0.6, width: rect.width, height: m.h - turn.maxY - m.pad * 1.6)
-            : CGRect(x: m.pad, y: rect.minY, width: rect.minX - m.pad * 2, height: rect.height)
+        let r = runningRects(m)
+        let stage = r.stage, turn = r.turn, info = r.info
         return ZStack(alignment: .topLeading) {
             CharacterRunnerView(speedKmh: data.speedKmh)
                 .frame(width: stage.width, height: stage.height * 0.94)

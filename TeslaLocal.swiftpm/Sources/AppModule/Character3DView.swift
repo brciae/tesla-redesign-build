@@ -10,8 +10,9 @@ final class CharacterRig {
     private(set) var model: Entity?
     private(set) var clips: [String: AnimationResource] = [:]
     private(set) var failed = false
+    private(set) var loadError: String?
     private init() {
-        guard let dir = Bundle.main.url(forResource: "character", withExtension: nil) else { failed = true; return }
+        guard let dir = Bundle.main.url(forResource: "character", withExtension: nil) else { failed = true; loadError = "character 폴더 없음"; return }
         do {
             let body = try Entity.load(contentsOf: dir.appendingPathComponent("character.usdz"))
             model = body
@@ -20,7 +21,8 @@ final class CharacterRig {
                 let url = dir.appendingPathComponent("anim_\(name).usdz")
                 if let e = try? Entity.load(contentsOf: url), let a = e.availableAnimations.first { clips[name] = a }
             }
-        } catch { failed = true }
+        } catch { failed = true; loadError = String(describing: error) }
+        if model != nil && clips["idle"] == nil { loadError = "대기 동작 없음 (애니메이션 \(model?.availableAnimations.count ?? 0)개)" }
     }
     var available: Bool { model != nil && clips["idle"] != nil }
 }

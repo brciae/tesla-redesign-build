@@ -14,7 +14,12 @@ struct CharacterRunnerView: View {
             Character3DView(speedKmh: speedKmh)
                 .accessibilityLabel(speedKmh < 3 ? "캐릭터 대기 중" : "캐릭터 달리는 중")
         } else {
-            atlasBody
+            atlasBody.overlay(alignment: .bottom) {
+                // v1.30: say why the 3D character is not shown instead of silently falling back.
+                if let e = CharacterRig.shared.loadError {
+                    Text("3D 캐릭터 로드 실패: " + e).font(.caption2).foregroundStyle(.secondary).lineLimit(2).padding(6)
+                }
+            }
         }
     }
 

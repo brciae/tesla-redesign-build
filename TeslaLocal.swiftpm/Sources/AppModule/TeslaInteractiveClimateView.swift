@@ -83,7 +83,8 @@ struct TeslaInteractiveClimateView: View {
         GeometryReader { geometry in
             let offset = min(68.0, geometry.size.width * 0.21)
             ZStack {
-                RoundedRectangle(cornerRadius: 26).fill(LinearGradient(colors: [Theme.fill(0.11), Theme.fill(0.06)], startPoint: .top, endPoint: .bottom))
+                // v1.30: light mode = plain white stage; the cut-out interior sits on it without a black frame.
+                RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .secondarySystemGroupedBackground))
                 Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490).accessibilityHidden(true)
                 if currentAppearance.enabled && currentAppearance.interiorColor.uppercased() != "17191B" {
                     Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490)
@@ -95,9 +96,13 @@ struct TeslaInteractiveClimateView: View {
                 seatControl("2열 우", position: 5, field: "seat_heater_rear_right").offset(x: offset, y: 68)
                 seatControl("3열 좌", position: 7, field: "seat_heater_third_row_left").offset(x: -offset, y: 186)
                 seatControl("3열 우", position: 8, field: "seat_heater_third_row_right").offset(x: offset, y: 186)
-                Text("Model Y L · 6인승").font(.headline).offset(y: -245)
             }.frame(width: geometry.size.width, height: 530)
         }.frame(height: 530).disabled(blocked)
+        .padding(.top, 30)
+        .background(RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+        .overlay(alignment: .top) {
+            Text("Model Y L · 6인승").font(.caption.bold()).foregroundStyle(.secondary).padding(.top, 10)
+        }
     }
     private func seatControl(_ title: String, position: Int, field: String, coolField: String? = nil) -> some View {
         VStack(spacing: 4) {
