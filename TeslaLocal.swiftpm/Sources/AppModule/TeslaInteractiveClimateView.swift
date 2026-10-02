@@ -79,39 +79,59 @@ struct TeslaInteractiveClimateView: View {
         requestedTemperature = min(28, max(16, requestedTemperature + delta))
         model.requestVehicleControl("temperature", title: "온도 설정", args: ["value": requestedTemperature])
     }
+    /// v1.36: Tesla-style stage — a light line-art cabin tinted by the chosen interior colour
+    /// (차꾸미기 → 실내 색상), with small heater/vent buttons sitting on each seat instead of cards.
+    private var interiorTint: Color {
+        let hex = currentAppearance.interiorColor
+        let base = UIColor(appearanceHex: hex)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        base.getRed(&r, green: &g, blue: &b, alpha: &a)
+        // Lift dark colours so stitching and seat shapes stay readable (black → mid-grey).
+        let lift: CGFloat = 0.38
+        return Color(red: Double(r + (1 - r) * lift), green: Double(g + (1 - g) * lift), blue: Double(b + (1 - b) * lift))
+    }
     private var cabinStage: some View {
-        GeometryReader { geometry in
-            let offset = min(68.0, geometry.size.width * 0.21)
-            ZStack {
-                // v1.30: light mode = plain white stage; the cut-out interior sits on it without a black frame.
-                RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .secondarySystemGroupedBackground))
-                Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490).accessibilityHidden(true)
-                if currentAppearance.enabled && currentAppearance.interiorColor.uppercased() != "17191B" {
-                    Image("TeslaYLInterior").resizable().scaledToFit().frame(maxHeight: 490)
-                        .colorMultiply(Color(uiColor: UIColor(appearanceHex: currentAppearance.interiorColor))).opacity(0.42).blendMode(.screen).accessibilityHidden(true)
+        let imageH: CGFloat = 500, imageW: CGFloat = imageH * 1024 / 1536
+        // Seat centres as fractions of the cabin image (measured on the 1024×1536 asset).
+        let seats: [(String, Int, String, String?, CGFloat, CGFloat)] = [
+            ("운전석", 0, "seat_heater_left", "seat_fan_front_left", 0.32, 0.33),
+            ("조수석", 1, "seat_heater_right", "seat_fan_front_right", 0.68, 0.33),
+            ("2열 좌", 2, "seat_heater_rear_left", nil, 0.31, 0.56),
+            ("2열 우", 5, "seat_heater_rear_right", nil, 0.69, 0.56),
+            ("3열 좌", 7, "seat_heater_third_row_left", nil, 0.36, 0.81),
+            ("3열 우", 8, "seat_heater_third_row_right", nil, 0.64, 0.81),
+        ]
+        return VStack(spacing: 6) {
+            Text("Model Y L · 6인승").font(.caption.bold()).foregroundStyle(.secondary)
+            ZStack(alignment: .topLeading) {
+                Image("TeslaYLInteriorLight").resizable().scaledToFit()
+                    .colorMultiply(interiorTint)
+                    .frame(width: imageW, height: imageH)
+                    .accessibilityHidden(true)
+                ForEach(seats.indices, id: \.self) { i in
+                    let s = seats[i]
+                    seatControl(s.0, position: s.1, field: s.2, coolField: s.3)
+                        .position(x: imageW * s.4, y: imageH * s.5)
                 }
-                seatControl("운전석", position: 0, field: "seat_heater_left", coolField: "seat_fan_front_left").offset(x: -offset, y: -50)
-                seatControl("조수석", position: 1, field: "seat_heater_right", coolField: "seat_fan_front_right").offset(x: offset, y: -50)
-                seatControl("2열 좌", position: 2, field: "seat_heater_rear_left").offset(x: -offset, y: 68)
-                seatControl("2열 우", position: 5, field: "seat_heater_rear_right").offset(x: offset, y: 68)
-                seatControl("3열 좌", position: 7, field: "seat_heater_third_row_left").offset(x: -offset, y: 186)
-                seatControl("3열 우", position: 8, field: "seat_heater_third_row_right").offset(x: offset, y: 186)
-            }.frame(width: geometry.size.width, height: 530)
-        }.frame(height: 530).disabled(blocked)
-        .padding(.top, 30)
-        .background(RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .secondarySystemGroupedBackground)))
-        .overlay(alignment: .top) {
-            Text("Model Y L · 6인승").font(.caption.bold()).foregroundStyle(.secondary).padding(.top, 10)
+            }
+            .frame(width: imageW, height: imageH)
         }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 26).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+        .disabled(blocked)
     }
     private func seatControl(_ title: String, position: Int, field: String, coolField: String? = nil) -> some View {
-        VStack(spacing: 4) {
-            Text(title).font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 3).background(.regularMaterial, in: Capsule())
-            HStack(spacing: 3) {
-                seatButton(title, position: position, field: field, cooling: false)
-                if let coolField { seatButton(title, position: position, field: coolField, cooling: true) }
-            }
-        }.padding(3).background(Theme.fill(0.12).opacity(0.88), in: RoundedRectangle(cornerRadius: 10))
+        HStack(spacing: 4) {
+            seatButton(title, position: position, field: field, cooling: false)
+            if let coolField { seatButton(title, position: position, field: coolField, cooling: true) }
+        }
+        .padding(4)
+        .background(.ultraThinMaterial.opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(alignment: .top) {
+            Text(title).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                .fixedSize().offset(y: -13)
+        }
     }
     private func seatButton(_ title: String, position: Int, field: String, cooling: Bool) -> some View {
         let measuredLevel = measured.number(field).flatMap { (0...3).contains($0) ? Int($0) : nil }
@@ -125,7 +145,7 @@ struct TeslaInteractiveClimateView: View {
             }
         } label: {
             VStack(spacing: 3) {
-                Image(systemName: cooling ? "fanblades.fill" : "flame.fill")
+                Image(systemName: cooling ? "fanblades.fill" : "heat.waves")
                 Text(level.map { $0 == 0 ? "끔" : String(repeating: "∿", count: $0) } ?? "—").font(.caption2.bold())
             }.frame(width: 36, height: 44).foregroundStyle((level ?? 0) > 0 ? tint : Color.primary.opacity(0.7))
                 .background(tint.opacity((level ?? 0) > 0 ? 0.25 : 0.07), in: RoundedRectangle(cornerRadius: 8))
@@ -169,7 +189,8 @@ struct TeslaInteractiveClimateView: View {
                 model.voice.say(title + " 요청이 승인되었으며, 차량 상태를 다시 확인합니다.", category: "voiceControl", manual: true)
                 await model.fleet.refreshVehicleSnapshot(force: true)
                 acceptedLevels.removeAll(); acceptedMode = nil
-            } catch { result = error.localizedDescription }
+                CharacterReact.send("nod")
+            } catch { result = error.localizedDescription; CharacterReact.send("shake") }
         }
     }
 }

@@ -34,6 +34,7 @@ import Combine
         previous[current.vin] = current
         if previous.count > 5 { previous = Dictionary(uniqueKeysWithValues: previous.values.sorted { $0.at > $1.at }.prefix(5).map { ($0.vin, $0) }) }
         if let data = try? JSONEncoder().encode(previous) { UserDefaults.standard.set(data, forKey: stateKey) }
+        if event?.kind == "complete" { CharacterReact.send("clap") }
         guard let event, UserDefaults.standard.bool(forKey: "notify.charge." + event.kind) else { return }
         Task { await deliver(event, id: "YL.charge.\(current.vin).\(event.kind).\(Int(current.at.timeIntervalSince1970))") }
     }

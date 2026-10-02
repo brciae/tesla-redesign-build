@@ -7,6 +7,7 @@
 import SwiftUI
 
 struct TypecastCharacterPickerSheet: View {
+    @State private var previewing: String?
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
     @ObservedObject private var typecast = TypecastClient.shared
@@ -67,6 +68,7 @@ struct TypecastCharacterPickerSheet: View {
                     }
                 }
             }
+            .onDisappear { if previewing != nil { typecast.stop(); previewing = nil } }
         }
     }
 
@@ -141,6 +143,24 @@ struct TypecastCharacterPickerSheet: View {
 
             Spacer()
 
+            // v1.36: listen before choosing — plays a short sample in this character's voice.
+            Button {
+                if previewing == char.nameKo { typecast.stop(); previewing = nil }
+                else {
+                    previewing = char.nameKo
+                    typecast.testSpeech(text: "안녕하세요, \(char.nameKo)입니다. 300미터 앞에서 우회전하세요.", voiceId: char.nameKo) {
+                        DispatchQueue.main.async { if previewing == char.nameKo { previewing = nil } }
+                    }
+                }
+            } label: {
+                Image(systemName: previewing == char.nameKo ? "stop.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(previewing == char.nameKo ? Color.red : Color.blue)
+            }
+            .buttonStyle(.plain)
+            .disabled(!typecast.hasKey)
+            .accessibilityLabel(previewing == char.nameKo ? "\(char.nameKo) 미리듣기 정지" : "\(char.nameKo) 목소리 미리듣기")
+
             // Select Button
             Button {
                 selectCharacter(char)
@@ -167,13 +187,10 @@ struct TypecastCharacterPickerSheet: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 3)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectCharacter(char)
-        }
     }
 
     private func selectCharacter(_ char: TypecastCharacter) {
+        typecast.stop(); previewing = nil
         typecast.selectedVoiceId = char.nameKo
         UserDefaults.standard.set("typecast:\(char.nameKo)", forKey: "voiceIdentifier")
         model.voice.say("\(char.nameKo) 음성을 선택했습니다.", category: "voiceControl", manual: true)

@@ -334,6 +334,7 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         if uncertain { commandUncertain = true; UserDefaults.standard.set(true, forKey: "manualControlUncertain") }
         controlStatus = message + (uncertain ? " · 결과 미확인 · 자동 재전송 안함" : "")
         completeAutomation(controlStatus)
+        if !uncertain { CharacterReact.send(voiceResult == .accepted ? "nod" : "shake") }
         if let spokenIntent { onControlOutcome?(ControlVoice.message(action: spokenIntent.action, value: spokenIntent.args.number("value"), result: uncertain ? .unknown : voiceResult)) }
         if writeInFlight || !chunks.isEmpty { recoverTransport("제어 전송 중단 · 조회 연결 복구"); return }
         // Read-only follow-up, never repeats the command.

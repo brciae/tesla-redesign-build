@@ -20,11 +20,13 @@ final class CharacterChat: ObservableObject {
         guard !text.isEmpty, !busy else { return }
         messages.append(CharacterChatMessage(fromUser: true, text: text))
         busy = true
+        CharacterReact.send("think")
         task = Task { [weak self] in
             let answer = await Self.answer(text, history: self?.messages ?? [], model: model)
             guard let self, !Task.isCancelled else { return }
             self.messages.append(CharacterChatMessage(fromUser: false, text: answer))
             self.busy = false
+            CharacterReact.send("talk")
             model.voice.say(answer, key: "character.chat", category: "", priority: 3, ttl: 30, manual: true)
         }
     }
@@ -72,29 +74,38 @@ final class CharacterChat: ObservableObject {
     }
 }
 
-/// Floating avatar shown over the main tabs.
+/// v1.36: floating 3D character over the main tabs. Tap → chat, drag → move (position remembered).
+/// It reacts to app events through CharacterReact (vehicle command result, charging, chat).
 struct CharacterChatButton: View {
     @ObservedObject var chat: CharacterChat
     @AppStorage("characterChat.enabled") private var enabled = true
+    @AppStorage("characterFloat.x") private var savedX = 0.0
+    @AppStorage("characterFloat.y") private var savedY = 0.0
+    @GestureState private var drag: CGSize = .zero
     var body: some View {
         if enabled {
-            Button { chat.presented = true } label: {
-                ZStack {
-                    Circle().fill(.white).shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-                    if let img = CharacterAtlas.shared?.portrait {
-                        Image(uiImage: img).resizable().scaledToFill()
-                            .frame(width: 60, height: 60, alignment: .top)
-                            .offset(y: 14)
-                            .clipShape(Circle())
-                    } else {
+            Group {
+                if CharacterRig.shared.available {
+                    Character3DView(speedKmh: 0, clipOverride: "idle", interactive: false, yaw: 0.25)
+                        .frame(width: 84, height: 132)
+                        .background(Circle().fill(Color.white.opacity(0.0001)))
+                } else {
+                    ZStack {
+                        Circle().fill(.white).shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                         Image(systemName: "bubble.left.and.text.bubble.right.fill").font(.title2).foregroundStyle(.blue)
-                    }
+                    }.frame(width: 60, height: 60)
                 }
-                .frame(width: 60, height: 60)
-                .overlay(Circle().stroke(Color.blue.opacity(0.35), lineWidth: 2))
             }
-            .buttonStyle(.plain)
+            .overlay(Rectangle().fill(Color.white.opacity(0.001))) // SwiftUI catches taps/drags above the 3D view
+            .contentShape(Rectangle())
+            .offset(x: savedX + drag.width, y: savedY + drag.height)
+            .gesture(DragGesture(minimumDistance: 8)
+                .updating($drag) { v, s, _ in s = v.translation }
+                .onEnded { v in savedX += v.translation.width; savedY += v.translation.height })
+            .onTapGesture { CharacterReact.send("wave"); chat.presented = true }
+            .accessibilityElement()
             .accessibilityLabel("캐릭터 도우미와 대화")
+            .accessibilityAddTraits(.isButton)
         }
     }
 }

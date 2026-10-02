@@ -18,7 +18,8 @@ final class CharacterRig {
             Self.matte(body)
             model = body
             if let idle = body.availableAnimations.first { clips["idle"] = idle }
-            for name in ["walk", "run", "jump", "turnL", "turnR", "strafeL", "strafeR", "strafeWalkL", "strafeWalkR"] {
+            for name in ["walk", "run", "jump", "turnL", "turnR", "strafeL", "strafeR", "strafeWalkL", "strafeWalkR",
+                         "wave", "talk", "think", "nod", "shake", "happy", "clap", "point", "lookaround", "sit"] {
                 let url = dir.appendingPathComponent("anim_\(name).usdz")
                 if let e = try? Entity.load(contentsOf: url), let a = e.availableAnimations.first { clips[name] = a }
             }
@@ -81,6 +82,9 @@ struct Character3DView: UIViewRepresentable {
         private var current = ""
         private var controller: AnimationPlaybackController?
         private var yaw: Float = 0.35, baseYaw: Float = 0.35, pitch: Float = 0.12
+        private var reacting = false
+        private var lastSpeed = 0.0, lastOverride: String?
+        private var observer: NSObjectProtocol?
 
         func attach(_ v: ARView, yaw initial: Float) {
             view = v; yaw = initial; baseYaw = initial
@@ -93,8 +97,27 @@ struct Character3DView: UIViewRepresentable {
             fill.look(at: [0, 0.6, 0], from: [-2, 1.5, -1.5], relativeTo: nil); anchor.addChild(fill)
             v.scene.addAnchor(anchor)
             placeCamera()
+            observer = NotificationCenter.default.addObserver(forName: CharacterReact.note, object: nil, queue: .main) { [weak self] n in
+                guard let clip = n.object as? String else { return }
+                MainActor.assumeIsolated { self?.react(clip) }
+            }
         }
-        func detach() { controller?.stop(); controller = nil; current = ""; view?.scene.anchors.removeAll() }
+        func detach() {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            controller?.stop(); controller = nil; current = ""; view?.scene.anchors.removeAll()
+        }
+        /// v1.36: one-shot gesture (wave, nod, shake, clap…) then back to the speed/state loop.
+        func react(_ name: String) {
+            guard let model = body, let clip = CharacterRig.shared.clips[name], !reacting else { return }
+            reacting = true
+            controller = model.playAnimation(clip, transitionDuration: 0.3, startsPaused: false)
+            let length = max(0.8, min(6, clip.definition.duration))
+            DispatchQueue.main.asyncAfter(deadline: .now() + length - 0.25) { [weak self] in
+                guard let self else { return }
+                self.reacting = false; self.current = ""
+                self.update(speed: self.lastSpeed, override: self.lastOverride)
+            }
+        }
 
         private func placeCamera() {
             let target = SIMD3<Float>(0, 0.5, 0), dist: Float = 2.4
@@ -111,7 +134,8 @@ struct Character3DView: UIViewRepresentable {
 
         func update(speed: Double, override: String?) {
             let rig = CharacterRig.shared
-            guard let model = body, speed.isFinite else { return }
+            lastSpeed = speed; lastOverride = override
+            guard let model = body, speed.isFinite, !reacting else { return }
             let name = override ?? (speed < 3 ? "idle" : speed < 20 ? "walk" : "run")
             let rate: Float = name == "run" ? Float(min(1.5, max(0.8, speed / 60))) : name == "walk" ? Float(min(1.3, max(0.7, speed / 10))) : 1
             if name != current, let clip = rig.clips[name] ?? rig.clips["idle"] {
@@ -120,5 +144,13 @@ struct Character3DView: UIViewRepresentable {
             }
             controller?.speed = rate
         }
+    }
+}
+
+/// v1.36: app events → character gestures. Any visible character (floating, chat, dashboard) reacts.
+enum CharacterReact {
+    static let note = Notification.Name("YLCharacterReact")
+    static func send(_ clip: String) {
+        DispatchQueue.main.async { NotificationCenter.default.post(name: note, object: clip) }
     }
 }
