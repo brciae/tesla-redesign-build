@@ -1,6 +1,7 @@
 import SwiftUI
 import RealityKit
 import UIKit
+import Combine
 
 /// v1.28: rigged 3D character (Tripo mesh + Mixamo motion capture, retargeted, root motion removed).
 /// Clips cross-fade by vehicle speed, so motion is continuous; drag to orbit and view from any side.
@@ -86,6 +87,8 @@ struct Character3DView: UIViewRepresentable {
     var clipOverride: String? = nil
     var interactive = true
     var yaw: Float = 0.35
+    /// v1.40: idle life — gentle sway/breathing plus a random gesture every few seconds.
+    var ambient = false
     @AppStorage("character.id") private var characterID = "yl" // re-renders every character view on change
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -101,6 +104,7 @@ struct Character3DView: UIViewRepresentable {
     }
     func updateUIView(_ v: ARView, context: Context) {
         v.isUserInteractionEnabled = interactive
+        context.coordinator.setAmbient(ambient)
         context.coordinator.update(speed: speedKmh, override: clipOverride)
     }
     static func dismantleUIView(_ v: ARView, coordinator: Coordinator) { coordinator.detach() }
@@ -118,6 +122,32 @@ struct Character3DView: UIViewRepresentable {
         private var reacting = false
         private var lastSpeed = 0.0, lastOverride: String?
         private var observer: NSObjectProtocol?
+        private var ambient = false
+        private var base = Transform.identity
+        private var tick: Cancellable?
+        private var clock: Double = 0, nextFidget: Double = 4
+
+        func setAmbient(_ on: Bool) {
+            guard on != ambient else { return }
+            ambient = on
+            if on, let v = view {
+                tick = v.scene.subscribe(to: SceneEvents.Update.self) { [weak self] e in
+                    MainActor.assumeIsolated { self?.step(e.deltaTime) }
+                }
+            } else { tick?.cancel(); tick = nil; body?.transform = base }
+        }
+        /// Breathing bob + slow body sway so the character never looks frozen, and a fidget every 6–12 s.
+        private func step(_ dt: Double) {
+            clock += dt
+            guard let b = body else { return }
+            let t = Float(clock)
+            b.position = base.translation + [0, 0.012 * sin(t * 2.1), 0]
+            b.orientation = simd_quatf(angle: 0.18 * sin(t * 0.35), axis: [0, 1, 0]) * simd_quatf(angle: 0.025 * sin(t * 0.9), axis: [0, 0, 1]) * base.rotation
+            if clock >= nextFidget {
+                nextFidget = clock + Double.random(in: 6...12)
+                if !reacting { react(["lookaround", "think", "happy", "nod", "wave", "point", "lookaround"].randomElement()!) }
+            }
+        }
 
         func attach(_ v: ARView, yaw initial: Float) {
             view = v; yaw = initial; baseYaw = initial
@@ -139,11 +169,12 @@ struct Character3DView: UIViewRepresentable {
         func loadBody() {
             body?.removeFromParent(); body = nil
             let rig = CharacterRig.shared; loadedID = rig.id
-            if let m = rig.model { let c = m.clone(recursive: true); body = c; anchor.addChild(c) }
+            if let m = rig.model { let c = m.clone(recursive: true); body = c; base = c.transform; anchor.addChild(c) }
             current = ""; reacting = false
         }
         func detach() {
             if let observer { NotificationCenter.default.removeObserver(observer) }
+            tick?.cancel(); tick = nil
             controller?.stop(); controller = nil; current = ""; view?.scene.anchors.removeAll()
         }
         /// v1.36: one-shot gesture (wave, nod, shake, clap…) then back to the speed/state loop.

@@ -10,6 +10,11 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.40 (140)", date: "2026-10-03", items: [
+            "떠있는 캐릭터 크기 조절: 캐릭터를 두 손가락으로 벌리거나 오므리기, 또는 설정 → 캐릭터 → 떠있는 캐릭터 크기(60~220%)",
+            "떠있는 캐릭터가 가만히 있을 때도 숨쉬듯 살짝 움직이고 몸을 천천히 좌우로 돌림",
+            "6~12초마다 둘러보기·생각·기뻐하기·끄덕임·손 흔들기·가리키기 중 하나를 무작위로 함",
+        ]),
         ReleaseNote(version: "1.39 (139)", date: "2026-10-03", items: [
             "1.38에서 새 캐릭터 5종 파일이 앱에 포함되지 않던 문제 수정 — 이제 메뉴 → 캐릭터에서 7종 모두 선택 가능",
         ]),

@@ -21,6 +21,7 @@ struct PreferencesView: View {
     @AppStorage("navSafetyVoice") private var navSafety = true
     @AppStorage("overspeed.volume") private var overspeedVolume = 0.8
     @AppStorage("overspeed.beep") private var overspeedBeep = true
+    @AppStorage("characterFloat.scale") private var characterScale = 1.0
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
     @ObservedObject private var typecast = TypecastClient.shared
@@ -64,6 +65,15 @@ struct PreferencesView: View {
                     Text("간단").tag(0); Text("보통").tag(1); Text("자세히").tag(2)
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
                 InfoRow("안내 빈도", "간단: 교차로에 가까워졌을 때의 회전 안내와 실제 위험 구간만 안내함. 보통: 중간 거리 회전 안내와 경로 변경 안내를 추가함. 자세히: 카카오 내비가 제공하는 안내를 모두 읽음(버스전용차로·하이패스·직진 안내 포함).")
+            }
+            // v1.40: floating character size (also pinch on the character itself).
+            Section("캐릭터") {
+                HStack {
+                    Text("떠있는 캐릭터 크기")
+                    Slider(value: $characterScale, in: 0.6...2.2, step: 0.1)
+                    Text("\(Int((characterScale * 100).rounded()))%").monospacedDigit().frame(minWidth: 52, alignment: .trailing)
+                }
+                Button("기본 크기로") { characterScale = 1.0 }
             }
             Section("고급") {
                 NavigationLink("음성 세부 설정") {

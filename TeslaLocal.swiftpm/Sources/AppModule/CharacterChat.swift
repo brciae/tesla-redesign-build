@@ -81,6 +81,8 @@ struct CharacterChatButton: View {
     @AppStorage("characterChat.enabled") private var enabled = true
     @AppStorage("characterFloat.x") private var savedX = 0.0
     @AppStorage("characterFloat.y") private var savedY = 0.0
+    @AppStorage("characterFloat.scale") private var scale = 1.0
+    @GestureState private var pinch: CGFloat = 1
     @GestureState private var drag: CGSize = .zero
     @State private var bubble: String?
     @State private var bubbleToken = UUID()
@@ -88,8 +90,8 @@ struct CharacterChatButton: View {
         if enabled {
             Group {
                 if CharacterRig.shared.available {
-                    Character3DView(speedKmh: 0, clipOverride: "idle", interactive: false, yaw: 0.25)
-                        .frame(width: 84, height: 132)
+                    Character3DView(speedKmh: 0, clipOverride: "idle", interactive: false, yaw: 0.25, ambient: true)
+                        .frame(width: 84 * liveScale, height: 132 * liveScale)
                         .background(Circle().fill(Color.white.opacity(0.0001)))
                 } else {
                     ZStack {
@@ -104,6 +106,10 @@ struct CharacterChatButton: View {
             .gesture(DragGesture(minimumDistance: 8)
                 .updating($drag) { v, s, _ in s = v.translation }
                 .onEnded { v in savedX += v.translation.width; savedY += v.translation.height })
+            // v1.40: pinch to resize (also adjustable in 설정 → 캐릭터 크기).
+            .simultaneousGesture(MagnificationGesture()
+                .updating($pinch) { v, s, _ in s = v }
+                .onEnded { v in scale = Self.clamp(scale * Double(v)) })
             .onTapGesture { CharacterReact.send("wave"); chat.presented = true }
             // v1.37: speech bubble above the character for whatever the app says out loud.
             .overlay(alignment: .topTrailing) {
@@ -136,6 +142,8 @@ struct CharacterChatButton: View {
             .accessibilityAddTraits(.isButton)
         }
     }
+    private var liveScale: CGFloat { CGFloat(Self.clamp(scale * Double(pinch))) }
+    static func clamp(_ s: Double) -> Double { min(2.2, max(0.6, s.isFinite ? s : 1)) }
 }
 
 struct CharacterChatView: View {
