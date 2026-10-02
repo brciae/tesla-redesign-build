@@ -6,9 +6,32 @@ import simd
 struct VehicleCameraCommand { var serial = 0; var action = "reset"; var yaw: Float = .pi/4; var pitch: Float = atan(0.34); var zoom: Float? = nil }
 
 private struct VehicleSceneAsset: Decodable {
-    struct Part: Decodable { let id: String; let pivot: [Float]; let axis: [Float]; let openAngle: Float }
+    struct Part: Decodable {
+        let id: String; let pivot: [Float]; let axis: [Float]; let openAngle: Float
+        // v1.28: the model faces +Z, so the left-hand driver side is +X. The source asset labelled the
+        // sides the other way round, which opened the passenger door for a driver-door state.
+        enum CodingKeys: String, CodingKey { case id, pivot, axis, openAngle }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            id = VehicleSceneAsset.sideFix(try c.decode(String.self, forKey: .id))
+            pivot = try c.decode([Float].self, forKey: .pivot); axis = try c.decode([Float].self, forKey: .axis)
+            openAngle = try c.decode(Float.self, forKey: .openAngle)
+        }
+    }
+    static func sideFix(_ s: String) -> String {
+        s.hasPrefix("driver") ? "passenger" + s.dropFirst(6) : s.hasPrefix("passenger") ? "driver" + s.dropFirst(9) : s
+    }
     struct Surface: Decodable { let color: [Float]; let roughness: Float; let metallic: Float; let unlit: Bool? }
-    struct Mesh: Decodable { let name: String; let parent: String; let material: String; let positions: [Float]; let normals: [Float]; let triangles: [UInt32] }
+    struct Mesh: Decodable {
+        let name: String; let parent: String; let material: String; let positions: [Float]; let normals: [Float]; let triangles: [UInt32]
+        enum CodingKeys: String, CodingKey { case name, parent, material, positions, normals, triangles }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            name = try c.decode(String.self, forKey: .name); parent = VehicleSceneAsset.sideFix(try c.decode(String.self, forKey: .parent))
+            material = try c.decode(String.self, forKey: .material); positions = try c.decode([Float].self, forKey: .positions)
+            normals = try c.decode([Float].self, forKey: .normals); triangles = try c.decode([UInt32].self, forKey: .triangles)
+        }
+    }
     let schema: Int
     let parts: [Part]
     let materials: [String: Surface]
