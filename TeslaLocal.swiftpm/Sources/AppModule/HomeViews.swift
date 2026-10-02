@@ -127,7 +127,9 @@ struct HomeView: View {
                 Spacer()
                 VehicleMotionBadge(drive: p.object("drive"), compact: true)
             }
-            Vehicle3DPanel(link: link, compact: true)
+            // v1.41: while plugged in / charging the home car shows the charge cable too.
+            let charge = p.object("charge")
+            Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: charge.chargingNow, isPlugged: charge.chargingNow || charge.flag("plugged"))
                 .frame(maxWidth: .infinity)
             Divider()
             HStack {

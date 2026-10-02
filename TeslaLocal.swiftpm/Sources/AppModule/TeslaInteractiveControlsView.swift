@@ -111,6 +111,12 @@ struct TeslaInteractiveControlsView: View {
         guard let s = model.fleet.vehicleSnapshot, s.vin == model.fleet.selectedVin else { return nil }
         return s
     }
+    /// v1.41: plugged/charging → the 3D car shows the cable (doors still animate).
+    private var chargeNow: (charging: Bool, plugged: Bool) {
+        let c = homePresentation(model, link).object("charge")
+        let charging = c.chargingNow
+        return (charging, charging || c.flag("plugged") || portText.0 == "연결")
+    }
     private var lockState: Bool? {
         if model.output.object("fresh").flag("closures"), let v = model.groups.object("closures")["locked"] as? Bool { return v }
         return snapshot?.locked
@@ -120,8 +126,15 @@ struct TeslaInteractiveControlsView: View {
         let values = keys.compactMap { s.number("vehicle_state", $0) }
         return values.isEmpty ? nil : values.filter { $0 > 0 }.count
     }
-    private func closureText(_ keys: [String], all: Bool) -> (String, Color) {
-        guard let n = openCount(keys) else { return ("미수신", Color.secondary) }
+    /// v1.41: live BLE closure state (what the 3D model shows) wins over a Fleet snapshot without body data.
+    private func bleOpenCount(_ parts: [String]) -> Int? {
+        guard !parts.isEmpty, model.output.object("fresh").flag("closures") else { return nil }
+        let g = model.groups.object("closures")
+        let v = parts.compactMap { g[$0] as? Bool }
+        return v.count == parts.count ? v.filter { $0 }.count : nil
+    }
+    private func closureText(_ keys: [String], ble: [String] = [], all: Bool) -> (String, Color) {
+        guard let n = bleOpenCount(ble) ?? openCount(keys) else { return ("미수신", Color.secondary) }
         if n == 0 { return (all ? "모두 닫힘" : "닫힘", Color.primary) }
         return (keys.count > 1 ? "\(n)개 열림" : "열림", Color.orange)
     }
@@ -135,15 +148,15 @@ struct TeslaInteractiveControlsView: View {
 
     private var closureStatusCard: some View {
         let rows: [(String, (String, Color))] = [
-            ("문", closureText(["df", "pf", "dr", "pr"], all: true)),
+            ("문", closureText(["df", "pf", "dr", "pr"], ble: ["driverFront", "passengerFront", "driverRear", "passengerRear"], all: true)),
             ("창문", closureText(["fd_window", "fp_window", "rd_window", "rp_window"], all: true)),
-            ("프렁크", closureText(["ft"], all: false)),
-            ("트렁크", closureText(["rt"], all: false)),
+            ("프렁크", closureText(["ft"], ble: ["frunk"], all: false)),
+            ("트렁크", closureText(["rt"], ble: ["trunk"], all: false)),
             ("충전구", portText)
         ]
         return VStack(spacing: 12) {
             // v1.26: live 3D model (same as home) on a white card; actions swing the camera to the part.
-            Vehicle3DPanel(link: link, compact: true, focus: focus)
+            Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: chargeNow.charging, isPlugged: chargeNow.plugged, focus: focus)
                 .frame(maxWidth: .infinity)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             VStack(spacing: 8) {
