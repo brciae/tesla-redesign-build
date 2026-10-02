@@ -254,7 +254,7 @@ struct TripInsightsView: View {
     private func stat(_ title: String, _ value: String, _ change: String?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.headline.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.headline.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.5)
             if let change { Text(change).font(.caption2.bold()).foregroundStyle(change.hasPrefix("▲") ? .green : .orange) }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

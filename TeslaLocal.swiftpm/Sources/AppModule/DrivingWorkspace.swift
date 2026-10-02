@@ -131,7 +131,7 @@ struct DrivingWorkspace: View {
             }
             .accessibilityLabel("운전 화면 설정")
         }
-        .lineLimit(1)
+        .lineLimit(1).minimumScaleFactor(0.5)
         .padding(.horizontal, compact ? 10 : 8)
         .padding(.vertical, compact ? 4 : 0)
         .frame(maxWidth: .infinity)

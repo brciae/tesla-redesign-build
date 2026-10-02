@@ -203,7 +203,7 @@ struct HomeView: View {
                 Image(systemName: icon).font(.system(size: 22, weight: .semibold)).foregroundStyle(tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.headline).foregroundStyle(Color.primary)
-                    Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,7 +298,7 @@ struct HomeView: View {
                 .shadow(color: tint.opacity(0.7), radius: 4)
             Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
                 .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
+                .lineLimit(1).minimumScaleFactor(0.5)
                 .foregroundStyle(Color.primary.opacity(0.85))
             if link.refreshing || model.fleet.isReadingVehicle {
                 ProgressView().controlSize(.mini)
@@ -325,7 +325,7 @@ struct HomeView: View {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.primary.opacity(0.85))
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.5)
             }
             .frame(maxWidth: .infinity)
         }
@@ -448,7 +448,7 @@ func glassMenuItem(_ page: Page, _ icon: String, title: String, subtitle: String
                         Text(subtitle)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.primary.opacity(0.55))
-                            .lineLimit(1)
+                            .lineLimit(1).minimumScaleFactor(0.5)
                     }
                 }
 
@@ -715,7 +715,7 @@ struct VehicleLocationCard: View {
                 Text(saved.displaySubtitle)
                     .font(.system(size: 13))
                     .foregroundStyle(Color.primary.opacity(0.55))
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.5)
             }
         }
         .task(id: "\(fix.latitude),\(fix.longitude)") { await resolveAddress(fix) }

@@ -215,11 +215,33 @@ struct InfoRow: View {
     }
 }
 
+struct VoiceCacheRow: View {
+    let entry: TypecastClient.VoiceCacheEntry
+    var delete: () -> Void
+    @State private var confirming = false
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                Text("\(entry.count)개 · \(String(format: "%.1f", entry.megabytes))MB").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("삭제", role: .destructive) { confirming = true }
+                .font(.caption.weight(.semibold)).buttonStyle(.bordered).controlSize(.small)
+                .confirmationDialog("\(entry.name) 음성 캐시를 삭제할까요?", isPresented: $confirming, titleVisibility: .visible) {
+                    Button("\(entry.name) 캐시 삭제", role: .destructive, action: delete)
+                    Button("취소", role: .cancel) {}
+                } message: { Text("다른 음성의 캐시는 그대로 남습니다. 이 음성은 다음 재생 때 다시 합성됩니다.") }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 struct VoiceCacheDeleteButton: View {
     var delete: () -> Void
     @State private var confirming = false
     var body: some View {
-        Button("캐시 비우기") { confirming = true }
+        Button("전체 캐시 비우기") { confirming = true }
             .font(.caption)
             .foregroundStyle(.red)
             .buttonStyle(.borderless)

@@ -15,7 +15,7 @@ struct LocalBriefingControls: View {
                 .accessibilityLabel("\(title) 요약 듣기").accessibilityIdentifier("briefing.play.\(title)")
             Button { model.stopSpeech() } label: { Image(systemName: "stop.fill").frame(width: 44, height: 44) }
                 .accessibilityLabel("브리핑 중지")
-        }.buttonStyle(.borderless).font(.subheadline.weight(.semibold)).lineLimit(1)
+        }.buttonStyle(.borderless).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.5)
         }
     }
 }

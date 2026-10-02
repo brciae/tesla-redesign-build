@@ -130,6 +130,33 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return dir
     }
 
+    /// v1.34: each voice keeps its own sub-folder so one character's bad takes can be deleted alone.
+    /// Files from before v1.34 sit in the root ("미분류") and move into their voice folder on first use.
+    private func voiceDirectory(_ voiceId: String) -> URL {
+        let safe = voiceId.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
+        let dir = cacheDirectory.appendingPathComponent("v_" + String(safe), isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) { try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+        return dir
+    }
+    struct VoiceCacheEntry: Identifiable, Hashable { let id: String; let name: String; let count: Int; let megabytes: Double }
+    @Published var cacheByVoice: [VoiceCacheEntry] = []
+    static let unsortedCacheID = "__unsorted"
+    func voiceName(_ id: String) -> String {
+        if id == Self.unsortedCacheID { return "미분류 (v1.34 이전 저장분)" }
+        if let name = voiceCatalog.first(where: { $0.value == id && !$0.key.hasPrefix("tc_") })?.key { return name }
+        return id
+    }
+    func clearCache(voice id: String) {
+        if id == Self.unsortedCacheID {
+            let files = (try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)) ?? []
+            for f in files where f.pathExtension == "wav" { try? FileManager.default.removeItem(at: f) }
+        } else {
+            try? FileManager.default.removeItem(at: cacheDirectory.appendingPathComponent(voiceDirectory(id).lastPathComponent, isDirectory: true))
+        }
+        updateCacheCount()
+        lastStatus = "\(voiceName(id)) 음성 캐시를 삭제했습니다."
+    }
+
     /// One-time purge of short clips synthesised with "smart" emotion (some came back whispered).
     /// Short cues are tiny WAVs; long reports are kept so they need no re-synthesis.
     private func purgeWhisperedShortClipsOnce() {
@@ -352,17 +379,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func cachedURL(for text: String, voiceId: String) -> URL? {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = cacheKey(for: clean, voiceId: voiceId)
-        let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
-        if isFileValid(fileURL) { return fileURL }
-
-        // Also check mapped alias / resolved voice ID
         let lower = voiceId.lowercased()
         let noSpaces = lower.replacingOccurrences(of: " ", with: "")
-        if let mapped = voiceCatalog[lower] ?? voiceCatalog[noSpaces], mapped != voiceId {
-            let mappedKey = cacheKey(for: clean, voiceId: mapped)
-            let mappedURL = cacheDirectory.appendingPathComponent("\(mappedKey).wav")
-            if isFileValid(mappedURL) { return mappedURL }
+        var ids = [voiceId]
+        if let mapped = voiceCatalog[lower] ?? voiceCatalog[noSpaces], mapped != voiceId { ids.append(mapped) }
+        for id in ids {
+            let key = cacheKey(for: clean, voiceId: id)
+            let inVoice = voiceDirectory(id).appendingPathComponent("\(key).wav")
+            if isFileValid(inVoice) { return inVoice }
+            // Pre-v1.34 file in the shared root: file it under this voice now.
+            let legacy = cacheDirectory.appendingPathComponent("\(key).wav")
+            if isFileValid(legacy) {
+                if (try? FileManager.default.moveItem(at: legacy, to: inVoice)) != nil { updateCacheCount(); return inVoice }
+                return legacy
+            }
         }
         return nil
     }
@@ -380,12 +410,12 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         guard data.count > 100 else { return nil }
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = cacheKey(for: clean, voiceId: voiceId)
-        let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
+        let fileURL = voiceDirectory(voiceId).appendingPathComponent("\(key).wav")
         do {
             try data.write(to: fileURL, options: .atomic)
             if let alias, !alias.isEmpty, alias != voiceId {
                 let aliasKey = cacheKey(for: clean, voiceId: alias)
-                let aliasURL = cacheDirectory.appendingPathComponent("\(aliasKey).wav")
+                let aliasURL = voiceDirectory(voiceId).appendingPathComponent("\(aliasKey).wav")
                 try? data.write(to: aliasURL, options: .atomic)
             }
             updateCacheCount()
@@ -402,21 +432,31 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func updateCacheCount() {
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path) {
-            cacheFileCount = files.count
-            var totalBytes: UInt64 = 0
-            for file in files {
-                let filePath = cacheDirectory.appendingPathComponent(file).path
-                if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
-                   let size = attrs[.size] as? UInt64 {
-                    totalBytes += size
-                }
+        let fm = FileManager.default
+        func scan(_ dir: URL) -> (Int, UInt64) {
+            let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+            var n = 0, bytes: UInt64 = 0
+            for f in files where f.pathExtension == "wav" {
+                n += 1; bytes += UInt64((try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
             }
-            cacheTotalSizeMB = Double(totalBytes) / (1024.0 * 1024.0)
-        } else {
-            cacheFileCount = 0
-            cacheTotalSizeMB = 0.0
+            return (n, bytes)
         }
+        var entries: [VoiceCacheEntry] = []
+        var total = 0, totalBytes: UInt64 = 0
+        let root = scan(cacheDirectory)
+        if root.0 > 0 { entries.append(VoiceCacheEntry(id: Self.unsortedCacheID, name: voiceName(Self.unsortedCacheID), count: root.0, megabytes: Double(root.1) / 1_048_576)) }
+        total += root.0; totalBytes += root.1
+        let dirs = (try? fm.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        for d in dirs where d.lastPathComponent.hasPrefix("v_") {
+            let r = scan(d)
+            guard r.0 > 0 else { continue }
+            let id = String(d.lastPathComponent.dropFirst(2))
+            entries.append(VoiceCacheEntry(id: id, name: voiceName(id), count: r.0, megabytes: Double(r.1) / 1_048_576))
+            total += r.0; totalBytes += r.1
+        }
+        cacheFileCount = total
+        cacheTotalSizeMB = Double(totalBytes) / 1_048_576
+        cacheByVoice = entries.sorted { $0.name < $1.name }
     }
 
     // MARK: - API Speech Synthesis

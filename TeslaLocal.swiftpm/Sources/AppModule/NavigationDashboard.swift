@@ -264,11 +264,11 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(data.destination.isEmpty ? "경로 미수신" : data.destination).font(.caption).lineLimit(1)
-                        Text("\(data.arrival) 도착 · \(data.remaining) · \(data.remainingDistance)").font(.subheadline.bold()).lineLimit(1).minimumScaleFactor(0.75)
+                        Text(data.destination.isEmpty ? "경로 미수신" : data.destination).font(.caption).lineLimit(1).minimumScaleFactor(0.5)
+                        Text("\(data.arrival) 도착 · \(data.remaining) · \(data.remainingDistance)").font(.subheadline.bold()).lineLimit(1).minimumScaleFactor(0.5)
                     }
                     Spacer(minLength: 0)
-                    Text(data.battery + " · " + data.range).font(.caption).lineLimit(1)
+                    Text(data.battery + " · " + data.range).font(.caption).lineLimit(1).minimumScaleFactor(0.5)
                 }.padding(.horizontal, 12).frame(height: 54).background(theme.canvas)
                 if data.showsMedia {
                     NavigationMediaHeader(data: data, action: onMedia)
@@ -300,7 +300,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     if let limit = data.speedLimit { LimitSign(limit: limit, distance: data.speedLimitDistance, size: 40) }
                 }
             }
-            if !data.next.isEmpty { Text("이후 " + data.next).font(.caption).lineLimit(1) }
+            if !data.next.isEmpty { Text("이후 " + data.next).font(.caption).lineLimit(1).minimumScaleFactor(0.5) }
             if data.laneCount > 0 { LaneStrip(data: data, u: min(1, m.u)).frame(maxHeight: 40) }
             if wide { Text(data.road).font(.caption).foregroundStyle(NavInk.muted).lineLimit(2); Spacer(minLength: 0) }
         }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -617,12 +617,12 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             VStack(alignment: .leading, spacing: 4 * m.u) {
                 HStack(spacing: 10 * m.u) {
                     ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 36 * m.u)
-                    Text(data.turnDistance).font(.system(size: 34 * m.u, weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                    Text(data.turnDistance).font(.system(size: 34 * m.u, weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                 }
                 Text(data.turn).font(.system(size: 16 * m.u, weight: .semibold))
-                    .lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
                 if !data.next.isEmpty {
-                    Text("다음 · " + data.next).font(.system(size: 13 * m.u)).foregroundStyle(.white.opacity(0.8)).lineLimit(1).minimumScaleFactor(0.7)
+                    Text("다음 · " + data.next).font(.system(size: 13 * m.u)).foregroundStyle(.white.opacity(0.8)).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
             .padding(12 * m.u)
@@ -636,7 +636,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                         Spacer(minLength: 0)
                         Text(data.clock).font(.system(size: 16 * m.u, weight: .semibold)).monospacedDigit()
                     }
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(1).minimumScaleFactor(0.5)
                     DestinationCard(data: data, u: m.u, compact: true)
                     Spacer(minLength: 0)
                     if data.showsMedia { media(.card, m) }
@@ -897,10 +897,10 @@ private struct ManeuverStack: View {
                 VStack(alignment: .leading, spacing: 2 * u) {
                     Text(data.turnDistance)
                         .font(.system(size: 34 * u, weight: .bold)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .lineLimit(1).minimumScaleFactor(0.5)
                     Text(data.turn)
                         .font(.system(size: 15 * u, weight: .semibold))
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2).minimumScaleFactor(0.6).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -910,7 +910,7 @@ private struct ManeuverStack: View {
                 HStack(spacing: 10 * u) {
                     Text(data.next)
                         .font(.system(size: 14 * u, weight: .semibold))
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .lineLimit(1).minimumScaleFactor(0.5)
                     Spacer(minLength: 4 * u)
                     ManeuverGlyph(symbol: data.nextSymbol, exitClock: data.nextExitClock, size: 22 * u)
                         .padding(3 * u)
@@ -945,7 +945,7 @@ private struct TurnBanner: View {
                 if !data.turnDistance.isEmpty && data.turnDistance != "—" {
                     Text(data.turnDistance)
                         .font(.system(size: 26 * u, weight: .semibold)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .lineLimit(1).minimumScaleFactor(0.5)
                         .contentTransition(.numericText(countsDown: true))
                         .animation(.smooth(duration: 0.25), value: data.turnDistance)
                 }
@@ -956,7 +956,7 @@ private struct TurnBanner: View {
             if !data.next.isEmpty {
                 Text("다음 " + data.next)
                     .font(.system(size: 13 * u, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.7)
+                    .foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 12 * u)
@@ -975,7 +975,7 @@ private struct TurnColumn: View {
                 ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 28 * u)
                 Text(data.turnDistance)
                     .font(.system(size: 34 * u, weight: .semibold)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .lineLimit(1).minimumScaleFactor(0.5)
             }
             Text(data.turn)
                 .font(.system(size: 18 * u, weight: .medium))
@@ -998,9 +998,9 @@ private struct ArrivalColumn: View {
         VStack(alignment: .trailing, spacing: 4 * u) {
             Text(data.arrival).font(.system(size: 26 * u, weight: .semibold)).monospacedDigit()
             Text("\(data.remaining) · \(data.remainingDistance)")
-                .font(.system(size: 16 * u)).foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.7)
+                .font(.system(size: 16 * u)).foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.5)
             if !data.destination.isEmpty {
-                Text(data.destination).font(.system(size: 16 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.7)
+                Text(data.destination).font(.system(size: 16 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
         .accessibilityElement(children: .combine)
@@ -1119,7 +1119,7 @@ private struct DestinationCard: View {
                 if let soc = data.arrivalSOC, soc.isFinite {
                     Label("\(finiteInt(soc.rounded()))%", systemImage: "bolt.fill")
                         .font(.system(size: 14 * u, weight: .semibold)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.7).layoutPriority(1)
+                        .lineLimit(1).minimumScaleFactor(0.5).layoutPriority(1)
                         .foregroundStyle(soc < 15 ? NavInk.amber : NavInk.green)
                         .accessibilityLabel("도착 시 배터리 \(finiteInt(soc.rounded()))%")
                 }
@@ -1243,7 +1243,7 @@ private struct Tile: View {
                 .background(NavInk.blue, in: Circle())
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted)
-                Text(value).font(.system(size: 14 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                Text(value).font(.system(size: 14 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
             }
             Spacer(minLength: 0)
         }
@@ -1383,9 +1383,9 @@ private struct FocusTurnPill: View {
     var body: some View {
         HStack(spacing: 10 * u) {
             ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 26 * u)
-            Text(data.turnDistance).font(.system(size: 22 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+            Text(data.turnDistance).font(.system(size: 22 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
             Rectangle().fill(.white.opacity(0.2)).frame(width: 1, height: 18 * u)
-            Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
+            Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 8 * u).frame(minHeight: 50 * u)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 25 * u, style: .continuous))
@@ -1423,7 +1423,7 @@ private struct FocusSpeedColumn: View {
                     Spacer(minLength: 0)
                     Text(data.range).font(.system(size: 15 * u, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
                 }
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.12))
@@ -1456,7 +1456,7 @@ private struct FocusArrival: View {
             if !data.next.isEmpty {
                 HStack(spacing: 6 * u) {
                     ManeuverGlyph(symbol: data.nextSymbol, exitClock: data.nextExitClock, size: 16 * u)
-                    Text("다음 · " + data.next).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.65)
+                    Text("다음 · " + data.next).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
         }
@@ -1487,7 +1487,7 @@ private struct FleetPanel: View {
         VStack(alignment: .leading, spacing: (full ? 12 : 8) * u) {
             HStack(spacing: 8 * u) {
                 VStack(alignment: .leading, spacing: 1 * u) {
-                    Text(data.vehicleName).font(.system(size: 16 * u, weight: .bold)).lineLimit(1).minimumScaleFactor(0.65)
+                    Text(data.vehicleName).font(.system(size: 16 * u, weight: .bold)).lineLimit(1).minimumScaleFactor(0.5)
                     HStack(spacing: 5 * u) {
                         Circle().fill(data.connected ? NavInk.green : .orange).frame(width: 7 * u, height: 7 * u)
                         Text(data.connected ? "주행 중" : "차량 신호 없음").font(.system(size: 14 * u, weight: .semibold))
@@ -1552,14 +1552,14 @@ private struct FleetPanel: View {
                 Spacer(minLength: 0)
                 Label(data.odometer, systemImage: "road.lanes")
             }
-            .font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.65)
+            .font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
     }
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2 * u) {
             Text(label).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted)
-            Text(value).font(.system(size: 15 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.system(size: 15 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10 * u)
@@ -1598,7 +1598,7 @@ private struct Chip: View {
         .padding(.horizontal, 11 * u).frame(height: 30 * u)
         .background(.regularMaterial, in: Capsule())
         .environment(\.colorScheme, .dark)
-        .lineLimit(1).minimumScaleFactor(0.65)
+        .lineLimit(1).minimumScaleFactor(0.5)
     }
 }
 
@@ -1683,7 +1683,7 @@ private struct MediaCard: View {
                 .accessibilityIdentifier("navigation.media.title")
             Text(subtitle).font(.system(size: 13 * u))
                 .foregroundStyle(data.mediaStatus.isEmpty ? NavInk.muted : NavInk.amber)
-                .lineLimit(1).minimumScaleFactor(0.7)
+                .lineLimit(1).minimumScaleFactor(0.5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1749,11 +1749,11 @@ struct ParkedNavigationActions: View {
     var body: some View {
         HStack(spacing: 12) {
             Label("주차 중", systemImage: "parkingsign.circle.fill")
-                .font(.system(size: 14, weight: .medium)).lineLimit(1)
+                .font(.system(size: 14, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
             Spacer(minLength: 8)
             Button(action: stop) {
                 Label("안내 종료", systemImage: "xmark.circle.fill")
-                    .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    .font(.system(size: 15, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
                     .padding(.horizontal, 12).frame(minHeight: 44)
             }
             .buttonStyle(.plain).foregroundStyle(.white)
@@ -1772,7 +1772,7 @@ private struct NavigationMediaHeader: View {
         HStack(spacing: 8) {
             Image(systemName: "music.note").foregroundStyle(.blue)
             Text(data.mediaTitle.isEmpty ? data.mediaSource : data.mediaTitle)
-                .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
+                .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("navigation.media.title")
             Button { action("mediaToggle") } label: {
@@ -1799,10 +1799,10 @@ private struct MediaIsland: View {
             IslandBars(active: data.mediaPlaying, u: u)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 15 * u, weight: .semibold))
-                    .lineLimit(1).minimumScaleFactor(0.7).truncationMode(.tail)
+                    .lineLimit(1).minimumScaleFactor(0.5)
                     .accessibilityIdentifier("navigation.media.title")
                 if expanded, !subtitle.isEmpty {
-                    Text(subtitle).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted).lineLimit(1)
+                    Text(subtitle).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
             .frame(maxWidth: (expanded ? 240 : 160) * u, alignment: .leading)
@@ -1977,7 +1977,7 @@ private struct RunningTurnCard: View {
                 .frame(width: 44 * u)
             VStack(alignment: .leading, spacing: 2 * u) {
                 Text(data.turnDistance).font(.system(size: 24 * u, weight: .bold)).monospacedDigit()
-                Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
             }
             Spacer(minLength: 0)
             if let limit = data.speedLimit {
@@ -2011,7 +2011,7 @@ private struct RunningInfoPanel: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(Color.black)
-        .lineLimit(1).minimumScaleFactor(0.7)
+        .lineLimit(1).minimumScaleFactor(0.5)
         .padding(12 * u)
         .background(.white, in: RoundedRectangle(cornerRadius: 20 * u, style: .continuous))
         .shadow(color: .black.opacity(0.06), radius: 8 * u, y: 2 * u)
@@ -2067,6 +2067,6 @@ private struct OverspeedAlert: View {
         let interval = level >= 3 ? 0.8 : 2.0
         guard now.timeIntervalSince(lastBeep) >= interval else { return }
         lastBeep = now
-        AudioServicesPlaySystemSound(1057)
+        OverspeedChime.shared.play()
     }
 }

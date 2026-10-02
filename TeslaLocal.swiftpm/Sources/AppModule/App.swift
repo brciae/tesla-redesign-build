@@ -248,7 +248,7 @@ struct Caption: View {
             Text(text).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         } else {
             Button { open = true } label: {
-                Label(String(text.prefix(18)) + "…", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                Label(String(text.prefix(18)) + "…", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.5)
             }
             .buttonStyle(.plain)
             .popover(isPresented: $open) {
@@ -269,7 +269,7 @@ struct Metric: View {
         let parts = units.displayParts(value, suffix: suffix, digits: digits)
         VStack(alignment: .leading, spacing: 7) {
             (Text(parts.0).font(.system(size: 32, weight: .medium, design: .rounded)) + Text(parts.1).font(.system(size: 14, weight: .medium)))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.60)
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                 .contentTransition(.numericText()).animation(reduced || !animated ? nil : .easeOut(duration: 0.28), value: value)
             Caption(title)
         }.frame(maxWidth: .infinity, alignment: .leading)

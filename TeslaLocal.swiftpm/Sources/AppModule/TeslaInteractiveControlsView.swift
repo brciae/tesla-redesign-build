@@ -222,7 +222,7 @@ struct TeslaInteractiveControlsView: View {
     private func gridLabel(_ title: String, _ icon: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 20, weight: .medium))
-            Text(title).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.8)
+            Text(title).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.5)
         }
         .foregroundStyle(Color.primary)
         .frame(maxWidth: .infinity, minHeight: 76)

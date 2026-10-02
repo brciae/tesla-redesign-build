@@ -31,7 +31,7 @@ struct ScreenBriefingControls: View {
         }
         .buttonStyle(.borderless)
         .font(.subheadline.weight(.semibold))
-        .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+        .lineLimit(1).minimumScaleFactor(0.5).fixedSize(horizontal: true, vertical: false)
         .onDisappear { pending?.cancel() }
         }
     }

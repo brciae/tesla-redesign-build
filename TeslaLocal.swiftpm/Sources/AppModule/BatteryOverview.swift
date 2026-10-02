@@ -183,12 +183,12 @@ struct BatteryOverview: View {
         HStack(spacing: 8) {
             let start = trip.number("at") ?? 0
             Text(Self.tripRowDateFormatter.string(from: Date(timeIntervalSince1970: start / 1000)))
-                .lineLimit(1)
+                .lineLimit(1).minimumScaleFactor(0.5)
                 .foregroundStyle(Color.primary.opacity(0.85))
             Spacer(minLength: 4)
             Text(number(trip.number("km")) + " km · " + number(trip.number("soc")) + "%p")
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.5)
                 .foregroundStyle(Color.primary.opacity(0.7))
             if trip.flag("partial") { Image(systemName: "exclamationmark.circle").foregroundStyle(.orange).accessibilityLabel("부분 기록") }
         }.font(.caption).monospacedDigit()
@@ -207,7 +207,7 @@ struct BatteryOverview: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             (Text(number(value)).font(.system(size: 25, weight: .medium)) + Text(" " + unit).font(.system(size: 12)))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

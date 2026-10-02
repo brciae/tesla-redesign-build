@@ -267,7 +267,7 @@ struct NavigationLandingPanel: View {
                                     Image(systemName: "clock").foregroundStyle(.secondary)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(place.name).font(.subheadline.weight(.semibold))
-                                        if !place.address.isEmpty { Text(place.address).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                                        if !place.address.isEmpty { Text(place.address).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.5) }
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)

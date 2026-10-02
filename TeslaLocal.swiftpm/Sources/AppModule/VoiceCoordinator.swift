@@ -554,3 +554,38 @@ struct VoiceOutputSettings: View {
             .font(.caption).foregroundStyle(.secondary)
     }
 }
+
+/// v1.34: the overspeed chime is a generated two-tone beep played through AVAudioPlayer so it
+/// follows the user's 경고음 음량 setting (system sounds ignore any volume).
+final class OverspeedChime {
+    static let shared = OverspeedChime()
+    private var player: AVAudioPlayer?
+    private lazy var wav: Data = {
+        let rate = 44_100.0, dur = 0.28
+        let n = Int(rate * dur)
+        var pcm = Data(capacity: n * 2)
+        for i in 0..<n {
+            let t = Double(i) / rate
+            let f = t < dur / 2 ? 1760.0 : 1320.0
+            let env = min(1, t / 0.01) * min(1, (dur - t) / 0.03)
+            var v = Int16(sin(2 * .pi * f * t) * env * 0.9 * Double(Int16.max))
+            pcm.append(Data(bytes: &v, count: 2))
+        }
+        var h = Data()
+        func u32(_ x: UInt32) { var x = x.littleEndian; h.append(Data(bytes: &x, count: 4)) }
+        func u16(_ x: UInt16) { var x = x.littleEndian; h.append(Data(bytes: &x, count: 2)) }
+        h.append("RIFF".data(using: .ascii)!); u32(UInt32(36 + pcm.count)); h.append("WAVEfmt ".data(using: .ascii)!)
+        u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate) * 2); u16(2); u16(16)
+        h.append("data".data(using: .ascii)!); u32(UInt32(pcm.count))
+        return h + pcm
+    }()
+    func play() {
+        let d = UserDefaults.standard
+        guard d.object(forKey: "overspeed.beep") == nil || d.bool(forKey: "overspeed.beep") else { return }
+        let volume = d.object(forKey: "overspeed.volume") == nil ? 0.8 : d.double(forKey: "overspeed.volume")
+        guard volume > 0, let p = try? AVAudioPlayer(data: wav) else { return }
+        p.volume = Float(min(1, max(0, volume)))
+        p.play()
+        player = p
+    }
+}

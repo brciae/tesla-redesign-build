@@ -285,7 +285,7 @@ struct VisitedPlacesView: View {
             Section("방문 순위") {
                 ForEach(list) { p in
                     HStack {
-                        Text(names[p.id] ?? p.id).font(.subheadline).lineLimit(1)
+                        Text(names[p.id] ?? p.id).font(.subheadline).lineLimit(1).minimumScaleFactor(0.5)
                         Spacer()
                         Text("도착 \(p.visits) · 충전 \(p.charges)").font(.caption).foregroundStyle(.secondary)
                     }.task {
@@ -440,7 +440,7 @@ struct TeslaMateView: View {
                     Button { withAnimation(.snappy(duration: 0.32)) { raw = s.rawValue } } label: {
                         VStack(spacing: 3) {
                             Image(systemName: s.icon).font(.system(size: 15, weight: .semibold)).symbolEffect(.bounce, value: raw == s.rawValue)
-                            Text(s.rawValue).font(.caption2.weight(s == section ? .bold : .regular)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(s.rawValue).font(.caption2.weight(s == section ? .bold : .regular)).lineLimit(1).minimumScaleFactor(0.5)
                         }
                         .foregroundStyle(s == section ? Color.primary : Color.secondary)
                         .frame(maxWidth: .infinity).padding(.vertical, 7)
@@ -486,7 +486,7 @@ struct TeslaMateView: View {
         HStack(spacing: 8) {
             ForEach(items.indices, id: \.self) { i in
                 NavigationLink { items[i].2 } label: {
-                    Label(items[i].0, systemImage: items[i].1).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                    Label(items[i].0, systemImage: items[i].1).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.5)
                         .padding(.horizontal, 10).padding(.vertical, 7).frame(maxWidth: .infinity)
                         .background(Color.secondary.opacity(0.14), in: Capsule())
                 }.buttonStyle(.plain)

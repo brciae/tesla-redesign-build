@@ -19,6 +19,8 @@ struct PreferencesView: View {
     @AppStorage("voiceQuietEnd") private var quietEnd = 7
     @AppStorage("navVoiceEnabled") private var navVoice = true
     @AppStorage("navSafetyVoice") private var navSafety = true
+    @AppStorage("overspeed.volume") private var overspeedVolume = 0.8
+    @AppStorage("overspeed.beep") private var overspeedBeep = true
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
     @ObservedObject private var typecast = TypecastClient.shared
@@ -48,6 +50,16 @@ struct PreferencesView: View {
             Section("내비 안내") {
                 Toggle("길안내 음성", isOn: $navVoice)
                 Toggle("안전운행·과속 경고", isOn: $navSafety)
+                // v1.34: overspeed chime level (dashboard alert at ≥10 km/h over the limit).
+                Toggle("과속 경고음", isOn: $overspeedBeep)
+                if overspeedBeep {
+                    HStack {
+                        Text("경고음 음량")
+                        Slider(value: $overspeedVolume, in: 0...1, step: 0.05)
+                        Text("\(Int(overspeedVolume * 100))%").monospacedDigit().frame(minWidth: 44, alignment: .trailing)
+                    }
+                    Button("경고음 들어보기") { OverspeedChime.shared.play() }
+                }
                 Picker("안내 빈도", selection: $navDetail) {
                     Text("간단").tag(0); Text("보통").tag(1); Text("자세히").tag(2)
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
@@ -124,7 +136,7 @@ struct PreferencesView: View {
                 Text(desc)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.5)
             }
 
             Spacer()
@@ -357,10 +369,15 @@ struct TypecastSettingsSection: View {
             }
 
             if typecast.cacheFileCount > 0 {
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("영구 보관 캐시: \(typecast.cacheFileCount)개 (\(String(format: "%.1f", typecast.cacheTotalSizeMB))MB)")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // v1.34: delete one character's recordings without wiping the others.
+                    ForEach(typecast.cacheByVoice) { entry in
+                        VoiceCacheRow(entry: entry) { typecast.clearCache(voice: entry.id) }
+                    }
                     VoiceCacheDeleteButton {
                         typecast.clearCache()
                     }
