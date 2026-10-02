@@ -1,4 +1,26 @@
 import SwiftUI
+
+struct CompanionToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 16) {
+                configuration.label.frame(maxWidth: .infinity, alignment: .leading)
+                ZStack {
+                    Capsule().fill(configuration.isOn ? Color(uiColor: .systemGreen) : Color(uiColor: .systemGray4))
+                    HStack {
+                        if configuration.isOn { Text("I").font(.caption).foregroundStyle(.white.opacity(0.8)); Spacer(minLength: 0) }
+                        Circle().fill(.white).frame(width: 30, height: 30).shadow(color: .black.opacity(0.16), radius: 2, y: 1)
+                        if !configuration.isOn { Spacer(minLength: 0); Text("○").font(.caption).foregroundStyle(.white.opacity(0.5)) }
+                    }.padding(.horizontal, 5)
+                }.frame(width: 64, height: 38).accessibilityHidden(true)
+            }.frame(minHeight: 48).contentShape(Rectangle()).opacity(enabled ? 1 : 0.45)
+        }.buttonStyle(.plain)
+            .accessibilityValue(configuration.isOn ? "켜짐" : "꺼짐")
+            .animation(reduced ? nil : .easeInOut(duration: 0.18), value: configuration.isOn)
+    }
+}
 import UIKit
 import AVFoundation
 
@@ -193,11 +215,33 @@ struct InfoRow: View {
     }
 }
 
+struct VoiceCacheRow: View {
+    let entry: TypecastClient.VoiceCacheEntry
+    var delete: () -> Void
+    @State private var confirming = false
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                Text("\(entry.count)개 · \(String(format: "%.1f", entry.megabytes))MB").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("삭제", role: .destructive) { confirming = true }
+                .font(.caption.weight(.semibold)).buttonStyle(.bordered).controlSize(.small)
+                .confirmationDialog("\(entry.name) 음성 캐시를 삭제할까요?", isPresented: $confirming, titleVisibility: .visible) {
+                    Button("\(entry.name) 캐시 삭제", role: .destructive, action: delete)
+                    Button("취소", role: .cancel) {}
+                } message: { Text("다른 음성의 캐시는 그대로 남습니다. 이 음성은 다음 재생 때 다시 합성됩니다.") }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 struct VoiceCacheDeleteButton: View {
     var delete: () -> Void
     @State private var confirming = false
     var body: some View {
-        Button("캐시 비우기") { confirming = true }
+        Button("전체 캐시 비우기") { confirming = true }
             .font(.caption)
             .foregroundStyle(.red)
             .buttonStyle(.borderless)
@@ -259,7 +303,7 @@ struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: V
     private func styled<Content: View>(_ content: Content) -> some View {
         content
             .safeAreaPadding(.bottom, 8)
-            .toolbarBackground(Color(white: 0.12).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
+            .toolbarBackground(Theme.adaptive(dark: UIColor(white: 0.12, alpha: 1), light: UIColor.white).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
     }
 }
@@ -279,4 +323,3 @@ struct VoicePreviewControls: View {
         }
     }
 }
-

@@ -1,13 +1,14 @@
 import Foundation
 
 enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
-    case boarding, departure, arrival, chargeStart, chargeEnd, batteryLow, tireLow, rest, remaining, delay, destination
+    case boarding, departure, arrival, chargeStart, chargeEnd, chargingLocked, batteryLow, tireLow, rest, remaining, delay, destination
     var id: String { rawValue }
     var title: String {
         switch self {
         case .boarding: return "탑승 인사"
         case .departure: return "출발 안내"
         case .arrival: return "운행 종료"
+        case .chargingLocked: return "충전 중 차량 잠김"
         case .chargeStart: return "충전 시작"
         case .chargeEnd: return "충전 종료"
         case .batteryLow: return "배터리 잔량 주의"
@@ -22,7 +23,8 @@ enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .boarding: return "차량의 탑승 신호·운전석 문 닫힘·P가 연속 확인될 때 한 번"
         case .departure: return "D/R에서 실제 움직임이 시작될 때 한 번"
-        case .arrival: return "주행 후 P가 유지되어 운행 기록이 종료될 때"
+        case .arrival: return "주행 후 실제 P 전환을 수신해 운행 기록이 종료될 때"
+        case .chargingLocked: return "충전 중이고 차량이 잠기면 충전 회차당 한 번"
         case .chargeStart: return "새 상태에서 충전 시작으로 바뀔 때"
         case .chargeEnd: return "충전 종료 기록이 저장될 때"
         case .batteryLow: return "주행 중 설정한 잔량 이하일 때"
@@ -35,10 +37,10 @@ enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
     }
 }
 enum AutomationAction: String, Codable, CaseIterable, Identifiable {
-    case speech, climateOn, climateOff, temperature
+    case speech, climateOn, climateOff, temperature, sentryOn
     var id: String { rawValue }
     var title: String {
-        switch self { case .speech: return "음성 안내만"; case .climateOn: return "공조 켜기"; case .climateOff: return "공조 끄기"; case .temperature: return "공조 목표 온도 설정" }
+        switch self { case .sentryOn: return "감시 모드 켜기"; case .speech: return "음성 안내만"; case .climateOn: return "공조 켜기"; case .climateOff: return "공조 끄기"; case .temperature: return "공조 목표 온도 설정" }
     }
 }
 struct AutomationRule: Codable, Identifiable, Equatable {
@@ -65,6 +67,7 @@ struct AutomationRule: Codable, Identifiable, Equatable {
             var rule = AutomationRule(name: trigger.title, trigger: trigger)
             rule.id = "builtin." + trigger.rawValue
             rule.timeGreeting = trigger == .boarding
+            if trigger == .chargingLocked { rule.enabled = false }
             rule.cooldownMinutes = [.batteryLow, .tireLow].contains(trigger) ? 30 : 1
             if trigger == .rest { rule.threshold = 120 }
             if trigger == .remaining { rule.threshold = 10 }
@@ -77,7 +80,7 @@ struct AutomationRule: Codable, Identifiable, Equatable {
               (0...23).contains(startHour), (0...24).contains(endHour), (1...1440).contains(cooldownMinutes),
               threshold.isFinite, (0...300).contains(threshold), targetC.isFinite, (16...28).contains(targetC), targetC * 2 == (targetC * 2).rounded(),
               cabinThresholdC.isFinite, (-20...60).contains(cabinThresholdC), ["always", "above", "below"].contains(cabinCondition),
-              action == .speech || (trigger == .boarding && vehicle.range(of: "^[A-HJ-NPR-Z0-9]{17}$", options: .regularExpression) != nil) else { throw AutomationError.invalid }
+              action == .speech || (((trigger == .boarding && action != .sentryOn) || (trigger == .chargingLocked && action == .sentryOn)) && vehicle.range(of: "^[A-HJ-NPR-Z0-9]{17}$", options: .regularExpression) != nil) else { throw AutomationError.invalid }
         if [.rest, .remaining, .delay].contains(trigger), !(1...300).contains(threshold) { throw AutomationError.invalid }
         if trigger == .batteryLow, !(1...100).contains(threshold) { throw AutomationError.invalid }
         if trigger == .tireLow, !(1...4).contains(threshold) { throw AutomationError.invalid }
@@ -101,7 +104,10 @@ struct AutomationDocument: Codable, Equatable {
     var lastFired: [String: Double] = [:]
     var vehicle = ""
     var boardingLatched = false
+    var boardingVoiceLatched: Bool?
     var motionLatched = false
+    /// Last fresh presence receipt, persisted so a long unobserved gap can rearm boarding.
+    var lastPresenceSeenAt: Double?
 }
 struct AutomationSample {
     var now: Double
@@ -130,6 +136,8 @@ struct AutomationSample {
     var hour = 12
     var boardingReady = true
     var closuresAt: Double?
+    var locked: Bool?
+    var speechOnly = false
     var moving: Bool { driveFresh && ["D", "R"].contains(gear ?? "") && (speed ?? -1) >= 1 }
     var parked: Bool { driveFresh && gear == "P" && (speed == nil || ((speed ?? -1) >= 0 && (speed ?? 1) <= 0.5)) }
     var boarded: Bool { parked && closuresFresh && present == true && driverDoor == false }
@@ -166,6 +174,7 @@ struct AutomationEffect {
 struct AutomationPolicy {
     var document = AutomationDocument()
     private(set) var didBoard = false
+    private(set) var didVoiceBoard = false
     private var previous: AutomationSample?
     private var lastPresenceAt: Double?
     private var occupancySince: Double?
@@ -179,13 +188,18 @@ struct AutomationPolicy {
         previous = nil; lastPresenceAt = nil; occupancySince = nil; absentSince = nil; exitDoorAt = nil; driveSeconds = 0
         parkSince = nil; routeBaseline = nil; milestones = []
     }
-    mutating func settingsChanged() { reset(); document.boardingLatched = true }
+    mutating func settingsChanged() {
+        reset()
+        document.boardingVoiceLatched = document.boardingVoiceLatched ?? document.boardingLatched
+        document.boardingLatched = true
+    }
     static func renderedText(for rule: AutomationRule, sample: AutomationSample, delayMinutes: Double = 0) -> String {
         var text: String
         switch rule.trigger {
         case .boarding: text = "탑승을 환영합니다."
         case .departure: text = "출발했습니다."
         case .arrival: text = sample.tripSummary
+        case .chargingLocked: text = "충전 중 차량 잠금을 확인했습니다."
         case .chargeStart: text = "충전이 시작되었습니다."
         case .chargeEnd: text = "충전 종료."
         case .batteryLow: text = "배터리 \(Int(sample.soc ?? 0))퍼센트. 충전이 필요합니다."
@@ -226,6 +240,7 @@ struct AutomationPolicy {
     }
     mutating func evaluate(_ input: AutomationSample) -> [AutomationEffect] {
         didBoard = false
+        didVoiceBoard = false
         var sample = input
         // Reject nonfinite/implausible telemetry before comparisons, interpolation or Int conversion.
         func bounded(_ n: Double?, _ range: ClosedRange<Double>) -> Double? { guard let n, n.isFinite, range.contains(n) else { return nil }; return n }
@@ -236,47 +251,62 @@ struct AutomationPolicy {
         sample.remainingMinutes = bounded(sample.remainingMinutes, 0...10080)
         sample.tires = sample.tires.map { bounded($0, 0.1...10) }
         guard sample.active, !sample.vehicle.isEmpty, sample.now.isFinite else { reset(); return [] }
+        if document.boardingVoiceLatched == nil { document.boardingVoiceLatched = document.boardingLatched }
         if document.vehicle != sample.vehicle {
             let firstVehicle = document.vehicle.isEmpty
             document.vehicle = sample.vehicle
-            if !firstVehicle { document.boardingLatched = true; document.motionLatched = false }
+            if !firstVehicle { document.boardingLatched = true; document.boardingVoiceLatched = false; document.motionLatched = false }
             reset()
         }
-        if let old = previous, sample.now < old.now || sample.now - old.now > 35 { reset() }
+        let presenceGap = sample.speechOnly ? 90.0 : 15.0
+        if let old = previous, sample.now < old.now || sample.now - old.now > max(35, presenceGap) { reset() }
         let old = previous
         defer { previous = sample }
         // Only a new closures receipt advances presence debounce; charge/drive polling
         // must not turn one cached false signal into a confirmed exit.
         let presenceAt = sample.closuresAt ?? sample.now
-        if sample.closuresFresh && sample.driveFresh && presenceAt.isFinite && presenceAt <= sample.now && sample.now - presenceAt <= 15 {
+        if sample.closuresFresh && (sample.driveFresh || sample.speechOnly) && presenceAt.isFinite && presenceAt <= sample.now && sample.now - presenceAt <= presenceGap {
             if lastPresenceAt == nil || presenceAt > lastPresenceAt! {
-                if let last = lastPresenceAt, presenceAt - last > 15 { occupancySince = nil; absentSince = nil; exitDoorAt = nil }
+                // The exit is usually never observed (phone away, app closed, BLE out of range), so the latch
+                // would stay set forever. Ten unobserved minutes while parked counts as a new visit.
+                if let seen = document.lastPresenceSeenAt, presenceAt - seen > 600, !sample.moving {
+                    document.boardingLatched = false; document.boardingVoiceLatched = false
+                    occupancySince = nil; absentSince = nil; exitDoorAt = nil
+                }
+                if document.lastPresenceSeenAt.map({ presenceAt - $0 >= 60 || presenceAt < $0 }) ?? true { document.lastPresenceSeenAt = presenceAt }
+                if let last = lastPresenceAt, presenceAt - last > presenceGap { occupancySince = nil; absentSince = nil; exitDoorAt = nil }
                 lastPresenceAt = presenceAt
                 if sample.parked && sample.driverDoor == true { exitDoorAt = presenceAt }
                 if let at = exitDoorAt, presenceAt - at > 120 { exitDoorAt = nil }
-                if sample.boarded {
+                if sample.boarded || (sample.speechOnly && sample.present == true && sample.driverDoor == false) {
                     absentSince = nil
                     if occupancySince == nil { occupancySince = presenceAt }
                     // Occupancy may stay true briefly after the person closes the door.
                     // Keep that recent door cycle until presence is stable for eight seconds.
                     if presenceAt - (occupancySince ?? presenceAt) >= 8 { exitDoorAt = nil }
-                    if sample.boardingReady && presenceAt - (occupancySince ?? presenceAt) >= 2 && !document.boardingLatched {
+                    if presenceAt - (occupancySince ?? presenceAt) >= 2 && document.boardingVoiceLatched != true {
+                        document.boardingVoiceLatched = true; didVoiceBoard = true
+                    }
+                    if !sample.speechOnly && sample.boardingReady && presenceAt - (occupancySince ?? presenceAt) >= 2 && !document.boardingLatched {
                         document.boardingLatched = true; didBoard = true
                     }
                 } else {
                     occupancySince = nil
-                    if sample.parked && sample.present == false {
+                    if (sample.parked || sample.speechOnly) && sample.present == false {
                         if absentSince == nil { absentSince = presenceAt }
+                        // Fresh locked-and-empty evidence may rearm speech even when the door cycle was missed.
+                        // This never rearms physical commands.
+                        if sample.locked == true && presenceAt - (absentSince ?? presenceAt) >= 8 { document.boardingVoiceLatched = false }
                         // Rearm only after a real door-open/close cycle and sustained absence.
-                        if exitDoorAt != nil && sample.driverDoor == false && presenceAt - (absentSince ?? presenceAt) >= 8 {
-                            document.boardingLatched = false; exitDoorAt = nil
+                        if !sample.speechOnly && exitDoorAt != nil && sample.driverDoor == false && presenceAt - (absentSince ?? presenceAt) >= 8 {
+                            document.boardingLatched = false; document.boardingVoiceLatched = false; exitDoorAt = nil
                         }
                     } else { absentSince = nil }
                 }
             }
         } else { occupancySince = nil; absentSince = nil; exitDoorAt = nil; lastPresenceAt = nil }
         let boarding = didBoard
-        if sample.moving && old?.moving == true { driveSeconds += max(0, min(15, sample.now - (old?.now ?? sample.now))) }
+        if sample.moving && old?.moving == true { driveSeconds += max(0, min(sample.speechOnly ? 90 : 15, sample.now - (old?.now ?? sample.now))) }
         if sample.parked {
             if parkSince == nil { parkSince = sample.now }
             if sample.now - (parkSince ?? sample.now) >= 45 || sample.endedTrip != nil { document.motionLatched = false }
@@ -289,6 +319,7 @@ struct AutomationPolicy {
         if sample.moving, !sample.route.isEmpty, let minutes = sample.remainingMinutes, routeBaseline == nil { routeBaseline = sample.now + minutes * 60 }
         var effects: [AutomationEffect] = []
         for rule in document.rules where rule.enabled {
+            if sample.speechOnly && rule.action != .speech { continue }
             guard (try? rule.validate()) != nil, Self.allowsHour(rule, hour: sample.hour) else { continue }
             if rule.action != .speech && (rule.vehicle != sample.vehicle || !sample.boarded) { continue }
             if rule.cabinCondition != "always" {
@@ -302,9 +333,10 @@ struct AutomationPolicy {
             }
             var fire = false, text = "", milestone: String?
             switch rule.trigger {
-            case .boarding: fire = boarding; text = "탑승을 환영합니다."
+            case .boarding: fire = rule.action == .speech ? didVoiceBoard : boarding; text = "탑승을 환영합니다."
             case .departure: fire = departure; text = "출발했습니다."
             case .arrival: fire = sample.endedTrip != nil; text = sample.tripSummary
+            case .chargingLocked: fire = false // Evaluated from fresh Fleet sections; never BLE-cached display data.
             case .chargeStart: fire = sample.chargeFresh && old?.chargeFresh == true && old?.charging != nil && old?.charging != 5 && sample.charging == 5; text = "충전이 시작되었습니다."
             case .chargeEnd: fire = sample.endedCharge != nil; text = "충전 종료."
             case .batteryLow: fire = sample.moving && sample.chargeFresh && sample.soc != nil && (sample.soc ?? 101) <= rule.threshold; text = "배터리 \(Int(sample.soc ?? 0))퍼센트. 충전이 필요합니다."

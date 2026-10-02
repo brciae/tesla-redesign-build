@@ -8,10 +8,6 @@ extension EnvironmentValues {
 
 struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
-    @AppStorage("unitDistance") private var distance = "km"
-    @AppStorage("unitTemperature") private var temperature = "C"
-    @AppStorage("unitPressure") private var pressure = "bar"
-    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
     @AppStorage("voiceEnabled") private var enabled = true
     @AppStorage("voiceIdentifier") private var identifier = "typecast:은경"
     @AppStorage("voiceDeliveryStyle") private var deliveryStyle = "standard"
@@ -23,31 +19,18 @@ struct PreferencesView: View {
     @AppStorage("voiceQuietEnd") private var quietEnd = 7
     @AppStorage("navVoiceEnabled") private var navVoice = true
     @AppStorage("navSafetyVoice") private var navSafety = true
+    @AppStorage("overspeed.volume") private var overspeedVolume = 0.8
+    @AppStorage("overspeed.beep") private var overspeedBeep = true
+    @AppStorage("characterFloat.scale") private var characterScale = 1.0
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
     @ObservedObject private var typecast = TypecastClient.shared
 
     var body: some View {
         Form {
-            Section { ScreenBriefingControls(scope: .preferences, text: {
-                let selected = identifier.replacingOccurrences(of: "typecast:", with: "")
-                let name = TypecastCatalog.find(selected)?.nameKo ?? selected
-                return "선택 음성 \(name). 안내 음량 \(Int(volume * 100))퍼센트. 길안내 음성 \(navVoice ? "켜짐" : "꺼짐"). 하단 메뉴 불투명도 \(Int(tabBarOpacity * 100))퍼센트입니다."
-            }) }
-            Section("하단 메뉴 표시") {
-                HStack {
-                    Text("배경 불투명도")
-                    Spacer()
-                    Text("\(Int(tabBarOpacity * 100))%").monospacedDigit()
-                }
-                Slider(value: $tabBarOpacity, in: 0.5...1, step: 0.05)
-                    .accessibilityLabel("하단 메뉴 배경 불투명도")
-                    .accessibilityIdentifier("tabbar.opacity")
-                Text("100%로 설정하면 하단 메뉴 뒤의 내용이 비치지 않습니다.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
+                VoiceOutputSettings()
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
 
                 // Moderate thumbnail portrait card (38pt, clean and sleek)
@@ -68,21 +51,33 @@ struct PreferencesView: View {
             Section("내비 안내") {
                 Toggle("길안내 음성", isOn: $navVoice)
                 Toggle("안전운행·과속 경고", isOn: $navSafety)
+                // v1.34: overspeed chime level (dashboard alert at ≥10 km/h over the limit).
+                Toggle("과속 경고음", isOn: $overspeedBeep)
+                if overspeedBeep {
+                    HStack {
+                        Text("경고음 음량")
+                        Slider(value: $overspeedVolume, in: 0...1, step: 0.05)
+                        Text("\(Int(overspeedVolume * 100))%").monospacedDigit().frame(minWidth: 44, alignment: .trailing)
+                    }
+                    Button("경고음 들어보기") { OverspeedChime.shared.play() }
+                }
                 Picker("안내 빈도", selection: $navDetail) {
                     Text("간단").tag(0); Text("보통").tag(1); Text("자세히").tag(2)
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
                 InfoRow("안내 빈도", "간단: 교차로에 가까워졌을 때의 회전 안내와 실제 위험 구간만 안내함. 보통: 중간 거리 회전 안내와 경로 변경 안내를 추가함. 자세히: 카카오 내비가 제공하는 안내를 모두 읽음(버스전용차로·하이패스·직진 안내 포함).")
             }
-            Section("차량 표시 단위") {
-                Picker("거리·속도", selection: $distance) { Text("km · km/h").tag("km"); Text("mi · mph").tag("mi") }
-                Picker("온도", selection: $temperature) { Text("°C").tag("C"); Text("°F").tag("F") }
-                Picker("공기압", selection: $pressure) { Text("bar").tag("bar"); Text("psi").tag("psi"); Text("kPa").tag("kPa") }
-                InfoRow("표시 단위", "앱 화면 표시만 바뀜. 차량 내 설정과 지도 앱 단위는 그대로 유지됨.")
+            // v1.40: floating character size (also pinch on the character itself).
+            Section("캐릭터") {
+                HStack {
+                    Text("떠있는 캐릭터 크기")
+                    Slider(value: $characterScale, in: 0.6...2.2, step: 0.1)
+                    Text("\(Int((characterScale * 100).rounded()))%").monospacedDigit().frame(minWidth: 52, alignment: .trailing)
+                }
+                Button("기본 크기로") { characterScale = 1.0 }
             }
             Section("고급") {
                 NavigationLink("음성 세부 설정") {
                     Form {
-                        LocalBriefingControls(title: "음성 세부 설정") { ["안내 음량 \(Int(volume * 100))퍼센트.", duck ? "안내 중 음악 음량 줄임." : "음악 음량 유지.", quiet && quietStart != quietEnd ? "자동 브리핑 조용시간 \(quietStart)시부터 \(quietEnd)시까지입니다." : "조용시간 제한 없음."] }
                         Section("음성 조절") {
                             slider("속도", value: $rate, range: 0.3...0.6)
                             slider("안내 음량", value: $volume, range: 0...1)
@@ -106,7 +101,7 @@ struct PreferencesView: View {
                     }.navigationTitle("음성 세부 설정").navigationBarTitleDisplayMode(.inline)
                 }
             }
-        }.navigationTitle("표시·음성 설정").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle("음성·내비 안내").navigationBarTitleDisplayMode(.inline)
             .onChange(of: enabled) { _, value in if !value { model.stopSpeech() } }
             .onChange(of: identifier) { _, newId in
                 if newId.hasPrefix("typecast:") {
@@ -151,7 +146,7 @@ struct PreferencesView: View {
                 Text(desc)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(1).minimumScaleFactor(0.5)
             }
 
             Spacer()
@@ -325,8 +320,8 @@ struct TypecastSettingsSection: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
-                        .background(isSelected ? Color.blue : Color.white.opacity(0.12), in: Capsule())
-                        .foregroundStyle(.white)
+                        .background(isSelected ? Color.blue : Color.primary.opacity(0.12), in: Capsule())
+                        .foregroundStyle(isSelected ? Color.white : Color.primary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -377,11 +372,22 @@ struct TypecastSettingsSection: View {
             .tint(.blue)
             .disabled(typecast.isSynthesizing || !typecast.hasKey)
 
+            if typecast.synthesisPaused {
+                Button("이용 제한 해제 후 재시도 허용") {
+                    typecast.allowSynthesisAfterRestrictionResolved()
+                }.font(.footnote)
+            }
+
             if typecast.cacheFileCount > 0 {
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("영구 보관 캐시: \(typecast.cacheFileCount)개 (\(String(format: "%.1f", typecast.cacheTotalSizeMB))MB)")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // v1.34: delete one character's recordings without wiping the others.
+                    ForEach(typecast.cacheByVoice) { entry in
+                        VoiceCacheRow(entry: entry) { typecast.clearCache(voice: entry.id) }
+                    }
                     VoiceCacheDeleteButton {
                         typecast.clearCache()
                     }
@@ -401,8 +407,47 @@ private struct VoiceCategoryToggle: View {
 struct VoiceStatus: View {
     @ObservedObject var voice: VoiceCoordinator
     var body: some View {
+        Text(voice.automaticStatus).font(.caption).foregroundStyle(Theme.muted).textSelection(.enabled)
         if !voice.notice.isEmpty { Text(voice.notice).font(.caption).foregroundStyle(.orange) }
         if !voice.lastText.isEmpty { Text(voice.playbackState + ": " + voice.lastText).font(.caption).foregroundStyle(Theme.muted) }
         if !voice.outputDescription.isEmpty { Text(voice.outputDescription).font(.caption).foregroundStyle(Theme.muted) }
+        if !voice.lastPlaybackOutput.isEmpty { Text(voice.lastPlaybackOutput).font(.caption).foregroundStyle(Theme.muted).textSelection(.enabled) }
     }
+}
+
+struct DisplaySettingsView: View {
+    @AppStorage("unitDistance") private var distance = "km"
+    @AppStorage("unitTemperature") private var temperature = "C"
+    @AppStorage("unitPressure") private var pressure = "bar"
+    @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
+    @AppStorage("appearance") private var appearance = "dark"
+    var body: some View { Form {
+            Section("화면 모드") {
+                Picker("화면 모드", selection: $appearance) {
+                    Text("시스템").tag("system")
+                    Text("다크").tag("dark")
+                    Text("라이트").tag("light")
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("display.appearance")
+            }
+            Section("하단 메뉴 표시") {
+                HStack {
+                    Text("배경 불투명도")
+                    Spacer()
+                    Text("\(Int(tabBarOpacity * 100))%").monospacedDigit()
+                }
+                Slider(value: $tabBarOpacity, in: 0.5...1, step: 0.05)
+                    .accessibilityLabel("하단 메뉴 배경 불투명도")
+                    .accessibilityIdentifier("tabbar.opacity")
+                Text("100%로 설정하면 하단 메뉴 뒤의 내용이 비치지 않습니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("차량 표시 단위") {
+                Picker("거리·속도", selection: $distance) { Text("km · km/h").tag("km"); Text("mi · mph").tag("mi") }
+                Picker("온도", selection: $temperature) { Text("°C").tag("C"); Text("°F").tag("F") }
+                Picker("공기압", selection: $pressure) { Text("bar").tag("bar"); Text("psi").tag("psi"); Text("kPa").tag("kPa") }
+                InfoRow("표시 단위", "앱 화면 표시만 바뀜. 차량 내 설정과 지도 앱 단위는 그대로 유지됨.")
+            }
+    }.navigationTitle("화면·표시 단위") }
 }

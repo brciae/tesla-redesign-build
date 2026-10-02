@@ -15,6 +15,20 @@ int main(void) { @autoreleasepool {
         check([YLNavigationAction(clock+69) containsString:expected], @"Roundabout code means clock, not ordinal exit");
     }
     check([YLNavigationSpeech(101,nil,nil,200) isEqual:@"200미터 앞, 목적지입니다."], @"Approaching destination is not arrival");
+    check([YLNavigationSpeech(101,nil,nil,0) isEqual:@"목적지에 도착했습니다."], @"Destination arrival must not say ahead");
+    check([YLNavigationSpeech(1000,nil,nil,0) isEqual:@"경유지에 도착했습니다."], @"Waypoint arrival is distinct from approach");
+    check([YLNavigationDistancePrefix(112) isEqual:@"100미터 앞, "], @"Do not read raw meter precision");
+    check([YLNavigationDistancePrefix(1381) isEqual:@"1킬로미터 앞, "], @"Long distance uses approximate kilometers");
+    check([YLNavigationDistancePrefix(40) isEqual:@"잠시 후, "], @"Nearby event is imminent");
+    check([YLNavigationDistancePrefix(0) isEqual:@"잠시 후, "], @"Zero is not zero meters ahead");
+    check([YLNavigationDistancePrefix(-1) isEqual:@""], @"Missing distance is not imminent");
+    check([YLNavigationDistancePrefix(80) isEqual:@"100미터 앞, "], @"Near distance boundary");
+    check([YLNavigationDistancePrefix(75) isEqual:@"잠시 후, "], @"Close is imminent, not meters");
+    check([YLNavigationDistancePrefix(460) isEqual:@"500미터 앞, "], @"Whole 100 m steps");
+    check([YLNavigationDistancePrefix(950) isEqual:@"1킬로미터 앞, "], @"Kilometer boundary");
+    check([YLNavigationCompactNumber(3.0) isEqual:@"3"], @"No meaningless decimal zero");
+    check([YLNavigationCompactNumber(3.5) isEqual:@"3.5"], @"Retain real clearance fraction");
+    check([YLNavigationCompactNumber(3.25) isEqual:@"3.25"], @"Do not round legal clearance up");
     check([YLNavigationSpeech(777,@"무시",@[@"무시"],200) length]==0, @"Unknown code must not invent movement");
     check([YLNavigationSpeech(100,nil,nil,200) length]==0, @"Start marker must not generate proceed");
     check(![YLNavigationSpeech(2,nil,nil,-1) containsString:@"미터"], @"Invalid distance must not be voiced");

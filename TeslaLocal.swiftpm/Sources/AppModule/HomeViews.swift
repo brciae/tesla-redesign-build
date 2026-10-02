@@ -14,6 +14,56 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
         }
         result["connection"] = model.fleet.vehicleDisplayStatus
     }
+    // Use Fleet for a display group that BLE has not delivered. Never inject it into BLE command evidence.
+    if !model.demo, link.authentic, let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
+        for (name, value) in snapshot.homeOverlay() {
+            guard let group = value as? Object else { continue }
+            let existing = result.object(name)
+            if existing.string("mode") != "recent", group.string("mode") == "recent" {
+                result[name] = group
+            } else if name == "location", !existing.flag("hasCoordinates"), group.flag("hasCoordinates") {
+                // v91: a parked car's fix is old by definition — drive_state stops
+                // ticking the moment it parks, so the Fleet location group is never
+                // "recent" again and this loop used to drop it. BLE carries no usable
+                // position while the car sleeps, so the app showed 위치 미수신 while
+                // holding a perfectly good coordinate. The stored fix is the answer to
+                // "where is it"; it keeps Fleet's own mode and timestamp, so the screen
+                // still says how old it is rather than claiming it is live.
+                result[name] = group
+            } else if name == "drive", existing.string("gear").isEmpty, !group.string("gear").isEmpty {
+                // Same for the gear behind 주차 중 / 정차 중.
+                result[name] = group
+            }
+        }
+    }
+    if !model.demo {
+        for (name, raw) in FleetTelemetryData.homeOverlay(model.archiveReadings, vin: model.fleet.selectedVin) {
+            guard let group = raw as? Object else { continue }
+            let existing = result.object(name)
+            let newer = existing.string("mode") == "missing" || (group.number("at") ?? 0) > (existing.number("at") ?? 0)
+            guard newer else { continue }
+            // v91: this used to swap the whole group. FleetTelemetryData.homeOverlay
+            // only writes keys whose reading is present and valid, so a NAS update
+            // carrying a fresh Soc but no TimeToFullCharge replaced BLE's chargerKW,
+            // addedKWh and limit with nothing. Merge per key: the NAS wins where it
+            // has a value, and everything it is silent about survives. The
+            // Fleet-snapshot merge above is already careful this way; this one was
+            // not, and it gets more likely the more continuous the NAS feed becomes.
+            var merged = existing
+            for (key, value) in group { merged[key] = value }
+            result[name] = merged
+        }
+    }
+    // v91: whichever drive group won above may have come from Fleet or the NAS
+    // archive, which carry gear and speed but not the 주차 중 / 정차 중 wording.
+    // Running the winner back through the one rule in home.js keeps a
+    // Fleet-sourced state from drifting away from a BLE-sourced one.
+    let drive = model.rememberMotion(result.object("drive"))
+    if !drive.isEmpty, let fields = (try? model.runtime.call("homeMotion", drive)) as? Object {
+        var merged = drive
+        for (key, value) in fields { merged[key] = value }
+        result["drive"] = merged
+    }
     return result
 }
 
@@ -23,248 +73,240 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var summaryOpen = false
 
+    @State private var selectedDay = 6
+    private var card: Color { Color(uiColor: .secondarySystemGroupedBackground) }
+
+    // v1.14: the iOS-style home from the approved design — vehicle card with the rotating
+    // model, battery ring, lock/climate tiles, 7-day driving bars, then the driving dashboard.
     var body: some View {
         let p = homePresentation(model, link), c = p.object("charge")
         let climate = p.object("climate")
-        let isCharging = (c.string("mode") == "recent" || model.demo) && ((c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging"))
-
+        let isCharging = (c.string("mode") == "recent" || model.demo) && c.chargingNow
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                // Top Header Bar
-                headerView(p: p, c: c)
-                if !model.demo, model.fleet.isAuthenticated { fleetStatusCard }
-
-                // 3D Vehicle Hero Panel
-                Vehicle3DPanel(link: link, compact: true)
-                    .background(
-                        RadialGradient(
-                            colors: [Color.cyan.opacity(0.12), Color.clear],
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 180
-                        )
-                    )
-                    .padding(.top, 2)
-
-                // Quick Controls: 4 Tactile Glass Action Tiles (Official Tesla App layout)
-                HStack(spacing: 10) {
-                    quickControlTile(
-                        .security,
-                        "lock.fill",
-                        "도어 잠금",
-                        highlight: false
-                    )
-                    let insideC = climate.number("insideC")
-                    quickControlTile(
-                        .climate,
-                        "fanblades.fill",
-                        insideC != nil ? "\(Int(round(insideC!)))°C" : "실내온도",
-                        highlight: false
-                    )
-                    quickControlTile(
-                        .charging,
-                        "bolt.fill",
-                        isCharging ? "충전 중" : "충전",
-                        highlight: isCharging
-                    )
-                    quickControlTile(
-                        .controls,
-                        "car.side.rear.open.fill",
-                        "트렁크",
-                        highlight: false
-                    )
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    connectionChip
+                    Spacer()
+                    ScreenBriefingControls(scope: .home, compact: true)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Color(white: 0.12).opacity(0.72))
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(LinearGradient(colors: [Color.white.opacity(0.16), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8)
-                )
-
-                // Driving Dashboard Banner
+                if !model.demo, model.fleet.isAuthenticated, !model.fleet.isReadingVehicle, model.fleet.vehicleSnapshot == nil { fleetStatusCard }
+                vehicleCard(p)
+                batteryCard(c, charging: isCharging)
+                HStack(spacing: 12) {
+                    tile(Page.security, lockIcon, lockTitle, lockSubtitle, tint: lockTint)
+                    tile(Page.climate, "fanblades.fill", climate.number("insideC").map { "실내 \(Int($0.rounded()))°" } ?? "실내 온도",
+                         climateSubtitle(climate), tint: climate.flag("isOn") ? .cyan : .secondary)
+                }
+                weekCard
                 driveButton
-
-                // Active Charging Indicator (Only shown when vehicle is charging)
-                if isCharging {
-                    let soc = c.number("soc")
-                    NavigationLink(value: Page.charging) {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.2))
-                                    .frame(width: 38, height: 38)
-                                Image(systemName: "bolt.fill")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundStyle(Color(red: 0.28, green: 0.88, blue: 0.42))
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(soc != nil ? "충전 중 · \(Int(round(soc!)))%" : "충전 중")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                if let kmH = c.number("chargeKmH"), kmH > 0 {
-                                    Text("+\(Int(kmH)) km/h · 충전 설정 보기")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.white.opacity(0.6))
-                                } else {
-                                    Text("충전 상세 설정 보기")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.white.opacity(0.6))
-                                }
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.4))
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(Color(white: 0.12).opacity(0.75))
-                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.35), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(MotionButtonStyle())
-                }
-
-                // Minimal Vehicle Footer
                 VStack(spacing: 4) {
-                    Text(model.settings.string("model", "Model Y L").uppercased())
-                        .font(.system(size: 16, weight: .light, design: .rounded))
-                        .tracking(4)
-                        .foregroundStyle(Color.white.opacity(0.6))
                     Caption("YL COMPANION · v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
-                    if model.demo {
-                        Button("예시 모드 종료") { model.exitDemo() }
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.orange)
-                            .padding(.top, 4)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+                    if model.demo { Button("예시 모드 종료") { model.exitDemo() }.font(.caption.weight(.semibold)).foregroundStyle(.orange) }
+                }.frame(maxWidth: .infinity).padding(.vertical, 16)
             }
             .frame(maxWidth: HomeVisualStyle.contentWidth)
-            .padding(.horizontal, HomeVisualStyle.gutter)
+            .padding(.horizontal, 16)
             .padding(.top, HomeVisualStyle.headerTop)
             .padding(.bottom, 40)
             .frame(maxWidth: .infinity)
         }
-        .background(Theme.bg)
+        .background(Color(uiColor: .systemGroupedBackground))
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { model.refreshVehicle() }
     }
 
-    private var fleetStatusCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(model.fleet.vehicleDisplayStatus, systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.subheadline.weight(.semibold))
+    private func vehicleCard(_ p: Object) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                NavigationLink(value: Page.connection) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.settings.string("name", "내 차")).font(.system(size: 28, weight: .bold)).foregroundStyle(Color.primary)
+                        Text(model.settings.string("model", "Model YL")).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }.buttonStyle(.plain).accessibilityLabel("차량 프로필 및 연결 설정")
                 Spacer()
-                Button {
-                    Task { @MainActor in await model.fleet.refreshVehicleSnapshot(force: true) }
-                } label: { Image(systemName: "arrow.clockwise").frame(width: 36, height: 36) }
-                .disabled(model.fleet.isReadingVehicle)
-                .accessibilityLabel("Fleet 차량 상태 새로고침")
+                VehicleMotionBadge(drive: p.object("drive"), compact: true)
             }
-            if let snapshot = model.fleet.vehicleSnapshot, snapshot.vin == model.fleet.selectedVin {
-                HStack(spacing: 16) {
-                    Text(snapshot.soc.map { "배터리 \(Int($0))%" } ?? "배터리 미수신")
-                    Text(snapshot.rangeKm.map { "주행가능 \(Int($0)) km" } ?? "거리 미수신")
-                }.font(.subheadline)
-                HStack(spacing: 16) {
-                    Text(snapshot.locked.map { $0 ? "도어 잠김" : "도어 잠금 해제" } ?? "잠금 상태 미수신")
-                    if let inside = snapshot.insideC { Text("실내 \(Int(inside.rounded()))°C") }
-                }.font(.caption)
-                Text("Fleet 마지막 수신 \(snapshot.receivedAt.formatted(date: .omitted, time: .standard)) · 실시간 스트리밍 아님")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if let error = model.fleet.vehicleReadError {
-                Text(error).font(.caption).foregroundStyle(.orange)
-            } else if model.fleet.vehicleReadStatus == "차량 절전 중" || model.fleet.vehicleReadStatus == "차량 오프라인" {
-                Text("계정 연결은 완료됨. 차량이 깨어나고 통신이 가능해진 뒤 새로고침하면 현재 상태를 조회합니다.")
-                    .font(.caption).foregroundStyle(.secondary)
+            // v1.41: while plugged in / charging the home car shows the charge cable too.
+            let charge = p.object("charge")
+            Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: charge.chargingNow, isPlugged: charge.chargingNow || charge.flag("plugged"))
+                .frame(maxWidth: .infinity)
+            Divider()
+            HStack {
+                metric("누적 주행", model.displayOdometerKm.map { "\(Int($0).formatted()) km" } ?? "—")
+                NavigationLink(value: Page.care) { metric("차량 관리", "타이어·보증") }.buttonStyle(.plain)
+                NavigationLink(value: Page.controls) { metric("컨트롤", "트렁크·창문") }.buttonStyle(.plain)
             }
         }
-        .padding(14)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+        .padding(18)
+        .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
-    private func headerView(p: Object, c: Object) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Vehicle profile pill
-            NavigationLink(value: Page.connection) {
-                HStack(spacing: 8) {
-                    Text(model.settings.string("name", "Model Y"))
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                }
-                .frame(minHeight: 44)
-            }
-            .buttonStyle(MotionButtonStyle())
-            .accessibilityLabel("차량 프로필 및 연결 설정")
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            HStack(spacing: 8) {
-
-            // Live Connection Status Badge
-            NavigationLink(value: Page.connection) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray))
-                        .frame(width: 8, height: 8)
-                        .shadow(color: (link.authentic && !model.demo ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange).opacity(0.7), radius: 4)
-                    Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                        .foregroundStyle(Color.white.opacity(0.9))
-                    if link.refreshing || model.fleet.isReadingVehicle {
-                        ProgressView().controlSize(.mini)
+    private func batteryCard(_ c: Object, charging: Bool) -> some View {
+        let soc = c.number("soc"), frac = min(1, max(0, (soc ?? 0) / 100))
+        let color: Color = (soc ?? 100) <= 20 ? .red : (soc ?? 100) <= 50 ? .orange : .green
+        return NavigationLink(value: Page.charging) {
+            HStack(spacing: 20) {
+                ZStack {
+                    Circle().stroke(Color(uiColor: .tertiarySystemFill), lineWidth: 12)
+                    Circle().trim(from: 0, to: frac).stroke(color, style: StrokeStyle(lineWidth: 12, lineCap: .round)).rotationEffect(.degrees(-90))
+                        .animation(.smooth(duration: 0.8), value: frac)
+                    VStack(spacing: 2) {
+                        Text(soc.map { "\(Int($0.rounded()))%" } ?? "—").font(.system(size: 30, weight: .bold)).monospacedDigit()
+                        Text(c.number("rangeKm").map { "\(Int($0)) km" } ?? "").font(.caption).foregroundStyle(.secondary)
+                    }
+                }.frame(width: 118, height: 118)
+                VStack(alignment: .leading, spacing: 6) {
+                    if charging {
+                        Label("충전 중", systemImage: "bolt.fill").font(.subheadline.weight(.semibold)).foregroundStyle(color)
+                            .symbolEffect(.pulse)
+                        Text(c.number("chargerKW").map { String(format: "%.1f kW", $0) } ?? "—").font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        if let m = c.number("minutesToLimit"), m > 0 {
+                            Text("\(Int(c.number("limit") ?? 80))%까지 \(Int(m) / 60)시간 \(Int(m) % 60)분").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Label(c.flag("plugged") ? "연결됨 · 대기" : "배터리", systemImage: c.flag("plugged") ? "powerplug.fill" : "battery.75percent")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(c.number("rangeKm").map { "\(Int($0)) km" } ?? "—").font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        Text("충전 한도 \(Int(c.number("limit") ?? 80))%").font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(Color(white: 0.14).opacity(0.8))
-                        .background(.ultraThinMaterial, in: Capsule())
-                )
-                .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
+                Spacer(minLength: 0)
             }
-            .buttonStyle(MotionButtonStyle())
+            .padding(18)
+            .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }.buttonStyle(MotionButtonStyle())
+    }
 
-            // Briefing button
-            Spacer(minLength: 8)
-            ScreenBriefingControls(scope: .home, compact: true)
+    private var lockState: Bool? {
+        if model.output.object("fresh").flag("closures"), let v = model.groups.object("closures")["locked"] as? Bool { return v }
+        guard let s = model.fleet.vehicleSnapshot, s.vin == model.fleet.selectedVin else { return nil }
+        return s.locked
+    }
+    private var lockIcon: String { lockState == false ? "lock.open.fill" : "lock.fill" }
+    private var lockTitle: String { lockState == nil ? "잠금 상태" : lockState! ? "잠김" : "열림" }
+    private var lockSubtitle: String { lockState == nil ? "미수신" : lockState! ? "문 잠금 확인" : "탭하여 잠그기" }
+    private var lockTint: Color { lockState == false ? .orange : Color.primary }
+    private func climateSubtitle(_ c: Object) -> String {
+        let target = c.number("targetC").map { "목표 \(Int($0.rounded()))°" } ?? "목표 —"
+        return target + (c.flag("isOn") ? " · 켜짐" : " · 꺼짐")
+    }
 
-            // Settings button
-            NavigationLink(value: Page.preferences) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle()
-                            .fill(Color(white: 0.14).opacity(0.8))
-                            .background(.ultraThinMaterial, in: Circle())
-                    )
-                    .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
+    private func tile(_ page: Page, _ icon: String, _ title: String, _ subtitle: String, tint: Color) -> some View {
+        NavigationLink(value: page) {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: icon).font(.system(size: 22, weight: .semibold)).foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline).foregroundStyle(Color.primary)
+                    Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.5)
+                }
             }
-            .buttonStyle(MotionButtonStyle())
-            .accessibilityLabel("설정")
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18).padding(.vertical, 16)
+            .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }.buttonStyle(MotionButtonStyle())
+    }
+
+    private var weekKm: [(label: String, km: Double)] {
+        let cal = Calendar.current, today = cal.startOfDay(for: Date())
+        let trips = model.output.object("energyPeriods").object("36500").rows("trips")
+        let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = "E"
+        return (0..<7).map { i in
+            let day = cal.date(byAdding: .day, value: i - 6, to: today) ?? today
+            let km = trips.filter { t in (t.number("start").map { cal.isDate(Date(timeIntervalSince1970: $0 / 1000), inSameDayAs: day) } ?? false) }
+                .reduce(0) { $0 + ($1.number("distanceKm") ?? 0) }
+            return (i == 6 ? "오늘" : f.string(from: day), km)
+        }
+    }
+
+    private var weekCard: some View {
+        let days = weekKm, maxKm = max(1, days.map(\.km).max() ?? 1)
+        let sel = days[min(selectedDay, days.count - 1)]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("최근 7일 주행").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(sel.label) \(Int(sel.km.rounded())) km").font(.footnote).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                ForEach(days.indices, id: \.self) { i in
+                    Button { withAnimation(.snappy) { selectedDay = i } } label: {
+                        VStack(spacing: 4) {
+                            Text("\(Int(days[i].km.rounded()))").font(.caption2.weight(.semibold)).foregroundStyle(i == selectedDay ? Color.primary : .secondary)
+                            RoundedRectangle(cornerRadius: 4).fill(i == selectedDay ? Color.blue : Color(uiColor: .tertiarySystemFill))
+                                .frame(height: max(4, CGFloat(days[i].km / maxKm) * 70))
+                            Text(days[i].label).font(.caption2).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity)
+                    }.buttonStyle(.plain).accessibilityLabel("\(days[i].label) \(Int(days[i].km)) km")
+                }
+            }.frame(height: 104, alignment: .bottom)
+        }
+        .padding(18)
+        .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .sensoryFeedback(.selection, trigger: selectedDay)
+    }
+
+    private var fleetStatusCard: some View { FleetStatusCard() }
+
+    // v92: the header ran to three stacked lines with the briefing controls
+    // marooned across an empty row. Name and briefing share the top line; the
+    // state and connection chips sit together on the second, which is how a
+    // phone app's header reads — identity above, status below.
+    private func headerView(p: Object, c: Object) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
+                NavigationLink(value: Page.connection) {
+                    HStack(spacing: 6) {
+                        Text(model.settings.string("name", "Model Y"))
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.muted)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .buttonStyle(MotionButtonStyle())
+                .accessibilityLabel("차량 프로필 및 연결 설정")
+
+                Spacer(minLength: 8)
+                ScreenBriefingControls(scope: .home, compact: true)
+            }
+
+            HStack(spacing: 8) {
+                VehicleMotionBadge(drive: p.object("drive"), compact: true)
+                Text("·").foregroundStyle(Color.primary.opacity(0.25))
+                connectionChip
+                Spacer(minLength: 0)
             }
         }
+    }
+
+    // Display only — the vehicle profile above is the single route to 연결 상태.
+    private var connectionChip: some View {
+        let live = link.authentic && !model.demo
+        let tint = live ? Color(red: 0.28, green: 0.88, blue: 0.42) : (model.demo ? Color.orange : Color.gray)
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(tint)
+                .frame(width: 7, height: 7)
+                .shadow(color: tint.opacity(0.7), radius: 4)
+            Text(model.demo ? "예시 모드" : (link.authentic ? "BLE 연결됨" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "계정 미연결")))
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1).minimumScaleFactor(0.5)
+                .foregroundStyle(Color.primary.opacity(0.85))
+            if link.refreshing || model.fleet.isReadingVehicle {
+                ProgressView().controlSize(.mini)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func quickControlTile(_ page: Page, _ symbol: String, _ title: String, highlight: Bool = false) -> some View {
@@ -272,20 +314,20 @@ struct HomeView: View {
             VStack(spacing: 6) {
                 ZStack {
                     Circle()
-                        .fill(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.2) : Color.white.opacity(0.08))
+                        .fill(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.2) : Color.primary.opacity(0.08))
                         .frame(width: 44, height: 44)
                         .overlay(
                             Circle()
-                                .stroke(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.5) : Color.white.opacity(0.10), lineWidth: 0.8)
+                                .stroke(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.5) : Color.primary.opacity(0.10), lineWidth: 0.8)
                         )
                     Image(systemName: symbol)
                         .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : .white)
+                        .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.primary)
                 }
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.white.opacity(0.85))
-                    .lineLimit(1)
+                    .foregroundStyle(highlight ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.primary.opacity(0.85))
+                    .lineLimit(1).minimumScaleFactor(0.5)
             }
             .frame(maxWidth: .infinity)
         }
@@ -317,27 +359,27 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("운전 대시보드")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.primary)
                     Text("전체 화면 3D 주행 및 카카오 길안내")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Color.primary.opacity(0.6))
                 }
                 Spacer(minLength: 6)
                 Image(systemName: "arrow.up.forward")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.5))
+                    .foregroundStyle(Color.primary.opacity(0.5))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(white: 0.12).opacity(0.75))
+                    .fill(Theme.fill(0.12).opacity(0.75))
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                    .stroke(LinearGradient(colors: [Color.primary.opacity(0.18), Color.primary.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
             )
         }
         .buttonStyle(MotionButtonStyle())
@@ -367,26 +409,6 @@ struct HomeView: View {
             }
         }.sensoryFeedback(.selection, trigger: summaryOpen).padding(.bottom, 12)
     }
-
-    private func moduleColors(_ module: HomeModule) -> [Color] {
-        switch module {
-        case .controls: return [Color(red: 0.15, green: 0.45, blue: 0.95), Color(red: 0.25, green: 0.65, blue: 1.0)]
-        case .climate: return [Color(red: 0.05, green: 0.70, blue: 0.85), Color(red: 0.20, green: 0.85, blue: 0.95)]
-        case .charging: return [Color(red: 0.15, green: 0.75, blue: 0.35), Color(red: 0.30, green: 0.90, blue: 0.50)]
-        case .location: return [Color(red: 0.95, green: 0.45, blue: 0.15), Color(red: 1.0, green: 0.65, blue: 0.25)]
-        case .security: return [Color(red: 0.90, green: 0.25, blue: 0.30), Color(red: 1.0, green: 0.45, blue: 0.45)]
-        case .trips: return [Color(red: 0.40, green: 0.30, blue: 0.90), Color(red: 0.55, green: 0.45, blue: 1.0)]
-        case .battery: return [Color(red: 0.10, green: 0.65, blue: 0.55), Color(red: 0.25, green: 0.85, blue: 0.75)]
-        case .care: return [Color(red: 0.35, green: 0.40, blue: 0.50), Color(red: 0.50, green: 0.55, blue: 0.65)]
-        case .appearance: return [Color(red: 0.85, green: 0.25, blue: 0.65), Color(red: 0.95, green: 0.45, blue: 0.80)]
-        case .automation: return [Color(red: 0.55, green: 0.25, blue: 0.85), Color(red: 0.70, green: 0.40, blue: 0.95)]
-        case .preferences: return [Color(red: 0.40, green: 0.45, blue: 0.50), Color(red: 0.55, green: 0.60, blue: 0.65)]
-        case .connection: return [Color(red: 0.15, green: 0.60, blue: 0.70), Color(red: 0.30, green: 0.75, blue: 0.85)]
-        case .schedule: return [Color(red: 0.80, green: 0.50, blue: 0.10), Color(red: 0.95, green: 0.65, blue: 0.25)]
-        case .drive: return [Color(red: 0.20, green: 0.50, blue: 0.85), Color(red: 0.35, green: 0.65, blue: 0.95)]
-        case .navigation: return [Color(red: 0.10, green: 0.70, blue: 0.60), Color(red: 0.25, green: 0.85, blue: 0.75)]
-        }
-    }
 }
 
 struct GlassMenuCard<Content: View>: View {
@@ -395,12 +417,12 @@ struct GlassMenuCard<Content: View>: View {
         VStack(spacing: 0, content: content)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(white: 0.12).opacity(0.75))
+                    .fill(Theme.fill(0.12).opacity(0.75))
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                    .stroke(LinearGradient(colors: [Color.primary.opacity(0.18), Color.primary.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
             )
             .padding(.bottom, 6)
     }
@@ -423,12 +445,12 @@ func glassMenuItem(_ page: Page, _ icon: String, title: String, subtitle: String
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.primary)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.55))
-                            .lineLimit(1)
+                            .foregroundStyle(Color.primary.opacity(0.55))
+                            .lineLimit(1).minimumScaleFactor(0.5)
                     }
                 }
 
@@ -436,7 +458,7 @@ func glassMenuItem(_ page: Page, _ icon: String, title: String, subtitle: String
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.35))
+                    .foregroundStyle(Color.primary.opacity(0.35))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -446,7 +468,7 @@ func glassMenuItem(_ page: Page, _ icon: String, title: String, subtitle: String
 
         if !isLast {
             Divider()
-                .background(Color.white.opacity(0.08))
+                .background(Color.primary.opacity(0.08))
                 .padding(.leading, 64)
         }
     }
@@ -462,8 +484,9 @@ struct ReadOnlyNotice: View {
 struct ControlsView: View {
     @ObservedObject var link: VehicleLink
     var body: some View {
+        // The 차량 제어 / 실내 공조 segment lives in ControlsTabRootView; no second picker here.
         TeslaInteractiveControlsView(link: link)
-            .navigationTitle("차량 제어")
+            .navigationTitle("컨트롤")
     }
 }
 
@@ -475,145 +498,363 @@ struct ClimateStatusView: View {
     }
 }
 
+/// v91: 주차 중 / 정차 중 / 주행 중, with how old the reading is. Other Tesla
+/// apps lead with this and the app already had the gear and speed in hand; it
+/// simply never rendered them, so the car's state read 상태 미수신 even when a
+/// good response had just arrived.
+struct VehicleMotionBadge: View {
+    let drive: Object
+    var compact = false
+    private var motion: String { drive.string("motion") }
+    private var icon: String {
+        switch motion {
+        case "parked": return "parkingsign.circle.fill"
+        case "driving": return "steeringwheel"
+        case "stopped": return "pause.circle.fill"
+        default: return "questionmark.circle"
+        }
+    }
+    private var tint: Color {
+        switch motion {
+        case "parked": return Theme.green
+        case "driving": return Color(red: 0.35, green: 0.65, blue: 1.0)
+        case "stopped": return Color.orange
+        default: return Theme.muted
+        }
+    }
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: compact ? 11 : 13, weight: .semibold))
+            Text(drive.string("motionLabel", "상태 미수신")).font(.system(size: compact ? 12 : 14, weight: .semibold))
+            if let at = drive.number("at") {
+                Text(dateText(at)).font(.system(size: compact ? 11 : 12)).foregroundStyle(Theme.muted).monospacedDigit()
+            }
+        }
+        .foregroundStyle(tint)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// v92: the old card showed "상태 미수신 · 위치 정보를 수신하지 못했습니다" while a
+/// saved parking record with a full address sat two cards below it on the same
+/// screen. A car that is not reporting right now was still somewhere the last
+/// time it did, and that is the answer to "where is my car" — so the saved
+/// position is used when no live one is available, labelled as what it is.
+/// v92: this was four stacked lines of running text — "배터리 34%  주행가능 190 km"
+/// then "잠금 상태 미수신" then a full timestamp sentence. The numbers are the
+/// point, so they are tiles; the lock state is a chip; and the reception time is
+/// a caption on the title row instead of a sentence of its own.
+struct FleetStatusCard: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let snapshot = model.fleet.vehicleSnapshot.flatMap { $0.vin == model.fleet.selectedVin ? $0 : nil }
+        VStack(alignment: .leading, spacing: 14) {
+            titleRow(snapshot)
+            if let snapshot {
+                HStack(spacing: 0) {
+                    tile(snapshot.soc.map { "\(Int($0))" }, "%", "배터리")
+                    divider
+                    tile(snapshot.rangeKm.map { "\(Int($0))" }, "km", "주행 가능")
+                    divider
+                    let bleTemperature = model.output.object("fresh").flag("climate") ? model.groups.object("climate").number("insideC") : nil
+                    let temperature = bleTemperature ?? snapshot.insideC
+                    tile(temperature.map { "\(Int($0.rounded()))" }, "°C", "실내 온도")
+                }
+                lockChip(snapshot.locked)
+            }
+            notice
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Theme.fill(0.12).opacity(0.75))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 1))
+        )
+    }
+
+    private func titleRow(_ snapshot: FleetVehicleSnapshot?) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color(red: 0.35, green: 0.65, blue: 1.0))
+            Text(model.fleet.vehicleDisplayStatus)
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.primary)
+            Spacer(minLength: 4)
+            if let at = snapshot?.receivedAt {
+                Text(at.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted).monospacedDigit()
+            }
+            Button {
+                model.refreshVehicle()
+            } label: {
+                Group {
+                    if model.fleet.isReadingVehicle || model.link.refreshing { ProgressView().controlSize(.mini) }
+                    else { Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold)) }
+                }
+                .frame(width: 44, height: 44)
+                .background(Color.primary.opacity(0.08), in: Circle())
+                .foregroundStyle(Color.primary)
+            }
+            .disabled(model.fleet.isReadingVehicle || model.link.refreshing)
+            .accessibilityLabel("차량 상태 새로고침")
+        }
+    }
+
+    private func tile(_ value: String?, _ unit: String, _ label: String) -> some View {
+        VStack(spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value ?? "미수신")
+                    .font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(value == nil ? Theme.muted : Color.primary)
+                if value != nil {
+                    Text(unit).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.muted)
+                }
+            }
+            Text(label).font(.system(size: 11)).foregroundStyle(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Color.primary.opacity(0.08)).frame(width: 1, height: 28)
+    }
+
+    private func lockChip(_ locked: Bool?) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: locked == nil ? "lock.slash" : (locked! ? "lock.fill" : "lock.open.fill"))
+                .contentTransition(.symbolEffect(.replace)).font(.system(size: 11, weight: .semibold))
+            Text(locked.map { $0 ? "도어 잠김" : "도어 잠금 해제" } ?? "잠금 미수신")
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(locked == nil ? Theme.muted : (locked! ? Theme.green : Color.orange))
+        .padding(.horizontal, 9).padding(.vertical, 5)
+        .background(Color.primary.opacity(0.07), in: Capsule())
+    }
+
+    @ViewBuilder private var notice: some View {
+        if let error = model.fleet.vehicleReadError {
+            Text(error).font(.system(size: 12)).foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if model.fleet.vehicleReadStatus == "차량 절전 중" || model.fleet.vehicleReadStatus == "차량 오프라인" {
+            Text("차량이 깨어나면 새로고침해서 현재 상태를 가져옵니다.")
+                .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+struct VehicleLocationCard: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var link: VehicleLink
+    @ObservedObject private var parking = SmartParkingManager.shared
+    let location: Object
+    let drive: Object
+    @Binding var address: String
+
+    private enum Source { case live, remembered, phone }
+    private struct Fix { let latitude: Double; let longitude: Double; let at: Date?; let source: Source }
+
+    private var fix: Fix? {
+        if location.flag("hasCoordinates"), let lat = location.number("latitude"), let lon = location.number("longitude") {
+            return Fix(latitude: lat, longitude: lon,
+                       at: (location.number("gpsAt") ?? location.number("at")).map { Date(timeIntervalSince1970: $0 / 1000) },
+                       source: .live)
+        }
+        if let record = parking.latestRecord, record.vehicleID == parking.selectedVehicleID, let lat = record.effectiveLatitude, let lon = record.effectiveLongitude {
+            return Fix(latitude: lat, longitude: lon, at: record.timestamp, source: .remembered)
+        }
+        if let record = parking.latestRecord, record.vehicleID == nil || record.vehicleID == parking.selectedVehicleID,
+           let lat = record.mobile.mobileLatitude, let lon = record.mobile.mobileLongitude {
+            return Fix(latitude: lat, longitude: lon, at: record.timestamp, source: .phone)
+        }
+        return nil
+    }
+
+    var body: some View {
+        GlassMenuCard {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                if let fix {
+                    placeName(fix)
+                    chips(fix)
+                    actions(fix)
+                } else {
+                    waiting
+                    refreshButton
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "location.north.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color(red: 0.25, green: 0.65, blue: 1.0))
+            Text("차량 위치").font(.system(size: 17, weight: .bold)).foregroundStyle(Color.primary)
+            Spacer(minLength: 4)
+            VehicleMotionBadge(drive: drive, compact: true)
+        }
+    }
+
+    @ViewBuilder private func placeName(_ fix: Fix) -> some View {
+        let saved = parking.latestRecord
+        let title: String = {
+            if !address.isEmpty { return address }
+            if fix.source != .live, let saved { return saved.displayTitle }
+            return "위치 확인 중…"
+        }()
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 21, weight: .bold))
+                .foregroundStyle(Color.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+            if fix.source == .remembered, let saved, !saved.displaySubtitle.isEmpty, saved.displaySubtitle != title {
+                Text(saved.displaySubtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.primary.opacity(0.55))
+                    .lineLimit(1).minimumScaleFactor(0.5)
+            }
+        }
+        .task(id: "\(fix.latitude),\(fix.longitude)") { await resolveAddress(fix) }
+    }
+
+    private func chips(_ fix: Fix) -> some View {
+        HStack(spacing: 6) {
+            if let at = fix.at { chip(elapsed(at), "clock") }
+            chip(fix.source == .live ? "차량 수신" : fix.source == .phone ? "저장 당시 휴대폰 위치" : "마지막 주차 위치",
+                 fix.source == .live ? "antenna.radiowaves.left.and.right" : "parkingsign")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func chip(_ text: String, _ icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+            Text(text).font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(Color.primary.opacity(0.72))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(0.08), in: Capsule())
+    }
+
+    private func actions(_ fix: Fix) -> some View {
+        HStack(spacing: 10) {
+            if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(fix.latitude),\(fix.longitude)") {
+                Link(destination: url) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "map.fill")
+                        Text("지도 보기")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(.white)
+                }
+            }
+            refreshButton.frame(width: 56)
+        }
+    }
+
+    private var refreshButton: some View {
+        Button {
+            model.refreshVehicle()
+        } label: {
+            Group {
+                if link.refreshing || model.fleet.isReadingVehicle {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 15, weight: .semibold))
+                }
+            }
+            .frame(maxWidth: .infinity).frame(height: 44)
+            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .foregroundStyle(Color.primary)
+        }
+        .disabled(model.demo || (!link.authentic && !model.fleet.isAuthenticated) || link.refreshing)
+        .accessibilityLabel("위치 정보 새로고침")
+    }
+
+    /// Name what is actually missing rather than "수신하지 못했습니다".
+    private var waiting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(location.string("diagnostic").isEmpty ? "차량이 아직 좌표를 보고하지 않음" : location.string("diagnostic"))
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.primary)
+            Text(link.authentic || model.fleet.isAuthenticated
+                 ? "저장된 주차 기록도 아직 없습니다. 차량이 깨어나 좌표를 보고하면 여기에 표시됩니다."
+                 : "차량 계정 또는 블루투스를 먼저 연결해 주세요.")
+                .font(.system(size: 13)).foregroundStyle(Color.primary.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func elapsed(_ at: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(at))
+        if seconds < 60 { return "방금" }
+        if seconds < 3600 { return "\(seconds / 60)분 전" }
+        if seconds < 86400 { return "\(seconds / 3600)시간 전" }
+        return dateText(at.timeIntervalSince1970 * 1000, time: false)
+    }
+
+    private func resolveAddress(_ fix: Fix) async {
+        let point = CLLocation(latitude: fix.latitude, longitude: fix.longitude)
+        if let marks = try? await CLGeocoder().reverseGeocodeLocation(point, preferredLocale: Locale(identifier: "ko_KR")),
+           let mark = marks.first {
+            let parts = [mark.administrativeArea, mark.locality, mark.subLocality, mark.thoroughfare, mark.subThoroughfare]
+                .compactMap { $0 }.filter { !$0.isEmpty }
+            let joined = parts.joined(separator: " ")
+            if !joined.isEmpty { address = joined; return }
+            if let name = mark.name, !name.isEmpty { address = name; return }
+        }
+        address = String(format: "%.4f, %.4f", fix.latitude, fix.longitude)
+    }
+}
+
 struct LocationStatusView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
+    @ObservedObject private var parking = SmartParkingManager.shared
     @State private var roadAddress: String = ""
     var body: some View {
-        let l = homePresentation(model, link).object("location")
-        let hasCoords = l.flag("hasCoordinates")
-        let lat = l.number("latitude")
-        let lng = l.number("longitude")
-        PageBody(title: "차량 위치", briefing: .location, briefingText: { model.screenBriefing(.location, address: roadAddress) }) {
-            VStack(spacing: 16) {
-                GlassMenuCard {
-                    VStack(alignment: .leading, spacing: 14) {
-                        CardTitle(title: "마지막 수신 위치", systemImage: "location.north.circle.fill")
-                        if hasCoords, let lat = lat, let lng = lng {
-                            VStack(alignment: .leading, spacing: 8) {
-                                // Prominent Korean address
-                                HStack(alignment: .firstTextBaseline) {
-                                    Image(systemName: "mappin.and.ellipse")
-                                        .foregroundStyle(Color(red: 0.25, green: 0.65, blue: 1.0))
-                                        .font(.system(size: 16, weight: .semibold))
-                                    Text(roadAddress.isEmpty ? "위치 확인 중..." : roadAddress)
-                                        .font(.system(size: 19, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .lineLimit(2)
-                                }
-
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("\(String(format: "%.5f", lat)), \(String(format: "%.5f", lng))")
-                                            .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(Color.white.opacity(0.6))
-                                        if let gpsAt = l.number("gpsAt") {
-                                            Text("GPS 측정: \(dateText(gpsAt))")
-                                                .font(.caption2)
-                                                .foregroundStyle(Color.white.opacity(0.45))
-                                        }
-                                    }
-                                    Spacer()
-                                    if !model.demo, let url = URL(string: "https://maps.apple.com/?ll=\(lat),\(lng)") {
-                                        Link(destination: url) {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "map.fill")
-                                                Text("지도 보기")
-                                            }
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
-                                            .background(Color(red: 0.18, green: 0.50, blue: 0.95), in: Capsule())
-                                            .foregroundStyle(.white)
-                                        }
-                                    }
-                                }
-                            }
-                            .task(id: "\(lat),\(lng)") {
-                                let geocoder = CLGeocoder()
-                                let location = CLLocation(latitude: lat, longitude: lng)
-                                if let placemarks = try? await geocoder.reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ko_KR")),
-                                   let p = placemarks.first {
-                                    let admin = p.administrativeArea ?? ""
-                                    let locality = p.locality ?? ""
-                                    let subLoc = p.subLocality ?? ""
-                                    let thoroughfare = p.thoroughfare ?? ""
-                                    let subThoroughfare = p.subThoroughfare ?? ""
-                                    let name = p.name ?? ""
-                                    let parts = [admin, locality, subLoc, thoroughfare, subThoroughfare].filter { !$0.isEmpty }
-                                    let full = parts.joined(separator: " ")
-                                    if !full.isEmpty {
-                                        roadAddress = full
-                                    } else if !name.isEmpty {
-                                        roadAddress = name
-                                    } else {
-                                        roadAddress = "\(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))"
-                                    }
-                                } else {
-                                    if abs(lat - 37.17) < 0.05 && abs(lng - 127.36) < 0.05 {
-                                        roadAddress = "경기도 용인시 처인구 남사읍"
-                                    } else {
-                                        roadAddress = "\(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))"
-                                    }
-                                }
-                            }
-                        } else {
-                            Text("위치 정보를 수신하지 못했습니다")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.white.opacity(0.6))
-                        }
-
-                        Button {
-                            if link.authentic { link.refreshNow(retryUnavailable: true) }
-                            else { Task { await model.fleet.refreshVehicleSnapshot(force: true) } }
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("위치 정보 새로고침")
-                            }
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                            .foregroundStyle(.white)
-                        }
-                        .disabled(model.demo || (!link.authentic && !model.fleet.isAuthenticated) || link.refreshing)
-                    }
-                    .padding(16)
+        let p = homePresentation(model, link)
+        PageBody(title: "차량 위치", briefing: .location, briefingText: {
+            if !p.object("location").flag("hasCoordinates"), let record = parking.latestRecord,
+               record.vehicleID == nil || record.vehicleID == parking.selectedVehicleID {
+                if record.vehicleID == parking.selectedVehicleID, record.effectiveLatitude != nil, record.effectiveLongitude != nil {
+                    return record.briefingLines.joined(separator: " ")
                 }
+                if record.mobile.mobileLatitude != nil, record.mobile.mobileLongitude != nil {
+                    return "저장 당시 휴대폰 위치입니다. " + record.briefingLines.prefix(2).joined(separator: " ")
+                }
+            }
+            return model.screenBriefing(.location, address: roadAddress)
+        }) {
+            VStack(spacing: 16) {
+                VehicleLocationCard(link: link, location: p.object("location"), drive: p.object("drive"), address: $roadAddress)
 
                 // Smart Parking Card (Floor, Pillar, Photo, Memo)
                 SmartParkingCard(link: link)
 
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        CardTitle(title: "길안내 및 주차", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                        NavigationLink(value: Page.navigation) {
-                            HStack {
-                                Image(systemName: "safari.fill")
-                                    .foregroundStyle(Color.blue)
-                                Text("내장 내비게이션 시작")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.35))
-                            }
-                            .padding(.vertical, 8)
-                        }
-                        Divider().background(Color.white.opacity(0.08))
-                        NavigationLink(value: Page.care) {
+                        // v90: 길안내 lives in this tab's first segment, so only 주차 기록 remains here.
+                        CardTitle(title: "주차 기록", systemImage: "parkingsign.circle.fill")
+                        NavigationLink(value: Page.parking) {
                             HStack {
                                 Image(systemName: "parkingsign.circle.fill")
                                     .foregroundStyle(Color.green)
                                 Text("주차 위치 및 사진 기록")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(Color.primary)
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.35))
+                                    .foregroundStyle(Color.primary.opacity(0.35))
                             }
                             .padding(.vertical, 8)
                         }
@@ -631,7 +872,7 @@ struct ChargeStatusView: View {
     @State private var add = false
     var body: some View {
         let c = homePresentation(model, link).object("charge")
-        let isCharging = (c.number("chargerKW") ?? 0) > 0.5 || c.flag("charging")
+        let isCharging = c.chargingNow
         let isPlugged = isCharging || c.flag("plugged")
         PageBody(title: "충전", briefing: .charging) {
             VStack(spacing: 16) {
@@ -663,26 +904,11 @@ struct ChargeStatusView: View {
                                     .foregroundStyle(Color.green)
                                 Text("충전 기록 및 영수증 추가")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(Color.primary)
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.35))
-                            }
-                            .padding(.vertical, 8)
-                        }
-                        Divider().background(Color.white.opacity(0.08))
-                        NavigationLink(value: Page.battery) {
-                            HStack {
-                                Image(systemName: "waveform.path.ecg")
-                                    .foregroundStyle(Color.orange)
-                                Text("충전 이력 및 배터리 분석")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.35))
+                                    .foregroundStyle(Color.primary.opacity(0.35))
                             }
                             .padding(.vertical, 8)
                         }
@@ -700,6 +926,7 @@ struct SecurityStatusView: View {
     @ObservedObject var link: VehicleLink
     var body: some View {
         PageBody(title: "보안 및 잠금", briefing: .security) {
+            NavigationLink { FleetSupplementView(fleet: model.fleet, kind: .drivers) } label: { Label("차량 접근 운전자", systemImage: "person.2") }
             VStack(spacing: 16) {
                 GlassMenuCard {
                     VStack(alignment: .leading, spacing: 14) {
@@ -715,13 +942,13 @@ struct SecurityStatusView: View {
                         HStack {
                             Text("연결 상태")
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.65))
+                                .foregroundStyle(Color.primary.opacity(0.65))
                             Spacer()
                             Text(homePresentation(model, link).string("connection", "확인 중"))
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color.primary)
                         }
-                        Divider().background(Color.white.opacity(0.08))
+                        Divider().background(Color.primary.opacity(0.08))
                         NavigationLink(value: Page.connection) {
                             HStack {
                                 Text("연결 및 키 설정")
@@ -730,7 +957,7 @@ struct SecurityStatusView: View {
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.35))
+                                    .foregroundStyle(Color.primary.opacity(0.35))
                             }
                             .padding(.vertical, 4)
                         }
@@ -756,11 +983,11 @@ struct PowerFlowGraphView: View {
             HStack {
                 Text("실시간 전력 흐름")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .foregroundStyle(Color.primary.opacity(0.6))
                 Spacer()
                 Text(isCharging ? String(format: "%.1f kW 충전 중", chargerKW) : "대기 상태")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isCharging ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.white.opacity(0.5))
+                    .foregroundStyle(isCharging ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.primary.opacity(0.5))
             }
 
             Canvas { context, size in
@@ -805,15 +1032,15 @@ struct PowerFlowGraphView: View {
                 context.fill(
                     fillPath,
                     with: .linearGradient(
-                        Gradient(colors: isCharging ? [Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.22), Color.clear] : [Color.white.opacity(0.03), Color.clear]),
+                        Gradient(colors: isCharging ? [Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.22), Color.clear] : [Color.primary.opacity(0.03), Color.clear]),
                         startPoint: CGPoint(x: 0, y: 0),
                         endPoint: CGPoint(x: 0, y: h)
                     )
                 )
             }
             .frame(height: 52)
-            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.06), lineWidth: 0.8))
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.06), lineWidth: 0.8))
         }
     }
 }
@@ -835,7 +1062,7 @@ private struct TeslaOfficialChargingCardView: View {
         let rangeKm = c.number("rangeKm").map { String(Int($0.rounded())) } ?? "—"
         let chargerKW = c.number("chargerKW") ?? 0.0
         let addedKWh = c.number("addedKWh") ?? 0.0
-        let isCharging = (model.demo || c.string("mode") == "recent") && (c.flag("charging") || chargerKW > 0.5)
+        let isCharging = (model.demo || c.string("mode") == "recent") && c.chargingNow
         let voltage = c.number("chargerVoltage").map { String(Int($0.rounded())) } ?? "—"
 
         VStack(spacing: 0) {
@@ -846,22 +1073,22 @@ private struct TeslaOfficialChargingCardView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text(c.number("soc") == nil ? "—" : "\(soc)")
                             .font(.system(size: 36, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                         Text("%")
                             .font(.system(size: 20, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.6))
+                            .foregroundStyle(Color.primary.opacity(0.6))
                     }
                     Text("·")
                         .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(Color.white.opacity(0.3))
+                        .foregroundStyle(Color.primary.opacity(0.3))
                         .padding(.horizontal, 4)
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text("\(rangeKm)")
                             .font(.system(size: 24, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.9))
+                            .foregroundStyle(Color.primary.opacity(0.9))
                         Text("km")
                             .font(.system(size: 14, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.55))
+                            .foregroundStyle(Color.primary.opacity(0.55))
                     }
 
                     Spacer()
@@ -881,13 +1108,13 @@ private struct TeslaOfficialChargingCardView: View {
                                 .frame(width: 7, height: 7)
                             Text(c.string("mode") == "recent" ? "충전 대기" : "상태 미확인")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.8))
+                                .foregroundStyle(Color.primary.opacity(0.8))
                         }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.08), in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+                    .background(Color.primary.opacity(0.08), in: Capsule())
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.12), lineWidth: 0.8))
                 }
 
                 // Battery SOC Gradient Progress Bar with Target Limit Thumb
@@ -900,12 +1127,12 @@ private struct TeslaOfficialChargingCardView: View {
                         ZStack(alignment: .leading) {
                             // Background Track
                             Capsule()
-                                .fill(Color(white: 0.16))
+                                .fill(Theme.adaptive(dark: UIColor(white: 0.16, alpha: 1), light: UIColor.systemGray5))
                                 .frame(height: 8)
 
                             // Target Limit Allowed Zone
                             Capsule()
-                                .fill(Color.white.opacity(0.12))
+                                .fill(Color.primary.opacity(0.12))
                                 .frame(width: max(8, w * targetFrac), height: 8)
 
                             // Current SOC Fill with Vibrant Gradient
@@ -951,11 +1178,11 @@ private struct TeslaOfficialChargingCardView: View {
                     HStack {
                         Text("충전 한도: \(Int(targetLimit))%")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.85))
+                            .foregroundStyle(Color.primary.opacity(0.85))
                         Spacer()
                         Text(isCharging ? "충전기 출력 \(Int(round(chargerKW))) kW · +\(c.number("addedKWh").map { String(Int($0.rounded())) } ?? "—") kWh" : (c.string("mode") == "recent" ? "충전 대기 상태" : "충전 상태 미확인"))
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.55))
+                            .foregroundStyle(Color.primary.opacity(0.55))
                     }
                 }
 
@@ -980,7 +1207,7 @@ private struct TeslaOfficialChargingCardView: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(currentAmps > 5 ? Color.white.opacity(0.85) : Color.white.opacity(0.25))
+                            .foregroundStyle(currentAmps > 5 ? Color.primary.opacity(0.85) : Color.primary.opacity(0.25))
                             .frame(width: 44, height: 40)
                             .scaleEffect(isLeftPressed ? 0.85 : 1.0)
                     }
@@ -990,7 +1217,7 @@ private struct TeslaOfficialChargingCardView: View {
 
                     Text("요청 \(currentAmps) A · \(voltage) V")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.primary)
 
                     Spacer()
 
@@ -1008,21 +1235,21 @@ private struct TeslaOfficialChargingCardView: View {
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(currentAmps < maxAmps ? Color.white.opacity(0.85) : Color.white.opacity(0.25))
+                            .foregroundStyle(currentAmps < maxAmps ? Color.primary.opacity(0.85) : Color.primary.opacity(0.25))
                             .frame(width: 44, height: 40)
                             .scaleEffect(isRightPressed ? 0.85 : 1.0)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
                 .frame(height: 40)
-                .background(Color(white: 0.14).opacity(0.9), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 0.8))
+                .background(Theme.adaptive(dark: UIColor(white: 0.14, alpha: 1), light: UIColor.systemGray6).opacity(0.9), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.8))
             }
             .padding(16)
 
             // Divider Line
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Color.primary.opacity(0.08))
                 .frame(height: 1)
 
             Button("선택 전류 적용") { model.requestVehicleControl("chargeAmps", title: "충전 전류 설정", args: ["value": currentAmps]) }.buttonStyle(.bordered)
@@ -1045,7 +1272,7 @@ private struct TeslaOfficialChargingCardView: View {
                 .buttonStyle(PlainButtonStyle())
 
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.primary.opacity(0.08))
                     .frame(width: 1, height: 48)
 
                 Button {
@@ -1054,7 +1281,7 @@ private struct TeslaOfficialChargingCardView: View {
                 } label: {
                     Text(isCharging ? "충전 포트 잠금 해제" : "충전 포트 열기")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.85))
+                        .foregroundStyle(Color.primary.opacity(0.85))
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                 }
@@ -1063,12 +1290,12 @@ private struct TeslaOfficialChargingCardView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(white: 0.11).opacity(0.85))
+                .fill(Theme.fill(0.11).opacity(0.85))
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                .stroke(LinearGradient(colors: [Color.primary.opacity(0.18), Color.primary.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
         )
     }
 }
@@ -1090,12 +1317,16 @@ struct ControlsTabRootView: View {
             .padding(.bottom, 8)
             .background(Theme.bg)
 
-            if selectedSection == 0 {
-                ControlsView(link: link)
-            } else {
-                ClimateStatusView(link: link)
-            }
+            Group {
+                if selectedSection == 0 {
+                    ControlsView(link: link)
+                } else {
+                    ClimateStatusView(link: link)
+                }
+            }.id(selectedSection).transition(.blurReplace)
         }
+        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
 }
@@ -1103,13 +1334,12 @@ struct ControlsTabRootView: View {
 struct EnergyTabRootView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
-    @State private var selectedSection = 0
-    @State private var batteryDays = 30
+    @AppStorage("energy.section") private var selectedSection = 0
     var body: some View {
         VStack(spacing: 0) {
             Picker("에너지 구분", selection: $selectedSection) {
                 Text("충전 제어").tag(0)
-                Text("배터리 분석").tag(1)
+                Text("TeslaMate").tag(1)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1117,18 +1347,17 @@ struct EnergyTabRootView: View {
             .padding(.bottom, 8)
             .background(Theme.bg)
 
-            if selectedSection == 0 {
-                ChargeStatusView(link: link)
-            } else {
-                ScrollView {
-                    ScreenBriefingControls(scope: .battery, text: { model.screenBriefing(.battery, days: batteryDays) })
-                    BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(batteryDays)), days: $batteryDays)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+            Group {
+                if selectedSection == 0 {
+                    ChargeStatusView(link: link)
+                } else {
+                    // Battery analysis, cost, calendar and all history live under one TeslaMate section.
+                    TeslaMateView()
                 }
-                .background(Theme.bg)
-            }
+            }.id(selectedSection).transition(.blurReplace)
         }
+        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
 }
@@ -1143,7 +1372,6 @@ struct DriveTabRootView: View {
             Picker("운행 구분", selection: $selectedSection) {
                 Text("길안내").tag(0)
                 Text("위치·주차").tag(1)
-                Text("운행 기록").tag(2)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20)
@@ -1151,14 +1379,16 @@ struct DriveTabRootView: View {
             .padding(.bottom, 8)
             .background(Theme.bg)
 
-            if selectedSection == 0 {
-                NavigationSetupView(navigation: navigation)
-            } else if selectedSection == 1 {
-                LocationStatusView(link: link)
-            } else {
-                TripsView()
-            }
+            Group {
+                if selectedSection == 0 {
+                    NavigationLandingView(navigation: navigation)
+                } else {
+                    LocationStatusView(link: link)
+                }
+            }.id(selectedSection).transition(.blurReplace)
         }
+        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
 }
@@ -1176,28 +1406,37 @@ struct MenuTabRootView: View {
 
                 // Group 1: 차량 커스텀 & 점검
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("차량 커스텀 & 점검")
+                    Text("차량 관리")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Color.primary.opacity(0.6))
                         .padding(.leading, 6)
 
                     GlassMenuCard {
-                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 컬러 · 휠 · 캘리퍼 · 틴팅 · 시트/인테리어", colors: [Color.purple, Color.pink])
-                        glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "차량 관리 및 케어", subtitle: "타이어 공기압(TPMS) · 와이퍼 모드 · 서비스 점검", colors: [Color.orange, Color.yellow])
-                        glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 도난 방지 알림 · 운전자 프로필", colors: [Color.blue, Color.cyan], isLast: true)
+                        glassMenuItem(.fleetInsights, "checkmark.shield", title: "차량 상태·보증", subtitle: "사양 · 보증 · 경고", colors: [Color.cyan, Color.blue])
+                        glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "타이어·정비", subtitle: "공기압 · 소모품 주기", colors: [Color.orange, Color.yellow])
+                        glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 운전자", colors: [Color.blue, Color.cyan], isLast: true)
                     }
                 }
 
                 // Group 2: 스마트 기능 & 설정
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("스마트 기능 & 설정")
+                    Text("설정")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Color.primary.opacity(0.6))
                         .padding(.leading, 6)
 
                     GlassMenuCard {
-                        glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "탑승/출발/도착/충전 음성 안내 및 자동 제어", colors: [Color.green, Color.mint])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "표시 및 AI 음성 설정", subtitle: "타입캐스트 음성 · API 키 · 단위 설정", colors: [Color.gray, Color.white], isLast: true)
+                        glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "차량·NAS 연결", subtitle: "계정 · 블루투스 · 서버", colors: [Color.cyan, Color.blue])
+                        glassMenuItem(.navigation, "map", title: "내비게이션", subtitle: "지도 · 위치 권한 · 하이패스", colors: [Color.blue, Color.cyan])
+                        glassMenuItem(.chargingSettings, "bolt.fill", title: "충전 계획·요금", subtitle: "충전 기준 · 전기 단가", colors: [Color.green, Color.mint])
+                        glassMenuItem(.recordSettings, "externaldrive", title: "기록·백업", subtitle: "내보내기 · 복원", colors: [Color.blue, Color.cyan])
+                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내", colors: [Color.purple, Color.pink])
+                        glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "상황별 음성 안내 · 자동 제어", colors: [Color.green, Color.mint])
+                        glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 알림 · 권한", colors: [Color.purple, Color.blue])
+                        glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "배경 · 거리 · 온도 단위", colors: [Color.gray, Color(uiColor: .systemGray2)])
+                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color(uiColor: .systemGray2)])
+                        glassMenuItem(.character, "figure.wave", title: "캐릭터", subtitle: "3D 캐릭터 선택 · 미리보기", colors: [Color.pink, Color.purple])
+                        glassMenuItem(.releaseNotes, "doc.text.fill", title: "릴리즈 노트", subtitle: "버전별 변경 내역", colors: [Color.orange, Color.pink], isLast: true)
                     }
                 }
             }
@@ -1207,6 +1446,11 @@ struct MenuTabRootView: View {
     private var vehicleStatusHeader: some View {
         let vin = model.settings.string("vin")
         let cleanVin = vin.isEmpty ? "VIN 미등록" : vin
+        let snapshotPayload = model.fleet.vehicleSnapshot?.payload ?? [:]
+        let snapshotName = (snapshotPayload["display_name"] as? String) ?? ""
+        let snapshotCarType = ((snapshotPayload["vehicle_config"] as? [String: Any])?["car_type"] as? String) ?? ""
+        let savedModel = model.settings.string("model")
+        let vehicleTitle: String = !snapshotName.isEmpty ? snapshotName : (!savedModel.isEmpty ? "Tesla " + savedModel : (snapshotCarType.isEmpty ? "Tesla" : "Tesla " + snapshotCarType))
         let isConnected = link.authentic || (model.fleet.vehicleSnapshot?.isRecent() == true && model.fleet.vehicleReadError == nil)
         let connText = link.authentic ? "차량 BLE 정상 연결" : (model.fleet.isAuthenticated ? model.fleet.vehicleDisplayStatus : "차량 연결 대기 중")
         let connColor = isConnected ? Color.green : Color.orange
@@ -1214,18 +1458,18 @@ struct MenuTabRootView: View {
         return HStack(spacing: 14) {
             Image(systemName: "car.side.fill")
                 .font(.system(size: 28))
-                .foregroundStyle(Color.white.opacity(0.85))
+                .foregroundStyle(Color.primary.opacity(0.85))
                 .frame(width: 52, height: 52)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Tesla Model Y")
+                Text(vehicleTitle)
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.primary)
 
                 Text(cleanVin)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.5))
+                    .foregroundStyle(Color.primary.opacity(0.5))
 
                 HStack(spacing: 6) {
                     Circle()
@@ -1242,11 +1486,36 @@ struct MenuTabRootView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(white: 0.12).opacity(0.75))
+                .fill(Theme.fill(0.12).opacity(0.75))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                 )
         )
+    }
+}
+
+struct NavigationLandingView: View {
+    @EnvironmentObject private var model: AppModel
+    @ObservedObject var navigation: EmbeddedNavigation
+    @State private var searching = false
+    @State private var selected: SavedNavigationPlace?
+    @State private var nearby = false
+    @State private var recent: [SavedNavigationPlace] = []
+    var body: some View {
+        NavigationLandingPanel(guiding: navigation.guiding, recent: recent,
+            search: { selected = nil; searching = true },
+            dashboard: { navigation.activateWorkspace(model: model) },
+            charging: { nearby = true },
+            naver: { model.openInNaverMap() }, tmap: { model.openInTMap() },
+            select: { selected = $0; searching = true }, externalEnabled: !model.demo)
+        .onAppear { loadRecent() }
+        .sheet(isPresented: $searching, onDismiss: loadRecent) {
+            DestinationSearchView(navigation: navigation, initialPlace: selected).environmentObject(model)
+        }
+        .navigationDestination(isPresented: $nearby) { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging) }
+    }
+    private func loadRecent() {
+        recent = UserDefaults.standard.data(forKey: "navigation.recent").flatMap { try? JSONDecoder().decode([SavedNavigationPlace].self, from: $0) } ?? []
     }
 }

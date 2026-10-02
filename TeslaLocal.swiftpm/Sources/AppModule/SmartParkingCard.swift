@@ -11,13 +11,35 @@ struct SmartParkingCard: View {
 
     var body: some View {
         if model.fleet.isAuthenticated && !model.demo {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(manager.fleetParkingStatus).font(.subheadline)
-                Button("현재 차량 위치를 주차 위치로 저장") { manager.saveCurrentFleetParking() }
-                    .buttonStyle(.bordered)
-                    .disabled(model.fleet.vehicleSnapshot?.parkingTelemetry() == nil)
-                Caption("직접 저장한 시각을 기록함 · 실제 도착 시각은 차량에서 제공하지 않음")
-            }.padding()
+            // v92: the disable condition carried the same 120-second gate as
+            // parkingTelemetry itself — the fourth place it has caused this bug.
+            // A parked car stops updating drive_state, so the button greyed out
+            // exactly when the owner most wanted it. What it actually needs is a
+            // position, not a fresh one.
+            let ready = manager.canSaveVehicleLocation
+            VStack(alignment: .leading, spacing: 10) {
+                Text(manager.fleetParkingStatus)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { manager.saveCurrentFleetParking() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "mappin.and.ellipse").font(.system(size: 14, weight: .semibold))
+                        Text("확인된 차량 위치를 주차 위치로 저장").font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 46)
+                    .background(ready ? Color(red: 0.18, green: 0.50, blue: 0.95) : Color.primary.opacity(0.07),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(ready ? Color.white : Color.primary.opacity(0.35))
+                }
+                .disabled(!ready)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Theme.fill(0.12).opacity(0.75))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 1))
+            )
         }
         if let record = manager.latestRecord, record.vehicleID == nil || record.vehicleID == manager.selectedVehicleID {
             LocalBriefingControls(title: "주차 상태") {
@@ -46,7 +68,7 @@ struct SmartParkingCard: View {
                             HStack(spacing: 4) {
                                 Image(systemName: record.verification.isSecurityVerified ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
                                     .font(.system(size: 10, weight: .bold))
-                                Text(record.verification.isSecurityVerified ? "모바일+차량 종합검증" : "보안확인필요")
+                                Text(record.verification.isSecurityVerified ? "저장된 주차 기록" : "주차 기록 확인")
                                     .font(.system(size: 10, weight: .semibold))
                             }
                             .foregroundStyle(record.verification.isSecurityVerified ? Color.green : Color.orange)
@@ -60,14 +82,14 @@ struct SmartParkingCard: View {
                         // Main Title (OCR Floor & Pillar or Building Name)
                         Text(record.displayTitle)
                             .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
+                            .foregroundStyle(Color.primary)
+                            .lineLimit(2).minimumScaleFactor(0.6)
 
                         // Subtitle (Address & Landmark)
                         Text(record.displaySubtitle)
                             .font(.system(size: 13))
-                            .foregroundStyle(.white.opacity(0.65))
-                            .lineLimit(1)
+                            .foregroundStyle(Color.primary.opacity(0.65))
+                            .lineLimit(1).minimumScaleFactor(0.5)
                     }
 
                     Spacer()
@@ -85,7 +107,7 @@ struct SmartParkingCard: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 14))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 14)
-                                        .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                                        .stroke(Color.primary.opacity(0.25), lineWidth: 1)
                                 )
                         }
                     }
@@ -110,7 +132,7 @@ struct SmartParkingCard: View {
                     )
                 }
 
-                LinearGradient(colors: [.clear, Color.white.opacity(0.18), .clear], startPoint: .leading, endPoint: .trailing).frame(height: 1)
+                LinearGradient(colors: [.clear, Color.primary.opacity(0.18), .clear], startPoint: .leading, endPoint: .trailing).frame(height: 1)
 
                 // 6-Tile Comprehensive Synthesis Grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -120,7 +142,7 @@ struct SmartParkingCard: View {
                         iconColor: .cyan,
                         title: "위치 기록 경과",
                         value: elapsedTimeString(since: record.timestamp),
-                        caption: formatTime(record.timestamp) + " 기록"
+                        caption: formatTime(record.timestamp) + " 기록" + gpsNote(record.vehicle.positionStatus)
                     )
 
                     // Tile 2: Vehicle Heading & Orientation
@@ -213,12 +235,12 @@ struct SmartParkingCard: View {
                             Text("다시 촬영")
                         }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(Color.primary.opacity(0.85))
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.12))
+                                .fill(Color.primary.opacity(0.12))
                         )
                     }
 
@@ -227,11 +249,11 @@ struct SmartParkingCard: View {
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 14))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Color.primary.opacity(0.5))
                             .frame(width: 44, height: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.08))
+                                    .fill(Color.primary.opacity(0.08))
                             )
                     }
                 }
@@ -243,7 +265,7 @@ struct SmartParkingCard: View {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color(red: 0.09, green: 0.11, blue: 0.16).opacity(0.92), Color(red: 0.05, green: 0.06, blue: 0.09).opacity(0.96)],
+                                colors: [Theme.adaptive(dark: UIColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 1), light: .white).opacity(0.92), Theme.adaptive(dark: UIColor(red: 0.05, green: 0.06, blue: 0.09, alpha: 1), light: .white).opacity(0.96)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -315,22 +337,22 @@ struct SmartParkingCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("주차 위치 촬영 및 자동 기록")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                         Text("기둥 번호 또는 야외 건물 촬영 시 차량+모바일 자동 검증")
                             .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(Color.primary.opacity(0.6))
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(Color.primary.opacity(0.4))
                 }
                 .padding(14)
                 .background(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.primary.opacity(0.06))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
                                 .stroke(Color.cyan.opacity(0.25), lineWidth: 1)
@@ -354,6 +376,15 @@ struct SmartParkingCard: View {
 
     // MARK: - Subviews
 
+    private func gpsNote(_ status: String?) -> String {
+        switch status {
+        case "gpsOld": return " · GPS 측정값 오래됨"
+        case "estimated": return " · 추정 위치"
+        case "gpsUnavailable": return " · GPS 확인 중"
+        default: return ""
+        }
+    }
+
     private func tileView(icon: String, iconColor: Color, title: String, value: String, caption: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
@@ -362,30 +393,30 @@ struct SmartParkingCard: View {
                     .font(.system(size: 11))
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(Color.primary.opacity(0.55))
             }
 
             Text(value)
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
+                .foregroundStyle(Color.primary)
+                .lineLimit(1).minimumScaleFactor(0.5)
 
             Text(caption)
                 .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.45))
-                .lineLimit(1)
+                .foregroundStyle(Color.primary.opacity(0.45))
+                .lineLimit(1).minimumScaleFactor(0.5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.primary.opacity(0.05))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.14), Color.white.opacity(0.03)],
+                        colors: [Color.primary.opacity(0.14), Color.primary.opacity(0.03)],
                         startPoint: .top,
                         endPoint: .bottom
                     ),

@@ -23,6 +23,7 @@ function hostCall(op,json){
       case 'view':value=engine.view(now);break;
       case 'vehicle3D':value=YL3D.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
       case 'vehicleCamera':value=YL3D.fitCamera(a);break;
+      case 'homeMotion':value=YLHome.motion(a);break;
       case 'home':value=YLHome.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
       case 'load':value=engine.load(a.state??a,{resumeActive:a.resume===true});clearLive();navigationGate.reset();break;
       case 'validate':value=YLCore.validateState(a);break;
@@ -30,6 +31,10 @@ function hostCall(op,json){
       case 'export':value=engine.state;break;
       case 'settings':value=engine.settings(a);break;
       case 'ingest':value=engine.ingest(a,now);break;
+      case 'enrichChargeSOC':value=engine.enrichChargeSOC(a);break;
+      case 'ingestArchive':value=engine.ingestArchive(a);break;
+      case 'ingestFleetDrive':value=engine.ingestFleetDrive(a,now);break;
+      case 'ingestFleetCharge':value=engine.ingestFleetCharge(a,now);break;
       case 'finish':value=engine.finish(now,true);break;
       case 'addCharge':value=engine.addCharge(a);break;
       case 'maintenance':value=engine.addMaintenance(a);break;

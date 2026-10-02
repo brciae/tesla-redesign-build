@@ -26,6 +26,20 @@ final class VehicleAppearanceStore: ObservableObject {
         defaults.set(try JSONEncoder().encode(value.validated()), forKey: "appearance.v1." + key)
         revision += 1
     }
+    /// The car's factory paint (Fleet vehicle_config) seeds the 3D model once, unless the user already customized it.
+    func adoptFactoryPaint(_ exterior: String?, vin: String) {
+        guard let exterior, !exterior.isEmpty, !vin.isEmpty else { return }
+        let key = Self.vehicleKey(vin: vin, demo: false)
+        guard defaults.data(forKey: "appearance.v1." + key) == nil else { return }
+        let table: [(String, String)] = [("midnightsilver", "4A4F55"), ("quicksilver", "9FA3A6"), ("stealthgr", "3F4347"), ("pearlwhite", "F2F2F0"),
+                                         ("white", "F2F2F0"), ("black", "111214"), ("deepblue", "1F3A68"), ("blue", "1F3A68"),
+                                         ("ultrared", "A8141C"), ("red", "A8141C"), ("silver", "B0B4B8"), ("grey", "3F4347"), ("gray", "3F4347")]
+        let name = exterior.lowercased().replacingOccurrences(of: " ", with: "")
+        guard let hex = table.first(where: { name.contains($0.0) })?.1 else { return }
+        var value = VehicleAppearance.original
+        value.enabled = true; value.paint = hex
+        try? save(value, for: key)
+    }
     func imageURL(_ id: String?) -> URL? {
         guard let id, UUID(uuidString: id) != nil else { return nil }
         return folder.appendingPathComponent(id + ".png")

@@ -78,7 +78,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         defer { isCheckingConnection = false }
         connectionStatus = "\(identity) · API 목록 요청 중…"
         do {
-            let catalog = try await fetchVoiceCatalog(apiKey: key)
+            let catalog = try await fetchVoiceCatalog(apiKey: key, force: true)
             connectionStatus = "\(identity) · GET /v3/voices · HTTP 200 · 보이스 \(Set(catalog.values).count)개. 목록 인증만 확인됨. 음성 합성 권한은 별도 확인 필요."
         } catch {
             connectionStatus = "\(identity) · GET /v3/voices · \(error.localizedDescription)"
@@ -112,6 +112,11 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         ("한영", "한영", "표현력이 풍부하고 생생한 대화 톤")
     ]
 
+    // Validated metadata is scoped to the selected key and expires after 10 minutes.
+    private var catalogKeyFingerprint = ""
+    private var catalogFetchedAt = Date.distantPast
+    private var catalogRequest: Task<[String: String], Error>?
+    private var catalogRequestKey = ""
     private var player: AVAudioPlayer?
     private var testCompletion: (() -> Void)?
 
@@ -123,6 +128,46 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return dir
+    }
+
+    /// v1.34: each voice keeps its own sub-folder so one character's bad takes can be deleted alone.
+    /// Files from before v1.34 sit in the root ("미분류") and move into their voice folder on first use.
+    private func voiceDirectory(_ voiceId: String) -> URL {
+        let safe = voiceId.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
+        let dir = cacheDirectory.appendingPathComponent("v_" + String(safe), isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) { try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+        return dir
+    }
+    struct VoiceCacheEntry: Identifiable, Hashable { let id: String; let name: String; let count: Int; let megabytes: Double }
+    @Published var cacheByVoice: [VoiceCacheEntry] = []
+    static let unsortedCacheID = "__unsorted"
+    func voiceName(_ id: String) -> String {
+        if id == Self.unsortedCacheID { return "미분류 (v1.34 이전 저장분)" }
+        if let name = voiceCatalog.first(where: { $0.value == id && !$0.key.hasPrefix("tc_") })?.key { return name }
+        return id
+    }
+    func clearCache(voice id: String) {
+        if id == Self.unsortedCacheID {
+            let files = (try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)) ?? []
+            for f in files where f.pathExtension == "wav" { try? FileManager.default.removeItem(at: f) }
+        } else {
+            try? FileManager.default.removeItem(at: cacheDirectory.appendingPathComponent(voiceDirectory(id).lastPathComponent, isDirectory: true))
+        }
+        updateCacheCount()
+        lastStatus = "\(voiceName(id)) 음성 캐시를 삭제했습니다."
+    }
+
+    /// One-time purge of short clips synthesised with "smart" emotion (some came back whispered).
+    /// Short cues are tiny WAVs; long reports are kept so they need no re-synthesis.
+    private func purgeWhisperedShortClipsOnce() {
+        let flag = "typecastToneV2Purged"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        UserDefaults.standard.set(true, forKey: flag)
+        let dir = cacheDirectory
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        for url in files where url.pathExtension == "wav" {
+            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 260_000 { try? FileManager.default.removeItem(at: url) }
+        }
     }
 
     private func migrateLegacyCacheIfNeeded() {
@@ -161,6 +206,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         super.init()
         removeLegacyOfflineData()
         migrateLegacyCacheIfNeeded()
+        purgeWhisperedShortClipsOnce()
         updateCacheCount()
         if hasKey && voiceCatalog.isEmpty {
             Task { await refreshVoiceCatalog() }
@@ -235,7 +281,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return result
     }
 
-    private func fetchVoiceCatalog(apiKey: String) async throws -> [String: String] {
+    @MainActor
+    private func fetchVoiceCatalog(apiKey: String, force: Bool = false) async throws -> [String: String] {
+        let fingerprint = SHA256.hash(data: Data(apiKey.utf8)).map { String(format: "%02x", $0) }.joined()
+        if !force, catalogKeyFingerprint == fingerprint, Date().timeIntervalSince(catalogFetchedAt) < 600, !voiceCatalog.isEmpty { return voiceCatalog }
+        if catalogRequestKey == fingerprint, let pending = catalogRequest { return try await pending.value }
+        let task = Task { try await self.requestVoiceCatalog(apiKey: apiKey) }
+        catalogRequest = task; catalogRequestKey = fingerprint
+        defer { if catalogRequestKey == fingerprint { catalogRequest = nil; catalogRequestKey = "" } }
+        let catalog = try await task.value
+        voiceCatalog = catalog; catalogKeyFingerprint = fingerprint; catalogFetchedAt = Date()
+        return catalog
+    }
+
+    private func requestVoiceCatalog(apiKey: String) async throws -> [String: String] {
         let url = URL(string: "https://api.typecast.ai/v3/voices?model=ssfm-v30")!
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
@@ -245,7 +304,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw URLError(.badServerResponse)
         }
         guard http.statusCode == 200 else {
-            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey])
+            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey], stage: "GET /v3/voices · model=ssfm-v30")
         }
         let catalog = parseVoices(from: data)
         guard !catalog.isEmpty else {
@@ -259,7 +318,6 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         do {
             let catalog = try await fetchVoiceCatalog(apiKey: activeApiKey)
             await MainActor.run {
-                self.voiceCatalog = catalog
                 self.lastStatus = "API 보이스 목록 동기화 완료"
             }
         } catch {
@@ -279,7 +337,6 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw NSError(domain: "Typecast", code: 404, userInfo: [NSLocalizedDescriptionKey:
                 "선택한 음성을 현재 계정의 ssfm-v30 API 목록에서 찾을 수 없음. API 지원 음성 확인 필요"])
         }
-        await MainActor.run { self.voiceCatalog = catalog }
         return id
     }
 
@@ -289,6 +346,31 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     // MARK: - Cache Management
 
+    static func presetTone(_ text: String) -> Bool { text.count <= 40 }
+    /// Appends 0.6 s of silence so car/Bluetooth output latency never clips the last syllable.
+    static func paddedTail(_ wav: Data, seconds: Double = 0.6) -> Data {
+        var d = wav
+        func u32(_ o: Int) -> UInt32 { d[d.startIndex + o ..< d.startIndex + o + 4].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) } }
+        func put(_ v: UInt32, _ o: Int) { withUnsafeBytes(of: v.littleEndian) { d.replaceSubrange(d.startIndex + o ..< d.startIndex + o + 4, with: $0) } }
+        var o = 12, byteRate: UInt32 = 0, blockAlign = 0
+        while o + 8 <= d.count {
+            let id = String(data: d[d.startIndex + o ..< d.startIndex + o + 4], encoding: .ascii) ?? ""
+            let size = Int(u32(o + 4))
+            if id == "fmt " { byteRate = u32(o + 16); blockAlign = Int(d[d.startIndex + o + 20]) | Int(d[d.startIndex + o + 21]) << 8 }
+            if id == "data" {
+                guard byteRate > 0, o + 8 + size == d.count else { return wav }
+                var extra = Int(Double(byteRate) * seconds)
+                if blockAlign > 0 { extra -= extra % blockAlign }
+                d.append(Data(count: extra))
+                put(UInt32(size + extra), o + 4)
+                put(UInt32(d.count - 8), 4)
+                return d
+            }
+            o += 8 + size + (size & 1)
+        }
+        return wav
+    }
+
     private func cacheKey(for text: String, voiceId: String) -> String {
         let input = "\(voiceId)_\(text)"
         let digest = SHA256.hash(data: Data(input.utf8))
@@ -297,17 +379,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func cachedURL(for text: String, voiceId: String) -> URL? {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = cacheKey(for: clean, voiceId: voiceId)
-        let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
-        if isFileValid(fileURL) { return fileURL }
-
-        // Also check mapped alias / resolved voice ID
         let lower = voiceId.lowercased()
         let noSpaces = lower.replacingOccurrences(of: " ", with: "")
-        if let mapped = voiceCatalog[lower] ?? voiceCatalog[noSpaces], mapped != voiceId {
-            let mappedKey = cacheKey(for: clean, voiceId: mapped)
-            let mappedURL = cacheDirectory.appendingPathComponent("\(mappedKey).wav")
-            if isFileValid(mappedURL) { return mappedURL }
+        var ids = [voiceId]
+        if let mapped = voiceCatalog[lower] ?? voiceCatalog[noSpaces], mapped != voiceId { ids.append(mapped) }
+        for id in ids {
+            let key = cacheKey(for: clean, voiceId: id)
+            let inVoice = voiceDirectory(id).appendingPathComponent("\(key).wav")
+            if isFileValid(inVoice) { return inVoice }
+            // Pre-v1.34 file in the shared root: file it under this voice now.
+            let legacy = cacheDirectory.appendingPathComponent("\(key).wav")
+            if isFileValid(legacy) {
+                if (try? FileManager.default.moveItem(at: legacy, to: inVoice)) != nil { updateCacheCount(); return inVoice }
+                return legacy
+            }
         }
         return nil
     }
@@ -325,12 +410,12 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         guard data.count > 100 else { return nil }
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = cacheKey(for: clean, voiceId: voiceId)
-        let fileURL = cacheDirectory.appendingPathComponent("\(key).wav")
+        let fileURL = voiceDirectory(voiceId).appendingPathComponent("\(key).wav")
         do {
             try data.write(to: fileURL, options: .atomic)
             if let alias, !alias.isEmpty, alias != voiceId {
                 let aliasKey = cacheKey(for: clean, voiceId: alias)
-                let aliasURL = cacheDirectory.appendingPathComponent("\(aliasKey).wav")
+                let aliasURL = voiceDirectory(voiceId).appendingPathComponent("\(aliasKey).wav")
                 try? data.write(to: aliasURL, options: .atomic)
             }
             updateCacheCount()
@@ -347,27 +432,94 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func updateCacheCount() {
-        if let files = try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path) {
-            cacheFileCount = files.count
-            var totalBytes: UInt64 = 0
-            for file in files {
-                let filePath = cacheDirectory.appendingPathComponent(file).path
-                if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
-                   let size = attrs[.size] as? UInt64 {
-                    totalBytes += size
-                }
+        let fm = FileManager.default
+        func scan(_ dir: URL) -> (Int, UInt64) {
+            let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+            var n = 0, bytes: UInt64 = 0
+            for f in files where f.pathExtension == "wav" {
+                n += 1; bytes += UInt64((try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
             }
-            cacheTotalSizeMB = Double(totalBytes) / (1024.0 * 1024.0)
-        } else {
-            cacheFileCount = 0
-            cacheTotalSizeMB = 0.0
+            return (n, bytes)
         }
+        var entries: [VoiceCacheEntry] = []
+        var total = 0, totalBytes: UInt64 = 0
+        let root = scan(cacheDirectory)
+        if root.0 > 0 { entries.append(VoiceCacheEntry(id: Self.unsortedCacheID, name: voiceName(Self.unsortedCacheID), count: root.0, megabytes: Double(root.1) / 1_048_576)) }
+        total += root.0; totalBytes += root.1
+        let dirs = (try? fm.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+        for d in dirs where d.lastPathComponent.hasPrefix("v_") {
+            let r = scan(d)
+            guard r.0 > 0 else { continue }
+            let id = String(d.lastPathComponent.dropFirst(2))
+            entries.append(VoiceCacheEntry(id: id, name: voiceName(id), count: r.0, megabytes: Double(r.1) / 1_048_576))
+            total += r.0; totalBytes += r.1
+        }
+        cacheFileCount = total
+        cacheTotalSizeMB = Double(totalBytes) / 1_048_576
+        cacheByVoice = entries.sorted { $0.name < $1.name }
     }
 
     // MARK: - API Speech Synthesis
 
+    @MainActor private var synthesisFlight: (id: UUID, task: Task<URL, Error>, preparation: Bool, text: String, voice: String)?
+    private var previewTask: Task<Void, Never>?
+
+    private func pauseKey(_ key: String) -> String {
+        "typecastPaused." + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    var synthesisPaused: Bool { UserDefaults.standard.bool(forKey: pauseKey(activeApiKey)) }
+
+    func allowSynthesisAfterRestrictionResolved() {
+        UserDefaults.standard.removeObject(forKey: pauseKey(activeApiKey))
+        lastStatus = "재시도 허용됨 · 미리듣기를 누르면 합성을 요청합니다."
+    }
+
+    /// One network synthesis at a time. Playback cancellation never restarts an accepted request.
+    @MainActor
+    func synthesize(text: String, voiceId: String? = nil, validUntil: Date? = nil, preparation: Bool = false) async throws -> URL {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedVoice = (voiceId ?? selectedVoiceId).trimmingCharacters(in: .whitespacesAndNewlines)
+        let voice = requestedVoice.isEmpty ? Self.defaultVoiceId : requestedVoice
+        let key = activeApiKey
+        while true {
+            try Task.checkCancellation()
+            if let validUntil, Date() >= validUntil { throw CancellationError() }
+            if let cached = cachedURL(for: clean, voiceId: voice) { return cached }
+            if let flight = synthesisFlight {
+                if TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: preparation, runningPreparation: flight.preparation, samePhrase: flight.text == clean && flight.voice == voice) {
+                    flight.task.cancel()
+                }
+                _ = await flight.task.result
+                if synthesisFlight?.id == flight.id { synthesisFlight = nil }
+                continue
+            }
+            guard key == activeApiKey else { throw CancellationError() }
+            if UserDefaults.standard.bool(forKey: pauseKey(key)) {
+                throw NSError(domain: "Typecast", code: 403, userInfo: [NSLocalizedDescriptionKey:
+                    "이 키는 403 응답 이후 추가 합성을 중지했습니다. 저장된 음성은 계속 사용합니다. 이용 제한이 해제된 뒤 설정에서 재시도를 허용하세요."])
+            }
+            let id = UUID()
+            let task = Task { @MainActor in
+                do { return try await self.performSynthesis(text: clean, voiceId: voice) }
+                catch {
+                    if (error as NSError).code == 403 {
+                        UserDefaults.standard.set(true, forKey: self.pauseKey(key))
+                    }
+                    throw error
+                }
+            }
+            synthesisFlight = (id, task, preparation, clean, voice)
+            let result = await task.result
+            if synthesisFlight?.id == id { synthesisFlight = nil }
+            try Task.checkCancellation()
+            return try result.get()
+        }
+    }
+
     /// Synthesizes speech via Typecast API or returns immediately from local disk cache.
-    func synthesize(text: String, voiceId: String? = nil) async throws -> URL {
+    @MainActor
+    private func performSynthesis(text: String, voiceId: String? = nil) async throws -> URL {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty else {
             throw NSError(domain: "Typecast", code: 400, userInfo: [NSLocalizedDescriptionKey: "음성 변환할 텍스트가 비어 있습니다."])
@@ -407,19 +559,21 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             do {
                 try Task.checkCancellation()
                 let resolvedVoice = try await resolveVoiceId(for: voiceInput, apiKey: key)
+                try Task.checkCancellation()
                 var request = URLRequest(url: apiURL)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.setValue(key, forHTTPHeaderField: "X-API-KEY")
-                request.timeoutInterval = 12.0
+                request.timeoutInterval = 60.0 // Full reports need more synthesis time; navigation retains its playback deadline.
 
                 let body: [String: Any] = [
                     "voice_id": resolvedVoice,
                     "text": cleanText,
                     "model": "ssfm-v30",
-                    "prompt": [
-                        "emotion_type": "smart"
-                    ],
+                    // "smart" guesses emotion from context; terse cues such as "계속 직진하세요." came back whispered.
+                    "prompt": Self.presetTone(cleanText)
+                        ? ["emotion_type": "preset", "emotion_preset": "normal", "emotion_intensity": 1.0] as [String: Any]
+                        : ["emotion_type": "smart"] as [String: Any],
                     "output": [
                         "audio_format": "wav",
                         "volume": 100
@@ -443,7 +597,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     return savedURL
                 }
 
-                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry)
+                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry, stage: "POST /v1/text-to-speech · model=ssfm-v30 · voice=\(resolvedVoice)")
             } catch {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 let failure = error as NSError
@@ -468,27 +622,27 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         testCompletion = completion
         lastStatus = "타입캐스트 음성 생성 중…"
 
-        Task {
+        previewTask = Task {
             do {
                 let audioURL = try await synthesize(text: text, voiceId: voiceId)
                 await MainActor.run {
                     do {
-                        let audioSession = AVAudioSession.sharedInstance()
-                        try? audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-                        try? audioSession.setActive(true)
+                        try VoiceAudioRouting.activate()
 
                         let p = try AVAudioPlayer(contentsOf: audioURL)
                         p.delegate = self
                         p.prepareToPlay()
-                        p.play()
+                        guard p.play() else { throw NSError(domain: "TypecastPlayback", code: 1, userInfo: [NSLocalizedDescriptionKey: "오디오 재생을 시작하지 못했습니다."]) }
                         self.player = p
                         self.lastStatus = "타입캐스트 음성 재생 중"
                     } catch {
+                        VoiceAudioRouting.release()
                         self.lastStatus = "오디오 재생 실패: \(error.localizedDescription)"
                         completion?()
                     }
                 }
             } catch {
+                if error is CancellationError { return }
                 await MainActor.run {
                     self.lastStatus = "합성 실패: \(error.localizedDescription)"
                     completion?()
@@ -498,14 +652,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func stop() {
+        previewTask?.cancel()
+        previewTask = nil
         player?.stop()
         player = nil
+        VoiceAudioRouting.release()
         testCompletion?()
         testCompletion = nil
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        lastStatus = "재생 완료"
+        guard player === self.player else { return }
+        lastStatus = flag ? "재생 완료" : "오디오 재생 중단"
+        self.player = nil
+        VoiceAudioRouting.release()
         testCompletion?()
         testCompletion = nil
     }

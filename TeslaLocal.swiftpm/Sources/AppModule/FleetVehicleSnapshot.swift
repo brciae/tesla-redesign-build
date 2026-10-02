@@ -7,7 +7,7 @@ struct FleetVehicleSnapshot {
     let receivedAt: Date
     let payload: [String: Any]
 
-    private func number(_ section: String, _ key: String) -> Double? {
+    func number(_ section: String, _ key: String) -> Double? {
         guard let value = (payload[section] as? [String: Any])?[key] as? NSNumber,
               CFGetTypeID(value) != CFBooleanGetTypeID(), value.doubleValue.isFinite else { return nil }
         return value.doubleValue
@@ -57,6 +57,7 @@ struct FleetVehicleSnapshot {
         let coordinates = lat != nil && lon != nil && (-90...90).contains(lat!) && (-180...180).contains(lon!) && !(lat == 0 && lon == 0)
         location["hasCoordinates"] = coordinates
         if coordinates { location["latitude"] = lat; location["longitude"] = lon }
+        if let heading = number("drive_state", "heading"), heading.isFinite, (0...360).contains(heading) { location["heading"] = heading }
         location["gpsAt"] = number("drive_state", "timestamp")
         if let at = number("drive_state", "timestamp"), now.timeIntervalSince1970 * 1000 - at <= 120000, at <= now.timeIntervalSince1970 * 1000 + 5000 {
             location["mode"] = sectionIsRecent("drive_state", now: now) ? "recent" : "cached"
@@ -67,6 +68,7 @@ struct FleetVehicleSnapshot {
     func driveDisplay(now: Date = Date()) -> [String: Any] {
         var drive: [String: Any] = ["mode": sectionIsRecent("drive_state", now: now) ? "recent" : "cached", "receivedAt": receivedAt.timeIntervalSince1970 * 1000]
         drive["at"] = number("drive_state", "timestamp")
+        if let odo = number("vehicle_state", "odometer"), odo >= 0 { drive["odometerKm"] = odo * 1.609344 }
         if let gear = (payload["drive_state"] as? [String: Any])?["shift_state"] as? String, ["P", "D", "R", "N"].contains(gear) { drive["gear"] = gear }
         if let speed = number("drive_state", "speed"), speed >= 0 { drive["speedKmh"] = speed * 1.609344 }
         let raw = payload["drive_state"] as? [String: Any] ?? [:]
@@ -105,10 +107,21 @@ struct FleetVehicleSnapshot {
     }
 
     /// Read-only translation. A missing Fleet shift_state is not proof of P.
-    func parkingTelemetry(now: Date = Date()) -> [String: Any]? {
-        guard sectionIsRecent("drive_state", now: now), let driveAt = number("drive_state", "timestamp"),
-              driveAt <= now.timeIntervalSince1970 * 1000 + 5000,
-              now.timeIntervalSince1970 * 1000 - driveAt <= 120000 else { return nil }
+    /// v92: `requireRecent` used to be unconditional, and it is why a parked car
+    /// never got a parking record. drive_state stops ticking the moment the car
+    /// parks, so two minutes later this returned nil forever and
+    /// SmartParkingManager.saveFleetParking bailed on its very first guard —
+    /// silently, without even updating its status text. A car that last reported
+    /// P at a standstill is still parked three hours later; the report being old
+    /// is the normal case, not a reason to disbelieve it. Callers that genuinely
+    /// need a live reading keep the default.
+    func parkingTelemetry(now: Date = Date(), requireRecent: Bool = true) -> [String: Any]? {
+        guard let driveAt = number("drive_state", "timestamp"),
+              driveAt <= now.timeIntervalSince1970 * 1000 + 5000 else { return nil }
+        if requireRecent {
+            guard sectionIsRecent("drive_state", now: now),
+                  now.timeIntervalSince1970 * 1000 - driveAt <= 120000 else { return nil }
+        }
         let stamp = receivedAt.timeIntervalSince1970 * 1000
         var drive: [String: Any] = ["at": driveAt, "receivedAt": stamp]
         if let gear = (payload["drive_state"] as? [String: Any])?["shift_state"] as? String, ["P", "D", "R", "N"].contains(gear) { drive["gear"] = gear }
@@ -121,5 +134,123 @@ struct FleetVehicleSnapshot {
             if let value = number("vehicle_state", fleetKey), value >= 0 { closures[key] = value > 0 }
         }
         return ["drive": drive, "location": overlay["location"] ?? [:], "charge": overlay["charge"] ?? [:], "climate": overlay["climate"] ?? [:], "closures": closures]
+    }
+}
+
+
+struct FleetInsightRow { let label: String; let value: String }
+struct FleetInsightSection { let title: String; let source: String; let rows: [FleetInsightRow] }
+
+extension FleetVehicleSnapshot {
+    func insightSections() -> [FleetInsightSection] {
+        func metric(_ section: String, _ key: String, _ label: String, _ unit: String, digits: Int = 1, scale: Double = 1) -> FleetInsightRow {
+            let value = number(section, key).map { String(format: "%.*f", digits, $0 * scale) + unit } ?? "미수신"
+            return FleetInsightRow(label: label, value: value)
+        }
+        func status(_ key: String, _ label: String) -> FleetInsightRow {
+            FleetInsightRow(label: label, value: flag("vehicle_state", key).map { $0 ? "켜짐" : "꺼짐" } ?? "미수신")
+        }
+        var tires: [FleetInsightRow] = []
+        for (key, label) in [("fl", "앞 왼쪽"), ("fr", "앞 오른쪽"), ("rl", "뒤 왼쪽"), ("rr", "뒤 오른쪽")] {
+            tires.append(metric("vehicle_state", "tpms_pressure_" + key, label, " bar", digits: 2))
+            tires.append(FleetInsightRow(label: label + " 경고", value: flag("vehicle_state", "tpms_hard_warning_" + key).map { $0 ? "차량 공기압 경고" : "차량 경고 없음" } ?? "미수신"))
+        }
+        var security = [FleetInsightRow(label: "잠금", value: locked.map { $0 ? "잠김" : "잠금 해제" } ?? "미수신"), status("sentry_mode", "감시 모드"), status("is_user_present", "차량 감지 탑승")]
+        for (key, label) in [("fd_window", "앞 왼쪽 창문"), ("fp_window", "앞 오른쪽 창문"), ("rd_window", "뒤 왼쪽 창문"), ("rp_window", "뒤 오른쪽 창문"), ("df", "앞 왼쪽 문"), ("pf", "앞 오른쪽 문"), ("dr", "뒤 왼쪽 문"), ("pr", "뒤 오른쪽 문"), ("ft", "프렁크"), ("rt", "트렁크")] {
+            security.append(FleetInsightRow(label: label, value: number("vehicle_state", key).map { $0 == 0 ? "닫힘" : "열림" } ?? "미수신"))
+        }
+        let vehicle = payload["vehicle_state"] as? [String: Any] ?? [:]
+        let update = vehicle["software_update"] as? [String: Any] ?? [:]
+        let firmware = [FleetInsightRow(label: "차량 소프트웨어", value: vehicle["car_version"] as? String ?? "미수신"), FleetInsightRow(label: "업데이트 상태", value: update["status"] as? String ?? "미수신"), FleetInsightRow(label: "업데이트 버전", value: update["version"] as? String ?? "미수신"), metric("vehicle_state", "odometer", "총 주행거리", " km", scale: 1.609344)]
+        return [
+            FleetInsightSection(title: "충전 진단", source: "charge_state", rows: [
+                metric("charge_state", "charger_power", "충전 전력", " kW"), metric("charge_state", "charger_voltage", "입력 전압", " V", digits: 0),
+                metric("charge_state", "charger_actual_current", "실제 전류", " A", digits: 0), metric("charge_state", "charge_current_request", "요청 전류", " A", digits: 0),
+                metric("charge_state", "charge_current_request_max", "요청 가능 최대 전류", " A", digits: 0), metric("charge_state", "charge_energy_added", "이번 세션 충전량", " kWh"),
+                metric("charge_state", "charge_rate", "표시 주행거리 증가 속도", " km/h", scale: 1.609344), metric("charge_state", "time_to_full_charge", "차량 예상 잔여 시간", " 분", digits: 0, scale: 60)]),
+            FleetInsightSection(title: "타이어 상태", source: "vehicle_state", rows: tires),
+            FleetInsightSection(title: "도착 전망", source: "drive_state", rows: [
+                FleetInsightRow(label: "차량 목적지", value: (payload["drive_state"] as? [String: Any])?["active_route_destination"] as? String ?? "미수신"),
+                metric("drive_state", "active_route_energy_at_arrival", "차량 예상 도착 배터리", " %"), metric("drive_state", "active_route_minutes_to_arrival", "남은 시간", " 분", digits: 0),
+                metric("drive_state", "active_route_miles_to_arrival", "남은 거리", " km", scale: 1.609344), metric("drive_state", "active_route_traffic_minutes_delay", "교통 지연", " 분", digits: 0)]),
+            FleetInsightSection(title: "주차·보안 확인", source: "vehicle_state", rows: security),
+            FleetInsightSection(title: "소프트웨어·주행거리", source: "vehicle_state", rows: firmware),
+            FleetInsightSection(title: "충전 준비·출발 준비", source: "charge_state", rows: readiness()),
+            FleetInsightSection(title: "차량 사양·표시 설정", source: "vehicle_config", rows: configuration())
+        ]
+    }
+
+    private func readiness() -> [FleetInsightRow] {
+        let charge = payload["charge_state"] as? [String: Any] ?? [:]
+        func yes(_ value: Bool?, _ on: String, _ off: String) -> String { value.map { $0 ? on : off } ?? "미수신" }
+        var rows = [
+            FleetInsightRow(label: "충전 케이블", value: (charge["conn_charge_cable"] as? String).map { $0 == "<invalid>" ? "연결 안 됨" : $0 + " 연결" } ?? "미수신"),
+            FleetInsightRow(label: "충전 포트", value: yes(charge["charge_port_door_open"] as? Bool, "열림", "닫힘")),
+            FleetInsightRow(label: "충전 상태", value: charge["charging_state"] as? String ?? "미수신"),
+            FleetInsightRow(label: "예약 충전", value: yes(charge["scheduled_charging_pending"] as? Bool, "대기 중", "없음")),
+            FleetInsightRow(label: "배터리 히터", value: yes(charge["battery_heater_on"] as? Bool, "작동 중", "꺼짐")),
+            FleetInsightRow(label: "사전 공조", value: yes(flag("climate_state", "is_preconditioning"), "작동 중", "꺼짐")),
+            FleetInsightRow(label: "공조", value: yes(flag("climate_state", "is_climate_on"), "켜짐", "꺼짐"))
+        ]
+        if let start = number("charge_state", "scheduled_charging_start_time"), start > 0 {
+            let time = Date(timeIntervalSince1970: start).formatted(date: .omitted, time: .shortened)
+            rows.insert(FleetInsightRow(label: "예약 충전 시작", value: time), at: 4)
+        }
+        return rows
+    }
+
+    private func configuration() -> [FleetInsightRow] {
+        let config = payload["vehicle_config"] as? [String: Any] ?? [:]
+        let gui = payload["gui_settings"] as? [String: Any] ?? [:]
+        func text(_ source: [String: Any], _ key: String) -> String { (source[key] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "미수신" }
+        return [
+            FleetInsightRow(label: "차종", value: text(config, "car_type")), FleetInsightRow(label: "트림", value: text(config, "trim_badging")),
+            FleetInsightRow(label: "외장 색상", value: text(config, "exterior_color")), FleetInsightRow(label: "휠", value: text(config, "wheel_type")),
+            FleetInsightRow(label: "거리 단위", value: text(gui, "gui_distance_units")), FleetInsightRow(label: "온도 단위", value: text(gui, "gui_temperature_units"))
+        ]
+    }
+
+    func insightSummary() -> [String] {
+        var lines: [String] = []
+        if sectionIsRecent("vehicle_state") {
+            let warned = [("fl", "앞 왼쪽"), ("fr", "앞 오른쪽"), ("rl", "뒤 왼쪽"), ("rr", "뒤 오른쪽")].filter { flag("vehicle_state", "tpms_hard_warning_" + $0.0) == true }.map { $0.1 }
+            if !warned.isEmpty { lines.append("타이어 공기압 경고: " + warned.joined(separator: ", ") + ". 안전한 곳에서 확인하세요.") }
+            if locked == false, flag("vehicle_state", "is_user_present") == false { lines.append("차량이 잠기지 않았고 탑승자가 없습니다.") }
+            let windows = ["fd_window", "fp_window", "rd_window", "rp_window"].compactMap { number("vehicle_state", $0) }.filter { $0 > 0 }.count
+            if windows > 0 { lines.append("창문이 \(windows)곳 열려 있습니다.") }
+        }
+        let cable = (payload["charge_state"] as? [String: Any])?["conn_charge_cable"] as? String
+        if sectionIsRecent("charge_state"), let cable, cable != "<invalid>", !charging, (payload["charge_state"] as? [String: Any])?["scheduled_charging_pending"] as? Bool != true {
+            lines.append("충전 케이블이 연결돼 있지만 충전하지 않고 있습니다.")
+        }
+        if sectionIsRecent("vehicle_state") {
+            let open = ["df", "pf", "dr", "pr", "ft", "rt"].compactMap { number("vehicle_state", $0) }.filter { $0 > 0 }.count
+            if open > 0 { lines.append("문이나 트렁크가 \(open)곳 열려 있습니다. 출발 전에 확인하세요.") }
+        }
+        if sectionIsRecent("drive_state"), let arrival = number("drive_state", "active_route_energy_at_arrival"), (0...100).contains(arrival), arrival < 15 {
+            lines.append(String(format: "도착 예상 잔량이 %.0f퍼센트로 적습니다. 경로에서 충전할 곳을 확인하세요.", arrival))
+        }
+        if lines.isEmpty, sectionIsRecent("vehicle_state"), flag("vehicle_state", "sentry_mode") == true {
+            lines.append("감시 모드가 켜져 있습니다.")
+        }
+        if !sectionIsRecent("vehicle_state") && !sectionIsRecent("drive_state") { return ["차량 정보를 새로 고친 뒤 다시 들어보세요."] }
+        return lines.isEmpty ? ["지금 읽어드릴 주요 변경 사항이 없습니다."] : lines
+    }
+
+    /// Recursively enumerate every returned field, including nested update data.
+    func flattenedFields(section: String) -> [FleetInsightRow] {
+        func flatten(_ value: Any, path: String) -> [FleetInsightRow] {
+            if let dictionary = value as? [String: Any] {
+                if dictionary.isEmpty { return [FleetInsightRow(label: path, value: "빈 객체")] }
+                return dictionary.keys.sorted().flatMap { flatten(dictionary[$0]!, path: path.isEmpty ? $0 : path + "." + $0) }
+            }
+            if let array = value as? [Any] {
+                if array.isEmpty { return [FleetInsightRow(label: path, value: "빈 목록")] }
+                return array.enumerated().flatMap { flatten($0.element, path: path + "[\($0.offset)]") }
+            }
+            return [FleetInsightRow(label: path, value: value is NSNull ? "미수신 (null)" : String(describing: value))]
+        }
+        guard let value = payload[section] else { return [] }
+        return flatten(value, path: section)
     }
 }
