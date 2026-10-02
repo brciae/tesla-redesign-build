@@ -82,6 +82,8 @@ struct CharacterChatButton: View {
     @AppStorage("characterFloat.x") private var savedX = 0.0
     @AppStorage("characterFloat.y") private var savedY = 0.0
     @GestureState private var drag: CGSize = .zero
+    @State private var bubble: String?
+    @State private var bubbleToken = UUID()
     var body: some View {
         if enabled {
             Group {
@@ -103,6 +105,32 @@ struct CharacterChatButton: View {
                 .updating($drag) { v, s, _ in s = v.translation }
                 .onEnded { v in savedX += v.translation.width; savedY += v.translation.height })
             .onTapGesture { CharacterReact.send("wave"); chat.presented = true }
+            // v1.37: speech bubble above the character for whatever the app says out loud.
+            .overlay(alignment: .topTrailing) {
+                if let bubble {
+                    Text(bubble)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: 220, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08)))
+                        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                        .offset(x: savedX + drag.width - 20, y: savedY + drag.height - 12)
+                        .alignmentGuide(.top) { d in d[.bottom] }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
+                        .onTapGesture { withAnimation { self.bubble = nil } }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: CharacterReact.speech)) { n in
+                guard let text = n.object as? String else { return }
+                let token = UUID(); bubbleToken = token
+                withAnimation(.spring(response: 0.3)) { bubble = text }
+                CharacterReact.send("talk")
+                let seconds = min(12, max(3.5, Double(text.count) * 0.12))
+                DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { if bubbleToken == token { withAnimation { bubble = nil } } }
+            }
             .accessibilityElement()
             .accessibilityLabel("캐릭터 도우미와 대화")
             .accessibilityAddTraits(.isButton)

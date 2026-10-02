@@ -734,7 +734,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             CharacterRunnerView(speedKmh: data.speedKmh)
                 .frame(width: stage.width, height: stage.height * 0.94)
                 .offset(x: stage.minX, y: stage.minY + stage.height * 0.04)
-                .allowsHitTesting(m.wide) // landscape: drag to orbit around the runner
+                .allowsHitTesting(true) // v1.37: drag to orbit in portrait and landscape
             RunningTurnCard(data: data, u: m.u)
                 .frame(width: turn.width, height: turn.height)
                 .offset(x: turn.minX, y: turn.minY)

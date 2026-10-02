@@ -1433,6 +1433,7 @@ struct MenuTabRootView: View {
                         glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 알림 · 권한", colors: [Color.purple, Color.blue])
                         glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "배경 · 거리 · 온도 단위", colors: [Color.gray, Color(uiColor: .systemGray2)])
                         glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color(uiColor: .systemGray2)])
+                        glassMenuItem(.character, "figure.wave", title: "캐릭터", subtitle: "3D 캐릭터 선택 · 미리보기", colors: [Color.pink, Color.purple])
                         glassMenuItem(.releaseNotes, "doc.text.fill", title: "릴리즈 노트", subtitle: "버전별 변경 내역", colors: [Color.orange, Color.pink], isLast: true)
                     }
                 }

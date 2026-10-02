@@ -215,6 +215,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             automaticTrace("제어 안내 차단 · 음성 설정 꺼짐"); return
         }
         guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { automaticTrace("자동 안내 차단 · 전체 또는 종류별 음성 설정 꺼짐"); return }
+        CharacterReact.say(text) // v1.37: the floating character shows what is being said
         let now = Date()
         if !manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: now), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { automaticTrace("자동 안내 차단 · 방해 금지 시간"); return }
         if !manual { automaticTrace("자동 안내 요청 수신 · 재생 대기") }
