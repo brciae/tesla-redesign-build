@@ -728,13 +728,13 @@ static UIImage *YLArrowIcon(UIColor *fill) {
                                     @92:@"구간 단속 시작 지점입니다.",
                                     @94:@"갓길 단속 지점이 있습니다.",
                                     @95:@"끼어들기 단속 지점이 있습니다.",
-                                    @96:@"구간 단속 구간입니다.",
+                                    @96:@"구간 단속 중입니다. 제한 속도를 지키세요.",
                                     @97:@"지정 차로 단속 지점이 있습니다.",
                                     @101:@"안전띠 착용 단속 지점이 있습니다.",
                                     @104:@"노후 경유차 운행 제한 단속 지점이 있습니다.",
                                     @105:@"후면 구간 단속 시작 지점입니다.",
                                     @692:@"구간 단속 시작 지점입니다.",
-                                    @696:@"구간 단속 구간입니다.",
+                                    @696:@"구간 단속 중입니다. 제한 속도를 지키세요.",
                                     @705:@"후면 구간 단속 시작 지점입니다."};
         // Speed cameras: "N미터 앞, 과속 단속 카메라가 있습니다. 제한 속도는 … 과속에 주의하세요."
         NSSet *speedCameras = [NSSet setWithArray:@[@81, @82, @86, @91, @100, @102, @103]];
@@ -769,7 +769,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         case KNVoiceCode_DetalDir:
         case KNVoiceCode_MultiRoute:
             return @""; // SDK does not expose the source sentence for these audio-only events.
-        case KNVoiceCode_SchoolZone: return @"어린이 보호 구역입니다.";
+        case KNVoiceCode_SchoolZone: return @"어린이 보호구역입니다. 속도를 줄이고 주의하세요.";
         case KNVoiceCode_Alert: return @""; // A bare "주의하세요" is not a complete instruction; hazards speak via their own sentence.
         case KNVoiceCode_Hipass: return @"하이패스 차로를 확인하세요.";
         case KNVoiceCode_StrateToNext: return @"계속 직진하세요.";
@@ -778,7 +778,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         case KNVoiceCode_RouteUnchanged: return @"현재 경로를 유지합니다.";
         case KNVoiceCode_OutOfRoute: return @"경로를 이탈했습니다. 경로를 다시 탐색합니다.";
         case KNVoiceCode_GPSConnected: return @"위치 신호가 연결되었습니다.";
-        case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로입니다.";
+        case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로입니다. 진입하지 않도록 차로를 확인하세요.";
         case KNVoiceCode_Alram: return @"";
         case KNVoiceCode_LinkSound: return @"";
         // Missing event objects cannot be replaced by a possibly different screen maneuver.
@@ -959,10 +959,12 @@ static UIImage *YLArrowIcon(UIColor *fill) {
             if ((direction.rgCode >= KNRGCode_RotaryDirection_1 && direction.rgCode <= KNRGCode_RotaryDirection_12) || (direction.rgCode >= KNRGCode_RoundaboutDirection_1 && direction.rgCode <= KNRGCode_RoundaboutDirection_12)) { symbol = @"arrow.triangle.2.circlepath"; action = @"회전교차로"; }
             break;
     }
-    NSString *name = direction.nodeName ?: @"";
+    NSString *name = (direction.nodeName.length && YLNavigationIsPlaceName(direction.nodeName)) ? direction.nodeName : @"";
     if (direction.rgCode >= KNRGCode_RotaryDirection_1 && direction.rgCode <= KNRGCode_RotaryDirection_12) exitClock = direction.rgCode - KNRGCode_RotaryDirection_1 + 1;
     if (direction.rgCode >= KNRGCode_RoundaboutDirection_1 && direction.rgCode <= KNRGCode_RoundaboutDirection_12) exitClock = direction.rgCode - KNRGCode_RoundaboutDirection_1 + 1;
-    NSString *toward = [direction.directionNames componentsJoinedByString:@" · "] ?: @"";
+    NSMutableArray<NSString *> *places = [NSMutableArray array];
+    for (NSString *n in direction.directionNames) if ([n isKindOfClass:NSString.class] && YLNavigationIsPlaceName(n) && ![places containsObject:n]) [places addObject:n];
+    NSString *toward = [places componentsJoinedByString:@" · "];
     NSString *text = [@[name, toward, action] componentsJoinedByString:@" "];
     return @{@"text": [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet], @"symbol":symbol, @"highway":highway, @"exitClock":@(exitClock)};
 }
