@@ -42,6 +42,7 @@ enum Page: String, Hashable {
     case chargingSettings = "충전 계획·요금", recordSettings = "기록·백업"
     case parking = "주차 기록"
     case displaySettings = "화면·표시 단위"
+    case releaseNotes = "릴리즈 노트"
 }
 func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { guard let value, value.isFinite else { return "—" }; return String(format: "%.*f", digits, value) + suffix }
 func dateText(_ ms: Double?, time: Bool = true) -> String { guard let ms else { return "미수신" }; let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = time ? "M월 d일 HH:mm" : "yyyy.MM.dd"; return f.string(from: Date(timeIntervalSince1970: ms/1000)) }
@@ -195,6 +196,7 @@ private struct AppDestinations: ViewModifier {
         case .parking: ParkingView()
         case .displaySettings: DisplaySettingsView()
         case .preferences: PreferencesView()
+        case .releaseNotes: ReleaseNotesView()
         case .appearance: VehicleAppearanceView()
         case .fleetInsights: FleetInsightsView(fleet: model.fleet)
         case .notifications: NotificationSettingsView()

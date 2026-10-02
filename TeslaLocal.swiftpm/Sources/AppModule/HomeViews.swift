@@ -1432,7 +1432,8 @@ struct MenuTabRootView: View {
                         glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "상황별 음성 안내 · 자동 제어", colors: [Color.green, Color.mint])
                         glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 알림 · 권한", colors: [Color.purple, Color.blue])
                         glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "배경 · 거리 · 온도 단위", colors: [Color.gray, Color(uiColor: .systemGray2)])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color(uiColor: .systemGray2)], isLast: true)
+                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color(uiColor: .systemGray2)])
+                        glassMenuItem(.releaseNotes, "doc.text.fill", title: "릴리즈 노트", subtitle: "버전별 변경 내역", colors: [Color.orange, Color.pink], isLast: true)
                     }
                 }
             }

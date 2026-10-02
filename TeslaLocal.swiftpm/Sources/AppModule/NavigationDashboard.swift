@@ -1,3 +1,4 @@
+import AudioToolbox
 import SwiftUI
 import UIKit
 
@@ -99,6 +100,12 @@ struct NavigationReadout {
     var powerKW: Double?
     var destination = ""
     var speedLimit: Int? = nil
+    /// v1.31: 0 none · 1 over the limit · 2 ≥10 km/h over · 3 ≥20 km/h over.
+    var overspeedLevel: Int {
+        guard let limit = speedLimit, limit > 0, speedKmh.isFinite else { return 0 }
+        let over = speedKmh - Double(limit)
+        return over >= 20 ? 3 : over >= 10 ? 2 : over > 0.5 ? 1 : 0
+    }
     var speedLimitDistance = ""
     var odometer = "—"
     var clock = ""
@@ -180,6 +187,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         GeometryReader { geo in
             layout(NavMetrics(size: geo.size))
         }
+        .overlay { OverspeedAlert(level: data.overspeedLevel) }
     }
 
     @ViewBuilder
@@ -282,11 +290,11 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     Text(data.turnDistance).font(.system(size: 28, weight: .bold)).monospacedDigit()
                     Text(data.turn).font(.subheadline.bold()).lineLimit(2).minimumScaleFactor(0.8)
                 }
-                if !wide { Spacer(minLength: 0); Text(data.speed).font(.title.bold()).monospacedDigit(); Text(data.speedUnit).font(.caption2) }
+                if !wide { Spacer(minLength: 0); Text(data.speed).overspeed(data.overspeedLevel).font(.title.bold()).monospacedDigit(); Text(data.speedUnit).font(.caption2) }
             }
             if wide {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(data.speed).font(.system(size: 40, weight: .semibold)).monospacedDigit()
+                    Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 40, weight: .semibold)).monospacedDigit()
                     Text(data.speedUnit).font(.caption)
                     Spacer()
                     if let limit = data.speedLimit { LimitSign(limit: limit, distance: data.speedLimitDistance, size: 40) }
@@ -513,7 +521,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 // Speed & Speed Limit Sign side-by-side (Tesla FSD authentic cluster)
                 HStack(alignment: .center, spacing: 12 * m.u) {
                     HStack(alignment: .firstTextBaseline, spacing: 4 * m.u) {
-                        Text(data.speed)
+                        Text(data.speed).overspeed(data.overspeedLevel)
                             .font(.system(size: (m.wide ? 68 : 72) * m.u, weight: .light))
                             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                             .contentTransition(.numericText(countsDown: true))
@@ -591,7 +599,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 GearRow(gear: data.gear, u: m.u * 0.85, style: .letters)
                 HStack(alignment: .center, spacing: 10 * m.u) {
                     VStack(spacing: 0) {
-                        Text(data.speed)
+                        Text(data.speed).overspeed(data.overspeedLevel)
                             .font(.system(size: 60 * m.u, weight: .heavy)).italic()
                             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                         Text(data.speedUnit).font(.system(size: 13 * m.u, weight: .medium)).foregroundStyle(.white.opacity(0.75))
@@ -812,7 +820,7 @@ private struct SpeedRing: View {
                 .rotationEffect(.degrees(135))
                 .animation(.easeOut(duration: 0.45), value: fraction)
             VStack(spacing: 0) {
-                Text(data.speed)
+                Text(data.speed).overspeed(data.overspeedLevel)
                     .font(.system(size: size * 0.36, weight: .bold))
                     .monospacedDigit().tracking(-size * 0.012)
                     .lineLimit(1).minimumScaleFactor(0.5)
@@ -1043,7 +1051,7 @@ private struct TripPill: View {
                 }
             }
         }
-        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
         .padding(.horizontal, 14 * u)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background { GlassFill(radius: 12 * u) }
@@ -1052,7 +1060,7 @@ private struct TripPill: View {
     }
     private var arrival: some View { Text(data.arrival).font(.system(size: 18 * u, weight: .bold)) }
     private var distance: some View { Text(data.remainingDistance).font(.system(size: 17 * u, weight: .semibold)) }
-    private var remaining: some View { Text(data.remaining).font(.system(size: 15 * u)).foregroundStyle(.white.opacity(0.8)) }
+    private var remaining: some View { Text(data.remaining).font(.system(size: 15 * u)).foregroundStyle(.white.opacity(0.8)).layoutPriority(1) }
     @ViewBuilder private var signal: some View {
         if !data.connected { Text("신호 없음").font(.system(size: 14 * u, weight: .medium)).foregroundStyle(.orange) }
     }
@@ -1060,7 +1068,7 @@ private struct TripPill: View {
         HStack(spacing: 6 * u) {
             BatteryGauge(level: data.batterySOC, width: 28 * u).font(.system(size: 14 * u))
             Text(stacked ? data.battery : "\(data.battery) · \(data.range)").font(.system(size: 16 * u, weight: .semibold))
-        }
+        }.fixedSize().layoutPriority(2) // v1.31: never "3…" — the battery % always shows in full
     }
 }
 
@@ -1186,7 +1194,7 @@ private struct VehicleCard<CarContent: View>: View {
                 .frame(width: w, height: stageH)
                 .clipped()
                 HStack(alignment: .firstTextBaseline, spacing: 6 * dynamicU) {
-                    Text(data.speed)
+                    Text(data.speed).overspeed(data.overspeedLevel)
                         .font(.system(size: min(42 * dynamicU, h * 0.15), weight: .regular)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.5)
                     Text(data.speedUnit).font(.system(size: 14 * dynamicU)).foregroundStyle(NavInk.muted)
@@ -1401,7 +1409,7 @@ private struct FocusSpeedColumn: View {
                 if let limit = data.speedLimit { LimitSign(limit: limit, distance: "", size: 32 * u) }
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text(data.speed).font(.system(size: 64 * u, weight: .light)).monospacedDigit()
+                Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 64 * u, weight: .light)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.5)
                 Text(data.speedUnit.uppercased()).font(.system(size: 13 * u, weight: .semibold)).tracking(1.5 * u)
                     .foregroundStyle(NavInk.muted)
@@ -1488,7 +1496,7 @@ private struct FleetPanel: View {
                 }
                 Spacer(minLength: 0)
                 HStack(alignment: .firstTextBaseline, spacing: 3 * u) {
-                    Text(data.speed).font(.system(size: 30 * u, weight: .semibold)).monospacedDigit()
+                    Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 30 * u, weight: .semibold)).monospacedDigit()
                     Text(data.speedUnit).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted)
                 }
                 Text(data.gear).font(.system(size: 15 * u, weight: .bold))
@@ -1991,7 +1999,7 @@ private struct RunningInfoPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8 * u) {
             HStack(alignment: .firstTextBaseline, spacing: 4 * u) {
-                Text(data.speed).font(.system(size: 46 * u, weight: .bold)).monospacedDigit()
+                Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 46 * u, weight: .bold)).monospacedDigit()
                 Text(data.speedUnit).font(.system(size: 14 * u, weight: .semibold)).foregroundStyle(Color.black.opacity(0.5))
                 Spacer(minLength: 0)
                 Text(data.gear).font(.system(size: 18 * u, weight: .bold)).foregroundStyle(Color.black.opacity(0.55))
@@ -2014,5 +2022,51 @@ private struct RunningInfoPanel: View {
             Spacer(minLength: 4)
             Text(value).font(.system(size: 15 * u, weight: .semibold)).monospacedDigit()
         }
+    }
+}
+
+
+// MARK: - v1.31 overspeed warning
+
+private struct OverspeedTint: ViewModifier {
+    let level: Int
+    func body(content: Content) -> some View {
+        if level > 0 { content.foregroundStyle(Color.red) } else { content }
+    }
+}
+extension Text {
+    /// Red speed digits whenever the car is above the posted / camera limit.
+    func overspeed(_ level: Int) -> some View { modifier(OverspeedTint(level: level)) }
+}
+
+/// Edge-red pulse (≥10 km/h over) and a chime whose rate rises with the excess (≥10: every 2 s, ≥20: every 0.8 s).
+private struct OverspeedAlert: View {
+    let level: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lastBeep = Date.distantPast
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: level < 2)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let rate = level >= 3 ? 2.6 : 1.3
+            let pulse = reduceMotion ? 0.6 : 0.5 + 0.5 * sin(t * rate * 2 * .pi)
+            ZStack {
+                if level >= 2 {
+                    RadialGradient(colors: [.clear, .clear, Color.red.opacity(level >= 3 ? 0.55 : 0.38)],
+                                   center: .center, startRadius: 0, endRadius: 520)
+                        .opacity(pulse)
+                }
+            }
+            .onChange(of: Int(t * 10)) { _, _ in beepIfDue(ctx.date) }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    private func beepIfDue(_ now: Date) {
+        guard level >= 2 else { return }
+        let interval = level >= 3 ? 0.8 : 2.0
+        guard now.timeIntervalSince(lastBeep) >= interval else { return }
+        lastBeep = now
+        AudioServicesPlaySystemSound(1057)
     }
 }
