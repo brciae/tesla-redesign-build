@@ -9,7 +9,7 @@ extension Dictionary where Key == String, Value == Any {
     func rows(_ key: String) -> [Object] { self[key] as? [Object] ?? [] }
     func string(_ key: String, _ fallback: String = "") -> String { self[key] as? String ?? fallback }
     // v1.28: NaN/inf from the JS bridge or BLE made Int(...) trap all over the UI; only finite values leave here.
-    func number(_ key: String) -> Double? { (self[key] as? NSNumber)?.doubleValue.flatMap { $0.isFinite ? $0 : nil } }
+    func number(_ key: String) -> Double? { guard let v = (self[key] as? NSNumber)?.doubleValue, v.isFinite else { return nil }; return v }
     func flag(_ key: String) -> Bool { self[key] as? Bool ?? false }
     var chargingNow: Bool {
         if let value = self["isCharging"] as? Bool { return value }
