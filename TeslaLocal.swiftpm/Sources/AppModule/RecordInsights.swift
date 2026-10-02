@@ -57,6 +57,17 @@ struct ChargeInsightsView: View {
         }
         return sums.keys.sorted().flatMap { m in ChargeKind.allCases.compactMap { k in sums[m]?[k].map { MonthBar(month: m, kind: k, kwh: $0) } } }
     }
+    private var monthTotals: [(Date, Double)] {
+        var t: [Date: Double] = [:]
+        for b in months { t[b.month, default: 0] += b.kwh }
+        return t.keys.sorted().map { ($0, t[$0] ?? 0) }
+    }
+    private var sixMonthDomain: ClosedRange<Date> {
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .month, value: -5, to: monthStart) ?? monthStart
+        let end = cal.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart
+        return start...end
+    }
     private var hours: [HourBar] {
         var h = (0..<24).map { HourBar(id: $0) }
         for c in charges.prefix(200) { if let d = at(c) { h[Calendar.current.component(.hour, from: d)].count += 1 } }
@@ -105,32 +116,44 @@ struct ChargeInsightsView: View {
                 }
                 card("최근 6개월 추이", "방식별 충전량 kWh") {
                     if months.isEmpty { empty } else {
-                        Chart(months) { b in
-                            BarMark(x: .value("월", b.month, unit: .month), y: .value("kWh", b.kwh), width: .fixed(28))
-                                .foregroundStyle(by: .value("방식", b.kind.rawValue))
-                                .cornerRadius(4)
+                        // v1.33: always six month slots (a single month no longer fills the chart),
+                        // thinner stacked bars and the month total printed on top.
+                        Chart {
+                            ForEach(months) { b in
+                                BarMark(x: .value("월", b.month, unit: .month), y: .value("kWh", b.kwh), width: .ratio(0.5))
+                                    .foregroundStyle(by: .value("방식", b.kind.rawValue))
+                            }
+                            ForEach(monthTotals.indices, id: \.self) { i in
+                                PointMark(x: .value("월", monthTotals[i].0, unit: .month), y: .value("kWh", monthTotals[i].1))
+                                    .opacity(0)
+                                    .annotation(position: .top, spacing: 2) { Text("\(Int(monthTotals[i].1))").font(.caption2.weight(.semibold).monospacedDigit()).foregroundStyle(.secondary) }
+                            }
                         }
-                        .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in AxisGridLine(); AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))") } } } }
+                        .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3])); AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))") } } } }
                         .chartLegend(position: .top, alignment: .leading)
                         .chartForegroundStyleScale(domain: ChargeKind.allCases.map(\.rawValue), range: ChargeKind.allCases.map(\.color))
-                        .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in AxisValueLabel(format: .dateTime.month(.abbreviated)) } }
+                        .chartXScale(domain: sixMonthDomain)
+                        .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in AxisValueLabel(format: .dateTime.month(.defaultDigits), centered: true) } }
+                        .chartYScale(domain: 0...max(10, (monthTotals.map(\.1).max() ?? 0) * 1.18))
                         .frame(height: 180).chartReveal()
                     }
                 }
                 card("충전 시작 시간대", "최근 200회 · 막대 높이 = 충전 시작 횟수") {
                     let peak = hours.max { $0.count < $1.count }
+                    // v1.33: bars were invisible (ratio width on a numeric axis = 0 pt). Hours are now
+                    // categories, so every hour gets a real bar; night hours sit on a shaded band.
                     Chart(hours) { h in
-                        BarMark(x: .value("시", h.id), y: .value("횟수", h.count), width: .ratio(0.7))
+                        BarMark(x: .value("시", String(h.id)), y: .value("횟수", h.count))
                             .foregroundStyle(by: .value("구분", h.id >= 23 || h.id < 9 ? "심야 23~9시" : "주간 9~23시"))
                             .cornerRadius(3)
-                            .annotation(position: .top) { if h.count > 0 { Text("\(h.count)").font(.system(size: 9).monospacedDigit()).foregroundStyle(.secondary) } }
+                            .annotation(position: .top, spacing: 2) { if h.count > 0 { Text("\(h.count)").font(.system(size: 9, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary) } }
                     }
                     .chartForegroundStyleScale(["심야 23~9시": Color.indigo, "주간 9~23시": Color.teal])
                     .chartLegend(position: .top, alignment: .leading)
-                    .chartXScale(domain: -0.5...23.5)
-                    .chartXAxis { AxisMarks(values: [0, 6, 12, 18, 23]) { v in AxisGridLine(); AxisValueLabel { if let i = v.as(Int.self) { Text("\(i)시") } } } }
-                    .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
-                    .frame(height: 170)
+                    .chartXAxis { AxisMarks(values: ["0", "3", "6", "9", "12", "15", "18", "21"]) { v in AxisValueLabel { if let s = v.as(String.self) { Text("\(s)시").font(.caption2) } } } }
+                    .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3])); AxisValueLabel() } }
+                    .chartYScale(domain: 0...Double(max(2, (hours.map(\.count).max() ?? 0) + 1)))
+                    .frame(height: 180)
                     if let peak, peak.count > 0 {
                         let night = hours.filter { $0.id >= 23 || $0.id < 9 }.reduce(0) { $0 + $1.count }
                         let sum = max(1, hours.reduce(0) { $0 + $1.count })

@@ -10,6 +10,11 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.33 (133)", date: "2026-10-02", items: [
+            "충전 시작 시간대: 막대가 아예 안 그려지던 문제 수정, 시간별 막대 + 심야/주간 색 구분",
+            "최근 6개월 추이: 항상 6개월 칸 표시, 월별 합계 kWh를 막대 위에 표시",
+            "배터리 잔량 추이: 데이터 사이를 부드럽게 꾸며 그리던 가짜 곡선 제거(직선 연결), 6시간 이상 기록 공백은 선을 끊어 표시, 20% 경고선 추가",
+        ]),
         ReleaseNote(version: "1.32 (132)", date: "2026-10-02", items: [
             "3D 캐릭터가 금속처럼 번쩍이던 문제 수정 (모델 변환 시 금속도 100%로 잘못 들어간 재질을 무광 피부·옷 재질로 교정)",
         ]),

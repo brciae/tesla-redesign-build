@@ -219,32 +219,35 @@ private extension Dictionary where Key == String, Value == Any {
 /// v91: the trend's marks live outside the view body; the type-checker gave up
 /// on the single expression once the end-point dot joined it.
 private extension BatteryOverview {
+    /// v1.33: straight segments (catmull-rom invented peaks between sparse samples), and the line breaks
+    /// across gaps > 6 h instead of drawing a fake curve. A dashed 20 % line marks the low level.
+    struct SocPoint: Identifiable { let id: String; let seg: Int; let date: Date; let soc: Double }
+    static func socSegments(_ trend: [Object]) -> [SocPoint] {
+        var out: [SocPoint] = []
+        var seg = 0, last: Double?
+        for p in trend {
+            guard let at = p.number("at"), let raw = p.number("soc") else { continue }
+            if let l = last, at - l > 6 * 3600 * 1000 { seg += 1 }
+            last = at
+            out.append(SocPoint(id: p.batteryRowID + "#\(out.count)", seg: seg, date: Date(timeIntervalSince1970: at / 1000), soc: min(100, max(0, raw))))
+        }
+        return out
+    }
     @ChartContentBuilder func socMarks(_ trend: [Object]) -> some ChartContent {
-                        ForEach(trend, id: \.batteryRowID) { point in
-                            let at = (point.number("at") ?? 0) / 1000
-                            let soc = min(100.0, max(0.0, point.number("soc") ?? 0))
-                            AreaMark(
-                                x: .value("시각", Date(timeIntervalSince1970: at)),
-                                y: .value("잔량", soc)
-                            )
-                            .interpolationMethod(.catmullRom)
-                            .foregroundStyle(
-                                // v91: lighter, so the fill reads as shading under
-                                // the line rather than a solid slab under a tall plot.
-                                LinearGradient(
-                                    colors: [Color.cyan.opacity(0.22), Color.cyan.opacity(0.0)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-
-                            LineMark(
-                                x: .value("시각", Date(timeIntervalSince1970: at)),
-                                y: .value("잔량", soc)
-                            )
-                            .interpolationMethod(.catmullRom)
-                            .foregroundStyle(Color.cyan)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                        let pts = Self.socSegments(trend)
+                        RuleMark(y: .value("경고", 20))
+                            .foregroundStyle(Color.red.opacity(0.35))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .annotation(position: .top, alignment: .leading) { Text("20%").font(.system(size: 9)).foregroundStyle(.red.opacity(0.7)) }
+                        ForEach(pts) { p in
+                            AreaMark(x: .value("시각", p.date), yStart: .value("0", 0), yEnd: .value("잔량", p.soc),
+                                     series: .value("구간", p.seg))
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(LinearGradient(colors: [Color.cyan.opacity(0.22), Color.cyan.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                            LineMark(x: .value("시각", p.date), y: .value("잔량", p.soc), series: .value("구간", p.seg))
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(Color.cyan)
+                                .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
                         }
                         // v90: a filled dot marks where the trace ends, so the
                         // current level reads without chasing the line's tip.
