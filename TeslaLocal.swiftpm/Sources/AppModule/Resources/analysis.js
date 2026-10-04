@@ -184,7 +184,7 @@
   function chargeIdentity(c,s){
     const place=rateKey(c.place), provider=rateKey(c.chargeOperator);
     const supercharger=c.chargeType==='supercharger'||/supercharger|슈퍼차저|수퍼차저/.test(place+provider);
-    const home=(!supercharger&&c.chargeType!=='dc')&&((place&&['집','집완속','자택','home'].includes(place))||nearby(c,s.homePoint,200));
+    const home=(!supercharger&&c.chargeType!=='dc')&&((place&&['집','집완속','자택','home'].includes(place))||(s.homeSpots??[s.homePoint]).some(p=>nearby(c,p,200)));
     const kind=supercharger?'supercharger':c.chargeType==='dc'?'dc':c.chargeType==='ac'||home||num(c.nasSupplyKWh,0.01,300)||num(c.supplyKWh,0.01,300)&&c.source==='NAS'?'ac':'unknown';
     const operator=provider||(/채비|chaevi/.test(place)?'채비':/환경부|기후부/.test(place)?'환경부':/한전|한국전력/.test(place)?'한국전력':/에버온/.test(place)?'에버온':/파워큐브/.test(place)?'파워큐브':/차지비/.test(place)?'차지비':/플러그링크/.test(place)?'플러그링크':supercharger?'tesla':'');
     return {place,operator,kind,home};
@@ -756,8 +756,14 @@
         const i=chargeIdentity(c,s.settings);
         for(const scope of ['place','operator'])if(i[scope]){const key=i.kind+'|'+scope+'|'+i[scope];if(!rateHistory.has(key))rateHistory.set(key,[]);rateHistory.get(key).push(c);}
       }
+      // v1.42: home = saved home address, any charge the user renamed to 집, or a spot with 4+ mostly overnight AC charges.
+      const homeNames=['집','집완속','자택','home'],geo=c=>validCoordinates(c.latitude,c.longitude);
+      const ac=rows.filter(c=>geo(c)&&c.chargeType!=='dc'&&c.chargeType!=='supercharger'),night=c=>{const h=new Date(c.at+9*3600000).getUTCHours();return h>=18||h<8;};
+      const learned=rows.filter(c=>geo(c)&&homeNames.includes(rateKey(c.place))).map(c=>({latitude:c.latitude,longitude:c.longitude}));
+      for(const c of ac){const near=ac.filter(o=>nearby(c,o,150));if(near.length>=4&&near.filter(night).length/near.length>=0.6)learned.push({latitude:c.latitude,longitude:c.longitude});}
+      const homeSettings={...s.settings,homeSpots:[s.settings.homePoint,...learned].filter(Boolean)};
       for(const row of rows){
-        Object.assign(row,costEstimate(row,s.settings,rateHistory));
+        Object.assign(row,costEstimate(row,homeSettings,rateHistory));
         row.chargedKWh=(row.storageVerified?row.storedKWh:null)??row.vehicleReportedKWh??row.estimatedStoredKWh??null;
         row.chargeEnergyEstimated=row.chargedKWh!=null&&!(row.storageVerified&&row.storedKWh!=null)&&row.vehicleReportedKWh==null;
         row.totalCost=row.cost??row.estimatedCost??null;
