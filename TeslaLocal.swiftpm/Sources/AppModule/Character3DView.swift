@@ -14,6 +14,11 @@ struct CharacterOption: Identifiable, Hashable {
     static let all: [CharacterOption] = [
         CharacterOption(id: "yl", name: "유엘 (기본)", folder: ""),
         CharacterOption(id: "wolf", name: "늑대 소녀", folder: "c_wolf"),
+        CharacterOption(id: "c346796a2", name: "흑발 셔츠", folder: "c_346796a2"),
+        CharacterOption(id: "c5ef8c3d7", name: "땋은 머리 후드", folder: "c_5ef8c3d7"),
+        CharacterOption(id: "c6914c96a", name: "붉은 머리 원피스", folder: "c_6914c96a"),
+        CharacterOption(id: "cc5766977", name: "망토 기사", folder: "c_c5766977"),
+        CharacterOption(id: "cdd67ef9a", name: "붉은 드레스", folder: "c_dd67ef9a"),
         CharacterOption(id: "r4d5c4915", name: "흰색 휴머노이드 로봇", folder: "r_4d5c4915", robot: true),
         CharacterOption(id: "raa13fc50", name: "스텔스 로봇", folder: "r_aa13fc50", robot: true),
         CharacterOption(id: "rfd33e359", name: "아머 로봇", folder: "r_fd33e359", robot: true),
@@ -26,6 +31,38 @@ struct CharacterOption: Identifiable, Hashable {
     var thumbnail: UIImage? {
         guard let dir = Bundle.main.url(forResource: "character", withExtension: nil) else { return nil }
         return UIImage(contentsOfFile: dir.appendingPathComponent("thumb_\(id).png").path)
+    }
+}
+
+/// v1.43: surface finish chosen in 메뉴 → 캐릭터, applied to every character view (holo also flickers).
+enum CharacterFinish: String, CaseIterable, Identifiable {
+    case auto, matte, metal, gold, holo
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .auto: return "기본"; case .matte: return "무광"; case .metal: return "메탈"; case .gold: return "골드"; case .holo: return "홀로그램" }
+    }
+    static var selected: CharacterFinish { CharacterFinish(rawValue: UserDefaults.standard.string(forKey: "character.finish") ?? "") ?? .auto }
+    @MainActor static func apply(_ f: CharacterFinish, to e: Entity) {
+        guard f != .auto else { return }
+        if var model = e.components[ModelComponent.self] {
+            model.materials = model.materials.map { m -> RealityKit.Material in
+                guard var p = m as? PhysicallyBasedMaterial else { return m }
+                switch f {
+                case .holo:
+                    var u = UnlitMaterial()
+                    u.color = .init(tint: UIColor(red: 0.35, green: 0.95, blue: 1, alpha: 1), texture: p.baseColor.texture)
+                    u.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+                    return u
+                case .matte: p.metallic = .init(floatLiteral: 0); p.roughness = .init(floatLiteral: 0.92)
+                case .metal: p.metallic = .init(floatLiteral: 0.95); p.roughness = .init(floatLiteral: 0.22); p.baseColor.tint = UIColor(white: 0.88, alpha: 1)
+                case .gold: p.metallic = .init(floatLiteral: 1); p.roughness = .init(floatLiteral: 0.28); p.baseColor.tint = UIColor(red: 1, green: 0.8, blue: 0.4, alpha: 1)
+                case .auto: break
+                }
+                return p
+            }
+            e.components.set(model)
+        }
+        for c in e.children { apply(f, to: c) }
     }
 }
 
@@ -96,6 +133,7 @@ struct Character3DView: UIViewRepresentable {
     /// v1.40: idle life — gentle sway/breathing plus a random gesture every few seconds.
     var ambient = false
     @AppStorage("character.id") private var characterID = "yl" // re-renders every character view on change
+    @AppStorage("character.finish") private var finish = "auto"
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> ARView {
@@ -136,16 +174,22 @@ struct Character3DView: UIViewRepresentable {
         func setAmbient(_ on: Bool) {
             guard on != ambient else { return }
             ambient = on
-            if on, let v = view {
-                tick = v.scene.subscribe(to: SceneEvents.Update.self) { [weak self] e in
-                    MainActor.assumeIsolated { self?.step(e.deltaTime) }
-                }
-            } else { tick?.cancel(); tick = nil; body?.transform = base }
+            if !on { body?.transform = base }
         }
+        private var loadedFinish = CharacterFinish.auto
+        private var glitch = 0.0
         /// Breathing bob + slow body sway so the character never looks frozen, and a fidget every 6–12 s.
         private func step(_ dt: Double) {
             clock += dt
             guard let b = body else { return }
+            if loadedFinish == .holo {
+                // hologram: soft flicker with an occasional short dropout
+                if glitch <= 0, Double.random(in: 0...1) < dt * 0.35 { glitch = 0.12 }
+                glitch -= dt
+                let o = glitch > 0 ? 0.35 : 0.82 + 0.1 * sin(clock * 9) + 0.05 * sin(clock * 23)
+                b.components.set(OpacityComponent(opacity: Float(o)))
+            }
+            guard ambient else { return }
             let t = Float(clock)
             b.position = base.translation + [0, 0.012 * sin(t * 2.1), 0]
             b.orientation = simd_quatf(angle: 0.18 * sin(t * 0.35), axis: [0, 1, 0]) * simd_quatf(angle: 0.025 * sin(t * 0.9), axis: [0, 0, 1]) * base.rotation
@@ -166,6 +210,9 @@ struct Character3DView: UIViewRepresentable {
             fill.look(at: [0, 0.6, 0], from: [-2, 1.5, -1.5], relativeTo: nil); anchor.addChild(fill)
             v.scene.addAnchor(anchor)
             placeCamera()
+            tick = v.scene.subscribe(to: SceneEvents.Update.self) { [weak self] e in
+                MainActor.assumeIsolated { self?.step(e.deltaTime) }
+            }
             observer = NotificationCenter.default.addObserver(forName: CharacterReact.note, object: nil, queue: .main) { [weak self] n in
                 guard let clip = n.object as? String else { return }
                 MainActor.assumeIsolated { self?.react(clip) }
@@ -175,7 +222,8 @@ struct Character3DView: UIViewRepresentable {
         func loadBody() {
             body?.removeFromParent(); body = nil
             let rig = CharacterRig.shared; loadedID = rig.id
-            if let m = rig.model { let c = m.clone(recursive: true); body = c; base = c.transform; anchor.addChild(c) }
+            loadedFinish = CharacterFinish.selected
+            if let m = rig.model { let c = m.clone(recursive: true); CharacterFinish.apply(loadedFinish, to: c); body = c; base = c.transform; anchor.addChild(c) }
             current = ""; reacting = false
         }
         func detach() {
@@ -212,7 +260,7 @@ struct Character3DView: UIViewRepresentable {
         func update(speed: Double, override: String?) {
             let rig = CharacterRig.shared
             lastSpeed = speed; lastOverride = override
-            if loadedID != CharacterOption.selectedID { loadBody() }
+            if loadedID != CharacterOption.selectedID || loadedFinish != CharacterFinish.selected { loadBody() }
             guard let model = body, speed.isFinite, !reacting else { return }
             let name = override ?? (speed < 3 ? "idle" : speed < 20 ? "walk" : "run")
             let rate: Float = name == "run" ? Float(min(1.5, max(0.8, speed / 60))) : name == "walk" ? Float(min(1.3, max(0.7, speed / 10))) : 1
@@ -244,11 +292,15 @@ enum CharacterReact {
 struct CharacterSelectView: View {
     @AppStorage("character.id") private var characterID = "yl"
     @State private var previewID: String = CharacterOption.selectedID
+    @AppStorage("character.finish") private var finish = "auto"
     var body: some View {
         List {
             Section {
+                Picker("질감", selection: $finish) {
+                    ForEach(CharacterFinish.allCases) { Text($0.title).tag($0.rawValue) }
+                }.pickerStyle(.segmented)
                 ZStack(alignment: .bottom) {
-                    CharacterPreview(id: previewID)
+                    CharacterPreview(id: previewID, finish: finish)
                         .frame(height: 320)
                     Text("드래그해서 돌려보기 · 두 번 탭하면 정면").font(.caption2).foregroundStyle(.secondary).padding(.bottom, 6)
                 }
@@ -290,6 +342,7 @@ struct CharacterSelectView: View {
 /// A standalone 3D view of one character (not the selected one), used by the picker.
 private struct CharacterPreview: UIViewRepresentable {
     let id: String
+    var finish = "auto"
     func makeCoordinator() -> Coord { Coord() }
     func makeUIView(context: Context) -> ARView {
         let v = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
@@ -298,10 +351,10 @@ private struct CharacterPreview: UIViewRepresentable {
         v.addGestureRecognizer(UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coord.pan(_:))))
         let dbl = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coord.reset)); dbl.numberOfTapsRequired = 2
         v.addGestureRecognizer(dbl)
-        context.coordinator.show(id)
+        context.coordinator.show(id, finish: finish)
         return v
     }
-    func updateUIView(_ v: ARView, context: Context) { context.coordinator.show(id) }
+    func updateUIView(_ v: ARView, context: Context) { context.coordinator.show(id, finish: finish) }
     static func dismantleUIView(_ v: ARView, coordinator: Coord) { v.scene.anchors.removeAll() }
     @MainActor final class Coord: NSObject {
         let anchor = AnchorEntity(world: .zero), turntable = Entity(), camera = PerspectiveCamera()
@@ -314,13 +367,13 @@ private struct CharacterPreview: UIViewRepresentable {
             let fill = DirectionalLight(); fill.light.intensity = 1100; fill.look(at: [0, 0.6, 0], from: [-2, 1.5, -1.5], relativeTo: nil); anchor.addChild(fill)
             v.scene.addAnchor(anchor)
         }
-        func show(_ id: String) {
-            guard id != shown else { return }
-            shown = id
+        func show(_ id: String, finish: String = "auto") {
+            guard id + finish != shown else { return }
+            shown = id + finish
             turntable.children.removeAll()
             let rig = CharacterRig.rig(id)
             guard let m = rig.model else { return }
-            let c = m.clone(recursive: true); turntable.addChild(c)
+            let c = m.clone(recursive: true); CharacterFinish.apply(CharacterFinish(rawValue: finish) ?? .auto, to: c); turntable.addChild(c)
             if let idle = rig.clips["wave"] ?? rig.clips["idle"] {
                 c.playAnimation(idle, transitionDuration: 0, startsPaused: false)
                 if let loop = rig.clips["idle"] {
