@@ -60,3 +60,9 @@ console.log('PASS: charge cost defaults, site/operator priority, paid/free prese
  const c=e.chargeSummary().rows[0];assert.equal(c.chargeType,'dc');assert.equal(c.supplyKWh,null,'AC counters are ignored during proven DC charging');assert.equal(c.estimatedCost,8000);
  console.log('PASS: NAS DC power identifies rapid charging without using AC supply counter');
 }
+{
+ // v1.42: a charge renamed to 집 teaches its spot; later charges there count as home.
+ const e=new Engine();e.settings({tariff:180});
+ e.state.charges=[row('named',{place:'집',chargeType:'ac',latitude:37.5,longitude:127.1}),row('later',{chargeType:'ac',latitude:37.5005,longitude:127.1003}),row('away',{chargeType:'ac',latitude:37.6,longitude:127.2})];
+ assert.equal(priced(e,'later').chargeTypeLabel,'집 완속');assert.notEqual(priced(e,'away').chargeTypeLabel,'집 완속');
+}
