@@ -103,10 +103,16 @@ struct NavigationReadout {
     /// v1.31: 0 none · 1 over the limit · 2 ≥10 km/h over · 3 ≥20 km/h over.
     var overspeedLevel: Int {
         guard let limit = speedLimit, limit > 0, speedKmh.isFinite else { return 0 }
+        // v1.42: only warn inside the distance chosen in 설정 (300 / 500 / 1000 m) before the camera.
+        if let m = speedLimitMetres, m.isFinite {
+            let range = UserDefaults.standard.object(forKey: "overspeed.distance") as? Double ?? 500
+            if m > range { return 0 }
+        }
         let over = speedKmh - Double(limit)
         return over >= 20 ? 3 : over >= 10 ? 2 : over > 0.5 ? 1 : 0
     }
     var speedLimitDistance = ""
+    var speedLimitMetres: Double? = nil
     var odometer = "—"
     var clock = ""
     var gpsLive = false

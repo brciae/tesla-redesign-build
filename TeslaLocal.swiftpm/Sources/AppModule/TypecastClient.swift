@@ -29,6 +29,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
     @Published var isSynthesizing = false
+    /// v1.42: every voice the account can use (all genders/ages), from GET /v3/voices; cached for offline browsing.
+    @Published var remoteVoices: [TypecastCharacter] = TypecastClient.loadRemoteVoices()
     @Published var lastStatus = ""
     @Published var connectionStatus = ""
     @Published var isCheckingConnection = false
@@ -307,10 +309,41 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey], stage: "GET /v3/voices · model=ssfm-v30")
         }
         let catalog = parseVoices(from: data)
+        let voices = Self.parseVoiceMetadata(data)
+        if !voices.isEmpty {
+            UserDefaults.standard.set(data, forKey: "typecast.voiceListRaw")
+            await MainActor.run { self.remoteVoices = voices }
+        }
         guard !catalog.isEmpty else {
             throw NSError(domain: "Typecast", code: 502, userInfo: [NSLocalizedDescriptionKey: "HTTP 200이지만 지원 보이스 목록을 해석할 수 없음"])
         }
         return catalog
+    }
+
+    static func loadRemoteVoices() -> [TypecastCharacter] {
+        guard let data = UserDefaults.standard.data(forKey: "typecast.voiceListRaw") else { return [] }
+        return parseVoiceMetadata(data)
+    }
+    static func parseVoiceMetadata(_ data: Data) -> [TypecastCharacter] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        let list = (json as? [[String: Any]]) ?? ((json as? [String: Any]).flatMap { ($0["result"] ?? $0["voices"] ?? $0["data"]) as? [[String: Any]] }) ?? []
+        func text(_ v: Any?) -> String {
+            if let s = v as? String { return s }
+            if let d = v as? [String: Any] { return (d["ko"] ?? d["en"] ?? d.values.first) as? String ?? "" }
+            return ""
+        }
+        let genders = ["female": "여성", "male": "남성"]
+        let ages = ["child": "어린이", "teenager": "청소년", "teen": "청소년", "young_adult": "청년", "middle_age": "중년", "middle_aged": "중년", "elder": "노년", "senior": "노년", "old": "노년"]
+        return list.compactMap { item in
+            guard let id = (item["voice_id"] ?? item["actor_id"] ?? item["id"]) as? String, TypecastAPIPolicy.isVoiceID(id) else { return nil }
+            let name = text(item["voice_name"] ?? item["name"]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            let g = text(item["gender"]).lowercased(), a = text(item["age"]).lowercased()
+            let uses = (item["use_cases"] as? [String]) ?? (item["use_case"] as? [String]) ?? []
+            let gender = genders[g] ?? (g.isEmpty ? "미분류" : g), age = ages[a] ?? (a.isEmpty ? "미분류" : a)
+            return TypecastCharacter(id: id, nameKo: name, nameEn: name, tone: "", mood: "", category: uses.joined(separator: ", "),
+                                     desc: ([gender, age] + uses.prefix(2)).joined(separator: " · "), gender: gender, age: age)
+        }
     }
 
     func refreshVoiceCatalog() async {

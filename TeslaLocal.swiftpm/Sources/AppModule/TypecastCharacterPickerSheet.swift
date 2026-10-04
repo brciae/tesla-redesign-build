@@ -14,11 +14,22 @@ struct TypecastCharacterPickerSheet: View {
 
     @State private var searchQuery = ""
     @State private var selectedCategory = "전체"
+    @State private var selectedGender = "전체"
+    @State private var selectedAge = "전체"
+    private let genders = ["전체", "여성", "남성"]
+    private let ages = ["전체", "어린이", "청소년", "청년", "중년", "노년"]
+
+    /// v1.42: bundled curated voices + every voice the account can use from the Typecast API.
+    private var pool: [TypecastCharacter] {
+        let bundled = TypecastCatalog.characters
+        let names = Set(bundled.map { $0.nameKo.lowercased() })
+        return bundled + typecast.remoteVoices.filter { !names.contains($0.nameKo.lowercased()) }.sorted { $0.nameKo < $1.nameKo }
+    }
 
     private let categories = ["전체", "대화/일상", "아나운서/기자", "오디오북/낭독", "라디오/팟캐스트", "광고/홍보"]
 
     private var filteredCharacters: [TypecastCharacter] {
-        TypecastCatalog.search(query: searchQuery, category: selectedCategory)
+        TypecastCatalog.search(query: searchQuery, category: selectedCategory, gender: selectedGender, age: selectedAge, in: pool)
     }
 
     var body: some View {
@@ -28,7 +39,11 @@ struct TypecastCharacterPickerSheet: View {
                     ["선택 음성 \(TypecastCatalog.find(typecast.selectedVoiceId)?.nameKo ?? "사용자 지정 음성").", "\(selectedCategory) 분류에서 \(filteredCharacters.count)개가 검색됐습니다."]
                 }
                 // Category Pills
-                categoryPills
+                VStack(spacing: 6) {
+                    pills(genders, selection: $selectedGender) { TypecastCatalog.search(query: "", gender: $0, in: pool).count }
+                    pills(ages, selection: $selectedAge) { TypecastCatalog.search(query: "", gender: selectedGender, age: $0, in: pool).count }
+                    categoryPills
+                }
                     .padding(.vertical, 8)
                     .background(Color(UIColor.secondarySystemBackground))
 
@@ -69,6 +84,7 @@ struct TypecastCharacterPickerSheet: View {
                 }
             }
             .onDisappear { if previewing != nil { typecast.stop(); previewing = nil } }
+            .task { await typecast.refreshVoiceCatalog() }
         }
     }
 
@@ -79,7 +95,7 @@ struct TypecastCharacterPickerSheet: View {
             HStack(spacing: 8) {
                 ForEach(categories, id: \.self) { cat in
                     let isSelected = selectedCategory == cat
-                    let count = cat == "전체" ? TypecastCatalog.characters.count : TypecastCatalog.search(query: "", category: cat).count
+                    let count = TypecastCatalog.search(query: "", category: cat, gender: selectedGender, age: selectedAge, in: pool).count
                     Button {
                         selectedCategory = cat
                     } label: {
@@ -100,6 +116,24 @@ struct TypecastCharacterPickerSheet: View {
                 }
             }
             .padding(.horizontal, 16)
+        }
+    }
+
+    private func pills(_ items: [String], selection: Binding<String>, count: @escaping (String) -> Int) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(items, id: \.self) { item in
+                    let on = selection.wrappedValue == item
+                    Button { selection.wrappedValue = item } label: {
+                        HStack(spacing: 4) { Text(item); Text("(\(count(item)))").font(.caption2).opacity(0.8) }
+                            .font(.subheadline.weight(on ? .bold : .medium))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(on ? Color.blue : Color(UIColor.systemBackground), in: Capsule())
+                            .foregroundStyle(on ? Color.white : Color.primary)
+                            .overlay(Capsule().stroke(Color.primary.opacity(on ? 0 : 0.12), lineWidth: 1))
+                    }.buttonStyle(.plain)
+                }
+            }.padding(.horizontal, 16)
         }
     }
 

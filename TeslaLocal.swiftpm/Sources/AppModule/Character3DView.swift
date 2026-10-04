@@ -9,9 +9,14 @@ import Combine
 /// anim_<clip>.usdz files retargeted to its own skeleton. "" is the original character at the root.
 struct CharacterOption: Identifiable, Hashable {
     let id: String, name: String, folder: String
+    /// v1.42: robots keep a satin-metal finish instead of the skin/cloth matte look.
+    var robot = false
     static let all: [CharacterOption] = [
         CharacterOption(id: "yl", name: "유엘 (기본)", folder: ""),
         CharacterOption(id: "wolf", name: "늑대 소녀", folder: "c_wolf"),
+        CharacterOption(id: "r4d5c4915", name: "흰색 휴머노이드 로봇", folder: "r_4d5c4915", robot: true),
+        CharacterOption(id: "raa13fc50", name: "스텔스 로봇", folder: "r_aa13fc50", robot: true),
+        CharacterOption(id: "rfd33e359", name: "아머 로봇", folder: "r_fd33e359", robot: true),
     ]
     /// v1.41: an id that is no longer in the catalog (the 1.38 Tripo models were removed) falls back to 유엘.
     static var selectedID: String {
@@ -32,7 +37,7 @@ final class CharacterRig {
     static func rig(_ id: String) -> CharacterRig {
         if let r = cache[id] { return r }
         let option = CharacterOption.all.first { $0.id == id } ?? CharacterOption.all[0]
-        let r = CharacterRig(folder: option.folder); r.id = option.id
+        let r = CharacterRig(folder: option.folder, robot: option.robot); r.id = option.id
         cache[option.id] = r
         return r
     }
@@ -41,14 +46,16 @@ final class CharacterRig {
     private(set) var clips: [String: AnimationResource] = [:]
     private(set) var failed = false
     private(set) var loadError: String?
-    private init(folder: String) {
+    private init(folder: String, robot: Bool = false) {
         guard var dir = Bundle.main.url(forResource: "character", withExtension: nil) else { failed = true; loadError = "character 폴더 없음"; return }
         if !folder.isEmpty { dir = dir.appendingPathComponent(folder, isDirectory: true) }
         do {
             let body = try Entity.load(contentsOf: dir.appendingPathComponent("character.usdz"))
-            Self.matte(body)
+            Self.matte(body, robot: robot)
             model = body
-            if let idle = body.availableAnimations.first { clips["idle"] = idle }
+            // v1.42: anim_idle.usdz is the full loop; character.usdz may carry only a 2-frame pose.
+            if let e = try? Entity.load(contentsOf: dir.appendingPathComponent("anim_idle.usdz")), let a = e.availableAnimations.first { clips["idle"] = a }
+            else if let idle = body.availableAnimations.first { clips["idle"] = idle }
             for name in ["walk", "run", "jump", "turnL", "turnR", "strafeL", "strafeR", "strafeWalkL", "strafeWalkR",
                          "wave", "talk", "think", "nod", "shake", "happy", "clap", "point", "lookaround", "sit"] {
                 let url = dir.appendingPathComponent("anim_\(name).usdz")
@@ -59,12 +66,12 @@ final class CharacterRig {
     }
     /// v1.32: the exported PBR read as chrome on device (metallic ≈ 1). Force a skin/cloth look:
     /// keep the base-colour texture, metallic 0, high roughness, no clearcoat.
-    private static func matte(_ e: Entity) {
+    private static func matte(_ e: Entity, robot: Bool = false) {
         if var model = e.components[ModelComponent.self] {
             model.materials = model.materials.map { m -> RealityKit.Material in
                 if var pbr = m as? PhysicallyBasedMaterial {
-                    pbr.metallic = .init(floatLiteral: 0)
-                    pbr.roughness = .init(floatLiteral: 0.85)
+                    pbr.metallic = .init(floatLiteral: robot ? 0.55 : 0)
+                    pbr.roughness = .init(floatLiteral: robot ? 0.38 : 0.85)
                     pbr.specular = .init(floatLiteral: 0.2)
                     pbr.clearcoat = .init(floatLiteral: 0)
                     pbr.blending = .opaque          // opacity was wired to the colour map
@@ -75,7 +82,7 @@ final class CharacterRig {
             }
             e.components.set(model)
         }
-        for c in e.children { matte(c) }
+        for c in e.children { matte(c, robot: robot) }
     }
     var available: Bool { model != nil && clips["idle"] != nil }
 }

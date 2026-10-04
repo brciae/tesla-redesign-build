@@ -128,8 +128,10 @@ struct TeslaInteractiveControlsView: View {
     }
     /// v1.41: live BLE closure state (what the 3D model shows) wins over a Fleet snapshot without body data.
     private func bleOpenCount(_ parts: [String]) -> Int? {
-        guard !parts.isEmpty, model.output.object("fresh").flag("closures") else { return nil }
+        // v1.42: same rule as the 3D model (received in the last 2 min), not the stricter verified-session flag.
         let g = model.groups.object("closures")
+        let received = g.number("receivedAt") ?? g.number("at") ?? 0
+        guard !parts.isEmpty, model.output.object("fresh").flag("closures") || Date().timeIntervalSince1970 * 1000 - received <= 120_000 else { return nil }
         let v = parts.compactMap { g[$0] as? Bool }
         return v.count == parts.count ? v.filter { $0 }.count : nil
     }

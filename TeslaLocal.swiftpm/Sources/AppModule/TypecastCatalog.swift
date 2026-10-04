@@ -14,6 +14,9 @@ public struct TypecastCharacter: Identifiable, Hashable {
     public let mood: String
     public let category: String
     public let desc: String
+    /// v1.42: the bundled list is Korean young-adult women; voices from the API carry their own values.
+    public var gender: String = "여성"
+    public var age: String = "청년"
 
     public var isCuratedPreset: Bool {
         ["은경", "서현", "아엘", "한영"].contains(nameKo)
@@ -1251,8 +1254,10 @@ public enum TypecastCatalog {
         })
     }
 
-    public static func search(query: String, category: String = "전체") -> [TypecastCharacter] {
-        var results = characters
+    public static func search(query: String, category: String = "전체", gender: String = "전체", age: String = "전체", in pool: [TypecastCharacter]? = nil) -> [TypecastCharacter] {
+        var results = pool ?? characters
+        if gender != "전체" { results = results.filter { $0.gender == gender } }
+        if age != "전체" { results = results.filter { $0.age == age } }
         if category != "전체" {
             results = results.filter { char in
                 switch category {

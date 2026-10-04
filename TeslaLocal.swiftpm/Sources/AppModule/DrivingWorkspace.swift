@@ -266,7 +266,7 @@ struct DrivingWorkspace: View {
             if let raw = n["laneRaw"] as? String { r.laneRaw = raw }
             if let limit = n["speedLimit"] as? Int, limit > 0 {
                 r.speedLimit = limit
-                if n["speedLimitMetres"] != nil { r.speedLimitDistance = distance("speedLimitMetres") }
+                if n["speedLimitMetres"] != nil { r.speedLimitDistance = distance("speedLimitMetres"); r.speedLimitMetres = (n["speedLimitMetres"] as? NSNumber)?.doubleValue }
             }
             if let remain = n["remainMetres"] as? Double, let total = n["routeTotalMetres"] as? Double, total > 0 {
                 r.routeProgress = max(0, min(1, 1 - remain / total))

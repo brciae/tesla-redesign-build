@@ -21,6 +21,7 @@ struct PreferencesView: View {
     @AppStorage("navSafetyVoice") private var navSafety = true
     @AppStorage("overspeed.volume") private var overspeedVolume = 0.8
     @AppStorage("overspeed.beep") private var overspeedBeep = true
+    @AppStorage("overspeed.distance") private var overspeedDistance = 500.0
     @AppStorage("characterFloat.scale") private var characterScale = 1.0
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
@@ -59,6 +60,9 @@ struct PreferencesView: View {
                         Slider(value: $overspeedVolume, in: 0...1, step: 0.05)
                         Text("\(Int(overspeedVolume * 100))%").monospacedDigit().frame(minWidth: 44, alignment: .trailing)
                     }
+                    Picker("경고 시작 거리", selection: $overspeedDistance) {
+                        Text("300 m").tag(300.0); Text("500 m").tag(500.0); Text("1 km").tag(1000.0)
+                    }.pickerStyle(.segmented)
                     Button("경고음 들어보기") { OverspeedChime.shared.play() }
                 }
                 Picker("안내 빈도", selection: $navDetail) {
@@ -334,7 +338,7 @@ struct TypecastSettingsSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: "person.crop.rectangle.stack.fill")
                         .font(.caption)
-                    Text("전체 캐릭터 둘러보기 (한국어/여성/청년 131명)")
+                    Text("전체 캐릭터 둘러보기 (성별·연령·용도로 검색)")
                         .font(.caption.weight(.bold))
                     Spacer()
                     Image(systemName: "chevron.right")
