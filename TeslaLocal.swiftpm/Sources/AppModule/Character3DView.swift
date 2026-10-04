@@ -187,7 +187,8 @@ struct Character3DView: UIViewRepresentable {
                 if glitch <= 0, Double.random(in: 0...1) < dt * 0.35 { glitch = 0.12 }
                 glitch -= dt
                 let o = glitch > 0 ? 0.35 : 0.82 + 0.1 * sin(clock * 9) + 0.05 * sin(clock * 23)
-                b.components.set(OpacityComponent(opacity: Float(o)))
+                if #available(iOS 18.0, *) { b.components.set(OpacityComponent(opacity: Float(o))) }
+                else { b.isEnabled = glitch <= 0 } // iOS 17: dropout blink only
             }
             guard ambient else { return }
             let t = Float(clock)

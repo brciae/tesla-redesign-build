@@ -10,7 +10,7 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
-        ReleaseNote(version: "1.43 (143)", date: "2026-10-04", items: [
+        ReleaseNote(version: "1.44 (144)", date: "2026-10-04", items: [
             "1.41에서 뺀 캐릭터 5종 복구 — 모델이 깨지던 원인(부품별 뼈대 기준 불일치·방향 계산 오류)을 고쳐 다시 변환",
             "캐릭터 질감 선택: 메뉴 → 캐릭터 상단에서 기본·무광·메탈·골드·홀로그램 중 선택, 모든 캐릭터 화면에 적용",
             "홀로그램: 반투명 청록색 발광 + 은은한 깜빡임과 가끔 끊기는 글리치 효과",
