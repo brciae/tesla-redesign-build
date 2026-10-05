@@ -671,17 +671,29 @@
       }
       target.trips=staged.trips.sort((a,b)=>a.start-b.start);target.charges=staged.charges.sort((a,b)=>a.at-b.at);return counts;
     }
+    capacitySamples(from=0,now=Date.now()){
+      // v1.55: verified manual entries plus automatic sessions where the car itself reported the energy added
+      // (charge_energy_added) over a ≥20 %p SOC window. Before this, auto sessions never qualified, so the
+      // degradation card stayed at "collecting" forever.
+      return this.state.charges.filter(c=>!c.chargeExcluded&&!c.active&&num(c.at,from,now)&&num(c.startSOC,0,100)&&num(c.endSOC,0,100)&&c.endSOC-c.startSOC>=20)
+        .map(c=>{const verified=c.complete&&c.storageVerified&&c.comparable&&num(c.storedKWh,1,200);const kwh=verified?c.storedKWh:num(c.vehicleReportedKWh,1,200)?c.vehicleReportedKWh:null;
+          return kwh==null?null:{id:c.id,at:c.at,kwh:kwh/((c.endSOC-c.startSOC)/100),verified};})
+        .filter(c=>c&&num(c.kwh,20,200)).sort((a,b)=>a.at-b.at);
+    }
     healthIndex(now=Date.now()){
       const b=this.state.batteryBaseline??{at:Date.now(),source:'assumedNew'};
-      const samples=this.state.charges.filter(c=>!c.chargeExcluded&&num(c.at,b.at,now)&&c.complete&&c.storageVerified&&c.comparable&&num(c.storedKWh,1,200)&&num(c.startSOC,0,100)&&num(c.endSOC,0,100)&&c.endSOC-c.startSOC>=20)
-        .map(c=>({id:c.id,at:c.at,kwh:c.storedKWh/((c.endSOC-c.startSOC)/100)})).filter(c=>num(c.kwh,20,200)).sort((a,b)=>a.at-b.at);
+      const samples=this.capacitySamples(Math.min(b.at,now),now);
       const first=samples.slice(0,5),later=samples.slice(5).slice(-5);
-      const baseline=b.capacityKWh??(first.length===5?median(first.map(c=>c.kwh)):null);
-      const recent=later.length===5?median(later.map(c=>c.kwh)):null;
+      const nominal=num(this.state.settings.assumedCapacityKWh,20,200)?this.state.settings.assumedCapacityKWh:75;
+      // provisional: 3+ samples compared against the nominal pack capacity until 10 samples allow a personal baseline
+      const provisional=!b.capacityKWh&&first.length<5||(!b.capacityKWh&&later.length<5);
+      const recentSet=provisional?samples.slice(-5):later;
+      const baseline=b.capacityKWh??(!provisional?median(first.map(c=>c.kwh)):(samples.length>=3?nominal:null));
+      const recent=recentSet.length>=(provisional?3:5)?median(recentSet.map(c=>c.kwh)):null;
       const ratio=baseline&&recent?recent/baseline*100:null;
-      const baselineSpread=first.length===5?Math.max(...first.map(c=>c.kwh))-Math.min(...first.map(c=>c.kwh)):null;
-      const spread=later.length===5?Math.max(...later.map(c=>c.kwh))-Math.min(...later.map(c=>c.kwh)):null;
-      const comparable=ratio!==null&&baselineSpread/baseline<=0.15&&spread/recent<=0.15;
+      const baselineSpread=provisional?0:(first.length===5?Math.max(...first.map(c=>c.kwh))-Math.min(...first.map(c=>c.kwh)):null);
+      const spread=recentSet.length?Math.max(...recentSet.map(c=>c.kwh))-Math.min(...recentSet.map(c=>c.kwh)):null;
+      const comparable=ratio!==null&&baselineSpread/baseline<=0.15&&spread/recent<=0.2;
       const history=samples.slice(-30),span=history.length>1?(history.at(-1).at-history[0].at)/DAY:0,slopes=[];
       if(comparable&&history.length>=10&&span>=90){for(let i=0;i<history.length;i++)for(let j=i+1;j<history.length;j++){const days=(history[j].at-history[i].at)/DAY;if(days>=14)slopes.push((history[j].kwh-history[i].kwh)/baseline*100/days);}}
       const slope=slopes.length?Math.min(0,median(slopes)):null;
@@ -690,13 +702,13 @@
       return {baselineAt:b.at,baselineSource:b.source,baselineSOH:100,soh:comparable?round(Math.min(100,ratio),1):100,
         uncertaintyPercent:uncertainty==null?null:round(uncertainty,1),forecastSOH180:forecast,forecastDegradation180:forecast==null?null:round(100-forecast,1),calibrationSpanDays:round(span,0),calibrationMethod:'동일 조건 용량 중앙값·Theil–Sen 추세',
         degradationPercent:comparable?round(Math.max(0,100-ratio),1):0,estimated:comparable,initial:!comparable,
-        capacityRatioPercent:ratio===null?null:round(ratio,1),baselineCapacityKWh:round(baseline,1),recentCapacityKWh:round(recent,1),sampleCount:samples.length,
+        capacityRatioPercent:ratio===null?null:round(ratio,1),baselineCapacityKWh:round(baseline,1),recentCapacityKWh:round(recent,1),sampleCount:samples.length,samplesNeeded:provisional?3:10,provisional:comparable&&provisional,nominalKWh:nominal,
         note:comparable?'초기 관측용량 대비 최근 관측용량 비율의 상대 추정. 신차 실측 SOH·보증 진단 아님.':'신차 기준 SOH 100%·열화 0%는 초기 가정값. 비교 가능한 초기 5회와 이후 5회 이상의 저장에너지·SOC 자료 수집 중. 사용 패턴만으로 임의의 열화율을 차감하지 않음.',
         forecastNote:forecast==null?'초기 기준 100%. 비교 가능한 용량 관측 10회·90일 이후 개인 용량 추세로 180일 전망 보정. 미래 열화의 실측값이나 보증 진단이 아님.':'검증된 저장에너지·SOC로 구한 개인 용량 추세의 180일 외삽. 미래 온도·사용 패턴 변화 미반영; 오차 범위는 관측 산포이며 통계적 신뢰구간이 아님.'};
     }
     health(){
-      const good=this.state.charges.filter(c=>!c.chargeExcluded&&c.complete&&c.storageVerified&&c.comparable&&num(c.storedKWh,1,200)&&num(c.startSOC,0,100)&&num(c.endSOC,0,100)&&c.endSOC-c.startSOC>=20).map(c=>({at:c.at,capacity:c.storedKWh/((c.endSOC-c.startSOC)/100)})).filter(c=>num(c.capacity,20,200)).sort((a,b)=>a.at-b.at);
-      const value=good.length>=5?median(good.slice(-10).map(c=>c.capacity)):null;
+      const good=this.capacitySamples().map(c=>({at:c.at,capacity:c.kwh}));
+      const value=good.length>=3?median(good.slice(-10).map(c=>c.capacity)):null;
       const baseline=good.length>=10?median(good.slice(0,5).map(c=>c.capacity)):null;
       const recent=good.length>=10?median(good.slice(-5).map(c=>c.capacity)):null;
       return {count:good.length,capacity:round(value),baseline:round(baseline),changePercent:baseline?round((recent/baseline-1)*100):null,minimum:good.length?round(Math.min(...good.map(c=>c.capacity))):null,maximum:good.length?round(Math.max(...good.map(c=>c.capacity))):null,note:'선별된 회차의 관측 기반 추정. 최소 5회는 임시 품질 기준이며 정확도를 보장하지 않음. 신차 대비 열화율·수명 진단 아님.'};
