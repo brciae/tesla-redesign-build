@@ -10,6 +10,9 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.54 (154)", date: "2026-10-05", items: [
+            "타입캐스트 웹 배우 목록 파일이 앱 번들에 포함되지 않아 썸네일·한글 이름 보정이 동작하지 않던 문제 수정",
+        ]),
         ReleaseNote(version: "1.53 (153)", date: "2026-10-05", items: [
             "홀로그램 재설계: 몸통 가운데를 가르던 흰 빛기둥 제거, 내부 명도를 크게 낮추고 윤곽·격자선 위주로 빛나게 해 형체 구분",
             "등장 연출: 받침대에서 빔이 위로 쏘아지고, 스캔 링을 따라 발끝부터 머리까지 캐릭터가 생성됨",
