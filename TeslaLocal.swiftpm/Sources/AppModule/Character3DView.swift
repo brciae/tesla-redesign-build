@@ -61,6 +61,7 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
                     if let shader = holoShader, var c = try? CustomMaterial(surfaceShader: shader, lightingModel: .unlit) {
                         c.baseColor = .init(tint: .white, texture: p.baseColor.texture.map { CustomMaterial.Texture($0.resource) })
                         c.blending = .transparent(opacity: .init(floatLiteral: 1))
+                        c.custom.value = [10, 0, 0, 0]   // v1.53: fully revealed unless a spawn animation runs
                         return c
                     }
                     var u = UnlitMaterial()
@@ -93,43 +94,86 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
         }
         pad.addChild(disc(0.62, radial(inner: 0.0, outer: 0.5, rim: true), y: 0.002))
         for (i, r) in [(0, 0.36), (1, 0.48)] { pad.addChild(disc(Float(r) * 2, ring(dashes: i == 0 ? 6 : 10), y: 0.004 + Float(i) * 0.002, name: "holoRing\(i)")) }
-        // light column: four crossed vertical planes with a fading gradient
-        for k in 0..<4 {
-            var m = UnlitMaterial()
-            if let img = column(), let tex = try? TextureResource.generate(from: img, options: .init(semantic: .color)) { m.color = .init(tint: .white, texture: .init(tex)) }
-            m.blending = .transparent(opacity: .init(floatLiteral: 1))
-            let p = ModelEntity(mesh: .generatePlane(width: 0.5, height: 1.25), materials: [m])
-            p.position.y = 0.62
-            p.orientation = simd_quatf(angle: Float(k) * .pi / 4, axis: [0, 1, 0])
-            pad.addChild(p)
+        // v1.53: spawn beam (shoots up from the pad), scan ring that rides the materialise front,
+        // and matrix-style falling code columns around/behind the figure. The old light column and
+        // orbiting symbols are gone (the column read as a white bar through the body).
+        var beamM = UnlitMaterial(color: UIColor(red: 0.7, green: 1, blue: 0.97, alpha: 1))
+        beamM.blending = .transparent(opacity: .init(floatLiteral: 0.85))
+        let beam = ModelEntity(mesh: .generateBox(width: 0.018, height: 1, depth: 0.018), materials: [beamM])
+        beam.name = "holoBeam"; beam.isEnabled = false
+        pad.addChild(beam)
+        let scanRing = disc(0.62, ring(dashes: 1), y: 0, name: "holoScan"); scanRing.isEnabled = false
+        pad.addChild(scanRing)
+        let rain = Entity(); rain.name = "holoRain"
+        let textures = (0..<6).compactMap { k in rainColumn(seed: k).flatMap { try? TextureResource.generate(from: $0, options: .init(semantic: .color)) } }
+        if !textures.isEmpty {
+            for i in 0..<22 {
+                var m = UnlitMaterial()
+                m.color = .init(tint: .white, texture: .init(textures[i % textures.count]))
+                m.blending = .transparent(opacity: .init(floatLiteral: 1))
+                let h: Float = 0.9 + Float((i * 53) % 7) * 0.12
+                let e = ModelEntity(mesh: .generatePlane(width: 0.075, height: h), materials: [m])
+                let side: Float = i % 2 == 0 ? -1 : 1
+                let behind = i % 3 != 0
+                let x = side * (behind ? 0.08 + Float((i * 37) % 10) / 10 * 0.85 : 0.42 + Float((i * 29) % 10) / 10 * 0.45)
+                let z: Float = behind ? -0.35 - Float((i * 17) % 10) / 10 * 0.7 : 0.05 + Float((i * 13) % 10) / 10 * 0.2
+                e.position = [x, 0, z]
+                e.name = "rain\(i)"
+                rain.addChild(e)
+            }
         }
-        // v1.50: data glyphs (code, symbols) orbiting the figure
-        let glyphs = ["0x3F", "∑", "λ", "◇", "101", "▲", "Ω", "⌁", "SYS", "∆", "◎", "π", "7E", "≡"]
-        let orbit = Entity(); orbit.name = "holoGlyphs"
-        for (i, g) in glyphs.enumerated() {
-            var m = UnlitMaterial(color: cyan.withAlphaComponent(0.85))
-            m.blending = .transparent(opacity: .init(floatLiteral: 0.75))
-            let mesh = MeshResource.generateText(g, extrusionDepth: 0.001, font: .monospacedSystemFont(ofSize: 0.05, weight: .semibold), containerFrame: .zero, alignment: .center, lineBreakMode: .byClipping)
-            let e = ModelEntity(mesh: mesh, materials: [m])
-            let a = Float(i) / Float(glyphs.count) * 2 * .pi
-            let r: Float = 0.33 + Float(i % 3) * 0.05
-            e.position = [r * sin(a), 0.15 + Float((i * 37) % 100) / 100 * 1.0, r * cos(a)]
-            e.orientation = simd_quatf(angle: a, axis: [0, 1, 0])   // face outward along the ring
-            e.name = "glyph\(i)"
-            orbit.addChild(e)
-        }
-        pad.addChild(orbit)
+        pad.addChild(rain)
         root.addChild(pad)
     }
-    /// Glyphs circle slowly, bob, and blink on/off like flickering readouts.
-    @MainActor static func animateGlyphs(in pad: Entity, clock: Double) {
-        guard let orbit = pad.findEntity(named: "holoGlyphs") else { return }
-        orbit.orientation = simd_quatf(angle: Float(clock) * 0.25, axis: [0, 1, 0])
-        for (i, g) in orbit.children.enumerated() {
-            let base = 0.15 + Float((i * 37) % 100) / 100 * 1.0
-            g.position.y = base + 0.03 * Float(sin(clock * 0.9 + Double(i)))
-            let blink = sin(clock * (1.3 + Double(i % 4) * 0.4) + Double(i) * 1.7)
-            g.isEnabled = blink > -0.55
+
+    /// Sets the materialise height on every hologram material under `e` (metres, world space).
+    @MainActor static func setReveal(_ e: Entity, _ height: Float) {
+        if var model = e.components[ModelComponent.self] {
+            var changed = false
+            model.materials = model.materials.map { m in
+                guard var c = m as? CustomMaterial else { return m }
+                c.custom.value = [height, 0, 0, 0]; changed = true; return c
+            }
+            if changed { e.components.set(model) }
+        }
+        for c in e.children { setReveal(c, height) }
+    }
+
+    /// v1.53: whole hologram timeline. `age` = seconds since the character appeared.
+    /// 0–0.35 s beam shoots up · 0.35–1.9 s body materialises bottom→top with a scan ring · then idle.
+    @MainActor static func animateHolo(pad: Entity, body: Entity?, age: Double, clock: Double) {
+        let top: Float = 1.45
+        if let beam = pad.findEntity(named: "holoBeam") {
+            let shoot = Float(min(1, age / 0.35))
+            let fade = Float(max(0, 1 - max(0, age - 1.9) / 0.5))
+            beam.isEnabled = fade > 0.01
+            if beam.isEnabled {
+                let len = max(0.001, top * shoot)
+                beam.scale = [1 + 2.5 * (1 - fade), len, 1 + 2.5 * (1 - fade)]
+                beam.position.y = len / 2
+                if #available(iOS 18.0, *) { beam.components.set(OpacityComponent(opacity: fade * (0.75 + 0.25 * Float(sin(clock * 40))))) }
+            }
+        }
+        let progress = Float(min(1, max(0, (age - 0.35) / 1.55)))
+        let front = -0.05 + progress * (top + 0.15)
+        if let scan = pad.findEntity(named: "holoScan") {
+            scan.isEnabled = progress > 0 && progress < 1
+            scan.position.y = front
+            scan.orientation = simd_quatf(angle: Float(clock) * 3, axis: [0, 1, 0])
+        }
+        if let body, age < 2.3 { setReveal(body, age < 0.35 ? -1 : (progress >= 1 ? 10 : front)) }
+        for (i, name) in ["holoRing0", "holoRing1"].enumerated() {
+            pad.findEntity(named: name)?.orientation = simd_quatf(angle: Float(clock) * (i == 0 ? 0.8 : -0.5), axis: [0, 1, 0])
+        }
+        // rain starts once the beam fires, falls at varied speeds and wraps
+        if let rain = pad.findEntity(named: "holoRain") {
+            rain.isEnabled = age > 0.2
+            for (i, e) in rain.children.enumerated() {
+                let speed = 0.35 + Double((i * 41) % 10) / 10 * 0.55
+                let span = 3.2
+                let y = 2.2 - (clock * speed + Double((i * 71) % 100) / 100 * span).truncatingRemainder(dividingBy: span)
+                e.position.y = Float(y)
+            }
         }
     }
     private static func bitmap(_ size: Int, _ draw: (CGContext, CGFloat) -> Void) -> CGImage? {
@@ -154,18 +198,25 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
             ctx.strokeEllipse(in: CGRect(x: 4, y: 4, width: s - 8, height: s - 8))
         }
     }
-    private static func column() -> CGImage? {
-        bitmap(128) { ctx, s in
-            let colors = [cyan.withAlphaComponent(0).cgColor, cyan.withAlphaComponent(0.05).cgColor, cyan.withAlphaComponent(0.22).cgColor] as CFArray
-            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.6, 1]) {
-                ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])   // bright at the floor
-            }
-            ctx.setBlendMode(.destinationIn)
-            let mask = [UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor] as CFArray
-            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: mask, locations: [0, 0.5, 1]) {
-                ctx.drawLinearGradient(g, start: .zero, end: CGPoint(x: s, y: 0), options: [])
+    /// One falling code column: glyphs top→bottom, brightest (white) at the leading bottom glyph, fading upward.
+    private static func rainColumn(seed: Int) -> CGImage? {
+        let chars = Array("ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEFXZ=+*<>:")
+        let w: CGFloat = 48, h: CGFloat = 768, step: CGFloat = 38
+        let r = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = false; return f }())
+        let img = r.image { _ in
+            let count = Int(h / step)
+            for k in 0..<count {
+                let t = CGFloat(k) / CGFloat(count - 1)              // 0 top … 1 bottom (leading glyph)
+                let c = chars[(seed * 31 + k * 17 + k * k * 7) % chars.count]
+                let lead = k == count - 1
+                let color = lead ? UIColor(white: 1, alpha: 0.95) : UIColor(red: 0.25, green: 1, blue: 0.85, alpha: 0.08 + 0.7 * pow(t, 1.6))
+                let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedSystemFont(ofSize: 30, weight: lead ? .bold : .medium), .foregroundColor: color]
+                let str = NSAttributedString(string: String(c), attributes: attrs)
+                let sz = str.size()
+                str.draw(at: CGPoint(x: (w - sz.width) / 2, y: CGFloat(k) * step))
             }
         }
+        return img.cgImage
     }
 }
 
@@ -299,15 +350,13 @@ struct Character3DView: UIViewRepresentable {
         private var loadedFinish = CharacterFinish.auto
         private var projector: Entity?
         private var glitch = 0.0
+        private var holoStart = 0.0
         /// Breathing bob + slow body sway so the character never looks frozen, and a fidget every 6–12 s.
         private func step(_ dt: Double) {
             clock += dt
             guard let b = body else { return }
             if loadedFinish == .holo, let p = projector?.children.first {
-                for (i, name) in ["holoRing0", "holoRing1"].enumerated() {
-                    p.findEntity(named: name)?.orientation = simd_quatf(angle: Float(clock) * (i == 0 ? 0.8 : -0.5), axis: [0, 1, 0])
-                }
-                CharacterFinish.animateGlyphs(in: p, clock: clock)
+                CharacterFinish.animateHolo(pad: p, body: b, age: clock - holoStart, clock: clock)
             }
             if loadedFinish == .holo, CharacterFinish.holoShader == nil {
                 // fallback hologram (no shader): soft flicker with an occasional short dropout
@@ -355,6 +404,8 @@ struct Character3DView: UIViewRepresentable {
             if let m = rig.model { let c = m.clone(recursive: true); CharacterFinish.apply(loadedFinish, to: c); body = c; base = c.transform; anchor.addChild(c) }
             if loadedFinish == .holo {
                 let holder = Entity(); CharacterFinish.addProjector(to: holder); anchor.addChild(holder); projector = holder
+                holoStart = clock
+                if let body { CharacterFinish.setReveal(body, -1) }   // hidden until the beam fires
             }
             current = ""; reacting = false
         }
@@ -517,11 +568,27 @@ private struct CharacterPreview: UIViewRepresentable {
         return v
     }
     func updateUIView(_ v: ARView, context: Context) { context.coordinator.show(id, finish: finish) }
-    static func dismantleUIView(_ v: ARView, coordinator: Coord) { v.scene.anchors.removeAll() }
+    static func dismantleUIView(_ v: ARView, coordinator: Coord) { coordinator.tick?.cancel(); v.scene.anchors.removeAll() }
     @MainActor final class Coord: NSObject {
         let anchor = AnchorEntity(world: .zero), turntable = Entity(), camera = PerspectiveCamera()
         var shown = ""
+        weak var view: ARView?
+        var tick: Cancellable?
+        var clock = 0.0, holoStart = 0.0
+        var holoPad: Entity?
+        weak var holoBody: Entity?
         func setup(_ v: ARView) {
+            view = v
+            tick = v.scene.subscribe(to: SceneEvents.Update.self) { [weak self] e in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.clock += e.deltaTime
+                    if let pad = self.holoPad {
+                        // the pad stays put while the figure turns; keep the reveal in sync with the figure
+                        CharacterFinish.animateHolo(pad: pad, body: self.holoBody, age: self.clock - self.holoStart, clock: self.clock)
+                    }
+                }
+            }
             anchor.addChild(turntable)
             camera.camera.fieldOfViewInDegrees = 30
             camera.look(at: [0, 0.5, 0], from: [0, 0.75, 2.4], relativeTo: nil); anchor.addChild(camera)
@@ -537,7 +604,14 @@ private struct CharacterPreview: UIViewRepresentable {
             guard let m = rig.model else { return }
             let f = CharacterFinish(rawValue: finish) ?? .auto
             let c = m.clone(recursive: true); CharacterFinish.apply(f, to: c); turntable.addChild(c)
-            if f == .holo { CharacterFinish.addProjector(to: turntable) }
+            holoPad?.removeFromParent(); holoPad = nil; holoBody = nil
+            // v1.53: dark stage for the hologram so it reads like Tripo's viewer; clear for the others
+            view?.environment.background = .color(f == .holo ? UIColor(red: 0.02, green: 0.07, blue: 0.075, alpha: 1) : .clear)
+            if f == .holo {
+                let holder = Entity(); CharacterFinish.addProjector(to: holder); anchor.addChild(holder)
+                holoPad = holder.children.first; holoBody = c; holoStart = clock
+                CharacterFinish.setReveal(c, -1)
+            }
             if let idle = rig.clips["wave"] ?? rig.clips["idle"] {
                 c.playAnimation(idle, transitionDuration: 0, startsPaused: false)
                 if let loop = rig.clips["idle"] {

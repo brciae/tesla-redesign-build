@@ -34,11 +34,83 @@ final class CharacterChat: ObservableObject {
     func cancel() { task?.cancel(); busy = false }
 
     /// Vehicle facts handed to the model; the same text answers locally when no AI key is registered.
-    private static func context(_ model: AppModel) -> String {
-        [BriefingScope.home, .charging, .battery, .trips, .location]
-            .map { model.screenBriefing($0) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
+    /// v1.53: briefings alone held only totals — add the last trips, last charges, tyres, doors/locks,
+    /// odometer, software and every recent Fleet/telemetry reading so the chat can actually answer.
+    static func context(_ model: AppModel) -> String {
+        var lines = [BriefingScope.home, .charging, .battery, .climate, .driving, .location]
+            .map { model.screenBriefing($0) }.filter { !$0.isEmpty }
+        lines.append(contentsOf: tripFacts(model))
+        lines.append(contentsOf: chargeFacts(model))
+        if let tire = tireFact(model) { lines.append(tire) }
+        if let snap = model.fleet.vehicleSnapshot {
+            for section in snap.insightSections() {
+                let rows = section.rows.filter { $0.value != "미수신" && !$0.value.isEmpty }
+                if !rows.isEmpty { lines.append("[\(section.title)] " + rows.map { "\($0.label) \($0.value)" }.joined(separator: ", ")) }
+            }
+        }
+        let vin = model.fleet.selectedVin.isEmpty ? model.settings.string("vin") : model.fleet.selectedVin
+        let live = FleetTelemetryStore.shared.latest(vin: vin).values.filter { !$0.invalid }.sorted { $0.field < $1.field }
+        if !live.isEmpty {
+            lines.append("[실시간 텔레메트리] " + live.map { r in "\(r.field) " + (r.number.map { String(format: "%.2f", $0) } ?? r.text) + " (" + stamp(r.at) + ")" }.joined(separator: ", "))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    static func stamp(_ date: Date) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = "M월 d일 a h시 m분"
+        return f.string(from: date)
+    }
+    private static func date(_ ms: Double?) -> String { ms.map { stamp(Date(timeIntervalSince1970: $0 / 1000)) } ?? "시각 미상" }
+
+    static func tripFacts(_ model: AppModel) -> [String] {
+        let trips = model.state.rows("trips").sorted { ($0.number("end") ?? 0) > ($1.number("end") ?? 0) }
+        guard !trips.isEmpty else { return ["[운행] 저장된 운행 기록 없음"] }
+        var out = ["[운행] 전체 \(trips.count)회 저장됨"]
+        for (i, t) in trips.prefix(3).enumerated() {
+            var parts = [i == 0 ? "마지막 운행" : "\(i + 1)번째 최근 운행", "출발 " + date(t.number("start")), "도착 " + date(t.number("end"))]
+            if let s = t.number("start"), let e = t.number("end"), e > s { parts.append("소요 \(Int(((e - s) / 60000).rounded()))분") }
+            if let d = t.number("distanceKm") {
+                parts.append(String(format: "거리 %.1fkm", d))
+                if let s = t.number("start"), let e = t.number("end"), e - s > 60000 { parts.append(String(format: "평균 시속 %.0fkm", d / ((e - s) / 3600000))) }
+            }
+            if let a = t.number("startSOC"), let b = t.number("endSOC") { parts.append("배터리 \(Int(a))%→\(Int(b))%") }
+            if let used = t.number("observedMotorNetKWh") { parts.append(String(format: "모터 순사용 %.2fkWh", used)) }
+            out.append(parts.joined(separator: ", "))
+        }
+        return out
+    }
+
+    static func chargeFacts(_ model: AppModel) -> [String] {
+        let rows = model.state.rows("charges").sorted { ($0.number("end") ?? $0.number("at") ?? 0) > ($1.number("end") ?? $1.number("at") ?? 0) }
+        guard !rows.isEmpty else { return [] }
+        return rows.prefix(2).enumerated().map { i, c in
+            var parts = [i == 0 ? "마지막 충전" : "그 전 충전", date(c.number("end") ?? c.number("at"))]
+            for key in ["place", "location", "label", "name", "kind", "type"] { if let v = c[key] as? String, !v.isEmpty { parts.append(v) } }
+            if let a = c.number("startSOC"), let b = c.number("endSOC") { parts.append("배터리 \(Int(a))%→\(Int(b))%") }
+            if let k = c.number("chargedKWh") { parts.append(String(format: "충전량 %.1fkWh", k)) }
+            if let w = c.number("cost") ?? c.number("estimatedCost") { parts.append("비용 \(Int(w.rounded()))원") }
+            return "[충전] " + parts.joined(separator: ", ")
+        }
+    }
+
+    /// Newest tyre reading from BLE, the Fleet snapshot or streaming telemetry (same sources as the tyre card).
+    static func tireFact(_ model: AppModel) -> String? {
+        let names = ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"], keys = ["fl", "fr", "rl", "rr"]
+        let tele = ["TpmsPressureFl", "TpmsPressureFr", "TpmsPressureRl", "TpmsPressureRr"]
+        let vin = model.fleet.selectedVin.isEmpty ? model.settings.string("vin") : model.fleet.selectedVin
+        let live = FleetTelemetryStore.shared.latest(vin: vin)
+        var parts: [String] = [], newest: Date?
+        for i in 0..<4 {
+            var best: (Double, Date)?
+            func offer(_ v: Double?, _ at: Date?) { if let v, let at, v > 0, best == nil || at > best!.1 { best = (v, at) } }
+            let g = model.groups.object("tire"), vals = g["values"] as? [Any] ?? []
+            if model.settings.string("vin") == vin, vals.indices.contains(i), let at = g.number("at") { offer((vals[i] as? NSNumber)?.doubleValue, Date(timeIntervalSince1970: at / 1000)) }
+            if let snap = model.fleet.vehicleSnapshot, snap.vin == vin, let at = snap.number("vehicle_state", "timestamp") { offer(snap.number("vehicle_state", "tpms_pressure_" + keys[i]), Date(timeIntervalSince1970: at / 1000)) }
+            if let r = live[tele[i]], !r.invalid { offer(r.number, r.at) }
+            if let b = best { parts.append(String(format: "%@ %.2fbar(%.0fpsi)", names[i], b.0, b.0 * 14.5038)); newest = max(newest ?? b.1, b.1) }
+        }
+        guard !parts.isEmpty else { return nil }
+        return "[타이어 공기압] " + parts.joined(separator: ", ") + (newest.map { " · " + stamp($0) + " 기준" } ?? "")
     }
 
     private static func answer(_ question: String, history: [CharacterChatMessage], model: AppModel) async -> String {
@@ -49,7 +121,7 @@ final class CharacterChat: ObservableObject {
             let recent = history.suffix(8).map { ($0.fromUser ? "사용자: " : "도우미: ") + $0.text }.joined(separator: "\n")
             let prompt = """
             너는 테슬라 Model YL 차주의 앱 속 캐릭터 도우미다. 한국어 존댓말로 2~3문장, 음성으로 읽기 좋게 답한다.
-            아래 차량 데이터에 있는 사실만 말하고, 모르면 모른다고 말한다. 숫자와 단위는 그대로 쓴다. 마크다운·이모지 금지.
+            아래 차량 데이터에 있는 사실만 말하고, 데이터에 있으면 반드시 그 값으로 답한다. 정말 없을 때만 모른다고 말한다. 시각은 '몇 월 며칠 몇 시'처럼 말한다. 숫자와 단위는 그대로 쓴다. 마크다운·이모지 금지.
             [차량 데이터]
             \(facts.isEmpty ? "수신된 데이터 없음" : facts)
             [대화]
@@ -65,6 +137,11 @@ final class CharacterChat: ObservableObject {
         }
         // No AI service registered: answer from the briefing that matches the question.
         let q = question
+        if q.contains("타이어") || q.contains("공기압") { return tireFact(model) ?? "타이어 공기압 수신값이 아직 없어요. 차량을 깨우거나 Fleet 연결 후 다시 물어봐 주세요." }
+        if q.contains("마지막") || q.contains("최근 운행") || q.contains("최근 주행") {
+            if q.contains("충전") { return chargeFacts(model).first ?? "저장된 충전 기록이 없어요." }
+            return tripFacts(model).dropFirst().first ?? "저장된 운행 기록이 없어요."
+        }
         let scope: BriefingScope =
             q.contains("충전") ? .charging :
             q.contains("배터리") || q.contains("잔량") ? .battery :
