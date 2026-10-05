@@ -561,15 +561,33 @@ struct VoiceOutputSettings: View {
 final class OverspeedChime {
     static let shared = OverspeedChime()
     private var player: AVAudioPlayer?
-    private lazy var wav: Data = {
-        let rate = 44_100.0, dur = 0.28
+    /// v1.46: five selectable sounds (설정 → 내비 안내 → 경고음 종류).
+    static let sounds = ["투톤", "짧은 삐", "삐삐 연속", "차임벨", "경보"]
+    private var cache: [Int: Data] = [:]
+    private var wav: Data {
+        let kind = min(4, max(0, UserDefaults.standard.integer(forKey: "overspeed.sound")))
+        if let d = cache[kind] { return d }
+        let d = Self.render(kind); cache[kind] = d; return d
+    }
+    private static func render(_ kind: Int) -> Data {
+        let rate = 44_100.0
+        let dur = [0.28, 0.16, 0.42, 0.9, 0.6][kind]
         let n = Int(rate * dur)
         var pcm = Data(capacity: n * 2)
         for i in 0..<n {
             let t = Double(i) / rate
-            let f = t < dur / 2 ? 1760.0 : 1320.0
-            let env = min(1, t / 0.01) * min(1, (dur - t) / 0.03)
-            var v = Int16(sin(2 * .pi * f * t) * env * 0.9 * Double(Int16.max))
+            var s: Double
+            var env = min(1, t / 0.01) * min(1, (dur - t) / 0.03)
+            switch kind {
+            case 1: s = sin(2 * .pi * 2000 * t)                                                     // single short beep
+            case 2: s = sin(2 * .pi * 1900 * t); env *= (Int(t / 0.07) % 2 == 0) ? 1 : 0           // beep-beep-beep
+            case 3: s = 0.6 * sin(2 * .pi * 1046.5 * t) + 0.4 * sin(2 * .pi * 1568 * t)               // soft bell (C6 + G6)
+                    env = min(1, t / 0.005) * exp(-t * 4.5)
+            case 4: let f = 900 + 700 * (0.5 + 0.5 * sin(2 * .pi * 3.3 * t))                          // rising/falling siren
+                    s = sin(2 * .pi * f * t + 0.0) * 0.8 + 0.2 * sin(4 * .pi * f * t)
+            default: s = sin(2 * .pi * (t < dur / 2 ? 1760.0 : 1320.0) * t)                          // original two-tone
+            }
+            var v = Int16(max(-1, min(1, s * env * 0.9)) * Double(Int16.max))
             pcm.append(Data(bytes: &v, count: 2))
         }
         var h = Data()
@@ -579,7 +597,7 @@ final class OverspeedChime {
         u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate) * 2); u16(2); u16(16)
         h.append("data".data(using: .ascii)!); u32(UInt32(pcm.count))
         return h + pcm
-    }()
+    }
     func play() {
         let d = UserDefaults.standard
         guard d.object(forKey: "overspeed.beep") == nil || d.bool(forKey: "overspeed.beep") else { return }

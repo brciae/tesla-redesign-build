@@ -17,6 +17,9 @@ public struct TypecastCharacter: Identifiable, Hashable {
     /// v1.42: the bundled list is Korean young-adult women; voices from the API carry their own values.
     public var gender: String = "여성"
     public var age: String = "청년"
+    /// v1.46: TTS model this voice supports best (bundled list = ssfm-v30) and the free API sample clip.
+    public var model: String = "ssfm-v30"
+    public var previewURL: String = ""
 
     public var isCuratedPreset: Bool {
         ["은경", "서현", "아엘", "한영"].contains(nameKo)

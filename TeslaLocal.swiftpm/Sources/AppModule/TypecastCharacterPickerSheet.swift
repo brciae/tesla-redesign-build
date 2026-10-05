@@ -13,9 +13,10 @@ struct TypecastCharacterPickerSheet: View {
     @ObservedObject private var typecast = TypecastClient.shared
 
     @State private var searchQuery = ""
-    @State private var selectedCategory = "전체"
-    @State private var selectedGender = "전체"
-    @State private var selectedAge = "전체"
+    // v1.46: filters survive the list refreshing underneath (they used to snap back to 전체 after the sync).
+    @AppStorage("typecast.filter.category") private var selectedCategory = "전체"
+    @AppStorage("typecast.filter.gender") private var selectedGender = "전체"
+    @AppStorage("typecast.filter.age") private var selectedAge = "전체"
     private let genders = ["전체", "여성", "남성"]
     private let ages = ["전체", "어린이", "청소년", "청년", "중년", "노년"]
 
@@ -84,7 +85,7 @@ struct TypecastCharacterPickerSheet: View {
                 }
             }
             .onDisappear { if previewing != nil { typecast.stop(); previewing = nil } }
-            .task { await typecast.refreshVoiceCatalog() }
+            .task { await typecast.refreshVoiceCatalog(quiet: true) }
         }
     }
 
@@ -146,7 +147,7 @@ struct TypecastCharacterPickerSheet: View {
 
         return HStack(spacing: 12) {
             // Face Portrait Thumbnail
-            TypecastVoiceThumbnail(voice: char.nameKo, size: 44)
+            TypecastVoiceThumbnail(voice: char.nameKo, size: 44, gender: char.gender)
 
             // Info
             VStack(alignment: .leading, spacing: 3) {
@@ -182,9 +183,11 @@ struct TypecastCharacterPickerSheet: View {
                 if previewing == char.nameKo { typecast.stop(); previewing = nil }
                 else {
                     previewing = char.nameKo
-                    typecast.testSpeech(text: "안녕하세요, \(char.nameKo)입니다. 300미터 앞에서 우회전하세요.", voiceId: char.nameKo) {
+                    if !char.previewURL.isEmpty {
+                        typecast.playPreview(char.previewURL) { DispatchQueue.main.async { if previewing == char.nameKo { previewing = nil } } }
+                    } else { typecast.testSpeech(text: "안녕하세요, \(char.nameKo)입니다. 300미터 앞에서 우회전하세요.", voiceId: char.nameKo) {
                         DispatchQueue.main.async { if previewing == char.nameKo { previewing = nil } }
-                    }
+                    } }
                 }
             } label: {
                 Image(systemName: previewing == char.nameKo ? "stop.circle.fill" : "play.circle.fill")

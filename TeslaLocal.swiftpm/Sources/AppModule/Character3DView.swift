@@ -2,6 +2,7 @@ import SwiftUI
 import RealityKit
 import UIKit
 import Combine
+import Metal
 
 /// v1.28: rigged 3D character (Tripo mesh + Mixamo motion capture, retargeted, root motion removed).
 /// Clips cross-fade by vehicle speed, so motion is continuous; drag to orbit and view from any side.
@@ -38,6 +39,11 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
         switch self { case .auto: return "기본"; case .matte: return "무광"; case .metal: return "메탈"; case .gold: return "골드"; case .holo: return "홀로그램" }
     }
     static var selected: CharacterFinish { CharacterFinish(rawValue: UserDefaults.standard.string(forKey: "character.finish") ?? "") ?? .auto }
+    /// v1.46: Metal surface shader (HologramShader.metal) — rim glow, scanlines, sweep band, glitch slices.
+    @MainActor static let holoShader: CustomMaterial.SurfaceShader? = {
+        guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary() else { return nil }
+        return CustomMaterial.SurfaceShader(named: "hologramSurface", in: library)
+    }()
     @MainActor static func apply(_ f: CharacterFinish, to e: Entity) {
         guard f != .auto else { return }
         if var model = e.components[ModelComponent.self] {
@@ -45,6 +51,11 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
                 guard var p = m as? PhysicallyBasedMaterial else { return m }
                 switch f {
                 case .holo:
+                    if let shader = holoShader, var c = try? CustomMaterial(surfaceShader: shader, lightingModel: .unlit) {
+                        c.baseColor = .init(tint: .white, texture: p.baseColor.texture)
+                        c.blending = .transparent(opacity: .init(floatLiteral: 1))
+                        return c
+                    }
                     var u = UnlitMaterial()
                     u.color = .init(tint: UIColor(red: 0.35, green: 0.95, blue: 1, alpha: 1), texture: p.baseColor.texture)
                     u.blending = .transparent(opacity: .init(floatLiteral: 0.55))

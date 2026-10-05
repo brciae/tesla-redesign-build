@@ -148,10 +148,39 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if let name = voiceCatalog.first(where: { $0.value == id && !$0.key.hasPrefix("tc_") })?.key { return name }
         return id
     }
+    /// v1.46: one cached recording with the sentence it says (recorded from 1.46 on; older files have no text).
+    struct CachedPhrase: Identifiable, Hashable { let id: URL; let text: String; let group: String; let kilobytes: Int; let date: Date }
+    static func phraseGroup(_ t: String) -> String {
+        if t.isEmpty { return "문구 기록 없음 (1.46 이전 저장분)" }
+        let has = { (k: [String]) in k.contains { t.contains($0) } }
+        if has(["단속", "제한", "과속", "어린이", "보호구역", "주의", "사고", "버스 전용", "위험", "낙석", "안개"]) { return "안전·단속 안내" }
+        if has(["미터", "킬로미터", "회전", "좌회전", "우회전", "유턴", "직진", "방면", "차로", "출구", "진출", "합류", "도착", "경로", "목적지"]) { return "길안내" }
+        if has(["충전", "배터리", "잔량", "퍼센트"]) { return "충전·배터리" }
+        if has(["문", "트렁크", "프렁크", "창문", "잠금", "잠겼", "공조", "온도", "시트", "에어컨", "히터"]) { return "차량 제어·상태" }
+        if has(["안녕", "반가", "출발", "다녀", "어서", "좋은"]) { return "인사·브리핑" }
+        return "기타"
+    }
+    func cachedPhrases(voice id: String) -> [CachedPhrase] {
+        let dir = id == Self.unsortedCacheID ? cacheDirectory : cacheDirectory.appendingPathComponent(voiceDirectory(id).lastPathComponent, isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey])) ?? []
+        return files.filter { $0.pathExtension == "wav" }.map { f in
+            let text = (try? String(contentsOf: f.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8)) ?? ""
+            let v = try? f.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            return CachedPhrase(id: f, text: text, group: Self.phraseGroup(text), kilobytes: (v?.fileSize ?? 0) / 1024, date: v?.contentModificationDate ?? .distantPast)
+        }.sorted { $0.date > $1.date }
+    }
+    func deleteCached(_ items: [CachedPhrase]) {
+        for i in items {
+            try? FileManager.default.removeItem(at: i.id)
+            try? FileManager.default.removeItem(at: i.id.deletingPathExtension().appendingPathExtension("txt"))
+        }
+        updateCacheCount()
+        lastStatus = "음성 캐시 \(items.count)개를 삭제했습니다."
+    }
     func clearCache(voice id: String) {
         if id == Self.unsortedCacheID {
             let files = (try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)) ?? []
-            for f in files where f.pathExtension == "wav" { try? FileManager.default.removeItem(at: f) }
+            for f in files where f.pathExtension == "wav" || f.pathExtension == "txt" { try? FileManager.default.removeItem(at: f) }
         } else {
             try? FileManager.default.removeItem(at: cacheDirectory.appendingPathComponent(voiceDirectory(id).lastPathComponent, isDirectory: true))
         }
@@ -297,7 +326,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     private func requestVoiceCatalog(apiKey: String) async throws -> [String: String] {
-        let url = URL(string: "https://api.typecast.ai/v3/voices?model=ssfm-v30")!
+        // v1.46: no model filter — list every voice the account can use; each voice is synthesised with its best model.
+        let url = URL(string: "https://api.typecast.ai/v3/voices")!
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.setValue(apiKey, forHTTPHeaderField: "X-API-KEY")
         request.timeoutInterval = 20
@@ -306,7 +336,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             throw URLError(.badServerResponse)
         }
         guard http.statusCode == 200 else {
-            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey], stage: "GET /v3/voices · model=ssfm-v30")
+            throw TypecastAPIPolicy.failure(status: http.statusCode, data: data, secrets: [apiKey], stage: "GET /v3/voices")
         }
         let catalog = parseVoices(from: data)
         let voices = Self.parseVoiceMetadata(data)
@@ -320,6 +350,37 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         return catalog
     }
 
+    static func bestModel(_ models: [String]) -> String {
+        for m in ["ssfm-v30", "ssfm-v31", "ssfm-v21"] where models.contains(m) { return m }
+        return models.first ?? "ssfm-v30"
+    }
+    /// Model to synthesise a resolved voice id with (v30 keeps the established tone; others use what they support).
+    func model(forVoice id: String) -> String {
+        remoteVoices.first { $0.id == id }?.model ?? "ssfm-v30"
+    }
+    /// v1.46: plays Typecast's own sample clip — no credits spent, works for every listed voice.
+    func playPreview(_ urlString: String, completion: (() -> Void)? = nil) {
+        stop()
+        guard let url = URL(string: urlString) else { completion?(); return }
+        testCompletion = completion
+        previewTask = Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    do {
+                        try VoiceAudioRouting.activate()
+                        let p = try AVAudioPlayer(data: data)
+                        p.delegate = self; p.prepareToPlay()
+                        guard p.play() else { throw NSError(domain: "TypecastPreview", code: 1) }
+                        self.player = p
+                    } catch { VoiceAudioRouting.release(); self.testCompletion?(); self.testCompletion = nil }
+                }
+            } catch {
+                await MainActor.run { self.testCompletion?(); self.testCompletion = nil }
+            }
+        }
+    }
     static func loadRemoteVoices() -> [TypecastCharacter] {
         guard let data = UserDefaults.standard.data(forKey: "typecast.voiceListRaw") else { return [] }
         return parseVoiceMetadata(data)
@@ -329,7 +390,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let list = (json as? [[String: Any]]) ?? ((json as? [String: Any]).flatMap { ($0["result"] ?? $0["voices"] ?? $0["data"]) as? [[String: Any]] }) ?? []
         func text(_ v: Any?) -> String {
             if let s = v as? String { return s }
-            if let d = v as? [String: Any] { return (d["ko"] ?? d["en"] ?? d.values.first) as? String ?? "" }
+            if let d = v as? [String: Any] { return (d["kor"] ?? d["ko"] ?? d["eng"] ?? d["en"] ?? d.values.first) as? String ?? "" }
             return ""
         }
         let genders = ["female": "여성", "male": "남성"]
@@ -340,21 +401,24 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             guard !name.isEmpty else { return nil }
             let g = text(item["gender"]).lowercased(), a = text(item["age"]).lowercased()
             let uses = (item["use_cases"] as? [String]) ?? (item["use_case"] as? [String]) ?? []
+            let models = ((item["models"] as? [Any]) ?? []).compactMap { m -> String? in
+                if let s = m as? String { return s }
+                return (m as? [String: Any])?["version"] as? String ?? (m as? [String: Any])?["model"] as? String
+            }
             let gender = genders[g] ?? (g.isEmpty ? "미분류" : g), age = ages[a] ?? (a.isEmpty ? "미분류" : a)
             return TypecastCharacter(id: id, nameKo: name, nameEn: name, tone: "", mood: "", category: uses.joined(separator: ", "),
-                                     desc: ([gender, age] + uses.prefix(2)).joined(separator: " · "), gender: gender, age: age)
+                                     desc: ([gender, age] + uses.prefix(2)).joined(separator: " · "), gender: gender, age: age,
+                                     model: bestModel(models), previewURL: item["preview_url"] as? String ?? "")
         }
     }
 
-    func refreshVoiceCatalog() async {
+    func refreshVoiceCatalog(quiet: Bool = false) async {
         guard hasKey else { return }
         do {
-            let catalog = try await fetchVoiceCatalog(apiKey: activeApiKey)
-            await MainActor.run {
-                self.lastStatus = "API 보이스 목록 동기화 완료"
-            }
+            _ = try await fetchVoiceCatalog(apiKey: activeApiKey, force: remoteVoices.isEmpty)
+            if !quiet { await MainActor.run { self.lastStatus = "API 보이스 목록 동기화 완료 (\(self.remoteVoices.count)개)" } }
         } catch {
-            await MainActor.run { self.lastStatus = error.localizedDescription }
+            if !quiet { await MainActor.run { self.lastStatus = error.localizedDescription } }
         }
     }
 
@@ -368,7 +432,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
         guard let id = TypecastAPIPolicy.resolve(candidates, in: catalog) else {
             throw NSError(domain: "Typecast", code: 404, userInfo: [NSLocalizedDescriptionKey:
-                "선택한 음성을 현재 계정의 ssfm-v30 API 목록에서 찾을 수 없음. API 지원 음성 확인 필요"])
+                "선택한 음성을 현재 계정의 API 음성 목록에서 찾을 수 없음. API 지원 음성 확인 필요"])
         }
         return id
     }
@@ -446,10 +510,12 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let fileURL = voiceDirectory(voiceId).appendingPathComponent("\(key).wav")
         do {
             try data.write(to: fileURL, options: .atomic)
+            try? Data(clean.utf8).write(to: fileURL.deletingPathExtension().appendingPathExtension("txt"))
             if let alias, !alias.isEmpty, alias != voiceId {
                 let aliasKey = cacheKey(for: clean, voiceId: alias)
                 let aliasURL = voiceDirectory(voiceId).appendingPathComponent("\(aliasKey).wav")
                 try? data.write(to: aliasURL, options: .atomic)
+                try? Data(clean.utf8).write(to: aliasURL.deletingPathExtension().appendingPathExtension("txt"))
             }
             updateCacheCount()
             return fileURL
@@ -599,19 +665,22 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 request.setValue(key, forHTTPHeaderField: "X-API-KEY")
                 request.timeoutInterval = 60.0 // Full reports need more synthesis time; navigation retains its playback deadline.
 
-                let body: [String: Any] = [
+                let voiceModel = self.model(forVoice: resolvedVoice)
+                var body: [String: Any] = [
                     "voice_id": resolvedVoice,
                     "text": cleanText,
-                    "model": "ssfm-v30",
-                    // "smart" guesses emotion from context; terse cues such as "계속 직진하세요." came back whispered.
-                    "prompt": Self.presetTone(cleanText)
-                        ? ["emotion_type": "preset", "emotion_preset": "normal", "emotion_intensity": 1.0] as [String: Any]
-                        : ["emotion_type": "smart"] as [String: Any],
+                    "model": voiceModel,
                     "output": [
                         "audio_format": "wav",
                         "volume": 100
                     ]
                 ]
+                // "smart" guesses emotion from context; terse cues such as "계속 직진하세요." came back whispered.
+                if voiceModel != "ssfm-v21" {
+                    body["prompt"] = Self.presetTone(cleanText)
+                        ? ["emotion_type": "preset", "emotion_preset": "normal", "emotion_intensity": 1.0] as [String: Any]
+                        : ["emotion_type": "smart"] as [String: Any]
+                }
                 request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
                 let (data, response) = try await URLSession.shared.data(for: request)
@@ -630,7 +699,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                     return savedURL
                 }
 
-                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry, stage: "POST /v1/text-to-speech · model=ssfm-v30 · voice=\(resolvedVoice)")
+                throw TypecastAPIPolicy.failure(status: httpResponse.statusCode, data: data, secrets: keysToTry, stage: "POST /v1/text-to-speech · model=\(voiceModel) · voice=\(resolvedVoice)")
             } catch {
                 if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
                 let failure = error as NSError

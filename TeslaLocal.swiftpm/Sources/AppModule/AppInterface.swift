@@ -106,6 +106,15 @@ struct VoicePortrait: View {
 struct TypecastVoiceThumbnail: View {
     let voice: String
     var size: CGFloat = 38
+    /// v1.46: API voices have no portrait — draw a gender-coloured monogram instead of a blank.
+    var gender: String? = nil
+    private var palette: [Color] {
+        switch gender ?? TypecastClient.shared.remoteVoices.first(where: { $0.nameKo == cleanName })?.gender {
+        case "남성": return [Color(red: 0.15, green: 0.45, blue: 0.95), Color(red: 0.1, green: 0.75, blue: 0.75)]
+        case "여성": return [Color(red: 0.95, green: 0.4, blue: 0.6), Color(red: 0.6, green: 0.35, blue: 0.95)]
+        default: return [Color.gray, Color.blue.opacity(0.7)]
+        }
+    }
 
     var body: some View {
         Group {
@@ -116,7 +125,7 @@ struct TypecastVoiceThumbnail: View {
             } else {
                 ZStack {
                     LinearGradient(
-                        colors: [Color.blue.opacity(0.8), Color.purple.opacity(0.8)],
+                        colors: palette,
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -234,6 +243,64 @@ struct VoiceCacheRow: View {
                 } message: { Text("다른 음성의 캐시는 그대로 남습니다. 이 음성은 다음 재생 때 다시 합성됩니다.") }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// v1.46: one voice's cache, grouped by what the sentence is about; pick single clips or whole groups to delete.
+struct VoiceCacheDetailView: View {
+    let entry: TypecastClient.VoiceCacheEntry
+    @ObservedObject private var typecast = TypecastClient.shared
+    @State private var items: [TypecastClient.CachedPhrase] = []
+    @State private var selection = Set<URL>()
+    @State private var editMode: EditMode = .inactive
+    @State private var confirmGroup: String?
+    @State private var confirmSelected = false
+    private var groups: [(String, [TypecastClient.CachedPhrase])] {
+        Dictionary(grouping: items, by: \.group).map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 }
+    }
+    var body: some View {
+        List(selection: $selection) {
+            ForEach(groups, id: \.0) { group, phrases in
+                Section {
+                    ForEach(phrases) { p in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(p.text.isEmpty ? "(문구 기록 없음)" : p.text).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                            Text("\(p.kilobytes)KB · \(p.date.formatted(date: .abbreviated, time: .shortened))").font(.caption2).foregroundStyle(.secondary)
+                        }.tag(p.id)
+                    }
+                } header: {
+                    HStack {
+                        Text("\(group) · \(phrases.count)개")
+                        Spacer()
+                        Button("그룹 삭제", role: .destructive) { confirmGroup = group }.font(.caption.weight(.semibold))
+                    }
+                }
+            }
+        }
+        .environment(\.editMode, $editMode)
+        .navigationTitle(entry.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(editMode.isEditing ? "완료" : "선택") { withAnimation { editMode = editMode.isEditing ? .inactive : .active; selection.removeAll() } }
+            }
+            ToolbarItem(placement: .bottomBar) {
+                if editMode.isEditing {
+                    Button("선택한 \(selection.count)개 삭제", role: .destructive) { confirmSelected = true }.disabled(selection.isEmpty)
+                }
+            }
+        }
+        .confirmationDialog("선택한 캐시를 삭제할까요?", isPresented: $confirmSelected, titleVisibility: .visible) {
+            Button("\(selection.count)개 삭제", role: .destructive) { delete(items.filter { selection.contains($0.id) }) }
+        } message: { Text("삭제한 문구는 다음 재생 때 다시 합성됩니다.") }
+        .confirmationDialog("\(confirmGroup ?? "") 그룹을 모두 삭제할까요?", isPresented: Binding(get: { confirmGroup != nil }, set: { if !$0 { confirmGroup = nil } }), titleVisibility: .visible) {
+            Button("그룹 삭제", role: .destructive) { if let g = confirmGroup { delete(items.filter { $0.group == g }) } }
+        }
+        .onAppear(perform: reload)
+    }
+    private func reload() { items = typecast.cachedPhrases(voice: entry.id) }
+    private func delete(_ list: [TypecastClient.CachedPhrase]) {
+        typecast.deleteCached(list); selection.removeAll(); reload()
     }
 }
 

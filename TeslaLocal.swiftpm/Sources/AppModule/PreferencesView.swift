@@ -22,6 +22,7 @@ struct PreferencesView: View {
     @AppStorage("overspeed.volume") private var overspeedVolume = 0.8
     @AppStorage("overspeed.beep") private var overspeedBeep = true
     @AppStorage("overspeed.distance") private var overspeedDistance = 500.0
+    @AppStorage("overspeed.sound") private var overspeedSound = 0
     @AppStorage("characterFloat.scale") private var characterScale = 1.0
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
@@ -63,6 +64,10 @@ struct PreferencesView: View {
                     Picker("경고 시작 거리", selection: $overspeedDistance) {
                         Text("300 m").tag(300.0); Text("500 m").tag(500.0); Text("1 km").tag(1000.0)
                     }.pickerStyle(.segmented)
+                    Picker("경고음 종류", selection: $overspeedSound) {
+                        ForEach(OverspeedChime.sounds.indices, id: \.self) { Text(OverspeedChime.sounds[$0]).tag($0) }
+                    }
+                    .onChange(of: overspeedSound) { _, _ in OverspeedChime.shared.play() }
                     Button("경고음 들어보기") { OverspeedChime.shared.play() }
                 }
                 Picker("안내 빈도", selection: $navDetail) {
@@ -190,6 +195,7 @@ struct TypecastSettingsSection: View {
     @ObservedObject private var typecast = TypecastClient.shared
     @EnvironmentObject private var model: AppModel
     @State private var showCharacterPicker = false
+    @State private var cacheDetail: TypecastClient.VoiceCacheEntry?
 
     var body: some View {
         Toggle("타입캐스트 AI 음성 사용", isOn: $typecast.isEnabled)
@@ -390,12 +396,16 @@ struct TypecastSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                     // v1.34: delete one character's recordings without wiping the others.
                     ForEach(typecast.cacheByVoice) { entry in
-                        VoiceCacheRow(entry: entry) { typecast.clearCache(voice: entry.id) }
+                        HStack {
+                            VoiceCacheRow(entry: entry) { typecast.clearCache(voice: entry.id) }
+                            Button("세부") { cacheDetail = entry }.font(.caption.weight(.semibold)).buttonStyle(.bordered).controlSize(.small).fixedSize()
+                        }
                     }
                     VoiceCacheDeleteButton {
                         typecast.clearCache()
                     }
                 }
+                .navigationDestination(item: $cacheDetail) { VoiceCacheDetailView(entry: $0) }
             }
         }
     }
