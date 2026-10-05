@@ -10,6 +10,10 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.51 (151)", date: "2026-10-05", items: [
+            "타입캐스트 음성 즐겨찾기: 목록에서 ☆를 눌러 등록, 즐겨찾기는 목록 맨 위에 표시되고 '즐겨찾기만 보기'로 따로 볼 수 있음",
+            "설정 → 음성 화면에 즐겨찾기 음성 줄 추가 — 한 번에 바꾸기",
+        ]),
         ReleaseNote(version: "1.50 (150)", date: "2026-10-05", items: [
             "타입캐스트 검색: 한글·영문 이름과 음성 ID 모두로 검색, 오른쪽 위 ↻로 음성 목록 즉시 다시 받기, 목록 머리에 API 음성 개수 표시",
             "검색 결과가 없을 때 안내: 타입캐스트 웹 스튜디오의 일부 캐릭터는 API로 제공되지 않아 앱에서 쓸 수 없음",

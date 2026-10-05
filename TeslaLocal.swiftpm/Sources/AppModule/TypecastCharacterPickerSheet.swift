@@ -53,8 +53,20 @@ struct TypecastCharacterPickerSheet: View {
     }
     private func matches(_ c: TypecastCharacter, category: String) -> Bool { category == "전체" || Self.uses(c).contains(category) }
 
+    // v1.51: favourite voices (★) — shown first, and a ★ filter shows only them.
+    @AppStorage("typecast.favorites") private var favoritesRaw = ""
+    @AppStorage("typecast.filter.favorites") private var favoritesOnly = false
+    private var favorites: Set<String> { Set(favoritesRaw.split(separator: "\n").map(String.init)) }
+    private func toggleFavorite(_ name: String) {
+        var f = favorites
+        if f.contains(name) { f.remove(name) } else { f.insert(name) }
+        favoritesRaw = f.sorted().joined(separator: "\n")
+    }
     private var filteredCharacters: [TypecastCharacter] {
-        TypecastCatalog.search(query: searchQuery, gender: selectedGender, age: selectedAge, in: pool).filter { matches($0, category: selectedCategory) }
+        let fav = favorites
+        let list = TypecastCatalog.search(query: searchQuery, gender: selectedGender, age: selectedAge, in: pool)
+            .filter { matches($0, category: selectedCategory) && (!favoritesOnly || fav.contains($0.nameKo)) }
+        return list.filter { fav.contains($0.nameKo) } + list.filter { !fav.contains($0.nameKo) }
     }
 
     var body: some View {
@@ -65,6 +77,8 @@ struct TypecastCharacterPickerSheet: View {
                 }
                 // Category Pills
                 VStack(spacing: 6) {
+                    Toggle(isOn: $favoritesOnly) { Label("즐겨찾기만 보기 (\(favorites.count))", systemImage: "star.fill").font(.subheadline.weight(.semibold)) }
+                        .padding(.horizontal, 16).tint(.orange)
                     pills(genders, selection: $selectedGender) { TypecastCatalog.search(query: "", gender: $0, in: pool).count }
                     pills(ages, selection: $selectedAge) { TypecastCatalog.search(query: "", gender: selectedGender, age: $0, in: pool).count }
                     categoryPills
@@ -193,6 +207,12 @@ struct TypecastCharacterPickerSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    Button { toggleFavorite(char.nameKo) } label: {
+                        Image(systemName: favorites.contains(char.nameKo) ? "star.fill" : "star")
+                            .foregroundStyle(favorites.contains(char.nameKo) ? Color.orange : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(favorites.contains(char.nameKo) ? "\(char.nameKo) 즐겨찾기 해제" : "\(char.nameKo) 즐겨찾기")
                     if char.isCuratedPreset {
                         Text("★ 추천")
                             .font(.system(size: 9, weight: .bold))

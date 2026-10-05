@@ -198,6 +198,7 @@ struct TypecastSettingsSection: View {
     @EnvironmentObject private var model: AppModel
     @State private var showCharacterPicker = false
     @State private var showCacheManager = false
+    @AppStorage("typecast.favorites") private var favoritesRaw = ""
 
     var body: some View {
         Toggle("타입캐스트 AI 음성 사용", isOn: $typecast.isEnabled)
@@ -336,6 +337,29 @@ struct TypecastSettingsSection: View {
                         .foregroundStyle(isSelected ? Color.white : Color.primary)
                     }
                     .buttonStyle(.plain)
+                }
+            }
+
+            // v1.51: favourite voices for one-tap switching
+            let favs = favoritesRaw.split(separator: "\n").map(String.init)
+            if !favs.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange)
+                        ForEach(favs, id: \.self) { name in
+                            let on = typecast.selectedVoiceId == name
+                            Button {
+                                typecast.selectedVoiceId = name
+                                UserDefaults.standard.set("typecast:\(name)", forKey: "voiceIdentifier")
+                                model.voice.say("\(name) 음성을 선택했습니다.", category: "voiceControl", manual: true)
+                            } label: {
+                                HStack(spacing: 5) { TypecastVoiceThumbnail(voice: name, size: 22); Text(name).font(.caption.weight(.bold)) }
+                                    .padding(.horizontal, 8).padding(.vertical, 5)
+                                    .background(on ? Color.orange : Color.primary.opacity(0.12), in: Capsule())
+                                    .foregroundStyle(on ? Color.white : Color.primary)
+                            }.buttonStyle(.plain)
+                        }
+                    }
                 }
             }
 
