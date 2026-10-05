@@ -10,8 +10,18 @@ struct InfoNote: View {
         self.text = text
     }
 
+    @State private var open = false
     var body: some View {
-        EmptyView()
+        // v1.55: ⓘ icon that opens the full note (was hidden entirely)
+        Button { open = true } label: { Image(systemName: "info.circle").font(.footnote).foregroundStyle(.secondary) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title + " 설명")
+            .popover(isPresented: $open) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.headline)
+                    Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+                }.padding(16).frame(maxWidth: 320).presentationCompactAdaptation(.popover)
+            }
     }
 }
 

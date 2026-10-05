@@ -308,7 +308,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             }
             if !data.next.isEmpty { Text("이후 " + data.next).font(.caption).lineLimit(1).minimumScaleFactor(0.5) }
             if data.laneCount > 0 { LaneStrip(data: data, u: min(1, m.u)).frame(maxHeight: 40) }
-            if wide { Text(data.road).font(.caption).foregroundStyle(NavInk.muted).lineLimit(2); Spacer(minLength: 0) }
+            if wide { Text(data.road).font(.caption).foregroundStyle(NavInk.muted).lineLimit(2).minimumScaleFactor(0.6); Spacer(minLength: 0) }
         }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(theme.canvas)
     }

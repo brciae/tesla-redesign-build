@@ -730,8 +730,9 @@ struct TeslaFleetTokenSheet: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Text(clientIdText.prefix(12) + "…" + clientIdText.suffix(6))
+                                Text(clientIdText)
                                     .font(.system(size: 11, design: .monospaced))
+                                    .lineLimit(1).minimumScaleFactor(0.4)
                                     .foregroundStyle(.primary)
                             }
                             HStack {

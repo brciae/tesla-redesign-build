@@ -364,6 +364,11 @@ struct Character3DView: UIViewRepresentable {
         private var projector: Entity?
         private var glitch = 0.0
         private var holoStart = 0.0
+        // v1.55: robots fly (Iron-Man style) instead of walking/running: hover when parked, lift off and
+        // lean into the direction of travel as speed rises, with flickering foot thrusters.
+        private var isRobot = false
+        private var flight: Float = 0, flightTarget: Float = 0
+        private var thrusters: [ModelEntity] = []
         /// Breathing bob + slow body sway so the character never looks frozen, and a fidget every 6–12 s.
         private func step(_ dt: Double) {
             clock += dt
@@ -379,6 +384,7 @@ struct Character3DView: UIViewRepresentable {
                 if #available(iOS 18.0, *) { b.components.set(OpacityComponent(opacity: Float(o))) }
                 else { b.isEnabled = glitch <= 0 } // iOS 17: dropout blink only
             }
+            if isRobot { robotStep(b, dt); return }
             guard ambient else { return }
             let t = Float(clock)
             b.position = base.translation + [0, 0.012 * sin(t * 2.1), 0]
@@ -386,6 +392,51 @@ struct Character3DView: UIViewRepresentable {
             if clock >= nextFidget {
                 nextFidget = clock + Double.random(in: 6...12)
                 if !reacting { react(["lookaround", "think", "happy", "nod", "wave", "point", "lookaround"].randomElement()!) }
+            }
+        }
+
+        private func robotStep(_ b: Entity, _ dt: Double) {
+            let k: Float = Float(min(1, dt * 1.6))
+            flight += (flightTarget - flight) * k
+            let t: Float = Float(clock)
+            let hover: Float = 0.06 + 0.02 * sin(t * 2.6)
+            let lift: Float = hover + 0.34 * flight + 0.015 * flight * sin(t * 7.0)
+            b.position = base.translation + SIMD3<Float>(0, lift, 0)
+            // lean forward toward travel (+Z faces the camera side), slight banking sway while flying
+            let lean = simd_quatf(angle: 1.1 * flight, axis: [1, 0, 0])
+            let bank = simd_quatf(angle: 0.12 * flight * sin(t * 0.8), axis: [0, 0, 1])
+            let idleTurn = simd_quatf(angle: (1 - flight) * 0.15 * sin(t * 0.3), axis: [0, 1, 0])
+            b.orientation = idleTurn * lean * bank * base.rotation
+            let jitter: Float = 0.85 + 0.15 * Float(sin(clock * 53)) * Float(sin(clock * 31))
+            let power: Float = 0.35 + 0.65 * flight
+            for th in thrusters {
+                th.scale = SIMD3<Float>(1, max(0.05, power * jitter), 1)
+                if #available(iOS 18.0, *) { th.components.set(OpacityComponent(opacity: 0.55 + 0.45 * power)) }
+            }
+            if ambient, flight < 0.05, clock >= nextFidget {
+                nextFidget = clock + Double.random(in: 7...13)
+                if !reacting { react(["lookaround", "point", "nod", "wave"].randomElement()!) }
+            }
+        }
+        /// Two thruster flames under the feet (box flame + glow disc), children of the body root.
+        private func addThrusters(to b: Entity) {
+            thrusters.removeAll()
+            let bounds = b.visualBounds(relativeTo: b)
+            let width: Float = max(0.1, bounds.extents.x)
+            var flame = UnlitMaterial(color: UIColor(red: 1, green: 0.75, blue: 0.35, alpha: 1))
+            flame.blending = .transparent(opacity: .init(floatLiteral: 0.75))
+            var core = UnlitMaterial(color: UIColor(red: 0.75, green: 0.95, blue: 1, alpha: 1))
+            core.blending = .transparent(opacity: .init(floatLiteral: 0.9))
+            for side: Float in [-1, 1] {
+                let holder = ModelEntity()
+                holder.position = SIMD3<Float>(bounds.center.x + side * width * 0.14, bounds.min.y + 0.01, bounds.center.z)
+                let outer = ModelEntity(mesh: .generateBox(width: 0.045, height: 0.22, depth: 0.045, cornerRadius: 0.02), materials: [flame])
+                outer.position.y = -0.11
+                let inner = ModelEntity(mesh: .generateBox(width: 0.02, height: 0.14, depth: 0.02, cornerRadius: 0.01), materials: [core])
+                inner.position.y = -0.07
+                holder.addChild(outer); holder.addChild(inner)
+                b.addChild(holder)
+                thrusters.append(holder)
             }
         }
 
@@ -415,6 +466,9 @@ struct Character3DView: UIViewRepresentable {
             loadedFinish = CharacterFinish.selected(slot)
             projector?.removeFromParent(); projector = nil
             if let m = rig.model { let c = m.clone(recursive: true); CharacterFinish.apply(loadedFinish, to: c); body = c; base = c.transform; anchor.addChild(c) }
+            isRobot = CharacterOption.all.first(where: { $0.id == rig.id })?.robot == true
+            flight = 0; flightTarget = 0; thrusters.removeAll()
+            if isRobot, let body { addThrusters(to: body) }
             if loadedFinish == .holo {
                 let holder = Entity(); CharacterFinish.addProjector(to: holder); anchor.addChild(holder); projector = holder
                 holoStart = clock
@@ -458,8 +512,10 @@ struct Character3DView: UIViewRepresentable {
             lastSpeed = speed; lastOverride = override
             if loadedID != CharacterOption.selectedID(slot) || loadedFinish != CharacterFinish.selected(slot) { loadBody() }
             guard let model = body, speed.isFinite, !reacting else { return }
-            let name = override ?? (speed < 3 ? "idle" : speed < 20 ? "walk" : "run")
-            let rate: Float = name == "run" ? Float(min(1.5, max(0.8, speed / 60))) : name == "walk" ? Float(min(1.3, max(0.7, speed / 10))) : 1
+            // robots: no walk/run cycle — they hold the idle stance and fly (see robotStep)
+            flightTarget = isRobot && override == nil ? Float(min(1, max(0, (speed - 3) / 70))) : 0
+            let name = override ?? (isRobot || speed < 3 ? "idle" : speed < 20 ? "walk" : "run")
+            let rate: Float = name == "run" ? Float(min(1.5, max(0.8, speed / 60))) : name == "walk" ? Float(min(1.3, max(0.7, speed / 10))) : (isRobot ? max(0.4, 1 - 0.6 * flightTarget) : 1)
             if name != current, let clip = rig.clips[name] ?? rig.clips["idle"] {
                 current = name
                 controller = model.playAnimation(clip.repeat(), transitionDuration: 0.45, startsPaused: false)
@@ -492,8 +548,8 @@ struct CharacterSelectView: View {
     @AppStorage("character.finish") private var dashFinish = "auto"
     @AppStorage("characterFloat.id") private var floatID = ""
     @AppStorage("characterFloat.finish") private var floatFinish = ""
-    @AppStorage("characterFloat.voice") private var floatVoice = ""
-    @State private var voicePicker = false
+    @AppStorage("characterChat.enabled") private var floatEnabled = true
+    @AppStorage("characterFloat.scale") private var floatScale = 1.0
     private var characterID: String {
         get { CharacterOption.selectedID(slot) }
         nonmutating set { if slot == .dashboard { dashID = newValue } else { floatID = newValue } }
@@ -529,18 +585,17 @@ struct CharacterSelectView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(characterID == previewID)
+                // v1.55: this page is only about how characters look; every voice lives in 음성·내비 안내.
                 if slot == .floating {
-                    Button { voicePicker = true } label: {
-                        HStack {
-                            Text("떠있는 캐릭터 목소리")
-                            Spacer()
-                            Text(floatVoice.isEmpty ? "앱 안내 음성과 같음" : floatVoice).foregroundStyle(.secondary)
-                        }
+                    Toggle("화면에 떠있는 캐릭터 표시", isOn: $floatEnabled)
+                    HStack {
+                        Text("크기")
+                        Slider(value: $floatScale, in: 0.6...2.2, step: 0.1)
+                        Text("\(Int((floatScale * 100).rounded()))%").monospacedDigit().frame(minWidth: 52, alignment: .trailing)
                     }
-                    if !floatVoice.isEmpty { Button("앱 안내 음성과 같게", role: .destructive) { floatVoice = "" } }
+                    Button("기본 크기로") { floatScale = 1.0 }
                 }
             }
-            .sheet(isPresented: $voicePicker) { CharacterHooks.floatingVoicePicker?() ?? AnyView(Text("음성 목록을 열 수 없음")) }
             Section("캐릭터") {
                 ForEach(CharacterOption.all) { option in
                     Button { previewID = option.id } label: {

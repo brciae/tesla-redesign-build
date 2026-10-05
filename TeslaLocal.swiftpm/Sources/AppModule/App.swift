@@ -251,11 +251,12 @@ struct Caption: View {
             Text(text).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         } else {
             Button { open = true } label: {
-                Label(String(text.prefix(18)) + "…", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.5)
+                // v1.55: long notes are hidden behind an ⓘ button — no cut-off sentence with "…"
+                Label("설명", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .popover(isPresented: $open) {
-                Text(text).font(.callout).padding(16).frame(maxWidth: 320).presentationCompactAdaptation(.popover)
+                Text(text).font(.callout).fixedSize(horizontal: false, vertical: true).padding(16).frame(maxWidth: 320).presentationCompactAdaptation(.popover)
             }
         }
     }

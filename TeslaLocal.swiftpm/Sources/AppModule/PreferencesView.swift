@@ -23,7 +23,8 @@ struct PreferencesView: View {
     @AppStorage("overspeed.beep") private var overspeedBeep = true
     @AppStorage("overspeed.distance") private var overspeedDistance = 500.0
     @AppStorage("overspeed.sound") private var overspeedSound = 0
-    @AppStorage("characterFloat.scale") private var characterScale = 1.0
+    @AppStorage("characterFloat.voice") private var floatVoice = ""
+    @State private var floatVoicePicker = false
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
     @ObservedObject private var typecast = TypecastClient.shared
@@ -75,14 +76,17 @@ struct PreferencesView: View {
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
                 InfoRow("안내 빈도", "간단: 교차로에 가까워졌을 때의 회전 안내와 실제 위험 구간만 안내함. 보통: 중간 거리 회전 안내와 경로 변경 안내를 추가함. 자세히: 카카오 내비가 제공하는 안내를 모두 읽음(버스전용차로·하이패스·직진 안내 포함).")
             }
-            // v1.40: floating character size (also pinch on the character itself).
-            Section("캐릭터") {
-                HStack {
-                    Text("떠있는 캐릭터 크기")
-                    Slider(value: $characterScale, in: 0.6...2.2, step: 0.1)
-                    Text("\(Int((characterScale * 100).rounded()))%").monospacedDigit().frame(minWidth: 52, alignment: .trailing)
+            // v1.55: the floating character's own voice sits with the other voices (its look/size is in 캐릭터).
+            Section("떠있는 캐릭터 대화 목소리") {
+                Button { floatVoicePicker = true } label: {
+                    HStack(spacing: 10) {
+                        TypecastVoiceThumbnail(voice: floatVoice.isEmpty ? currentVoiceName : floatVoice, size: 30)
+                        Text("대화 목소리").foregroundStyle(.primary)
+                        Spacer()
+                        Text(floatVoice.isEmpty ? "안내 음성과 같음" : floatVoice).foregroundStyle(.secondary)
+                    }
                 }
-                Button("기본 크기로") { characterScale = 1.0 }
+                if !floatVoice.isEmpty { Button("안내 음성과 같게", role: .destructive) { floatVoice = "" } }
             }
             Section("고급") {
                 NavigationLink("음성 세부 설정") {
@@ -113,6 +117,7 @@ struct PreferencesView: View {
         }.navigationTitle("음성·내비 안내").navigationBarTitleDisplayMode(.inline)
             // v1.48: presented from the screen root so row updates (cache count, status) can't rebuild it mid-use.
             .sheet(isPresented: $typecast.showVoicePicker) { TypecastCharacterPickerSheet() }
+            .sheet(isPresented: $floatVoicePicker) { TypecastCharacterPickerSheet(target: .floatingCharacter) }
             .onChange(of: enabled) { _, value in if !value { model.stopSpeech() } }
             .onChange(of: identifier) { _, newId in
                 if newId.hasPrefix("typecast:") {

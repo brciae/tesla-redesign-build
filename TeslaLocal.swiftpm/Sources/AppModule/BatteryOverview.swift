@@ -33,7 +33,9 @@ struct BatteryOverview: View {
                         Text(index.flag("initial") ? "—" : number(index.number("degradationPercent"))).font(.system(size: 56, weight: .light)).monospacedDigit()
                         Text("%").font(.title2).foregroundStyle(.secondary)
                     }
-                    Text(index.flag("initial") ? "충전 자료가 쌓이면 추정값 표시" : "관측 용량 기반 상대 추정")
+                    Text(index.flag("initial")
+                         ? "용량 계산 가능한 충전 \(Int(index.number("sampleCount") ?? 0))/\(Int(index.number("samplesNeeded") ?? 3))회 (SOC 20%p 이상 충전)"
+                         : index.flag("provisional") ? "공칭 용량 \(Int(index.number("nominalKWh") ?? 75))kWh 대비 임시 추정" : "관측 용량 기반 상대 추정")
                         .font(.caption).foregroundStyle(index.flag("initial") ? .orange : accent)
                 }
                 Spacer()

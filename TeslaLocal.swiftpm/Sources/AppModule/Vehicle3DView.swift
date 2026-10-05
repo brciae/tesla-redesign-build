@@ -105,8 +105,10 @@ struct Vehicle3DPanel: View {
         .onChange(of: model.demo) { _, _ in preview = false; overrides = [:] }
         .onAppear {
             sceneError = nil
-            if chargingMode {
-                camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 1.15)
+            // v1.55: the charge-port (rear) angle only while a cable is actually connected; otherwise the
+            // normal front three-quarter view. Before this every home card opened from behind.
+            if chargingMode && (isPlugged || isCharging) {
+                camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95)
             }
             sceneVisible = true
         }

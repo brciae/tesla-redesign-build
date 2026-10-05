@@ -171,6 +171,42 @@ struct CharacterChatButton: View {
     @GestureState private var drag: CGSize = .zero
     @State private var bubble: String?
     @State private var bubbleToken = UUID()
+    /// v1.55: chat happens in speech bubbles right at the character — tap opens a bubble input,
+    /// the answer appears as the character's speech bubble. Long-press opens the full history sheet.
+    @EnvironmentObject private var model: AppModel
+    @State private var inputOpen = false
+    @State private var draft = ""
+    @FocusState private var inputFocused: Bool
+    private func showBubble(_ text: String, seconds: Double) {
+        let token = UUID(); bubbleToken = token
+        withAnimation(.spring(response: 0.3)) { bubble = text }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { if bubbleToken == token { withAnimation { bubble = nil } } }
+    }
+    private func sendDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !chat.busy else { return }
+        draft = ""
+        chat.send(text, model: model)
+        showBubble("생각 중…", seconds: 30)
+    }
+    private var inputBar: some View {
+        HStack(spacing: 6) {
+            TextField("무엇이든 물어보세요", text: $draft)
+                .font(.footnote).focused($inputFocused).submitLabel(.send).onSubmit(sendDraft)
+            Button(action: sendDraft) { Image(systemName: "arrow.up.circle.fill").font(.title3) }
+                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || chat.busy)
+                .accessibilityLabel("보내기")
+            Button { chat.presented = true } label: { Image(systemName: "text.bubble").font(.footnote) }
+                .accessibilityLabel("대화 기록")
+            Button { withAnimation { inputOpen = false }; inputFocused = false } label: { Image(systemName: "xmark").font(.caption.weight(.bold)) }
+                .foregroundStyle(.secondary).accessibilityLabel("닫기")
+        }
+        .padding(.leading, 12).padding(.trailing, 8).padding(.vertical, 7)
+        .frame(width: 250)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color.primary.opacity(0.1)))
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+    }
     var body: some View {
         if enabled {
             Group {
@@ -195,9 +231,19 @@ struct CharacterChatButton: View {
             .simultaneousGesture(MagnificationGesture()
                 .updating($pinch) { v, s, _ in s = v }
                 .onEnded { v in scale = Self.clamp(scale * Double(v)) })
-            .onTapGesture { CharacterReact.send("wave"); chat.presented = true }
+            .onTapGesture {
+                CharacterReact.send("wave")
+                withAnimation(.spring(response: 0.3)) { inputOpen.toggle() }
+                inputFocused = inputOpen
+            }
+            .onLongPressGesture(minimumDuration: 0.5) { chat.presented = true }
+            .onChange(of: chat.messages.count) { _, _ in
+                guard let last = chat.messages.last, !last.fromUser else { return }
+                showBubble(last.text, seconds: min(25, max(6, Double(last.text.count) * 0.16)))
+            }
             // v1.37: speech bubble above the character for whatever the app says out loud.
             .overlay(alignment: .topTrailing) {
+                VStack(alignment: .trailing, spacing: 8) {
                 if let bubble {
                     Text(bubble)
                         .font(.footnote.weight(.medium))
@@ -208,11 +254,13 @@ struct CharacterChatButton: View {
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08)))
                         .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
-                        .offset(x: savedX + drag.width - 20, y: savedY + drag.height - 12)
-                        .alignmentGuide(.top) { d in d[.bottom] }
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing)))
                         .onTapGesture { withAnimation { self.bubble = nil } }
                 }
+                if inputOpen { inputBar.transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomTrailing))) }
+                }
+                .offset(x: savedX + drag.width - 20, y: savedY + drag.height - 12)
+                .alignmentGuide(.top) { d in d[.bottom] }
             }
             .onReceive(NotificationCenter.default.publisher(for: CharacterReact.speech)) { n in
                 guard let text = n.object as? String else { return }

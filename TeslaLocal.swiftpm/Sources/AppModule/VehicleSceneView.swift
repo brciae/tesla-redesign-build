@@ -111,9 +111,9 @@ struct RealityVehicleView: UIViewRepresentable {
         private var reduced = false
         private var yaw: Float = .pi/4
         private var pitch: Float = atan(0.34)
-        private var zoom: Float = 1.08
+        private var zoom: Float = 0.86
         private var panStart: Float = 0
-        private var pinchStart: Float = 1.08
+        private var pinchStart: Float = 0.86
         private var lastCommand = -1
         private var viewport = CGSize.zero
         private var cameraBoxes: [Object] = []
@@ -298,10 +298,10 @@ struct RealityVehicleView: UIViewRepresentable {
                 pitch = command.pitch.isFinite ? min(1.45, max(0.1, command.pitch)) : atan(0.34)
                 var nextYaw = yaw, nextZoom = zoom
                 switch command.action {
-                case "angle": nextYaw = command.yaw; if let z = command.zoom, z.isFinite { nextZoom = min(2.5, max(1, z)) }
-                case "in": nextZoom = max(1, zoom - 0.15)
+                case "angle": nextYaw = command.yaw; if let z = command.zoom, z.isFinite { nextZoom = min(2.5, max(0.72, z)) }
+                case "in": nextZoom = max(0.72, zoom - 0.15)
                 case "out": nextZoom = min(2.5, zoom + 0.15)
-                default: nextYaw = .pi/4; nextZoom = 1.08
+                default: nextYaw = .pi/4; nextZoom = 0.86
                 }
                 moveCamera(yaw: nextYaw, zoom: nextZoom, animated: allow && !reduced)
             }
@@ -370,9 +370,9 @@ struct RealityVehicleView: UIViewRepresentable {
         }
         @objc func pinch(_ gesture: UIPinchGestureRecognizer) {
             guard allow else { return }; if gesture.state == .began { stopTween(); pinchStart = zoom }
-            zoom = min(2.5, max(1, pinchStart/Float(max(0.1, gesture.scale)))); placeCamera()
+            zoom = min(2.5, max(0.72, pinchStart/Float(max(0.1, gesture.scale)))); placeCamera()
         }
-        @objc func reset(_ gesture: UITapGestureRecognizer) { guard allow else { return }; moveCamera(yaw: .pi/4, zoom: 1.08, animated: !reduced) }
+        @objc func reset(_ gesture: UITapGestureRecognizer) { guard allow else { return }; moveCamera(yaw: .pi/4, zoom: 0.86, animated: !reduced) }
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
             guard allow else { return false }
             if let pan = gesture as? UIPanGestureRecognizer {
