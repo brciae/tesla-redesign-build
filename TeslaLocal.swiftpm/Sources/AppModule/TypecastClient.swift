@@ -146,8 +146,11 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let unsortedCacheID = "__unsorted"
     func voiceName(_ id: String) -> String {
         if id == Self.unsortedCacheID { return "미분류 (v1.34 이전 저장분)" }
-        if let name = voiceCatalog.first(where: { $0.value == id && !$0.key.hasPrefix("tc_") })?.key { return name }
-        return id
+        // v1.49: name from the saved voice list first — the live catalog is empty until a network sync.
+        if let v = remoteVoices.first(where: { $0.id == id }) { return v.nameKo }
+        if let c = TypecastCatalog.find(id) { return c.nameKo }
+        if let name = voiceCatalog.first(where: { $0.value == id && !$0.key.hasPrefix("tc_") && !$0.key.hasPrefix("uc_") })?.key { return name }
+        return "이름 확인 중 (\(id.prefix(10)))"
     }
     /// v1.46: one cached recording with the sentence it says (recorded from 1.46 on; older files have no text).
     struct CachedPhrase: Identifiable, Hashable { let id: URL; let text: String; let group: String; let kilobytes: Int; let date: Date }
@@ -344,7 +347,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         if !voices.isEmpty {
             UserDefaults.standard.set(data, forKey: "typecast.voiceListRaw")
             // only publish real changes — reassigning the same list made open pickers jump back to the top
-            await MainActor.run { if voices.map(\.id) != self.remoteVoices.map(\.id) { self.remoteVoices = voices } }
+            await MainActor.run { if voices.map(\.id) != self.remoteVoices.map(\.id) { self.remoteVoices = voices; self.updateCacheCount() } }
         }
         guard !catalog.isEmpty else {
             throw NSError(domain: "Typecast", code: 502, userInfo: [NSLocalizedDescriptionKey: "HTTP 200이지만 지원 보이스 목록을 해석할 수 없음"])

@@ -197,7 +197,7 @@ struct TypecastSettingsSection: View {
     @ObservedObject private var typecast = TypecastClient.shared
     @EnvironmentObject private var model: AppModel
     @State private var showCharacterPicker = false
-    @State private var cacheDetail: TypecastClient.VoiceCacheEntry?
+    @State private var showCacheManager = false
 
     var body: some View {
         Toggle("타입캐스트 AI 음성 사용", isOn: $typecast.isEnabled)
@@ -394,17 +394,12 @@ struct TypecastSettingsSection: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     // v1.34: delete one character's recordings without wiping the others.
-                    ForEach(typecast.cacheByVoice) { entry in
-                        HStack {
-                            VoiceCacheRow(entry: entry) { typecast.clearCache(voice: entry.id) }
-                            Button("세부") { cacheDetail = entry }.font(.caption.weight(.semibold)).buttonStyle(.bordered).controlSize(.small).fixedSize()
-                        }
-                    }
-                    VoiceCacheDeleteButton {
-                        typecast.clearCache()
-                    }
+                    // v1.49: one entry here; per-voice lists and sentence-level deletion live on their own screen.
+                    Button { showCacheManager = true } label: {
+                        HStack { Text("음성 캐시 관리"); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
+                    }.buttonStyle(.borderless)
                 }
-                .navigationDestination(item: $cacheDetail) { VoiceCacheDetailView(entry: $0) }
+                .navigationDestination(isPresented: $showCacheManager) { VoiceCacheManagerView() }
             }
         }
     }

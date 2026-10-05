@@ -246,6 +246,32 @@ struct VoiceCacheRow: View {
     }
 }
 
+/// v1.49: all cached voices (by character name) → tap one for its sentences.
+struct VoiceCacheManagerView: View {
+    @ObservedObject private var typecast = TypecastClient.shared
+    var body: some View {
+        List {
+            Section {
+                ForEach(typecast.cacheByVoice) { entry in
+                    NavigationLink { VoiceCacheDetailView(entry: entry) } label: {
+                        HStack(spacing: 10) {
+                            TypecastVoiceThumbnail(voice: entry.name, size: 32)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.name).font(.subheadline.weight(.semibold))
+                                Text("\(entry.count)개 · \(String(format: "%.1f", entry.megabytes))MB").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .swipeActions { Button("전체 삭제", role: .destructive) { typecast.clearCache(voice: entry.id) } }
+                }
+            } footer: { Text("캐릭터를 눌러 문구별로 골라 지우거나, 왼쪽으로 밀어 그 캐릭터 캐시를 모두 지울 수 있습니다.") }
+            Section { VoiceCacheDeleteButton { typecast.clearCache() } }
+        }
+        .navigationTitle("음성 캐시")
+        .task { await typecast.refreshVoiceCatalog(quiet: true) }
+    }
+}
+
 /// v1.46: one voice's cache, grouped by what the sentence is about; pick single clips or whole groups to delete.
 struct VoiceCacheDetailView: View {
     let entry: TypecastClient.VoiceCacheEntry
