@@ -28,22 +28,30 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typeca
 Xcode/TypecastPolicyTests
 # The original artwork stays unchanged; asset layout adds a 5% margin on each side.
 node tools/js-logic-tests.cjs
+node tools/charge-integrity-tests.cjs
+node tools/charge-cost-tests.cjs
+node tools/charge-enrichment-tests.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendarAnalysis.swift tools/energy-calendar-tests.swift -o Xcode/EnergyCalendarTests
+Xcode/EnergyCalendarTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests
 Xcode/FleetAuthTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetCommandPolicy.swift tools/fleet-command-tests.swift -o Xcode/FleetCommandTests
 Xcode/FleetCommandTests
-swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/FleetSupplement.swift TeslaLocal.swiftpm/Sources/AppModule/PublicChargingData.swift tools/fleet-snapshot-tests.swift -o Xcode/FleetSnapshotTests
 Xcode/FleetSnapshotTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/FleetParkingAnalysis.swift TeslaLocal.swiftpm/Sources/AppModule/OwnershipAnalysis.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift tools/fleet-telemetry-tests.swift -o Xcode/FleetTelemetryTests
+Xcode/FleetTelemetryTests
 swift tools/prepare-icon.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-policy-tests.swift -o Xcode/NativePolicyTests
 Xcode/NativePolicyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationTransfer.swift tools/automation-policy-tests.swift -o Xcode/AutomationPolicyTests
 Xcode/AutomationPolicyTests
-swiftc TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationAPI.swift tools/automation-api-tests.swift -o Xcode/AutomationAPITests
+Xcode/AutomationAPITests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests
 Xcode/ScreenBriefingTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/ParkingModels.swift tools/parking-record-tests.swift -o Xcode/ParkingRecordTests
 Xcode/ParkingRecordTests
-bash tools/test-interface.sh
 xcodegen generate --spec Xcode/project.json --project Xcode
 xcodebuild -resolvePackageDependencies \
   -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
@@ -54,6 +62,8 @@ xcodebuild -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
   -clonedSourcePackagesDirPath Xcode/SourcePackages \
   -disableAutomaticPackageResolution \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
+
+bash tools/test-interface.sh
 
 app_path="$repo_root/Xcode/DerivedData/Build/Products/Release-iphoneos/YLCompanion.app"
 test -s "$app_path/YLCompanion"
@@ -66,7 +76,7 @@ ditto "$app_path" "$stage_dir/Payload/YLCompanion.app"
 mkdir -p "$repo_root/Xcode/BuildOutput"
 app_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app_path/Info.plist")
 app_build=$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app_path/Info.plist")
-artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla ${app_version} Build${app_build} v01 Review.ipa"
+artifact_path="$repo_root/Xcode/BuildOutput/App-Tesla-${app_version}-Build${app_build}-v01-Review.ipa"
 ditto -c -k --keepParent "$stage_dir/Payload" "$artifact_path"
 unzip -t "$artifact_path"
 shasum -a 256 "$artifact_path"

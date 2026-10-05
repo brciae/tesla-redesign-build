@@ -9,6 +9,22 @@ final class FleetCommandRedirectGuard: NSObject, URLSessionTaskDelegate {
 }
 
 enum FleetCommandPolicy {
+    /// Tesla signed-command proxy uses zero-based heater positions, including third row 7/8.
+    static func seatHeaterParameters(position: Int, level: Int) throws -> [String: Int] {
+        guard [0, 1, 2, 4, 5, 7, 8].contains(position), (0...3).contains(level) else {
+            throw failure("지원되지 않는 좌석 또는 열선 단계입니다.")
+        }
+        return ["seat_position": position, "level": level]
+    }
+
+    /// Cooling command enums are one-based; received vehicle state remains zero-based.
+    static func seatCoolerParameters(position: Int, level: Int) throws -> [String: Int] {
+        guard (0...1).contains(position), (0...3).contains(level) else {
+            throw failure("지원되지 않는 좌석 또는 통풍 단계입니다.")
+        }
+        return ["seat_position": position + 1, "seat_cooler_level": level + 1]
+    }
+
     static func proxyURL(_ text: String) throws -> URL {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let parts = URLComponents(string: clean), parts.scheme == "https",

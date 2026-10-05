@@ -30,17 +30,19 @@ struct BatteryOverview: View {
                         InfoNote("열화율 추정", "차량이 보고한 충전 자료로 계산한 상대 추정값이며 BMS 진단이 아님. 표시되는 전비·소비량도 모두 관측값 기반 추정임.")
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(index.flag("initial") ? "0" : number(index.number("degradationPercent"))).font(.system(size: 56, weight: .light)).monospacedDigit()
+                        Text(index.flag("initial") ? "—" : number(index.number("degradationPercent"))).font(.system(size: 56, weight: .light)).monospacedDigit()
                         Text("%").font(.title2).foregroundStyle(.secondary)
                     }
-                    Text(index.flag("initial") ? "초기 가정 · 관측 추정 전" : "관측 용량 기반 상대 추정")
+                    Text(index.flag("initial")
+                         ? "용량 계산 가능한 충전 \(Int(index.number("sampleCount") ?? 0))/\(Int(index.number("samplesNeeded") ?? 3))회 (SOC 20%p 이상 충전)"
+                         : index.flag("provisional") ? "공칭 용량 \(Int(index.number("nominalKWh") ?? 75))kWh 대비 임시 추정" : "관측 용량 기반 상대 추정")
                         .font(.caption).foregroundStyle(index.flag("initial") ? .orange : accent)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 7) {
                     Image(systemName: "waveform.path.ecg").font(.system(size: 32)).foregroundStyle(accent)
-                    Text("SOH 기준 100%").font(.subheadline.weight(.semibold))
-                    Text("현재 지수 " + (index.flag("initial") ? "100" : number(index.number("soh"))) + "%").font(.caption)
+                    Text("배터리 상태").font(.subheadline.weight(.semibold))
+                    Text(index.flag("initial") ? "측정 자료 수집 중" : "상태 지수 " + number(index.number("soh")) + "%").font(.caption)
                 }
             }.accessibilityIdentifier("battery.health")
             Picker("분석 기간", selection: $days) {
@@ -85,52 +87,34 @@ struct BatteryOverview: View {
                     .padding(.bottom, 2)
 
                     Chart {
-                        ForEach(cleanedTrend, id: \.batteryRowID) { point in
-                            let at = (point.number("at") ?? 0) / 1000
-                            let soc = min(100.0, max(0.0, point.number("soc") ?? 0))
-                            AreaMark(
-                                x: .value("시각", Date(timeIntervalSince1970: at)),
-                                y: .value("잔량", soc)
-                            )
-                            .interpolationMethod(.linear)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.04)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-
-                            LineMark(
-                                x: .value("시각", Date(timeIntervalSince1970: at)),
-                                y: .value("잔량", soc)
-                            )
-                            .interpolationMethod(.linear)
-                            .foregroundStyle(Color.cyan)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                        }
-                    }
-                    .chartYScale(domain: 0...100)
+                        socMarks(cleanedTrend)
+                    }.chartReveal()
+                    .chartYScale(domain: 0...104)
+                    // v90: 100 / 50 / 0 on both edges and no gridlines — the
+                    // reference reading, where the shape carries the meaning.
                     .chartYAxis {
-                        AxisMarks(values: [0, 25, 50, 75, 100]) { value in
-                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
-                                .foregroundStyle(Color.white.opacity(0.12))
+                        AxisMarks(position: .leading, values: [0, 50, 100]) { value in
                             AxisValueLabel {
                                 if let intVal = value.as(Int.self) {
-                                    Text("\(intVal)%").font(.caption2).foregroundStyle(Color.white.opacity(0.55))
+                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.primary.opacity(0.45))
+                                }
+                            }
+                        }
+                        AxisMarks(position: .trailing, values: [0, 50, 100]) { value in
+                            AxisValueLabel {
+                                if let intVal = value.as(Int.self) {
+                                    Text("\(intVal)").font(.system(size: 10)).foregroundStyle(Color.primary.opacity(0.45))
                                 }
                             }
                         }
                     }
                     .chartXAxis {
                         AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                            AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 4]))
-                                .foregroundStyle(Color.white.opacity(0.08))
                             AxisValueLabel {
                                 if let date = value.as(Date.self) {
                                     Text(Self.batteryChartDateFormatter.string(from: date))
                                         .font(.system(size: 9))
-                                        .foregroundStyle(Color.white.opacity(0.55))
+                                        .foregroundStyle(Color.primary.opacity(0.55))
                                 }
                             }
                         }
@@ -138,15 +122,19 @@ struct BatteryOverview: View {
                     .chartPlotStyle { plotArea in
                         plotArea.clipped()
                     }
+                    // v91: the simulator screenshot showed the top "100" sliced in
+                    // half — it sits on the plot's top edge, and the frame had no
+                    // room above it. The plot is still clipped; only the labels
+                    // needed the headroom, so the outer clip is gone.
                     .frame(height: 155)
-                    .clipped()
+                    .padding(.vertical, 8)
                 }
             }
             DisclosureGroup("자세한 수치") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        measure("주차 소비", usage.object("energy").number("parkingKWh"), "kWh")
-                        measure("미분류 소비", usage.object("energy").number("unclassifiedKWh"), "kWh")
+                        measure("주차 중 배터리 소모", usage.object("energy").number("parkingKWh"), "kWh")
+                        InfoNote("주차 중 배터리 소모", "주차 동안 줄어든 배터리의 합계입니다. 감시 모드·공조 작동 시간은 소비·비용 화면에서 확인할 수 있습니다.")
                     }
                     if let forecast = index.number("forecastDegradation180") {
                         HStack { measure("180일 후 열화", forecast, "%"); measure("현재 관측 오차", index.number("uncertaintyPercent"), "%p") }
@@ -188,7 +176,7 @@ struct BatteryOverview: View {
                     }
                 }
             }
-        }.padding(18).background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
+        }.padding(18).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
             .accessibilityIdentifier("battery.overview")
     }
 
@@ -197,13 +185,13 @@ struct BatteryOverview: View {
         HStack(spacing: 8) {
             let start = trip.number("at") ?? 0
             Text(Self.tripRowDateFormatter.string(from: Date(timeIntervalSince1970: start / 1000)))
-                .lineLimit(1)
-                .foregroundStyle(Color.white.opacity(0.85))
+                .lineLimit(1).minimumScaleFactor(0.5)
+                .foregroundStyle(Color.primary.opacity(0.85))
             Spacer(minLength: 4)
             Text(number(trip.number("km")) + " km · " + number(trip.number("soc")) + "%p")
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .foregroundStyle(Color.white.opacity(0.7))
+                .minimumScaleFactor(0.5)
+                .foregroundStyle(Color.primary.opacity(0.7))
             if trip.flag("partial") { Image(systemName: "exclamationmark.circle").foregroundStyle(.orange).accessibilityLabel("부분 기록") }
         }.font(.caption).monospacedDigit()
     }
@@ -221,11 +209,57 @@ struct BatteryOverview: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             (Text(number(value)).font(.system(size: 25, weight: .medium)) + Text(" " + unit).font(.system(size: 12)))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private extension Dictionary where Key == String, Value == Any {
     var batteryRowID: String { string("id") }
+}
+
+/// v91: the trend's marks live outside the view body; the type-checker gave up
+/// on the single expression once the end-point dot joined it.
+private extension BatteryOverview {
+    /// v1.33: straight segments (catmull-rom invented peaks between sparse samples), and the line breaks
+    /// across gaps > 6 h instead of drawing a fake curve. A dashed 20 % line marks the low level.
+    struct SocPoint: Identifiable { let id: String; let seg: Int; let date: Date; let soc: Double }
+    static func socSegments(_ trend: [Object]) -> [SocPoint] {
+        var out: [SocPoint] = []
+        var seg = 0, last: Double?
+        for p in trend {
+            guard let at = p.number("at"), let raw = p.number("soc") else { continue }
+            if let l = last, at - l > 6 * 3600 * 1000 { seg += 1 }
+            last = at
+            out.append(SocPoint(id: p.batteryRowID + "#\(out.count)", seg: seg, date: Date(timeIntervalSince1970: at / 1000), soc: min(100, max(0, raw))))
+        }
+        return out
+    }
+    @ChartContentBuilder func socMarks(_ trend: [Object]) -> some ChartContent {
+                        let pts = Self.socSegments(trend)
+                        RuleMark(y: .value("경고", 20))
+                            .foregroundStyle(Color.red.opacity(0.35))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .annotation(position: .top, alignment: .leading) { Text("20%").font(.system(size: 9)).foregroundStyle(.red.opacity(0.7)) }
+                        ForEach(pts) { p in
+                            AreaMark(x: .value("시각", p.date), yStart: .value("0", 0), yEnd: .value("잔량", p.soc),
+                                     series: .value("구간", p.seg))
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(LinearGradient(colors: [Color.cyan.opacity(0.22), Color.cyan.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                            LineMark(x: .value("시각", p.date), y: .value("잔량", p.soc), series: .value("구간", p.seg))
+                                .interpolationMethod(.linear)
+                                .foregroundStyle(Color.cyan)
+                                .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                        }
+                        // v90: a filled dot marks where the trace ends, so the
+                        // current level reads without chasing the line's tip.
+                        if let last = trend.last, let at = last.number("at"), let soc = last.number("soc") {
+                            PointMark(
+                                x: .value("시각", Date(timeIntervalSince1970: at / 1000)),
+                                y: .value("잔량", min(100.0, max(0.0, soc)))
+                            )
+                            .symbolSize(60)
+                            .foregroundStyle(Color.cyan)
+                        }
+    }
 }

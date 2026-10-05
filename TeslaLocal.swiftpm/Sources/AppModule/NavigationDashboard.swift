@@ -1,3 +1,4 @@
+import AudioToolbox
 import SwiftUI
 import UIKit
 
@@ -10,19 +11,19 @@ import UIKit
 // MARK: - Palette
 
 enum NavInk {
-    static let blue = Color(red: 0.094, green: 0.471, blue: 1.0)            // #1878FF
+    static let blue = Color(red: 0.039, green: 0.518, blue: 1.0)            // iOS systemBlue (dark) #0A84FF
     static let blueDeep = Color(red: 0.137, green: 0.318, blue: 0.918)      // #2351EA
-    static let arc = Color(red: 0.118, green: 0.502, blue: 1.0)             // #1E80FF
-    static let green = Color(red: 0.204, green: 0.780, blue: 0.349)         // #34C759
-    static let red = Color(red: 0.898, green: 0.192, blue: 0.180)           // #E5312E
-    static let amber = Color(red: 1.0, green: 0.690, blue: 0.180)           // #FFB02E
+    static let arc = Color(red: 0.039, green: 0.518, blue: 1.0)             // #0A84FF
+    static let green = Color(red: 0.188, green: 0.820, blue: 0.345)         // iOS systemGreen (dark) #30D158
+    static let red = Color(red: 1.0, green: 0.271, blue: 0.227)             // iOS systemRed (dark) #FF453A
+    static let amber = Color(red: 1.0, green: 0.624, blue: 0.039)           // iOS systemOrange (dark) #FF9F0A
     static let canvas = Color(red: 0.043, green: 0.047, blue: 0.055)        // #0B0C0E
     static let mapBase = Color(red: 0.165, green: 0.173, blue: 0.192)       // #2A2C31
-    static let card = Color(red: 0.137, green: 0.145, blue: 0.169)          // #23252B
-    static let cardHi = Color(red: 0.180, green: 0.192, blue: 0.220)        // #2E3138
+    static let card = Color(red: 0.110, green: 0.110, blue: 0.118)          // secondarySystemBackground #1C1C1E
+    static let cardHi = Color(red: 0.173, green: 0.173, blue: 0.180)        // tertiarySystemBackground #2C2C2E
     static let slate = Color(red: 0.118, green: 0.125, blue: 0.145)         // #1E2025
     static let pill = Color(red: 0.039, green: 0.043, blue: 0.051)          // #0A0B0D
-    static let muted = Color(red: 0.62, green: 0.64, blue: 0.67)            // brighter than v29 for legibility
+    static let muted = Color(red: 0.596, green: 0.596, blue: 0.624)         // secondaryLabel (dark) #98989F
     static let gearOff = Color(red: 0.420, green: 0.439, blue: 0.471)
     static let neon = Color(red: 0.231, green: 0.576, blue: 1.0)            // #3B93FF
     static let navy = Color(red: 0.035, green: 0.071, blue: 0.200)          // #091233
@@ -32,7 +33,7 @@ enum NavInk {
 // MARK: - Public model
 
 enum NavigationTheme: String, CaseIterable, Identifiable {
-    case cluster, touring, minimal, panorama, focus, fleet
+    case cluster, touring, minimal, panorama, focus, fleet, running
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -42,6 +43,7 @@ enum NavigationTheme: String, CaseIterable, Identifiable {
         case .panorama: return "파노라마"
         case .focus: return "포커스"
         case .fleet: return "관제"
+        case .running: return "러닝"
         }
     }
     /// Camera for the vehicle view, nil when the layout shows no vehicle model.
@@ -50,7 +52,7 @@ enum NavigationTheme: String, CaseIterable, Identifiable {
         case .touring: return (-0.72, 0.42)          // Tesla-app front three-quarter
         case .minimal, .panorama: return (.pi, 0.30) // chase view over the neon road
         case .focus: return (.pi, 0.62)              // driving visualisation, high behind
-        case .cluster, .fleet: return nil
+        case .cluster, .fleet, .running: return nil
         }
     }
     /// Camera distance multiplier. Road and car live in the same 3D scene, so scale always matches.
@@ -76,6 +78,7 @@ enum NavigationTheme: String, CaseIterable, Identifiable {
         switch self {
         case .minimal, .focus: return .black
         case .panorama: return NavInk.navy
+        case .running: return Color(white: 0.97)
         default: return NavInk.canvas
         }
     }
@@ -97,7 +100,19 @@ struct NavigationReadout {
     var powerKW: Double?
     var destination = ""
     var speedLimit: Int? = nil
+    /// v1.31: 0 none · 1 over the limit · 2 ≥10 km/h over · 3 ≥20 km/h over.
+    var overspeedLevel: Int {
+        guard let limit = speedLimit, limit > 0, speedKmh.isFinite else { return 0 }
+        // v1.42: only warn inside the distance chosen in 설정 (300 / 500 / 1000 m) before the camera.
+        if let m = speedLimitMetres, m.isFinite {
+            let range = UserDefaults.standard.object(forKey: "overspeed.distance") as? Double ?? 500
+            if m > range { return 0 }
+        }
+        let over = speedKmh - Double(limit)
+        return over >= 20 ? 3 : over >= 10 ? 2 : over > 0.5 ? 1 : 0
+    }
     var speedLimitDistance = ""
+    var speedLimitMetres: Double? = nil
     var odometer = "—"
     var clock = ""
     var gpsLive = false
@@ -173,18 +188,25 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     /// mediaToggle, mediaNext, mediaPrev, mediaVolumeUp, mediaVolumeDown
     var onMedia: (String) -> Void = { _ in }
 
+    @Environment(\.dashboardSafeArea) private var safeArea
     var body: some View {
         GeometryReader { geo in
             layout(NavMetrics(size: geo.size))
         }
+        .overlay { OverspeedAlert(level: data.overspeedLevel) }
     }
 
+    @ViewBuilder
     private func layout(_ m: NavMetrics) -> some View {
+        // Keep all six original theme compositions; navigation data updates never select a different layout.
+        modelingLayout(m)
+    }
+
+    private func modelingLayout(_ m: NavMetrics) -> some View {
         let rect = mapRect(m)
-        let canvasColor = theme.canvas
-        let textColor = Color.white
+        let inset = overlayInset(m)
         return ZStack(alignment: .topLeading) {
-            canvasColor.frame(width: m.w, height: m.h)
+            theme.canvas.frame(width: m.w, height: m.h)
             map()
                 .frame(width: rect.width, height: rect.height)
                 .background(NavInk.mapBase)
@@ -193,12 +215,102 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .opacity(theme == .minimal ? 0 : 1)
                 .allowsHitTesting(theme != .minimal)
                 .accessibilityHidden(theme == .minimal)
-            overlay(m)
+            // Scrim themes: continue the leading scrim into the camera-side gap so no hard edge appears.
+            if m.wide, inset.leading > 0, theme == .cluster || theme == .fleet {
+                Color.black.opacity(theme == .cluster ? 1 : 0.4)
+                    .frame(width: inset.leading + 1, height: m.h)
+                    .allowsHitTesting(false)
+            }
+            overlay(NavMetrics(size: CGSize(width: max(1, m.w - inset.leading - inset.trailing), height: max(1, m.h - inset.top - inset.bottom))))
+                .frame(width: max(1, m.w - inset.leading - inset.trailing), height: max(1, m.h - inset.top - inset.bottom))
+                .offset(x: inset.leading, y: inset.top)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("navigation.foreground")
+        }
+        .frame(width: m.w, height: m.h, alignment: .topLeading)
+        .clipped()
+        .foregroundStyle(.white)
+        .environment(\.colorScheme, .dark)
+        // Own container so the root identifier does not overwrite the safe-area foreground identifier.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("navigation.modeling")
+    }
+
+    /// Only nudge content clear of the camera island: landscape takes a partial side inset,
+    /// portrait only the top. Bottom (home indicator) and the far side stay full-bleed.
+    private func overlayInset(_ m: NavMetrics) -> EdgeInsets {
+        if m.w > m.h {
+            // Sides keep the full cutout inset (UI tests require clearance on both camera orientations);
+            // top/bottom stay full-bleed so nothing is cut under the home indicator.
+            return EdgeInsets(top: 0, leading: safeArea.leading, bottom: 0, trailing: safeArea.trailing)
+        }
+        return EdgeInsets(top: safeArea.top, leading: 0, bottom: 0, trailing: 0)
+    }
+
+    private func navigationLayout(_ m: NavMetrics) -> some View {
+        let mediaHeight: CGFloat = data.showsMedia ? 48 : 0
+        let footerHeight: CGFloat = 54 + mediaHeight
+        let headerHeight: CGFloat = m.wide ? 0 : (data.laneCount > 0 ? 164 : 124)
+        let sidebar: CGFloat = m.wide ? min(280, m.w * 0.30) : 0
+        let rect = CGRect(x: sidebar, y: headerHeight, width: m.w - sidebar, height: max(1, m.h - headerHeight - footerHeight))
+        let canvasColor = theme.canvas
+        let textColor = Color.white
+        return ZStack(alignment: .topLeading) {
+            canvasColor.frame(width: m.w, height: m.h)
+            map()
+                .frame(width: rect.width, height: rect.height)
+                .background(NavInk.mapBase)
+                .clipped()
+                .position(x: rect.midX, y: rect.midY)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("navigation.map")
+            navigationPriorityHeader(m, wide: m.wide)
+                .frame(width: m.wide ? sidebar : m.w, height: m.wide ? m.h - footerHeight : headerHeight)
+                .accessibilityIdentifier("navigation.guidance")
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(data.destination.isEmpty ? "경로 미수신" : data.destination).font(.caption).lineLimit(1).minimumScaleFactor(0.5)
+                        Text("\(data.arrival) 도착 · \(data.remaining) · \(data.remainingDistance)").font(.subheadline.bold()).lineLimit(1).minimumScaleFactor(0.5)
+                    }
+                    Spacer(minLength: 0)
+                    Text(data.battery + " · " + data.range).font(.caption).lineLimit(1).minimumScaleFactor(0.5)
+                }.padding(.horizontal, 12).frame(height: 54).background(theme.canvas)
+                if data.showsMedia {
+                    NavigationMediaHeader(data: data, action: onMedia)
+                        .frame(height: mediaHeight).accessibilityIdentifier("navigation.mediaDock")
+                }
+            }.frame(width: m.w, height: footerHeight).offset(y: m.h - footerHeight)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
         .clipped()
         .foregroundStyle(textColor)
         .environment(\.colorScheme, .dark)
+    }
+
+    private func navigationPriorityHeader(_ m: NavMetrics, wide: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 36)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(data.turnDistance).font(.system(size: 28, weight: .bold)).monospacedDigit()
+                    Text(data.turn).font(.subheadline.bold()).lineLimit(2).minimumScaleFactor(0.8)
+                }
+                if !wide { Spacer(minLength: 0); Text(data.speed).overspeed(data.overspeedLevel).font(.title.bold()).monospacedDigit(); Text(data.speedUnit).font(.caption2) }
+            }
+            if wide {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 40, weight: .semibold)).monospacedDigit()
+                    Text(data.speedUnit).font(.caption)
+                    Spacer()
+                    if let limit = data.speedLimit { LimitSign(limit: limit, distance: data.speedLimitDistance, size: 40) }
+                }
+            }
+            if !data.next.isEmpty { Text("이후 " + data.next).font(.caption).lineLimit(1).minimumScaleFactor(0.5) }
+            if data.laneCount > 0 { LaneStrip(data: data, u: min(1, m.u)).frame(maxHeight: 40) }
+            if wide { Text(data.road).font(.caption).foregroundStyle(NavInk.muted).lineLimit(2).minimumScaleFactor(0.6); Spacer(minLength: 0) }
+        }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(theme.canvas)
     }
 
     private func mapRect(_ m: NavMetrics) -> CGRect {
@@ -219,23 +331,33 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             return m.wide
                 ? CGRect(x: m.w - m.w * 0.25 - m.pad, y: m.pad, width: m.w * 0.25, height: m.h * 0.48)
                 : CGRect(x: m.pad, y: m.h * 0.56, width: m.w - m.pad * 2, height: m.h * 0.22)
+        case .running:
+            return runningRects(m).map
         }
     }
 
     @ViewBuilder private func mapMask(rect: CGRect, m: NavMetrics) -> some View {
         switch theme {
-        case .touring, .focus:
+        case .touring, .focus, .running:
             RoundedRectangle(cornerRadius: 24 * m.u, style: .continuous)
         case .panorama:
             LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.7), .init(color: .clear, location: 1)],
                            startPoint: m.wide ? .leading : .bottom, endPoint: m.wide ? .trailing : .top)
         case .cluster:
-            LinearGradient(stops: [
-                .init(color: .black, location: 0),
-                .init(color: .black, location: 0.72),
-                .init(color: .black.opacity(0.55), location: 0.88),
-                .init(color: .clear, location: 1.0)
-            ], startPoint: .top, endPoint: .bottom)
+            // Portrait fades the map out under the bottom panel. Landscape must
+            // not: there the cluster sits on the left and its own scrim does the
+            // blending horizontally, so a top-to-bottom mask would cut the map
+            // across the wrong axis.
+            if m.wide {
+                Rectangle()
+            } else {
+                LinearGradient(stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black, location: 0.72),
+                    .init(color: .black.opacity(0.55), location: 0.88),
+                    .init(color: .clear, location: 1.0)
+                ], startPoint: .top, endPoint: .bottom)
+            }
         default:
             Rectangle()
         }
@@ -249,6 +371,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         case .panorama: panoramaLayer(m)
         case .focus: focusLayer(m)
         case .fleet: fleetLayer(m)
+        case .running: runningLayer(m)
         }
     }
 
@@ -404,7 +527,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 // Speed & Speed Limit Sign side-by-side (Tesla FSD authentic cluster)
                 HStack(alignment: .center, spacing: 12 * m.u) {
                     HStack(alignment: .firstTextBaseline, spacing: 4 * m.u) {
-                        Text(data.speed)
+                        Text(data.speed).overspeed(data.overspeedLevel)
                             .font(.system(size: (m.wide ? 68 : 72) * m.u, weight: .light))
                             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                             .contentTransition(.numericText(countsDown: true))
@@ -482,7 +605,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 GearRow(gear: data.gear, u: m.u * 0.85, style: .letters)
                 HStack(alignment: .center, spacing: 10 * m.u) {
                     VStack(spacing: 0) {
-                        Text(data.speed)
+                        Text(data.speed).overspeed(data.overspeedLevel)
                             .font(.system(size: 60 * m.u, weight: .heavy)).italic()
                             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                         Text(data.speedUnit).font(.system(size: 13 * m.u, weight: .medium)).foregroundStyle(.white.opacity(0.75))
@@ -500,12 +623,12 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             VStack(alignment: .leading, spacing: 4 * m.u) {
                 HStack(spacing: 10 * m.u) {
                     ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 36 * m.u)
-                    Text(data.turnDistance).font(.system(size: 34 * m.u, weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                    Text(data.turnDistance).font(.system(size: 34 * m.u, weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                 }
                 Text(data.turn).font(.system(size: 16 * m.u, weight: .semibold))
-                    .lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
                 if !data.next.isEmpty {
-                    Text("다음 · " + data.next).font(.system(size: 13 * m.u)).foregroundStyle(.white.opacity(0.8)).lineLimit(1).minimumScaleFactor(0.7)
+                    Text("다음 · " + data.next).font(.system(size: 13 * m.u)).foregroundStyle(.white.opacity(0.8)).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
             .padding(12 * m.u)
@@ -519,7 +642,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                         Spacer(minLength: 0)
                         Text(data.clock).font(.system(size: 16 * m.u, weight: .semibold)).monospacedDigit()
                     }
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(1).minimumScaleFactor(0.5)
                     DestinationCard(data: data, u: m.u, compact: true)
                     Spacer(minLength: 0)
                     if data.showsMedia { media(.card, m) }
@@ -582,6 +705,48 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             EnergyLine(powerKW: data.powerKW, u: m.u)
                 .frame(width: stage.width * 0.8, height: 20 * m.u)
                 .offset(x: stage.minX + stage.width * 0.1, y: stage.maxY - 26 * m.u)
+        }
+        .frame(width: m.w, height: m.h, alignment: .topLeading)
+    }
+
+    // MARK: Running — the character runs in place facing the viewer, paced by the car's speed
+
+    /// v1.30: one source of truth for every running-theme rect, so the map never overlaps the cards.
+    /// Portrait: character top 58 %, turn card, then info | map side by side.
+    /// Landscape: character left half; right column = turn card, map, info.
+    private func runningRects(_ m: NavMetrics) -> (stage: CGRect, turn: CGRect, map: CGRect, info: CGRect) {
+        let gap = m.pad
+        if m.wide {
+            let colX = m.w * 0.50, colW = m.w * 0.50 - gap
+            let turn = CGRect(x: colX, y: gap, width: colW, height: 66 * m.u)
+            let rest = m.h - turn.maxY - gap * 3
+            let map = CGRect(x: colX, y: turn.maxY + gap, width: colW, height: max(0, rest * 0.56))
+            let info = CGRect(x: colX, y: map.maxY + gap, width: colW, height: max(0, m.h - map.maxY - gap * 2))
+            return (CGRect(x: 0, y: 0, width: m.w * 0.48, height: m.h), turn, map, info)
+        }
+        let stageH = m.h * 0.58
+        let turn = CGRect(x: gap, y: stageH, width: m.w - gap * 2, height: 76 * m.u)
+        let lowerY = turn.maxY + gap, lowerH = max(0, m.h - lowerY - gap)
+        let infoW = (m.w - gap * 3) * 0.48
+        let info = CGRect(x: gap, y: lowerY, width: infoW, height: lowerH)
+        let map = CGRect(x: info.maxX + gap, y: lowerY, width: m.w - info.maxX - gap * 2, height: lowerH)
+        return (CGRect(x: 0, y: 0, width: m.w, height: stageH), turn, map, info)
+    }
+
+    private func runningLayer(_ m: NavMetrics) -> some View {
+        let r = runningRects(m)
+        let stage = r.stage, turn = r.turn, info = r.info
+        return ZStack(alignment: .topLeading) {
+            CharacterRunnerView(speedKmh: data.speedKmh)
+                .frame(width: stage.width, height: stage.height * 0.94)
+                .offset(x: stage.minX, y: stage.minY + stage.height * 0.04)
+                .allowsHitTesting(true) // v1.37: drag to orbit in portrait and landscape
+            RunningTurnCard(data: data, u: m.u)
+                .frame(width: turn.width, height: turn.height)
+                .offset(x: turn.minX, y: turn.minY)
+            RunningInfoPanel(data: data, u: m.u)
+                .frame(width: info.width, height: max(0, info.height))
+                .offset(x: info.minX, y: info.minY)
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
@@ -661,7 +826,7 @@ private struct SpeedRing: View {
                 .rotationEffect(.degrees(135))
                 .animation(.easeOut(duration: 0.45), value: fraction)
             VStack(spacing: 0) {
-                Text(data.speed)
+                Text(data.speed).overspeed(data.overspeedLevel)
                     .font(.system(size: size * 0.36, weight: .bold))
                     .monospacedDigit().tracking(-size * 0.012)
                     .lineLimit(1).minimumScaleFactor(0.5)
@@ -738,10 +903,10 @@ private struct ManeuverStack: View {
                 VStack(alignment: .leading, spacing: 2 * u) {
                     Text(data.turnDistance)
                         .font(.system(size: 34 * u, weight: .bold)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .lineLimit(1).minimumScaleFactor(0.5)
                     Text(data.turn)
                         .font(.system(size: 15 * u, weight: .semibold))
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2).minimumScaleFactor(0.6).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -751,7 +916,7 @@ private struct ManeuverStack: View {
                 HStack(spacing: 10 * u) {
                     Text(data.next)
                         .font(.system(size: 14 * u, weight: .semibold))
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .lineLimit(1).minimumScaleFactor(0.5)
                     Spacer(minLength: 4 * u)
                     ManeuverGlyph(symbol: data.nextSymbol, exitClock: data.nextExitClock, size: 22 * u)
                         .padding(3 * u)
@@ -786,7 +951,7 @@ private struct TurnBanner: View {
                 if !data.turnDistance.isEmpty && data.turnDistance != "—" {
                     Text(data.turnDistance)
                         .font(.system(size: 26 * u, weight: .semibold)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .lineLimit(1).minimumScaleFactor(0.5)
                         .contentTransition(.numericText(countsDown: true))
                         .animation(.smooth(duration: 0.25), value: data.turnDistance)
                 }
@@ -797,31 +962,12 @@ private struct TurnBanner: View {
             if !data.next.isEmpty {
                 Text("다음 " + data.next)
                     .font(.system(size: 13 * u, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.7)
+                    .foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 12 * u)
-        .background(
-            LinearGradient(
-                colors: [Color(red: 0.08, green: 0.44, blue: 0.98), Color(red: 0.05, green: 0.30, blue: 0.85)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 16 * u, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16 * u, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.40), Color.white.opacity(0.10)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .shadow(color: Color.blue.opacity(0.35), radius: 14 * u, y: 6 * u)
-        .shadow(color: .black.opacity(0.4), radius: 8 * u, y: 4 * u)
+        .background(NavInk.blue, in: RoundedRectangle(cornerRadius: 16 * u, style: .continuous))
+        .shadow(color: .black.opacity(0.3), radius: 10 * u, y: 4 * u)
         .accessibilityElement(children: .contain)
     }
 }
@@ -835,7 +981,7 @@ private struct TurnColumn: View {
                 ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 28 * u)
                 Text(data.turnDistance)
                     .font(.system(size: 34 * u, weight: .semibold)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .lineLimit(1).minimumScaleFactor(0.5)
             }
             Text(data.turn)
                 .font(.system(size: 18 * u, weight: .medium))
@@ -858,9 +1004,9 @@ private struct ArrivalColumn: View {
         VStack(alignment: .trailing, spacing: 4 * u) {
             Text(data.arrival).font(.system(size: 26 * u, weight: .semibold)).monospacedDigit()
             Text("\(data.remaining) · \(data.remainingDistance)")
-                .font(.system(size: 16 * u)).foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.7)
+                .font(.system(size: 16 * u)).foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.5)
             if !data.destination.isEmpty {
-                Text(data.destination).font(.system(size: 16 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.7)
+                Text(data.destination).font(.system(size: 16 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
         .accessibilityElement(children: .combine)
@@ -911,7 +1057,7 @@ private struct TripPill: View {
                 }
             }
         }
-        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
         .padding(.horizontal, 14 * u)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background { GlassFill(radius: 12 * u) }
@@ -920,7 +1066,7 @@ private struct TripPill: View {
     }
     private var arrival: some View { Text(data.arrival).font(.system(size: 18 * u, weight: .bold)) }
     private var distance: some View { Text(data.remainingDistance).font(.system(size: 17 * u, weight: .semibold)) }
-    private var remaining: some View { Text(data.remaining).font(.system(size: 15 * u)).foregroundStyle(.white.opacity(0.8)) }
+    private var remaining: some View { Text(data.remaining).font(.system(size: 15 * u)).foregroundStyle(.white.opacity(0.8)).layoutPriority(1) }
     @ViewBuilder private var signal: some View {
         if !data.connected { Text("신호 없음").font(.system(size: 14 * u, weight: .medium)).foregroundStyle(.orange) }
     }
@@ -928,7 +1074,7 @@ private struct TripPill: View {
         HStack(spacing: 6 * u) {
             BatteryGauge(level: data.batterySOC, width: 28 * u).font(.system(size: 14 * u))
             Text(stacked ? data.battery : "\(data.battery) · \(data.range)").font(.system(size: 16 * u, weight: .semibold))
-        }
+        }.fixedSize().layoutPriority(2) // v1.31: never "3…" — the battery % always shows in full
     }
 }
 
@@ -936,41 +1082,10 @@ private struct TripPill: View {
 private struct GlassFill: View {
     let radius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
-    var isNight: Bool { colorScheme == .dark }
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .fill(isNight ? .ultraThinMaterial : .regularMaterial)
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: isNight
-                            ? [Color.black.opacity(0.25), Color.black.opacity(0.42)]
-                            : [Color.white.opacity(0.85), Color.white.opacity(0.95)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        stops: isNight
-                            ? [
-                                .init(color: .white.opacity(0.28), location: 0),
-                                .init(color: .white.opacity(0.09), location: 0.35),
-                                .init(color: .white.opacity(0.02), location: 1.0)
-                              ]
-                            : [
-                                .init(color: .black.opacity(0.08), location: 0),
-                                .init(color: .black.opacity(0.04), location: 0.5),
-                                .init(color: .black.opacity(0.02), location: 1.0)
-                              ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
-        }
+        // iOS Maps-style sheet: system material only, no gradient rim.
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(colorScheme == .dark ? .regularMaterial : .thickMaterial)
     }
 }
 
@@ -982,9 +1097,8 @@ private struct SoftPanel: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return ZStack {
-            shape.fill(Color(white: 0.12).opacity(0.78))
-            shape.fill(.ultraThinMaterial)
-            shape.stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            shape.fill(.regularMaterial)
+            shape.fill(NavInk.card.opacity(0.55))
         }
         .environment(\.colorScheme, .dark)
         .allowsHitTesting(false)
@@ -1009,11 +1123,11 @@ private struct DestinationCard: View {
                     .lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if let soc = data.arrivalSOC, soc.isFinite {
-                    Label("\(Int(soc.rounded()))%", systemImage: "bolt.fill")
+                    Label("\(finiteInt(soc.rounded()))%", systemImage: "bolt.fill")
                         .font(.system(size: 14 * u, weight: .semibold)).monospacedDigit()
-                        .lineLimit(1).minimumScaleFactor(0.7).layoutPriority(1)
+                        .lineLimit(1).minimumScaleFactor(0.5).layoutPriority(1)
                         .foregroundStyle(soc < 15 ? NavInk.amber : NavInk.green)
-                        .accessibilityLabel("도착 시 배터리 \(Int(soc.rounded()))%")
+                        .accessibilityLabel("도착 시 배터리 \(finiteInt(soc.rounded()))%")
                 }
             }
             if !data.destination.isEmpty {
@@ -1086,7 +1200,7 @@ private struct VehicleCard<CarContent: View>: View {
                 .frame(width: w, height: stageH)
                 .clipped()
                 HStack(alignment: .firstTextBaseline, spacing: 6 * dynamicU) {
-                    Text(data.speed)
+                    Text(data.speed).overspeed(data.overspeedLevel)
                         .font(.system(size: min(42 * dynamicU, h * 0.15), weight: .regular)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.5)
                     Text(data.speedUnit).font(.system(size: 14 * dynamicU)).foregroundStyle(NavInk.muted)
@@ -1113,31 +1227,9 @@ private struct VehicleCard<CarContent: View>: View {
             .frame(width: w, height: h)
             .background(
                 ZStack {
-                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous).fill(.ultraThinMaterial)
-                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(red: 0.12, green: 0.13, blue: 0.16).opacity(0.85), Color(red: 0.07, green: 0.08, blue: 0.10).opacity(0.92)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous).fill(.regularMaterial)
+                    RoundedRectangle(cornerRadius: 26 * u, style: .continuous).fill(NavInk.card.opacity(0.6))
                 }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 26 * u, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .white.opacity(0.24), location: 0),
-                                .init(color: .white.opacity(0.08), location: 0.35),
-                                .init(color: .white.opacity(0.02), location: 1.0)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
             )
             .shadow(color: .black.opacity(0.4), radius: 16 * u, y: 8 * u)
         }
@@ -1157,7 +1249,7 @@ private struct Tile: View {
                 .background(NavInk.blue, in: Circle())
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted)
-                Text(value).font(.system(size: 14 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                Text(value).font(.system(size: 14 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
             }
             Spacer(minLength: 0)
         }
@@ -1173,8 +1265,8 @@ private struct TickBar: View {
     let u: CGFloat
     var body: some View {
         GeometryReader { g in
-            let count = max(10, Int(g.size.width / (5 * u)))
-            let on = Int(Double(count) * min(1, max(0, value ?? 0)))
+            let count = max(10, finiteInt(Double(g.size.width / max(0.01, 5 * u)), 10))
+            let on = finiteInt(Double(count) * min(1, max(0, value ?? 0)))
             HStack(spacing: 2 * u) {
                 ForEach(0..<count, id: \.self) { i in
                     Capsule()
@@ -1297,14 +1389,13 @@ private struct FocusTurnPill: View {
     var body: some View {
         HStack(spacing: 10 * u) {
             ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 26 * u)
-            Text(data.turnDistance).font(.system(size: 22 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+            Text(data.turnDistance).font(.system(size: 22 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
             Rectangle().fill(.white.opacity(0.2)).frame(width: 1, height: 18 * u)
-            Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
+            Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 8 * u).frame(minHeight: 50 * u)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 25 * u, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 25 * u, style: .continuous))
         .environment(\.colorScheme, .dark)
-        .overlay(RoundedRectangle(cornerRadius: 25 * u, style: .continuous).stroke(.white.opacity(0.08)))
         .accessibilityElement(children: .contain)
     }
 }
@@ -1324,7 +1415,7 @@ private struct FocusSpeedColumn: View {
                 if let limit = data.speedLimit { LimitSign(limit: limit, distance: "", size: 32 * u) }
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text(data.speed).font(.system(size: 64 * u, weight: .light)).monospacedDigit()
+                Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 64 * u, weight: .light)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.5)
                 Text(data.speedUnit.uppercased()).font(.system(size: 13 * u, weight: .semibold)).tracking(1.5 * u)
                     .foregroundStyle(NavInk.muted)
@@ -1338,7 +1429,7 @@ private struct FocusSpeedColumn: View {
                     Spacer(minLength: 0)
                     Text(data.range).font(.system(size: 15 * u, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
                 }
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.12))
@@ -1371,7 +1462,7 @@ private struct FocusArrival: View {
             if !data.next.isEmpty {
                 HStack(spacing: 6 * u) {
                     ManeuverGlyph(symbol: data.nextSymbol, exitClock: data.nextExitClock, size: 16 * u)
-                    Text("다음 · " + data.next).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.65)
+                    Text("다음 · " + data.next).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
         }
@@ -1393,9 +1484,8 @@ private struct FleetPanel: View {
         }
         .padding(14 * u)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18 * u, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18 * u, style: .continuous))
         .environment(\.colorScheme, .dark)
-        .overlay(RoundedRectangle(cornerRadius: 18 * u, style: .continuous).stroke(.white.opacity(0.1)))
         .shadow(color: .black.opacity(0.35), radius: 16 * u, y: 8 * u)
         .accessibilityElement(children: .contain)
     }
@@ -1403,7 +1493,7 @@ private struct FleetPanel: View {
         VStack(alignment: .leading, spacing: (full ? 12 : 8) * u) {
             HStack(spacing: 8 * u) {
                 VStack(alignment: .leading, spacing: 1 * u) {
-                    Text(data.vehicleName).font(.system(size: 16 * u, weight: .bold)).lineLimit(1).minimumScaleFactor(0.65)
+                    Text(data.vehicleName).font(.system(size: 16 * u, weight: .bold)).lineLimit(1).minimumScaleFactor(0.5)
                     HStack(spacing: 5 * u) {
                         Circle().fill(data.connected ? NavInk.green : .orange).frame(width: 7 * u, height: 7 * u)
                         Text(data.connected ? "주행 중" : "차량 신호 없음").font(.system(size: 14 * u, weight: .semibold))
@@ -1412,7 +1502,7 @@ private struct FleetPanel: View {
                 }
                 Spacer(minLength: 0)
                 HStack(alignment: .firstTextBaseline, spacing: 3 * u) {
-                    Text(data.speed).font(.system(size: 30 * u, weight: .semibold)).monospacedDigit()
+                    Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 30 * u, weight: .semibold)).monospacedDigit()
                     Text(data.speedUnit).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted)
                 }
                 Text(data.gear).font(.system(size: 15 * u, weight: .bold))
@@ -1442,7 +1532,7 @@ private struct FleetPanel: View {
                 HStack {
                     Text("경로 진행").font(.system(size: 13 * u, weight: .semibold)).foregroundStyle(NavInk.muted)
                     Spacer()
-                    Text(data.routeProgress.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
+                    Text(data.routeProgress.map { "\(finiteInt(($0 * 100).rounded()))%" } ?? "—")
                         .font(.system(size: 13 * u, weight: .semibold)).monospacedDigit()
                 }
                 ProgressTrack(value: data.routeProgress, u: u * 1.4)
@@ -1468,14 +1558,14 @@ private struct FleetPanel: View {
                 Spacer(minLength: 0)
                 Label(data.odometer, systemImage: "road.lanes")
             }
-            .font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.65)
+            .font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
     }
     private func stat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2 * u) {
             Text(label).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted)
-            Text(value).font(.system(size: 15 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.system(size: 15 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10 * u)
@@ -1488,8 +1578,8 @@ private struct SegmentBar: View {
     let u: CGFloat
     var body: some View {
         GeometryReader { g in
-            let count = max(12, Int(g.size.width / (6 * u)))
-            let on = Int(Double(count) * min(1, max(0, value ?? 0)))
+            let count = max(12, finiteInt(Double(g.size.width / max(0.01, 6 * u)), 12))
+            let on = finiteInt(Double(count) * min(1, max(0, value ?? 0)))
             HStack(spacing: 2 * u) {
                 ForEach(0..<count, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 1).fill(i < on ? NavInk.green : Color.white.opacity(0.12))
@@ -1512,10 +1602,9 @@ private struct Chip: View {
         }
         .foregroundStyle(tint)
         .padding(.horizontal, 11 * u).frame(height: 30 * u)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(.regularMaterial, in: Capsule())
         .environment(\.colorScheme, .dark)
-        .overlay(Capsule().stroke(.white.opacity(0.08)))
-        .lineLimit(1).minimumScaleFactor(0.65)
+        .lineLimit(1).minimumScaleFactor(0.5)
     }
 }
 
@@ -1597,9 +1686,10 @@ private struct MediaCard: View {
         VStack(alignment: .leading, spacing: 2 * u) {
             Text(title).font(.system(size: 16 * u, weight: .semibold))
                 .lineLimit(style == .mini ? 1 : 2).minimumScaleFactor(0.7)
+                .accessibilityIdentifier("navigation.media.title")
             Text(subtitle).font(.system(size: 13 * u))
                 .foregroundStyle(data.mediaStatus.isEmpty ? NavInk.muted : NavInk.amber)
-                .lineLimit(1).minimumScaleFactor(0.7)
+                .lineLimit(1).minimumScaleFactor(0.5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1665,11 +1755,11 @@ struct ParkedNavigationActions: View {
     var body: some View {
         HStack(spacing: 12) {
             Label("주차 중", systemImage: "parkingsign.circle.fill")
-                .font(.system(size: 14, weight: .medium)).lineLimit(1)
+                .font(.system(size: 14, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
             Spacer(minLength: 8)
             Button(action: stop) {
                 Label("안내 종료", systemImage: "xmark.circle.fill")
-                    .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    .font(.system(size: 15, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
                     .padding(.horizontal, 12).frame(minHeight: 44)
             }
             .buttonStyle(.plain).foregroundStyle(.white)
@@ -1688,7 +1778,7 @@ private struct NavigationMediaHeader: View {
         HStack(spacing: 8) {
             Image(systemName: "music.note").foregroundStyle(.blue)
             Text(data.mediaTitle.isEmpty ? data.mediaSource : data.mediaTitle)
-                .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.tail)
+                .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("navigation.media.title")
             Button { action("mediaToggle") } label: {
@@ -1715,9 +1805,10 @@ private struct MediaIsland: View {
             IslandBars(active: data.mediaPlaying, u: u)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 15 * u, weight: .semibold))
-                    .lineLimit(1).minimumScaleFactor(0.7).truncationMode(.tail)
+                    .lineLimit(1).minimumScaleFactor(0.5)
+                    .accessibilityIdentifier("navigation.media.title")
                 if expanded, !subtitle.isEmpty {
-                    Text(subtitle).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted).lineLimit(1)
+                    Text(subtitle).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
             .frame(maxWidth: (expanded ? 240 : 160) * u, alignment: .leading)
@@ -1787,5 +1878,201 @@ private struct IslandBars: View {
         guard moving else { return 0.35 }
         let phase = t * (3.1 + Double(i) * 0.9) + Double(i)
         return CGFloat(0.3 + 0.7 * abs(sin(phase)))
+    }
+}
+
+private struct DashboardSafeAreaKey: EnvironmentKey { static let defaultValue = EdgeInsets() }
+extension EnvironmentValues {
+    var dashboardSafeArea: EdgeInsets {
+        get { self[DashboardSafeAreaKey.self] }
+        set { self[DashboardSafeAreaKey.self] = newValue }
+    }
+}
+// Shared by every dashboard theme. Controls overlay the canvas without reserving a row.
+struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @State private var expanded = false
+    @State private var activity = 0
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var controls: () -> Controls
+    var body: some View {
+        GeometryReader { geometry in
+        content()
+            .environment(\.dashboardSafeArea, geometry.safeAreaInsets)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea(.container)
+            .overlay(alignment: .top) {
+                VStack(spacing: 0) {
+                    if expanded {
+                        HStack(spacing: 4) {
+                            VStack(spacing: 4) { controls() }.frame(maxWidth: .infinity)
+                            Button { setExpanded(false) } label: {
+                                Image(systemName: "chevron.up").frame(width: 44, height: 44)
+                            }.accessibilityLabel("상단 조작 닫기")
+                                .accessibilityIdentifier("navigation.chrome.close")
+                        }
+                        .padding(.horizontal, 8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                        .simultaneousGesture(TapGesture().onEnded { activity += 1 })
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    } else {
+                        Button { setExpanded(true) } label: {
+                            Capsule().fill(.white.opacity(0.85)).frame(width: 36, height: 4)
+                                .padding(8).background(.black.opacity(0.45), in: Capsule())
+                                .frame(width: 100, height: 44, alignment: .top)
+                                .contentShape(Rectangle())
+                        }.accessibilityLabel("상단 조작 열기")
+                            .accessibilityIdentifier("navigation.chrome.open")
+                    }
+                }.foregroundStyle(.white).padding(.horizontal, 8)
+                    .padding(.leading, geometry.safeAreaInsets.leading)
+                    .padding(.trailing, geometry.safeAreaInsets.trailing)
+                    .padding(.top, geometry.size.width > geometry.size.height ? 6 : 48)
+                    // v1.24: pin the panel to the screen's top edge in every orientation.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea()
+            }
+            .task(id: activity) {
+                guard expanded, !voiceOver else { return }
+                do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                guard !Task.isCancelled else { return }
+                setExpanded(false)
+            }
+        }
+    }
+    private func setExpanded(_ value: Bool) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { expanded = value }
+        activity += 1
+    }
+}
+
+
+struct NavigationJunctionCard: View {
+    let image: UIImage
+    let metres: Double
+    var body: some View {
+        VStack(spacing: 0) {
+            Image(uiImage: image).resizable().scaledToFit()
+                .accessibilityLabel("교차로 상세 안내 이미지")
+            HStack {
+                Text("분기점 상세 안내").font(.caption.weight(.semibold))
+                Spacer()
+                Text("\(Int(max(0, metres))) m").font(.subheadline.bold()).monospacedDigit()
+            }.padding(10)
+        }.foregroundStyle(.white).background(Color.black.opacity(0.88))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18)))
+            .accessibilityIdentifier("navigation.junction")
+    }
+}
+
+/// Int(x) traps on NaN/±infinity (zero-size layout during theme or rotation changes). Clamp instead.
+func finiteInt(_ x: Double, _ fallback: Int = 0) -> Int {
+    guard x.isFinite else { return fallback }
+    return Int(max(-1_000_000, min(1_000_000, x)))
+}
+
+/// Light cards for the running theme (white canvas).
+private struct RunningTurnCard: View {
+    let data: NavigationReadout
+    let u: CGFloat
+    var body: some View {
+        HStack(spacing: 12 * u) {
+            Image(systemName: data.turnSymbol).font(.system(size: 30 * u, weight: .bold)).foregroundStyle(NavInk.blue)
+                .frame(width: 44 * u)
+            VStack(alignment: .leading, spacing: 2 * u) {
+                Text(data.turnDistance).font(.system(size: 24 * u, weight: .bold)).monospacedDigit()
+                Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
+            }
+            Spacer(minLength: 0)
+            if let limit = data.speedLimit {
+                Text("\(limit)").font(.system(size: 18 * u, weight: .heavy)).monospacedDigit().foregroundStyle(.black)
+                    .frame(width: 44 * u, height: 44 * u)
+                    .background(Circle().fill(.white)).overlay(Circle().stroke(Color.red, lineWidth: 5 * u))
+            }
+        }
+        .foregroundStyle(Color.black)
+        .padding(12 * u)
+        .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20 * u, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 10 * u, y: 3 * u)
+    }
+}
+
+private struct RunningInfoPanel: View {
+    let data: NavigationReadout
+    let u: CGFloat
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8 * u) {
+            HStack(alignment: .firstTextBaseline, spacing: 4 * u) {
+                Text(data.speed).overspeed(data.overspeedLevel).font(.system(size: 46 * u, weight: .bold)).monospacedDigit()
+                Text(data.speedUnit).font(.system(size: 14 * u, weight: .semibold)).foregroundStyle(Color.black.opacity(0.5))
+                Spacer(minLength: 0)
+                Text(data.gear).font(.system(size: 18 * u, weight: .bold)).foregroundStyle(Color.black.opacity(0.55))
+            }
+            Divider()
+            row("도착", data.arrival)
+            row("남은 거리", data.remainingDistance)
+            row("배터리", data.battery)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.black)
+        .lineLimit(1).minimumScaleFactor(0.5)
+        .padding(12 * u)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20 * u, style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 8 * u, y: 2 * u)
+    }
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title).font(.system(size: 13 * u)).foregroundStyle(Color.black.opacity(0.5))
+            Spacer(minLength: 4)
+            Text(value).font(.system(size: 15 * u, weight: .semibold)).monospacedDigit()
+        }
+    }
+}
+
+
+// MARK: - v1.31 overspeed warning
+
+private struct OverspeedTint: ViewModifier {
+    let level: Int
+    func body(content: Content) -> some View {
+        if level > 0 { content.foregroundStyle(Color.red) } else { content }
+    }
+}
+extension Text {
+    /// Red speed digits whenever the car is above the posted / camera limit.
+    func overspeed(_ level: Int) -> some View { modifier(OverspeedTint(level: level)) }
+}
+
+/// Edge-red pulse (≥10 km/h over) and a chime whose rate rises with the excess (≥10: every 2 s, ≥20: every 0.8 s).
+private struct OverspeedAlert: View {
+    let level: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var lastBeep = Date.distantPast
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: level < 2)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            let rate = level >= 3 ? 2.6 : 1.3
+            let pulse = reduceMotion ? 0.6 : 0.5 + 0.5 * sin(t * rate * 2 * .pi)
+            ZStack {
+                if level >= 2 {
+                    RadialGradient(colors: [.clear, .clear, Color.red.opacity(level >= 3 ? 0.55 : 0.38)],
+                                   center: .center, startRadius: 0, endRadius: 520)
+                        .opacity(pulse)
+                }
+            }
+            .onChange(of: Int(t * 10)) { _, _ in beepIfDue(ctx.date) }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    private func beepIfDue(_ now: Date) {
+        guard level >= 2 else { return }
+        let interval = level >= 3 ? 0.8 : 2.0
+        guard now.timeIntervalSince(lastBeep) >= interval else { return }
+        lastBeep = now
+        OverspeedChime.shared.play()
     }
 }

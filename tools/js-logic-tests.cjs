@@ -1,6 +1,57 @@
 // v29 regression tests: route gate (stop / jitter / absence) and per-group freshness.
 const path = require('path');
 const C = require(path.join(__dirname, '../TeslaLocal.swiftpm/Sources/AppModule/Resources/analysis.js'));
+const chargeAssert = require('node:assert/strict');
+// Sparse packets like the verified NAS trace: stale ChargeState, delayed final counters,
+// and SOC drift after completion. SOC values here are synthetic regression fixtures.
+{
+ const vin='5YJYGDEE0LF000001',start=Date.now()-86400000,rows=[];
+ const put=(seconds,field,value)=>rows.push({at:start+seconds*1000,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ put(0,'ChargeState','Init');put(0,'DetailedChargeState','DetailedChargeStateDisconnected');put(0,'Soc',30);
+ for(const [t,state,soc,ac,dc] of [[10,'Starting',30,0,0],[15,'Charging',30,0,0],[75,'Charging',31,0.8,0.7],[135,'Stopped',32,1.6,1.4],[150,'Disconnected',32,1.6,1.4],[3600,'Starting',28,0,0],[3605,'Charging',28,0,0],[3660,'Charging',29,1,0.9],[3720,'Complete',80,42.9,40.48]]){
+  put(t,'DetailedChargeState','DetailedChargeState'+state);put(t,'Soc',soc);put(t,'ACChargingEnergyIn',ac);put(t,'DCChargingEnergyIn',dc);
+ }
+ const e=new C.Engine();e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,2);
+ put(3772,'ACChargingEnergyIn',43.10377842007361);
+ put(7200,'Soc',79);put(7210,'DCChargingEnergyIn',39.9);put(7300,'Soc',78.8);
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,2,'cached Complete plus later SOC drift must not create phantom charges');
+ const last=e.state.charges[1];chargeAssert.equal(last.endSOC,80);
+ chargeAssert.equal(last.supplyKWh,43.10377842007361,'final counter arriving on a later page must update the same charge');
+ chargeAssert.equal(last.vehicleReportedKWh,40.48,'post-charge counter decline must not reduce recorded energy');
+ last.supplyKWh=44;last.cost=1234;
+ e.ingestArchive({vin,rows});chargeAssert.equal(last.supplyKWh,44);
+ chargeAssert.equal(e.state.charges[1].supplyKWh,44);chargeAssert.equal(e.state.charges[1].cost,1234);
+ delete e.state.charges[1].archiveValues;e.state.charges[1].vehicleReportedKWh=39;
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges[1].vehicleReportedKWh,40.48,'legacy vehicle-derived energy must be repaired');
+ chargeAssert.equal(e.state.charges[1].supplyKWh,44,'legacy editable supply must stay intact without provenance');
+ chargeAssert.equal(e.state.charges[1].nasSupplyKWh,43.10377842007361,'show recovered supply alongside legacy input');
+ console.log('PASS: sparse NAS sessions, delayed final counters, post-completion drift and manual preservation');
+}
+{
+  const engine = new C.Engine(), now = Date.now() - 60000, vin = '5YJYGDEE0LF000001';
+  const feed = (dt, charging, soc, addedKWh) => engine.ingestFleetCharge({vin, at: now + dt, charging, soc, addedKWh, limit: 80}, now + dt);
+  feed(0, 2, 40, 0); feed(1000, 5, 40, 0); feed(10000, 5, 50, 7.5);
+  chargeAssert.equal(engine.state.activeCharge.startSOC, 40);
+  const resumed = new C.Engine(); resumed.load(JSON.parse(JSON.stringify(engine.state)), {resumeActive: true});
+  chargeAssert.equal(resumed.state.activeCharge.startSOC, 40, 'restart must preserve session start');
+  resumed.ingestFleetCharge({vin, at: now + 20000, charging: 6, soc: 80, addedKWh: 30, limit: 80}, now + 20000);
+  chargeAssert.equal(resumed.state.charges.length, 1);
+  chargeAssert.equal(resumed.state.charges[0].startSOC, 40);
+  chargeAssert.equal(resumed.state.charges[0].endSOC, 80);
+  chargeAssert.equal(resumed.state.groups.charge, undefined, 'Fleet history must not become BLE automation evidence');
+  const partial = new C.Engine(); partial.ingestFleetCharge({vin, at: now, charging: 5, soc: 60, addedKWh: 15}, now);
+  chargeAssert.equal(partial.state.activeCharge.startSOC, 40);
+  chargeAssert.equal(partial.state.activeCharge.startSOCEstimated, true, 'mid-session start inferred from added energy must be identified');
+  chargeAssert.throws(() => partial.ingestFleetCharge({vin: '5YJYGDEE0LF000002', at: now, charging: 5}, now));
+  partial.ingestFleetCharge({vin, at: now + 200000, charging: 7, soc: 20}, now + 200000);
+  chargeAssert.equal(partial.state.charges[0].endSOC, 60, 'late disconnected reading must not replace the last charging SOC');
+  chargeAssert.equal(partial.state.charges[0].endSOCLastObserved, true);
+  const restored = new C.Engine(); restored.load(JSON.parse(JSON.stringify(partial.state)));
+  chargeAssert.equal(restored.state.charges.length, 1, 'late stop must leave persistable charge history');
+  chargeAssert.equal(partial.batteryUsage(now + 200000, 7).chargeSOC, null, 'estimated session is not observed charge SOC');
+}
 const assert = (c, m) => { if (!c) { console.error('FAIL: ' + m); process.exit(1); } };
 const g = new C.EmbeddedRouteGate();
 const ev = (lat, at, name = 'A') => ({ type: 'route', name, latitude: lat, longitude: 127, at, receivedAt: at, token: name + lat });
@@ -24,15 +75,15 @@ console.log('PASS: route gate + freshness');
 const parkedGate = new C.EmbeddedRouteGate();
 parkedGate.observe(ev(37.5, 1000), true, false);
 const absent = receipt => ({type:'absent', at:1000, receivedAt:receipt, parked:true});
-assert(parkedGate.observe(absent(2000), true, true).type === 'wait', 'first parked absence');
+assert(parkedGate.observe(absent(2000), true, true).type === 'clear', 'fresh parked absence clears immediately');
 for(let i=0;i<4;i++) assert(parkedGate.observe(absent(2000), true, true).type === 'wait', 'cached receipt cannot count');
-assert(parkedGate.observe(absent(7000), true, true).type === 'wait', 'second parked absence');
+assert(parkedGate.observe(absent(7000), true, true).type === 'clear', 'new parked absence remains cleared');
 assert(parkedGate.observe(absent(12000), true, true).type === 'clear', 'fixed source clock clears after new receipts');
 parkedGate.reset(); parkedGate.observe(ev(37.5, 1000), true, false);
 parkedGate.observe({...absent(2000), parked:false},true,true);
 parkedGate.observe({...absent(7000), parked:false},true,true);
-assert(parkedGate.observe(absent(12000),true,true).type==='wait','entering P resets confirmation');
-assert(parkedGate.observe(ev(37.5,15000),true,true).type==='refresh','P alone does not cancel a valid route');
+assert(parkedGate.observe(absent(12000),true,true).type==='clear','entering P ends absence without waiting');
+assert(parkedGate.observe(ev(37.5,15000),true,true).type==='start','a later valid destination can start while parked');
 assert(parkedGate.absence===null,'route restoration resets absence');
 parkedGate.cancel();
 assert(parkedGate.observe(ev(37.5,16000),true,false).type==='wait','manual route stop blocks old destination while freely driving');
@@ -67,3 +118,152 @@ assert(messy.supplyKWh === 12 && messy.ambiguous, 'cumulative line ignored, gues
 const derived = C.parseReceipt(['충전 32 kWh', '단가 300 원/kWh'].join('\n'));
 assert(derived.cost === 9600, 'cost derived from unit price');
 console.log('PASS: receipt parsing');
+
+{
+ const e=new C.Engine(),now=Date.now(),vin='5YJYGDEE0LF000001';
+ e.ingestFleetCharge({vin,at:now,charging:6,soc:80,addedKWh:30},now);
+ chargeAssert.equal(e.chargeSummary().rows.length,1,'finished session must appear even if app missed start');
+ chargeAssert.equal(e.chargeSummary().rows[0].collectedAfterEnd,true);
+ e.ingestFleetCharge({vin,at:now+1000,charging:6,soc:80,addedKWh:30},now+1000);
+ chargeAssert.equal(e.chargeSummary().rows.length,1,'repeated completed snapshot must not duplicate');
+ e.addCharge({at:now-86400000,source:'manual'});
+ chargeAssert.equal(e.chargeSummary().rows[0].at,now,'recent list must sort by event time, not insertion order');
+}
+
+{
+ const e=new C.Engine(),now=Date.now(),vin='5YJYGDEE0LF000001';
+ const feed=(seconds,gear,odo,soc)=>e.ingestFleetDrive({vin,drive:{at:now+seconds*1000,gear,speedKmh:gear==='D'?36:0,odometerKm:odo},charge:{at:now+seconds*1000,soc}},now+seconds*1000);
+ feed(0,'P',100,80); feed(10,'D',100,80); feed(70,'D',100.6,79); feed(80,'P',100.7,79);
+ chargeAssert.equal(e.state.trips.length,1,'first explicit P ends trip without any later packet');
+ feed(130,'P',100.7,79);
+ chargeAssert.equal(e.state.trips.length,1,'Fleet-only drive must populate shared trip history');
+ chargeAssert.equal(e.state.trips[0].distanceKm,0.7);
+ chargeAssert.equal(e.state.groups.drive,undefined,'Fleet history must not authorize BLE automation');
+}
+
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000;
+ const rows=[]; const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc] of [[0,'Disconnected',40],[1000,'Charging',40],[60000,'Charging',50],[120000,'Complete',60]]){put(t,'Soc',soc);put(t,'DetailedChargeState','DetailedChargeState'+state);}
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].startSOC,40);chargeAssert.equal(e.state.charges[0].endSOC,60);
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,1,'NAS replay must be idempotent');
+ chargeAssert.equal(Object.keys(e.state.groups).length,0,'historical NAS packets must never authorize vehicle commands');
+ chargeAssert.throws(()=>e.ingestArchive({vin:'5YJYGDEE0LF000002',rows}));
+ const phone=new C.Engine();phone.state.settings.vin=vin;phone.state.charges=[{...e.state.charges[0],id:'phone',source:'BLE'}];phone.ingestArchive({vin,rows});chargeAssert.equal(phone.state.charges.length,1,'overlapping phone records must not be duplicated');
+ console.log('PASS: NAS charging reconstruction, VIN isolation and duplicate prevention');
+}
+
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000,rows=[];
+ const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,gear,speed,odo,soc] of [[0,'P',0,1000,70],[5000,'D',20,1000,70],[10000,'D',20,1000.1,69],[15000,'P',0,1000.2,69],[65000,'P',0,1000.2,69]]){for(const [f,v] of [['Gear','ShiftState'+gear],['VehicleSpeed',speed],['Odometer',odo],['Soc',soc]])put(t,f,v);}
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.trips.length,1);chargeAssert.ok(e.state.trips[0].distanceKm>0);
+ e.ingestArchive({vin,rows:[...rows].reverse()});chargeAssert.equal(e.state.trips.length,1,'reordered NAS history must not duplicate trips');
+ console.log('PASS: NAS trip reconstruction and reordered replay');
+}
+
+// v91: 주차 중 / 정차 중 / 주행 중. The app held gear and speed from both BLE and
+// Fleet and rendered neither, so a parked car read '상태 미수신'. One rule, used
+// by the presentation and by the Swift side for a Fleet-sourced group.
+{
+ const home=require('../TeslaLocal.swiftpm/Sources/AppModule/Resources/home.js');
+ const label=(d)=>home.motion(d).motionLabel;
+ chargeAssert.equal(label({gear:'P',speedKmh:0}),'주차 중');
+ chargeAssert.equal(label({gear:'P',speedKmh:4}),'주차 중','P is parked whatever the speed field claims');
+ chargeAssert.equal(label({gear:'D',speedKmh:47}),'주행 중');
+ chargeAssert.equal(label({gear:'D',speedKmh:0}),'정차 중','in gear and not moving is stopped, not parked');
+ chargeAssert.equal(label({gear:'N',speedKmh:0}),'정차 중');
+ chargeAssert.equal(label({speedKmh:0}),'정차 중','speed alone still answers the question');
+ chargeAssert.equal(label({}),'상태 미수신','no gear and no speed must not guess a state');
+ chargeAssert.equal(label({gear:'X',speedKmh:0}),'정차 중','an unknown gear string is not a gear');
+ chargeAssert.equal(home.motion({gear:'P',mode:'recent'}).motionIsStale,false);
+ chargeAssert.equal(home.motion({gear:'P',mode:'cached'}).motionIsStale,true,'a stored state must be marked stored');
+ chargeAssert.equal(home.motion({}).hasMotion,false);
+
+ // The presentation must expose the drive group at all — it did not before, which
+ // is why no screen could show the state.
+ const now=Date.now();
+ const p=home.presentation({groups:{drive:{at:now,receivedAt:now,gear:'P',speedKmh:0}},connected:true,authenticated:true,sessionStartedAt:now-1000},now);
+ chargeAssert.ok(p.drive,'presentation must return a drive group');
+ chargeAssert.equal(p.drive.motionLabel,'주차 중');
+ chargeAssert.equal(p.drive.mode,'recent');
+
+ // A parked car's fix is hours old; the coordinate must survive that, because
+ // '마지막 수신 위치' is old by definition.
+ const parked=home.presentation({groups:{location:{at:now-3*3600e3,receivedAt:now-3*3600e3,latitude:37.5,longitude:127.03,positionStatus:'available'}}},now);
+ chargeAssert.equal(parked.location.hasCoordinates,true,'an old fix is still a fix');
+ chargeAssert.equal(parked.location.latitude,37.5);
+ console.log('PASS: parked/stopped/driving state and stored-fix retention');
+}
+
+// v91: AC charging energy. Only DCChargingEnergyIn was read, so a car charged at
+// home recorded every session with addedKWh: null.
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000,rows=[];
+ const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc,ac] of [[0,'Disconnected',40,0],[1000,'Charging',40,0],[60000,'Charging',50,7.2],[120000,'Complete',60,14.5]]){
+   put(t,'Soc',soc); put(t,'DetailedChargeState','DetailedChargeState'+state); put(t,'ACChargingEnergyIn',ac);
+ }
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,1);
+ chargeAssert.ok(e.state.charges[0].supplyKWh>0,'an AC session must retain measured supply energy');
+ chargeAssert.equal(e.state.charges[0].supplyKWh,14.5);
+
+ // DC still wins when it is the counter that moved.
+ const dc=new C.Engine(),dcRows=[];
+ const putDC=(t,field,value)=>dcRows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc,v] of [[0,'Disconnected',20,0],[1000,'Charging',20,0],[60000,'Charging',45,22.0],[120000,'Complete',70,41.0]]){
+   putDC(t,'Soc',soc); putDC(t,'DetailedChargeState','DetailedChargeState'+state); putDC(t,'DCChargingEnergyIn',v);
+ }
+ dc.ingestArchive({vin,rows:dcRows});
+ chargeAssert.equal(dc.state.charges[0].vehicleReportedKWh,41.0);
+ console.log('PASS: AC and DC charge energy both recorded');
+}
+
+// Completion-only NAS data and incomplete phone records must not discard energy.
+{
+ const vin='5YJYGDEE0LF000001',at=Date.now()-300000,e=new C.Engine();
+ const row=(field,value)=>({at,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ const rows=[row('ChargeState','Complete'),row('Soc',80),row('ACChargingEnergyIn',18.5)];
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].supplyKWh,18.5);
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges.length,1);
+ const phone=new C.Engine();phone.state.settings.vin=vin;
+ phone.state.charges.push({id:'phone',at:at-60000,end:at,startSOC:50,endSOC:80,vehicleReportedKWh:null,cost:1234,complete:false});
+ phone.ingestArchive({vin,rows});chargeAssert.equal(phone.state.charges.length,1);
+ chargeAssert.equal(phone.state.charges[0].supplyKWh,18.5);chargeAssert.equal(phone.state.charges[0].cost,1234);
+ console.log('PASS: completion-only archive recovery, overlap enrichment, reimport idempotency');
+}
+
+// Grid input and battery input can both increase during AC charging.
+{
+ const e=new C.Engine(),vin='5YJYGDEE0LF000001',start=Date.now()-600000,rows=[];
+ const put=(t,field,value)=>rows.push({at:start+t,field,number:typeof value==='number'?value:undefined,text:JSON.stringify({stringValue:value}),invalid:false});
+ for(const [t,state,soc,ac,dc] of [[0,'Disconnected',40,0,0],[1000,'Charging',40,0,0],[60000,'Charging',50,8,7],[120000,'Complete',60,16,14]]){
+  put(t,'Soc',soc);put(t,'DetailedChargeState','DetailedChargeState'+state);put(t,'ACChargingEnergyIn',ac);put(t,'DCChargingEnergyIn',dc);
+ }
+ e.ingestArchive({vin,rows});
+ chargeAssert.equal(e.state.charges.length,1);chargeAssert.equal(e.state.charges[0].supplyKWh,16);chargeAssert.equal(e.state.charges[0].vehicleReportedKWh,14);
+ chargeAssert.equal(e.state.charges[0].startSOC,40);chargeAssert.equal(e.state.charges[0].endSOC,60);
+ e.state.charges[0].cost=5000;e.state.charges[0].place='Verified receipt';
+ e.ingestArchive({vin,rows});chargeAssert.equal(e.state.charges[0].cost,5000);chargeAssert.equal(e.state.charges[0].place,'Verified receipt');
+ console.log('PASS: simultaneous grid/battery counters kept separate without double counting');
+}
+
+// Stop-and-go and loss of reception must not fabricate a P transition.
+{
+ const e = new C.Engine(), start = Date.now();
+ const feed = (ms, gear, speed, source = start + ms) => e.drive({at:source,receivedAt:start+ms,gear,speedKmh:speed,odometerKm:100},start+ms);
+ feed(0,'D',20); feed(1000,'D',0);
+ chargeAssert.equal(e.state.trips.length,0,'red-light stop is not arrival');
+ feed(2000,undefined,0);
+ chargeAssert.equal(e.state.trips.length,0,'missing gear is not arrival');
+ e.view(start+60000);
+ chargeAssert.equal(e.state.trips.length,0,'disconnect alone is not arrival');
+ feed(61000,'P',0);
+ chargeAssert.equal(e.state.trips.length,1,'P receipt completes without waiting for another packet');
+ chargeAssert.equal(e.state.trips[0].end,start+61000);
+ feed(62000,'P',0);
+ chargeAssert.equal(e.state.trips.length,1,'repeated P cannot duplicate completion');
+ console.log('PASS: immediate P completion, red-light stop, missing gear and disconnect protection');
+}

@@ -18,10 +18,52 @@ final class AppModel: ObservableObject {
     let aiRules = AutomationAI()
     let voice = VoiceCoordinator()
     @Published var output: Object = [:]
+    @Published private(set) var archiveReadings: [FleetTelemetryReading] = []
     @Published var errorMessage: String?
     @Published private(set) var storageStatus: String?
     @Published var demo = false
     @Published var sharedFile: URL?
+    var vehicleReference: Object {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        return UserDefaults.standard.dictionary(forKey: "vehicle.reference." + vin) ?? [:]
+    }
+    var displayOdometerKm: Double? {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        var values = [vehicleReference.number("odometerKm")]
+        if settings.string("vin") == vin { values.append(groups.object("drive").number("odometerKm")) }
+        if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin { values.append(snapshot.number("vehicle_state", "odometer").map { $0 * 1.609344 }) }
+        if !demo, let reading = FleetTelemetryData.latest(archiveReadings, vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
+        return values.compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max()
+    }
+    /// v92: the 주차 중 / 정차 중 badge flickered to 상태 미수신 between polls.
+    /// A parked car does not change state while nothing is reporting, so the last
+    /// observed gear is kept and handed back when no current source carries one.
+    /// It is a cache of something the vehicle said, not an inference: the reading
+    /// keeps the timestamp it was observed at, so the screen still shows its age,
+    /// and it is cleared whenever a source does report a gear.
+    func rememberMotion(_ drive: Object) -> Object {
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        guard !vin.isEmpty, !demo else { return drive }
+        let key = "motion.last." + vin
+        if !drive.string("gear").isEmpty, let at = drive.number("at") {
+            let stored: [String: Any] = ["gear": drive.string("gear"), "at": at,
+                                         "speedKmh": drive.number("speedKmh") ?? 0]
+            if (UserDefaults.standard.dictionary(forKey: key)?["at"] as? Double) != at {
+                UserDefaults.standard.set(stored, forKey: key)
+            }
+            return drive
+        }
+        guard let remembered = UserDefaults.standard.dictionary(forKey: key),
+              let at = remembered["at"] as? Double, let gear = remembered["gear"] as? String else { return drive }
+        // Only fill the gap: anything the live group did carry stays untouched.
+        var merged = drive
+        merged["gear"] = gear
+        if merged.number("speedKmh") == nil { merged["speedKmh"] = remembered["speedKmh"] as? Double ?? 0 }
+        if merged.number("at") == nil { merged["at"] = at }
+        merged["mode"] = "cached"
+        merged["motionFromMemory"] = true
+        return merged
+    }
     var isSpeaking: Bool { voice.speaking }
     @Published var receiptDraft: Object = [:]
     @Published var receiptText = ""
@@ -34,6 +76,9 @@ final class AppModel: ObservableObject {
     private var recoveryLock = false
     private var timer: Timer?
     private var fleetObservation: AnyCancellable?
+    private var archiveObservation: AnyCancellable?
+    private var lastArchiveSync = Date.distantPast
+    private var lastFleetPoll = Date.distantPast
     private var protectedDataObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
@@ -62,14 +107,71 @@ final class AppModel: ObservableObject {
                 storageStatus = "기록 불러오기 대기 · 기기 잠금 해제 후 기존 자료를 엶"
             }
         }
+        automations.onNotification = { id, title, body in
+            Task { @MainActor in ChargeNotificationManager.shared.notifyAutomation(id: id, title: title, body: body) }
+        }
         refresh()
         fleet.commandAllowed = { [weak self] in
             guard let self else { return false }
             return !self.demo && UIApplication.shared.applicationState == .active && !self.link.controlBusy && !self.link.preparingControl && self.link.confirmation == nil
         }
         fleet.onCommandFailure = { [weak self] text in self?.errorMessage = text }
+        fleet.onVehicleSnapshot = { [weak self] snapshot in
+            guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin else { return }
+            let previousTrips = self.state.rows("trips").count
+            defer {
+                self.finishObservedTrip(previousCount: previousTrips)
+                let history = self.state
+                Task { @MainActor in
+                    self.automations.observeFleetSpeech(snapshot, history: history, previousTrips: previousTrips, link: self.link, voice: self.voice)
+                    self.automations.observeFleet(snapshot, voice: self.voice, bleActive: self.link.authentic)
+                }
+            }
+            let bleDrive = self.groups.object("drive")
+            let fleetDriveAt = snapshot.number("drive_state", "timestamp") ?? 0
+            if snapshot.sectionIsRecent("drive_state"), !self.link.authentic || fleetDriveAt > (bleDrive.number("at") ?? 0) {
+                let overlay = snapshot.homeOverlay()
+                let history: Object = ["vin": snapshot.vin, "drive": snapshot.driveDisplay(), "charge": overlay["charge"] ?? Object(), "location": overlay["location"] ?? Object()]
+                do { self.output = try self.runtime.call("ingestFleetDrive", history) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+                catch { self.storageStatus = "Fleet 운행 기록 저장: " + error.localizedDescription }
+            }
+            guard snapshot.sectionIsRecent("charge_state"),
+                  let charge = snapshot.payload["charge_state"] as? Object,
+                  let status = charge["charging_state"] as? String,
+                  let state = ["Disconnected": 2, "NoPower": 3, "Starting": 4, "Charging": 5, "Complete": 6, "Stopped": 7, "Calibrating": 8][status] else { return }
+            var input: Object = ["vin": snapshot.vin, "charging": state]
+            input["at"] = snapshot.number("charge_state", "timestamp")
+            input["soc"] = snapshot.soc; input["limit"] = snapshot.number("charge_state", "charge_limit_soc")
+            input["addedKWh"] = snapshot.number("charge_state", "charge_energy_added")
+            if charge["fast_charger_present"] as? Bool == true {
+                let brand = (charge["fast_charger_brand"] as? String) ?? ""
+                input["chargeType"] = brand.lowercased().contains("tesla") || brand.lowercased().contains("supercharger") ? "supercharger" : "dc"
+                input["chargeOperator"] = brand
+            } else if let phases = snapshot.number("charge_state", "charger_phases"), phases > 0 { input["chargeType"] = "ac" }
+            if snapshot.sectionIsRecent("drive_state") {
+                input["latitude"] = snapshot.number("drive_state", "latitude"); input["longitude"] = snapshot.number("drive_state", "longitude")
+            }
+            do { self.output = try self.runtime.call("ingestFleetCharge", input) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
+        }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation() }
+            DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation(); self?.observeParkingTelemetry() }
+        }
+        Task { @MainActor [weak self] in
+        FleetArchiveClient.shared.onHistoryReady = { [weak self] vin in
+            guard let self, !self.demo, self.fleet.selectedVin == vin else { throw CancellationError() }
+            try self.mergeArchiveHistory(vin: vin)
+            try self.persist()
+            FleetTelemetryStore.shared.historySaved(vin: vin)
+        }
+        }
+        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = FleetTelemetryStore.shared.records; self.observeParkingTelemetry() } }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.archiveReadings = FleetTelemetryStore.shared.records
+            self.observeParkingTelemetry()
+            do { try self.enrichLocalChargeSOC(); self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "충전 배터리 기록 보완: " + error.localizedDescription }
         }
         automations.settingsDidChange = { [weak self] in self?.voice.stopAutomatic(); self?.link.cancelPendingAutomation() }
         navigation.canPresent = { [weak self] in
@@ -79,8 +181,13 @@ final class AppModel: ObservableObject {
         }
         navigation.willStart = { [weak self] in self?.stopSpeech() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
-        navigation.onGuidanceEnd = { [weak self] in self?.voice.stop() }
+        navigation.onGuidanceEnd = { [weak self] arrived in
+            self?.voice.stop()
+            self?.voice.navigationGuide(arrived ? "목적지에 도착했습니다. 안내를 종료합니다." : "안내를 종료합니다.", safety: false)
+        }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
+        navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
+        voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         link.onControlOutcome = { [weak self] message in
             self?.voice.say(message, key: "controlOutcome:" + UUID().uuidString, category: "voiceControl", priority: 2)
@@ -91,6 +198,11 @@ final class AppModel: ObservableObject {
                 let previousCount = self.state.rows("trips").count
                 let previousCharges = self.state.rows("charges").count
                 self.output = try self.runtime.call("ingest", snapshot) as? Object ?? [:]
+                let charging = snapshot.object("groups").object("charge")
+                if let raw = charging.number("charging"), let status = ChargeEventPolicy.bleState(Int(raw)), let at = charging.number("at") {
+                    let observation = ChargeObservation(vin: self.settings.string("vin"), at: Date(timeIntervalSince1970: at / 1000), state: status, soc: charging.number("soc"), limit: charging.number("limit"))
+                    Task { @MainActor in ChargeNotificationManager.shared.observe(observation) }
+                }
                 if snapshot.object("groups")["drive"] != nil {
                     self.considerNavigation()
                     let d = snapshot.object("groups").object("drive")
@@ -104,8 +216,8 @@ final class AppModel: ObservableObject {
                     }
                 }
                 if self.state.rows("trips").count > previousCount || self.state.rows("charges").count > previousCharges || Date().timeIntervalSince(self.lastSaved) > 5 { self.saveRecordsWhenAvailable() }
+                self.finishObservedTrip(previousCount: previousCount)
                 self.automations.observe(output: self.output, previousTrips: previousCount, previousCharges: previousCharges, link: self.link, voice: self.voice, demo: self.demo)
-                self.triggerDepartureBriefingIfNeeded()
             } catch {
                 self.automations.resetObservation(); self.link.cancelPendingAutomation()
                 self.errorMessage = error.localizedDescription
@@ -114,7 +226,7 @@ final class AppModel: ObservableObject {
         link.onReadAvailabilityChange = { [weak self] in
             guard let self else { return }
             self.output["fresh"] = Object(); self.refresh()
-            if !self.link.authentic { self.voice.stopAutomatic(); self.automations.resetObservation() }
+            if !self.link.authentic { self.automations.resetObservation() } // BLE loss must not cancel already-valid Fleet or navigation speech.
         }
         protectedDataObserver = NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main) { [weak self] _ in
             self?.loadProtectedRecordsIfNeeded()
@@ -123,7 +235,10 @@ final class AppModel: ObservableObject {
         }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
-            if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active {
+            self?.syncArchiveIfNeeded()
+            // Fleet API is billed per call and can wake the car: poll every 30 s, not every 5 s timer tick.
+            if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active, Date().timeIntervalSince(self.lastFleetPoll) >= 30 {
+                self.lastFleetPoll = Date()
                 Task { @MainActor in await self.fleet.refreshVehicleSnapshot() }
             }
             if self?.savePending == true { self?.saveRecordsWhenAvailable() }
@@ -133,9 +248,62 @@ final class AppModel: ObservableObject {
         timer?.invalidate()
         if let protectedDataObserver { NotificationCenter.default.removeObserver(protectedDataObserver) }
     }
+    private func syncArchiveIfNeeded() {
+        Task { @MainActor in
+        // Also sync while iOS keeps the app alive in the background (BLE/location wake), less often,
+        // so NAS telemetry (charge state, lock, sessions) keeps flowing without the app on screen.
+        let active = UIApplication.shared.applicationState == .active
+        guard !demo,
+              Date().timeIntervalSince(lastArchiveSync) >= (active ? 30 : 120), !FleetArchiveClient.shared.address.isEmpty,
+              !fleet.selectedVin.isEmpty else { return }
+        lastArchiveSync = Date()
+        let vin = fleet.selectedVin
+            await FleetArchiveClient.shared.sync(vin: vin)
+            if let observation = FleetTelemetryData.chargeObservation(FleetTelemetryStore.shared.records, vin: vin) {
+                ChargeNotificationManager.shared.observe(observation)
+                self.automations.observeTelemetryCharge(observation, voice: self.voice, bleActive: self.link.authentic)
+            }
+            guard !self.demo, self.fleet.selectedVin == vin else { return }
+            do { try self.mergeArchiveHistory(vin: vin); self.saveRecordsWhenAvailable() }
+            catch { self.storageStatus = "NAS 기록 통합: " + error.localizedDescription }
+        }
+    }
+    @MainActor private func mergeArchiveHistory(vin: String) throws {
+        let store = FleetTelemetryStore.shared
+        guard let since = store.pendingHistoryStart(vin: vin) else { return }
+        let window = FleetTelemetryData.historyWindow(store.records, vin: vin, since: since)
+        let rows: [Object] = window.rows.map { r in
+            var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "field": r.field, "text": r.text, "invalid": r.invalid]
+            if let n = r.number { value["number"] = n }; return value
+        }
+        guard !rows.isEmpty else { return }
+        output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
+        archiveReadings = store.records
+        try enrichLocalChargeSOC()
+    }
     func refresh() {
-        do { output = try runtime.call("view") as? Object ?? [:]; if !link.connected || !link.authentic { output["fresh"] = Object() } }
-        catch { output["fresh"] = Object(); errorMessage = error.localizedDescription }
+        do {
+            // Read loaded settings before migrating the older standalone preference.
+            output = try runtime.call("view") as? Object ?? [:]
+            if !demo && !recoveryLock {
+                let defaults = UserDefaults.standard
+                var rates: Object = [:]
+                if settings.number("tariff") != nil { defaults.set(true, forKey: "cost.legacyTariffMigrated") }
+                if !defaults.bool(forKey: "cost.legacyTariffMigrated"), settings.number("tariff") == nil,
+                   let legacy = defaults.string(forKey: "cost.electricity").flatMap(Double.init), legacy.isFinite, (0...10000).contains(legacy) { rates["tariff"] = legacy }
+                if let data = defaults.data(forKey: "navigation.home"), let home = try? JSONSerialization.jsonObject(with: data) as? Object,
+                   let lat = home.number("latitude"), let lon = home.number("longitude"), (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0),
+                   settings.object("homePoint").number("latitude") != lat || settings.object("homePoint").number("longitude") != lon {
+                    rates["homePoint"] = ["latitude": lat, "longitude": lon]
+                }
+                if !rates.isEmpty {
+                    _ = try runtime.call("settings", rates)
+                    if rates["tariff"] != nil { defaults.set(true, forKey: "cost.legacyTariffMigrated") }
+                    output = try runtime.call("view") as? Object ?? [:]
+                }
+            }
+            if !link.connected || !link.authentic { output["fresh"] = Object() }
+        } catch { output["fresh"] = Object(); errorMessage = error.localizedDescription }
     }
     private func persist() throws {
         guard !demo else { return }
@@ -177,11 +345,33 @@ final class AppModel: ObservableObject {
             storageStatus = "기록 저장 실패 · 최근 변경은 아직 저장되지 않음. 30초 후 재시도"
         }
     }
+    private func observeParkingTelemetry() {
+        guard !demo else { return }
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        SmartParkingManager.shared.observeVehicleTelemetry(homePresentation(self, link), vin: vin)
+    }
+    private func enrichLocalChargeSOC() throws {
+        guard !demo else { return }
+        let vin = settings.string("vin")
+        let intervals = state.rows("charges").filter { $0.number("end") != nil }
+        let rows: [Object] = archiveReadings.filter { r in
+            r.vin == vin && ["Soc", "BatteryLevel"].contains(r.field) && intervals.contains { c in
+                let stamp = r.at.timeIntervalSince1970 * 1000
+                return abs(stamp - (c.number("at") ?? 0)) <= 120000 || abs(stamp - (c.number("end") ?? 0)) <= 120000
+            }
+        }.map { r in
+            var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "invalid": r.invalid]
+            if let soc = r.number { value["soc"] = soc }; return value
+        }
+        guard !rows.isEmpty else { return }
+        output = try runtime.call("enrichChargeSOC", ["vin": vin, "rows": rows]) as? Object ?? output
+    }
     func mutate(_ operation: String, _ value: Object = [:]) {
         guard !recoveryLock || demo else { errorMessage = "원본 기록 보호 중. 백업 복원 필요."; return }
         do {
             let previousVIN = settings.string("vin")
             _ = try runtime.call(operation, value); refresh()
+            if ["addCharge", "updateCharge"].contains(operation) { try enrichLocalChargeSOC() }
             if settings.string("vin") != previousVIN { navigation.reset(); automations.resetObservation(); link.cancelPendingAutomation() }
             saveRecordsWhenAvailable()
         }
@@ -202,22 +392,6 @@ final class AppModel: ObservableObject {
         guard !demo else { errorMessage = "예시 모드를 종료한 뒤 실차에 연결해야 함"; return }
         link.connect(vin: settings.string("vin"))
     }
-    private var sessionBriefed = false
-
-    func triggerDepartureBriefingIfNeeded() {
-        guard !sessionBriefed, !demo, UIApplication.shared.applicationState == .active else { return }
-        let charge = output.object("groups").object("charge")
-        guard let soc = charge.number("soc"), soc.isFinite, (0...100).contains(soc) else { return }
-        sessionBriefed = true
-
-        let units = VehicleUnits.saved
-        var msg = "배터리 \(Int(soc))퍼센트."
-        if let range = charge.number("rangeKm"), range.isFinite, (0...2000).contains(range) {
-            msg += " 주행 가능 거리는 \(units.format(range, suffix: " km"))입니다."
-        }
-        voice.say(msg, key: "session.departure.briefing", category: "voiceConnection", priority: 2, ttl: 20, manual: false)
-    }
-
     func pause() { link.pauseForBackground(); saveRecordsWhenAvailable() }
     func resignActive() { link.resignActive(); navigation.suspendPending() }
     func resume() {
@@ -226,15 +400,13 @@ final class AppModel: ObservableObject {
         if savePending { saveRecordsWhenAvailable() }
         link.resume(vin: settings.string("vin")); navigation.foregrounded(); refresh()
         Task { @MainActor in await fleet.refreshVehicleSnapshot() }
-        triggerDepartureBriefingIfNeeded()
     }
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
         if link.authentic { link.refreshNow(retryUnavailable: true) }
-        else if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
-        else { connect() }
+        if fleet.isAuthenticated { Task { @MainActor in await fleet.refreshVehicleSnapshot(force: true) } }
+        if !link.authentic && !fleet.isAuthenticated { connect() }
         refresh()
-        triggerDepartureBriefingIfNeeded()
     }
     func speak(_ text: String? = nil) {
         let fresh = output.object("fresh")
@@ -292,12 +464,22 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    private func finishObservedTrip(previousCount: Int) {
+        guard !demo, state.rows("trips").count > previousCount,
+              let trip = state.rows("trips").last, let end = trip.number("end"),
+              abs(Date().timeIntervalSince1970 * 1000 - end) <= 120000 else { return }
+        navigation.endGuidance()
+        let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
+        let body = state.string("lastBrief")
+        let id = trip.string("id")
+        Task { @MainActor in chargeNotifications.notifyTrip(vin: vin, id: id, body: body) }
+    }
     private func considerNavigation() {
         // v29: observe in background too — clear/refresh decisions must keep flowing while locked.
         // Only a *new* start is gated by navigation.canPresent() (foreground, no modal).
         guard !demo else { return }
         do {
-            let event: Object
+            var event: Object
             let vin: String
             if !link.authentic {
                 guard let snapshot = fleet.vehicleSnapshot, snapshot.vin == fleet.selectedVin else { return }
@@ -305,6 +487,12 @@ final class AppModel: ObservableObject {
             } else {
                 event = try runtime.call("embeddedDestination", [:]) as? Object ?? [:]
                 vin = settings.string("vin")
+                if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin {
+                    let fallback = snapshot.navigationEvent()
+                    if event.string("type") == "wait" || (fallback.number("at") ?? 0) > (event.number("at") ?? 0) {
+                        if fallback.string("type") != "wait" { event = fallback }
+                    }
+                }
             }
             // v39: with hand-off enabled the destination goes to Naver Map instead of the built-in guidance,
             // so its licensed voice does the talking. One hand-off per destination, foreground only.
@@ -329,6 +517,20 @@ final class AppModel: ObservableObject {
             guard root.string("kind") == "YLCompanionBackup", root.number("schema") == 1 else { throw LocalError.message("YL Companion JSON 백업만 지원함. Tesla·다른 앱의 내보내기 자료는 형식 확인 후 변환 필요.") }
             let counts = try runtime.call("mergeHistory", root.object("state")) as? Object ?? [:]
             try persist(); refresh()
+            let reference = root.object("vehicleReference")
+            let vin = root.object("state").object("settings").string("vin")
+            if !vin.isEmpty, reference.string("vin") == vin {
+                var checked: Object = [:]
+                for key in ["odometerKm", "nominalAh", "nominalVoltage", "nominalKWh", "basicWarrantyKm", "batteryWarrantyKm"] {
+                    if let value = reference.number(key), value.isFinite, value >= 0 { checked[key] = value }
+                }
+                for key in ["vin", "sourceDate", "source", "cellMaker", "cellShape", "chemistry", "basicWarrantyEnd", "batteryWarrantyEnd"] {
+                    let text = reference.string(key)
+                    if !text.isEmpty, text.count <= 200 { checked[key] = text }
+                }
+                UserDefaults.standard.set(checked, forKey: "vehicle.reference." + vin)
+                objectWillChange.send()
+            }
             errorMessage = "과거 운행 \(Int(counts.number("trips") ?? 0))건 · 충전 \(Int(counts.number("charges") ?? 0))건 추가 · 중복 \(Int(counts.number("duplicates") ?? 0))건 제외"
         } catch { errorMessage = error.localizedDescription }
     }

@@ -18,8 +18,8 @@
    "SWIFT_VERSION": "5.0",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "CODE_SIGNING_ALLOWED": "NO",
-   "MARKETING_VERSION": "0.83",
-   "CURRENT_PROJECT_VERSION": "83"
+   "MARKETING_VERSION": "1.55",
+   "CURRENT_PROJECT_VERSION": "155"
   }
  },
  "targets": {
@@ -81,6 +81,15 @@
     {
      "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/typecast_portraits",
      "type": "folder",
+     "buildPhase": "resources"
+    },
+    {
+     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/character",
+     "type": "folder",
+     "buildPhase": "resources"
+    },
+    {
+     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/typecast_web_actors.json",
      "buildPhase": "resources"
     }
    ],

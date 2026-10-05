@@ -12,16 +12,16 @@ import SwiftUI
 /// - Secondary Quick Grid: Remote Start (`remoteStartDrive`), Flash Lights (`flashLights`),
 ///   Honk Horn (`honkHorn`), Defrost Max (`setPreconditioningMax`).
 struct TeslaInteractiveControlsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
-    @State private var isLocked = true
-    @State private var isPortOpen = false
     @State private var enrollment = false
     @State private var remoteStartAlert = false
     @State private var tokenSheet = false
     @State private var statusToast: String? = nil
     @State private var isExecutingRemote = false
+    @State private var focus: VehicleCameraCommand? = nil
 
     private var currentAppearance: VehicleAppearance {
         appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))
@@ -39,19 +39,19 @@ struct TeslaInteractiveControlsView: View {
                             .foregroundStyle(.cyan)
                         Text(statusToast)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                         Spacer()
                         Button {
                             self.statusToast = nil
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.caption2)
-                                .foregroundStyle(Color.white.opacity(0.6))
+                                .foregroundStyle(Color.primary.opacity(0.6))
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color(white: 0.14).opacity(0.9), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Theme.fill(0.14).opacity(0.9), in: RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.cyan.opacity(0.35), lineWidth: 1))
                 }
 
@@ -61,7 +61,7 @@ struct TeslaInteractiveControlsView: View {
                         ProgressView().controlSize(.small)
                         Text(link.controlBusy ? "BLE 근거리 명령 전송 중…" : (isExecutingRemote || model.fleet.isSendingCommand ? "LTE 클라우드 원격 전송 중…" : "제어 세션 준비 중…"))
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.primary)
                         Spacer()
                     }
                     .padding(.horizontal, 16)
@@ -70,23 +70,22 @@ struct TeslaInteractiveControlsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.18, green: 0.50, blue: 0.95).opacity(0.4), lineWidth: 1))
                 }
 
+                // v1.22: canvas layout — status card, big lock button, 4×2 action grid.
+                closureStatusCard
+                lockButton
+                actionGrid
+
                 // Hybrid Connection Scope Notice Card
                 hybridConnectionNotice
 
-                // Centerpiece Interactive Vehicle Body Stage
-                interactiveVehicleStage
-
-                // Secondary Quick Controls Grid (LTE & Hybrid)
-                secondaryControlsGrid
-
                 // Tesla Fleet Cloud & BLE Authentication Management
-                fleetAndBleManagementSection
+
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
             .padding(.bottom, 32)
         }
-        .background(Theme.bg)
+        .background(Color(uiColor: .systemGroupedBackground))
         .confirmationDialog("별도 BLE 제어 키 등록을 요청하시겠습니까?", isPresented: $enrollment, titleVisibility: .visible) {
             Button("등록 요청") { link.enrollControlKey() }
             Button("취소", role: .cancel) {}
@@ -102,8 +101,147 @@ struct TeslaInteractiveControlsView: View {
             Text("테슬라 공식 Fleet API(LTE)를 통해 차량 컴퓨터로 원격 시동 명령을 전송합니다. 승인 후 2분 이내에 브레이크를 밟고 기어를 변속하면 키 없이 주행할 수 있습니다.")
         }
         .sheet(isPresented: $tokenSheet) {
-            TeslaFleetTokenSheet(fleet: model.fleet)
+            NavigationStack { ConnectionView(link: link) }.environmentObject(model)
         }
+    }
+
+    // MARK: - v1.22 Canvas Layout
+
+    private var snapshot: FleetVehicleSnapshot? {
+        guard let s = model.fleet.vehicleSnapshot, s.vin == model.fleet.selectedVin else { return nil }
+        return s
+    }
+    /// v1.41: plugged/charging → the 3D car shows the cable (doors still animate).
+    private var chargeNow: (charging: Bool, plugged: Bool) {
+        let c = homePresentation(model, link).object("charge")
+        let charging = c.chargingNow
+        return (charging, charging || c.flag("plugged") || portText.0 == "연결")
+    }
+    private var lockState: Bool? {
+        if model.output.object("fresh").flag("closures"), let v = model.groups.object("closures")["locked"] as? Bool { return v }
+        return snapshot?.locked
+    }
+    private func openCount(_ keys: [String]) -> Int? {
+        guard let s = snapshot else { return nil }
+        let values = keys.compactMap { s.number("vehicle_state", $0) }
+        return values.isEmpty ? nil : values.filter { $0 > 0 }.count
+    }
+    /// v1.41: live BLE closure state (what the 3D model shows) wins over a Fleet snapshot without body data.
+    private func bleOpenCount(_ parts: [String]) -> Int? {
+        // v1.42: same rule as the 3D model (received in the last 2 min), not the stricter verified-session flag.
+        let g = model.groups.object("closures")
+        let received = g.number("receivedAt") ?? g.number("at") ?? 0
+        guard !parts.isEmpty, model.output.object("fresh").flag("closures") || Date().timeIntervalSince1970 * 1000 - received <= 120_000 else { return nil }
+        let v = parts.compactMap { g[$0] as? Bool }
+        return v.count == parts.count ? v.filter { $0 }.count : nil
+    }
+    private func closureText(_ keys: [String], ble: [String] = [], all: Bool) -> (String, Color) {
+        guard let n = bleOpenCount(ble) ?? openCount(keys) else { return ("미수신", Color.secondary) }
+        if n == 0 { return (all ? "모두 닫힘" : "닫힘", Color.primary) }
+        return (keys.count > 1 ? "\(n)개 열림" : "열림", Color.orange)
+    }
+    private var portText: (String, Color) {
+        guard let s = snapshot else { return ("미수신", Color.secondary) }
+        let charge = s.payload.object("charge_state")
+        if let cable = charge["conn_charge_cable"] as? String, !cable.isEmpty, cable != "<invalid>" { return ("연결", Color.green) }
+        if let open = charge["charge_port_door_open"] as? Bool { return open ? ("열림", Color.orange) : ("닫힘", Color.primary) }
+        return ("미수신", Color.secondary)
+    }
+
+    private var closureStatusCard: some View {
+        let rows: [(String, (String, Color))] = [
+            ("문", closureText(["df", "pf", "dr", "pr"], ble: ["driverFront", "passengerFront", "driverRear", "passengerRear"], all: true)),
+            ("창문", closureText(["fd_window", "fp_window", "rd_window", "rp_window"], all: true)),
+            ("프렁크", closureText(["ft"], ble: ["frunk"], all: false)),
+            ("트렁크", closureText(["rt"], ble: ["trunk"], all: false)),
+            ("충전구", portText)
+        ]
+        return VStack(spacing: 12) {
+            // v1.26: live 3D model (same as home) on a white card; actions swing the camera to the part.
+            Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: chargeNow.charging, isPlugged: chargeNow.plugged, focus: focus)
+                .frame(maxWidth: .infinity)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            VStack(spacing: 8) {
+                ForEach(rows, id: \.0) { row in
+                    HStack {
+                        Text(row.0).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(row.1.0).foregroundStyle(row.1.1).fontWeight(.medium)
+                    }
+                    .font(.system(size: 15))
+                }
+            }
+        }
+        .padding(14)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var lockButton: some View {
+        let locked = lockState
+        let unlocked = locked == false
+        return Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            if locked == false {
+                dispatchHybridAction(title: "차량 잠금", bleAction: "lock", fleetAction: { try await model.fleet.doorLock() })
+            } else {
+                dispatchHybridAction(title: "잠금 해제", bleAction: "unlock", fleetAction: { try await model.fleet.doorUnlock() })
+            }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: unlocked ? "lock.open.fill" : "lock.fill").font(.system(size: 26, weight: .semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(locked == nil ? "잠금 상태 미수신" : (unlocked ? "잠금 해제됨" : "잠김")).font(.system(size: 17, weight: .semibold))
+                    Text(unlocked ? "눌러서 잠그기" : "눌러서 잠금 해제").font(.system(size: 13)).opacity(0.75)
+                }
+                Spacer()
+            }
+            .foregroundStyle(unlocked ? Color.white : Color.primary)
+            .padding(.horizontal, 18).padding(.vertical, 16)
+            .background(unlocked ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(MotionButtonStyle())
+    }
+
+    private func focusCamera(yaw: Float, pitch: Float) {
+        focus = VehicleCameraCommand(serial: (focus?.serial ?? 0) + 1, action: "angle", yaw: yaw, pitch: pitch, zoom: nil)
+    }
+
+    private var actionGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 2 : 4), spacing: 10) {
+            gridButton("프렁크", "car.side.front.open.fill") { focusCamera(yaw: 0, pitch: 1.1); dispatchHybridAction(title: "프렁크 열기", bleAction: "frunkOpen", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }) }
+            gridButton("트렁크", "car.side.rear.open.fill") { focusCamera(yaw: .pi, pitch: 1.1); dispatchHybridAction(title: "트렁크 동작", bleAction: "trunkMove", fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }) }
+            Menu {
+                Button("충전구 열기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
+                Button("충전구 닫기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
+            } label: { gridLabel("충전구", "bolt.fill") }
+            gridButton("전조등", "headlight.high.beam.fill") { executeFleetAction(title: "전조등 깜빡임") { try await model.fleet.flashLights() } }
+            gridButton("경적", "speaker.wave.3.fill") { executeFleetAction(title: "경적 울리기") { try await model.fleet.honkHorn() } }
+            gridButton("성에 제거", "snowflake") { executeFleetAction(title: "최대 성에 제거") { try await model.fleet.setPreconditioningMax(on: true) } }
+            gridButton("원격 시동", "key.fill") {
+                model.voice.say("원격 시동을 준비합니다.", key: "controls.remotestart", category: "voiceControl", priority: 3, ttl: 4, manual: true)
+                if model.fleet.isAuthenticated { remoteStartAlert = true }
+                else { statusToast = "원격 시동(LTE)을 위해 테슬라 Fleet API 토큰 설정이 필요합니다."; tokenSheet = true }
+            }
+            gridButton("공조 켜기", "fanblades.fill") { dispatchHybridAction(title: "공조 가동", bleAction: "climateOn", fleetAction: { try await model.fleet.setAutoConditioning(on: true) }) }
+        }
+    }
+
+    private func gridButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            action()
+        } label: { gridLabel(title, icon) }
+        .buttonStyle(MotionButtonStyle())
+    }
+
+    private func gridLabel(_ title: String, _ icon: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 20, weight: .medium))
+            Text(title).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.5)
+        }
+        .foregroundStyle(Color.primary)
+        .frame(maxWidth: .infinity, minHeight: 76)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     // MARK: - Hybrid Connection Notice
@@ -126,7 +264,7 @@ struct TeslaInteractiveControlsView: View {
                             ? "BLE 근거리 직통 연결됨"
                             : (fleetActive ? "Fleet 인증됨 · 제어 준비 별도" : "차량 통신 대기 중")))
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.primary)
 
                     if fleetActive {
                         Text("LTE Fleet")
@@ -148,7 +286,7 @@ struct TeslaInteractiveControlsView: View {
 
                 Text(fleetActive ? model.fleet.commandStatus : "근거리 제어는 BLE 제어 키, 원격 제어는 Fleet 인증·서명 서버·차량 가상키 등록이 필요합니다.")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.white.opacity(0.68))
+                .foregroundStyle(Color.primary.opacity(0.68))
                 .lineSpacing(3)
             }
             Spacer()
@@ -156,11 +294,11 @@ struct TeslaInteractiveControlsView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(white: 0.10).opacity(0.85))
+                .fill(Theme.fill(0.10).opacity(0.85))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
     }
 
@@ -173,68 +311,21 @@ struct TeslaInteractiveControlsView: View {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [Color(white: 0.10), Color(white: 0.05)],
+                            colors: [Theme.fill(0.10), Theme.fill(0.05)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.12), lineWidth: 1)
                     )
 
                 // Top-View Vehicle Body Graphic (Rotated 180° so Front Hood is at Top)
                 vehicleTopSilhouette
 
-                // Front Hood Hotspot (Frunk) - Top Center
-                sleekHotspot(
-                    icon: "car.side.front.open.fill",
-                    label: "프렁크",
-                    accent: Color(red: 0.35, green: 0.65, blue: 1.0)
-                ) {
-                    dispatchHybridAction(
-                        title: "프렁크 열기",
-                        bleAction: "frunkOpen",
-                        fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "front") }
-                    )
-                }
-                .offset(y: -140)
-
-                // Center Roof Hotspot (Lock / Unlock) - Mid Center
-                centerLockHotspot
-                    .offset(y: -15)
-
-                // Rear Left Charge Port Hotspot - Bottom Left (Driver side rear taillight)
-                sleekHotspot(
-                    icon: isPortOpen ? "bolt.slash.fill" : "bolt.fill",
-                    label: isPortOpen ? "포트 닫기" : "충전구",
-                    accent: isPortOpen ? Color.orange : Color(red: 0.28, green: 0.88, blue: 0.42),
-                    isActive: isPortOpen
-                ) {
-                    withAnimation { isPortOpen.toggle() }
-                    dispatchHybridAction(
-                        title: isPortOpen ? "포트 닫기" : "포트 열기",
-                        bleAction: isPortOpen ? "portClose" : "portOpen",
-                        fleetAction: { try await model.fleet.chargePortDoor(open: !isPortOpen) }
-                    )
-                }
-                .offset(x: -78, y: 138)
-
-                // Keep the rear control beside the vehicle, clear of the plate.
-                sleekHotspot(
-                    icon: "car.side.rear.open.fill",
-                    label: "트렁크",
-                    accent: Color(red: 0.35, green: 0.65, blue: 1.0)
-                ) {
-                    dispatchHybridAction(
-                        title: "트렁크 동작",
-                        bleAction: "trunkMove",
-                        fleetAction: { try await model.fleet.actuateTrunk(whichTrunk: "rear") }
-                    )
-                }
-                .offset(x: 78, y: 138)
             }
-            .frame(height: 420)
+            .frame(height: 320)
 
             // Tesla Official-Style Horizontal Quick Action Bar
             teslaQuickActionBar
@@ -293,110 +384,14 @@ struct TeslaInteractiveControlsView: View {
 
     // MARK: - Center Lock Hotspot
 
-    private var centerLockHotspot: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                isLocked.toggle()
-                dispatchHybridAction(
-                    title: isLocked ? "차량 잠금" : "잠금 해제",
-                    bleAction: isLocked ? "lock" : "unlock",
-                    fleetAction: { try await (isLocked ? model.fleet.doorLock() : model.fleet.doorUnlock()) }
-                )
-            }
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            isLocked
-                                ? Color(red: 0.28, green: 0.88, blue: 0.42).opacity(0.25)
-                                : Color.orange.opacity(0.28)
-                        )
-                        .frame(width: 44, height: 44)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    isLocked
-                                        ? Color(red: 0.28, green: 0.88, blue: 0.42)
-                                        : Color.orange,
-                                    lineWidth: 1.5
-                                )
-                        )
-                        .shadow(
-                            color: (isLocked ? Color.green : Color.orange).opacity(0.4),
-                            radius: 8
-                        )
-
-                    Image(systemName: isLocked ? "lock.fill" : "lock.open.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(isLocked ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange)
-                }
-
-                Text(isLocked ? "잠김" : "열림")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-        }
-        .buttonStyle(MotionButtonStyle())
-    }
-
-    // MARK: - Sleek Hotspot Button
-
-    private func sleekHotspot(
-        icon: String,
-        label: String,
-        accent: Color,
-        isActive: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    Circle()
-                        .fill(isActive ? accent.opacity(0.28) : Color(white: 0.12).opacity(0.85))
-                        .frame(width: 40, height: 40)
-                    Circle()
-                        .stroke(isActive ? accent : Color.white.opacity(0.25), lineWidth: 1.2)
-                        .frame(width: 40, height: 40)
-                    Image(systemName: icon)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(isActive ? accent : .white)
-                }
-                .shadow(color: isActive ? accent.opacity(0.4) : Color.black.opacity(0.3), radius: 6)
-
-                Text(label)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.9))
-                    .fixedSize()
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color(white: 0.08), in: Capsule())
-            }
-            .frame(minWidth: 64, minHeight: 64)
-        }
-        .buttonStyle(MotionButtonStyle())
-    }
-
     // MARK: - Tesla Official-Style Horizontal Quick Action Bar
 
     private var teslaQuickActionBar: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
-            teslaQuickButton(
-                icon: isLocked ? "lock.fill" : "lock.open.fill",
-                title: isLocked ? "도어 잠김" : "잠금 해제",
-                accent: isLocked ? Color(red: 0.28, green: 0.88, blue: 0.42) : Color.orange
-            ) {
-                withAnimation { isLocked.toggle() }
-                dispatchHybridAction(
-                    title: isLocked ? "차량 잠금" : "잠금 해제",
-                    bleAction: isLocked ? "lock" : "unlock",
-                    fleetAction: { try await (isLocked ? model.fleet.doorLock() : model.fleet.doorUnlock()) }
-                )
-            }
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 44), spacing: 6), count: dynamicTypeSize.isAccessibilitySize ? 3 : 5), spacing: 6) {
+            Menu {
+                Button("도어 잠그기") { dispatchHybridAction(title: "차량 잠금", bleAction: "lock", fleetAction: { try await model.fleet.doorLock() }) }
+                Button("도어 잠금 해제") { dispatchHybridAction(title: "잠금 해제", bleAction: "unlock", fleetAction: { try await model.fleet.doorUnlock() }) }
+            } label: { quickLabel("도어 잠금", icon: "lock.fill", accent: .green) }
 
             teslaQuickButton(
                 icon: "fanblades.fill",
@@ -410,18 +405,10 @@ struct TeslaInteractiveControlsView: View {
                 )
             }
 
-            teslaQuickButton(
-                icon: isPortOpen ? "bolt.slash.fill" : "bolt.fill",
-                title: isPortOpen ? "충전 닫기" : "충전 열기",
-                accent: isPortOpen ? Color.orange : Color(red: 0.28, green: 0.88, blue: 0.42)
-            ) {
-                withAnimation { isPortOpen.toggle() }
-                dispatchHybridAction(
-                    title: isPortOpen ? "포트 닫기" : "포트 열기",
-                    bleAction: isPortOpen ? "portClose" : "portOpen",
-                    fleetAction: { try await model.fleet.chargePortDoor(open: !isPortOpen) }
-                )
-            }
+            Menu {
+                Button("충전구 열기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 열기", bleAction: "portOpen", fleetAction: { try await model.fleet.chargePortDoor(open: true) }) }
+                Button("충전구 닫기") { focusCamera(yaw: 2.38, pitch: 0.32); dispatchHybridAction(title: "충전구 닫기", bleAction: "portClose", fleetAction: { try await model.fleet.chargePortDoor(open: false) }) }
+            } label: { quickLabel("충전구", icon: "bolt.fill", accent: .green) }
 
             teslaQuickButton(
                 icon: "car.side.front.open.fill",
@@ -448,8 +435,8 @@ struct TeslaInteractiveControlsView: View {
             }
         }
         .padding(10)
-        .background(Color(white: 0.10).opacity(0.85), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .background(Theme.fill(0.10).opacity(0.85), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.12), lineWidth: 1))
     }
 
     private func teslaQuickButton(
@@ -462,20 +449,25 @@ struct TeslaInteractiveControlsView: View {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             action()
         } label: {
+            quickLabel(title, icon: icon, accent: accent)
+        }
+        .buttonStyle(MotionButtonStyle())
+    }
+
+    private func quickLabel(_ title: String, icon: String, accent: Color) -> some View {
             VStack(spacing: 5) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(accent)
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.85))
-                    .lineLimit(1)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .minimumScaleFactor(0.85)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(MotionButtonStyle())
+            .frame(minHeight: 56)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - Secondary Quick Controls Grid (Fleet LTE & Hybrid)
@@ -485,7 +477,7 @@ struct TeslaInteractiveControlsView: View {
             HStack {
                 Text("빠른 실행 (LTE 원격 & 공조)")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .foregroundStyle(Color.primary.opacity(0.7))
                 Spacer()
                 if model.fleet.isAuthenticated {
                     Text("Fleet 인증됨")
@@ -527,11 +519,11 @@ struct TeslaInteractiveControlsView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(white: 0.10).opacity(0.85))
+                .fill(Theme.fill(0.10).opacity(0.85))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
         )
     }
 
@@ -551,83 +543,18 @@ struct TeslaInteractiveControlsView: View {
                     .foregroundStyle(accent)
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.primary)
                 Spacer()
             }
             .padding(.horizontal, 14)
             .frame(height: 50)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 0.8))
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.1), lineWidth: 0.8))
         }
         .buttonStyle(MotionButtonStyle())
     }
 
     // MARK: - Fleet Cloud & BLE Authentication Section
-
-    private var fleetAndBleManagementSection: some View {
-        VStack(spacing: 12) {
-            // Tesla Fleet Cloud API Card
-            HStack(spacing: 12) {
-                Image(systemName: "bolt.horizontal.icloud.fill")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(model.fleet.isAuthenticated ? Color.cyan : Color.white.opacity(0.4))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("테슬라 Fleet 클라우드 (LTE 원격 제어)")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
-
-                    Text(model.fleet.isAuthenticated
-                        ? (model.fleet.selectedVin.isEmpty ? "토큰 등록됨 · 차량 선택 필요" : "연동 활성 · VIN: \(model.fleet.selectedVin)")
-                        : "계정 인증 후 서명 서버·차량 가상키 등록 필요"
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.white.opacity(0.6))
-                }
-                Spacer()
-
-                Button {
-                    tokenSheet = true
-                } label: {
-                    Text(model.fleet.isAuthenticated ? "설정 변경" : "토큰 등록")
-                        .font(.system(size: 12, weight: .bold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.cyan.opacity(0.2), in: Capsule())
-                        .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 1))
-                        .foregroundStyle(Color.cyan)
-                }
-            }
-            .padding(14)
-            .background(Color(white: 0.09).opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
-
-            // BLE Key Management Disclosure
-            DisclosureGroup("로컬 블루투스(BLE) 인증 관리") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Toggle("이 기기의 차량 제어 기능 활성화", isOn: Binding(
-                        get: { link.controlEnabled },
-                        set: { link.enableControls($0) }
-                    ))
-                    .disabled(model.demo || link.controlBusy)
-
-                    HStack(spacing: 10) {
-                        Button("BLE 제어 키 등록 요청") { enrollment = true }
-                            .disabled(model.demo || !link.connected || link.controlBusy || link.confirmation != nil)
-                            .buttonStyle(.bordered)
-
-                        Button("차량 승인 후 재개") { link.authenticate() }
-                            .disabled(model.demo || !link.connected || link.controlBusy)
-                            .buttonStyle(.bordered)
-                    }
-                }
-                .padding(.top, 8)
-            }
-            .font(.footnote)
-            .foregroundStyle(Theme.muted)
-            .padding(14)
-            .background(Color(white: 0.08).opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
-        }
-    }
 
     // MARK: - Smart Hybrid Action Dispatcher
 
@@ -672,11 +599,13 @@ struct TeslaInteractiveControlsView: View {
                     isExecutingRemote = false
                     statusToast = "\(title) 승인 응답 수신"
                     model.voice.say("\(title) 승인 응답을 받았습니다.", category: "voiceControl", manual: true)
+                    CharacterReact.send("nod")
                 }
             } catch {
                 await MainActor.run {
                     isExecutingRemote = false
                     statusToast = "원격 실패: \(error.localizedDescription)"
+                    CharacterReact.send("shake")
                 }
             }
         }
@@ -727,7 +656,6 @@ struct TeslaFleetTokenSheet: View {
                         }
                     }.disabled(isLoading || !fleet.isAuthenticated)
                 }
-                Section { LocalBriefingControls(title: "테슬라 Fleet 연동") { [fleet.isAuthenticated ? "계정 인증 완료." : "계정 인증 필요.", fleet.selectedVin.isEmpty ? "차량 미선택." : "차량 선택됨.", "조회 상태: \(fleet.vehicleDisplayStatus).", isExchanging ? "인증 교환 중입니다." : ""] } }
                 // MARK: - Dual Connection Architecture Guide
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
@@ -802,8 +730,9 @@ struct TeslaFleetTokenSheet: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Text(clientIdText.prefix(12) + "…" + clientIdText.suffix(6))
+                                Text(clientIdText)
                                     .font(.system(size: 11, design: .monospaced))
+                                    .lineLimit(1).minimumScaleFactor(0.4)
                                     .foregroundStyle(.primary)
                             }
                             HStack {
@@ -833,14 +762,14 @@ struct TeslaFleetTokenSheet: View {
                                     .autocorrectionDisabled()
                                     .textInputAutocapitalization(.never)
                                     .padding(6)
-                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
                                     .onChange(of: clientSecretText) { newVal in
                                         fleet.saveClientSecret(newVal)
                                     }
                             }
                         }
                         .padding(8)
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
 
                         // Step 1: Web Login Button (Generates fresh PKCE and opens Safari)
                         Button {
@@ -888,7 +817,7 @@ struct TeslaFleetTokenSheet: View {
                                 .autocorrectionDisabled()
                                 .textInputAutocapitalization(.never)
                                 .padding(8)
-                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
                         }
 
                         // Step 3: Automatic Token Exchange

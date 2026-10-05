@@ -15,6 +15,8 @@ struct Vehicle3DPanel: View {
     var chargingMode = false
     var isCharging = false
     var isPlugged = false
+    /// v1.26: a control screen can steer the camera (e.g. top view toward the frunk when it is opened).
+    var focus: VehicleCameraCommand? = nil
     @State private var preview = false
     @State private var confirmPreview = false
     @State private var overrides: [String: Bool] = [:]
@@ -54,36 +56,6 @@ struct Vehicle3DPanel: View {
                         .padding(8).background(Theme.bg.opacity(0.92), in: Capsule()).padding(.top, 6)
                 }
                 if let sceneError { Text("3D 장면을 열지 못함\n\(sceneError)").font(.caption).foregroundStyle(.orange).padding().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.bg) }
-                // Jijijik-style floating circular refresh button on the right side of the vehicle
-                if compact {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Button {
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                link.refreshNow(retryUnavailable: true)
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color(white: 0.16).opacity(0.88))
-                                        .frame(width: 42, height: 42)
-                                        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                                        .shadow(color: .black.opacity(0.35), radius: 6, x: 0, y: 3)
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 17, weight: .semibold))
-                                        .foregroundStyle(link.refreshing || link.busy ? Color.cyan : .white)
-                                        .rotationEffect(.degrees(link.refreshing || link.busy ? 360 : 0))
-                                        .animation(link.refreshing || link.busy ? .linear(duration: 1.0).repeatForever(autoreverses: false) : .default, value: link.refreshing || link.busy)
-                                }
-                            }
-                            .buttonStyle(MotionButtonStyle())
-                            .accessibilityLabel("차량 정보 최신화")
-                            .padding(.trailing, 10)
-                            .padding(.bottom, 12)
-                        }
-                    }
-                }
             }.clipped()
             if !compact {
                 NavigationLink(value: Page.appearance) { Label("차꾸미기", systemImage: "paintpalette") }.buttonStyle(.bordered)
@@ -133,12 +105,15 @@ struct Vehicle3DPanel: View {
         .onChange(of: model.demo) { _, _ in preview = false; overrides = [:] }
         .onAppear {
             sceneError = nil
-            if chargingMode {
-                camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 1.15)
+            // v1.55: the charge-port (rear) angle only while a cable is actually connected; otherwise the
+            // normal front three-quarter view. Before this every home card opened from behind.
+            if chargingMode && (isPlugged || isCharging) {
+                camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95)
             }
             sceneVisible = true
         }
         .onDisappear { sceneVisible = false }
+        .onChange(of: focus?.serial ?? -1) { _, _ in if let focus { var c = focus; c.serial = camera.serial + 1; camera = c } }
     }
     private func cameraButton(_ title: String, yaw: Float) -> some View { Button(title) { camera.serial += 1; camera.action = "angle"; camera.yaw = yaw } }
 }

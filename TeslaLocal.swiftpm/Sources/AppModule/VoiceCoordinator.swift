@@ -10,9 +10,18 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     @Published private(set) var notice = ""
     @Published private(set) var playbackState = "대기"
     @Published private(set) var outputDescription = ""
+    @Published private(set) var lastPlaybackOutput = ""
+    @Published private(set) var automaticStatus = "자동 안내 요청 없음"
+    @Published private(set) var playbackStarts = 0
+    @Published private(set) var playbackCompletions = 0
+    private func automaticTrace(_ message: String) {
+        automaticStatus = Date().formatted(date: .omitted, time: .standard) + " · " + message
+    }
 
+    private let audioOwner = UUID().uuidString
     private var typecastPlayer: AVAudioPlayer?
     private var activeTicket: UUID?
+    private var synthesisTask: Task<Void, Never>?
     private var releaseWork: DispatchWorkItem?
     private var memoryObserver: NSObjectProtocol?
     private var queue = VoiceQueue()
@@ -21,14 +30,62 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var nativeActive = false
     private var quietUntil = Date.distantPast
     private var interrupted = false
+    private var interruptedAt = Date.distantPast
     private var observer: NSObjectProtocol?
     private var routeObserver: NSObjectProtocol?
     private var activeManual = false
     private var requestedAt = Date.distantPast
-    private var lastGuideText = ""
-    private var lastGuideAt = Date.distantPast
+    private var navigationPolicy = NavigationSpeechPolicy()
     private var navigationSpeaking = false
     private var activePriority = 0
+    private var activeText = ""
+    var navigationTargetIsAhead: ((String) -> Bool)?
+    private var navigationPreparation: Task<Void, Never>?
+    private var navigationPreparationTimes: [Date] = []
+
+    private var preparedAutomatic = Set<String>()
+    private var routeWaitSince: [String: Date] = [:]
+    /// Pre-synthesizes a predictable automatic announcement (e.g. the boarding greeting) into the Typecast cache.
+    func prepareAutomatic(_ text: String, category: String) {
+        let tc = TypecastClient.shared, d = UserDefaults.standard
+        guard tc.isEnabled, !tc.synthesisPaused, d.bool(forKey: "voiceEnabled") else { return }
+        let prepared = SpeechText.prepare(BriefingStyle.selected.phrase(text, category: category))
+        guard !prepared.isEmpty else { return }
+        let selection = d.string(forKey: "voiceIdentifier") ?? ""
+        let voice = selection.hasPrefix("typecast:") ? String(selection.dropFirst(9))
+            : (tc.selectedVoiceId.isEmpty ? TypecastClient.defaultVoiceId : tc.selectedVoiceId)
+        let key = voice + "|" + prepared
+        guard !preparedAutomatic.contains(key), tc.cachedURL(for: prepared, voiceId: voice) == nil else { return }
+        preparedAutomatic.insert(key)
+        automaticTrace("자동 안내 미리 합성 요청")
+        Task { @MainActor in
+            do { _ = try await tc.synthesize(text: prepared, voiceId: voice, preparation: true) }
+            catch { self.preparedAutomatic.remove(key) }
+        }
+    }
+
+    func prepareNavigation(_ message: String) {
+        let tc = TypecastClient.shared, d = UserDefaults.standard
+        guard navigationPreparation == nil, !navigationSpeaking, tc.isEnabled, !tc.synthesisPaused,
+              d.bool(forKey: "voiceEnabled"), d.double(forKey: "navVoiceVolume") > 0, let data = message.data(using: .utf8),
+              let phrases = try? JSONDecoder().decode([String].self, from: data) else { return }
+        let selected = d.string(forKey: "voiceIdentifier") ?? ""
+        let voice = selected.hasPrefix("typecast:") ? String(selected.dropFirst(9)) : tc.selectedVoiceId
+        navigationPreparation = Task { @MainActor in
+            defer { self.navigationPreparation = nil }
+            for raw in phrases.prefix(3) {
+                if Task.isCancelled || self.navigationSpeaking || tc.synthesisPaused { break }
+                let text = SpeechText.prepare(raw)
+                if tc.cachedURL(for: text, voiceId: voice) != nil { continue }
+                let now = Date()
+                self.navigationPreparationTimes.removeAll { now.timeIntervalSince($0) >= 60 }
+                guard self.navigationPreparationTimes.count < 6 else { break }
+                self.navigationPreparationTimes.append(now)
+                do { _ = try await tc.synthesize(text: text, voiceId: voice, preparation: true) }
+                catch { break } // No repeated request or alternate account on failure.
+            }
+        }
+    }
 
     override init() {
         super.init()
@@ -61,10 +118,12 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.refreshOutput()
+            self?.drain() // car audio just connected: play any announcement waiting for it
         }
         observer = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             guard let self, let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
             self.interrupted = raw == AVAudioSession.InterruptionType.began.rawValue
+            if self.interrupted { self.interruptedAt = Date() }
             if self.interrupted {
                 self.stop()
                 self.notice = "통화·다른 오디오로 안내 일시 중지"
@@ -83,9 +142,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         nativeActive = false
         _ = active
         if !active {
+            navigationPreparation?.cancel()
+            if navigationSpeaking { cancelCurrent() }
             queue.clearNavigation()
-            lastGuideText = ""
-            lastGuideAt = .distantPast
+            navigationPolicy = NavigationSpeechPolicy()
             nativeSpeaking = false
         }
     }
@@ -101,21 +161,30 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
-        guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { return }
-        // The navigation SDK owns announcement timing and frequency.
-        lastGuideText = text
-        lastGuideAt = now
+        guard let cue = NavigationSpeechCue.parse(text, now: now) else { automaticTrace(text.hasPrefix("{") && text.contains("\"text\"") ? "길안내 수신 · 안내 지점 통과 후 도착 (건너뜀)" : "길안내 수신 · 형식 오류"); return }
+        let text = NavigationDistanceWording.normalize(cue.text)
+        guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { automaticTrace("길안내 수신 · 음성 설정 꺼짐"); return }
+        automaticTrace("길안내 요청 수신")
+        let prepared = SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        let incidental = cue.incidental == true || text == "주의하세요."
+        // A generic warning must not replace a specific camera or maneuver sentence.
+        guard prepared != activeText,
+              navigationPolicy.accepts(text: prepared, safety: safety, incidental: incidental,
+                  navigationBusy: navigationSpeaking || queue.items.contains { $0.key.hasPrefix("navigation.") }, now: now) else { return }
 
-        let priority = safety ? 5 : 4
-        queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn")
+        let priority = incidental ? 3 : (safety ? 5 : 4)
+        if cue.stateChange == true { queue.clearNavigation() }
+        else { queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn") }
 
         // Safety guidance interrupts regular chatter immediately
-        if safety || !navigationSpeaking {
+        if NavigationSpeechPolicy.shouldInterrupt(stateChange: cue.stateChange == true, navigationBusy: navigationSpeaking, incidental: incidental, priority: priority, activePriority: activePriority) {
             cancelCurrent()
             quietUntil = .distantPast
         }
 
-        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text), expires: now.addingTimeInterval(8), priority: priority, manual: true), now: now)
+        // Normalize unit pronunciation only; do not rewrite the provider's maneuver.
+        navigationPreparation?.cancel()
+        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines), expires: Date(timeIntervalSince1970: cue.validUntil), priority: priority, manual: true, navigationID: cue.targetID), now: now)
         drain()
     }
 
@@ -139,12 +208,17 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     /// Speaks an announcement with instant button preemption (cancels previous speech immediately with 0ms delay).
-    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true) {
+    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true, voice: String? = nil) {
         let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
-        guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { return }
+        if category == "voiceControl" && (!d.bool(forKey: "voiceEnabled") || !d.bool(forKey: "voiceControl")) {
+            automaticTrace("제어 안내 차단 · 음성 설정 꺼짐"); return
+        }
+        guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { automaticTrace("자동 안내 차단 · 전체 또는 종류별 음성 설정 꺼짐"); return }
+        CharacterReact.say(text) // v1.37: the floating character shows what is being said
         let now = Date()
-        if !manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: now), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
+        if !manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: now), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { automaticTrace("자동 안내 차단 · 방해 금지 시간"); return }
+        if !manual { automaticTrace("자동 안내 요청 수신 · 재생 대기") }
         let styled = BriefingStyle.selected.phrase(text, category: category)
         let prepared = SpeechText.prepare(styled)
 
@@ -156,11 +230,17 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             quietUntil = .distantPast
         }
 
-        queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
+        queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual, voice: voice?.isEmpty == false ? voice : nil), now: now)
         drain()
     }
 
     private func drain() {
+        // iOS often never delivers the matching "ended" notification (e.g. while this session is
+        // inactive), which silently blocked every later announcement. Recover after 20 s.
+        if interrupted, Date().timeIntervalSince(interruptedAt) > 20 {
+            interrupted = false
+            automaticTrace("오디오 중단 해제 · 안내 재개")
+        }
         guard !interrupted, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
         guard let item = queue.next(now: Date()) else { return }
         navigationSpeaking = item.key.hasPrefix("navigation.")
@@ -173,6 +253,25 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             return
         }
         guard item.manual || d.bool(forKey: "voiceEnabled") else { return }
+        #if !targetEnvironment(simulator)
+        // Boarding-time announcements usually fire before the phone joins the car's Bluetooth audio;
+        // on the iPhone speaker at media volume they are effectively silent. Wait briefly for the car.
+        if !item.manual, !item.key.hasPrefix("navigation."), (d.string(forKey: "voiceOutput") ?? "system") == "system",
+           AVAudioSession.sharedInstance().currentRoute.outputs.allSatisfy({ $0.portType == .builtInSpeaker }) {
+            let first = routeWaitSince[item.key] ?? Date()
+            routeWaitSince[item.key] = first
+            if Date().timeIntervalSince(first) < 15, item.canStartPlayback(at: Date().addingTimeInterval(1)) {
+                queue.items.insert(item, at: 0)
+                navigationSpeaking = false; activePriority = 0
+                if playbackState != "차량 오디오 연결 대기" {
+                    playbackState = "차량 오디오 연결 대기"
+                    automaticTrace("차량 Bluetooth 오디오 연결 대기 · 최대 15초")
+                }
+                return
+            }
+        }
+        routeWaitSince[item.key] = nil
+        #endif
         if !item.manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: Date()), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
 
         let tc = TypecastClient.shared
@@ -187,7 +286,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         let selection = d.string(forKey: "voiceIdentifier") ?? ""
         let targetVoice: String
-        if selection.hasPrefix("typecast:") {
+        if let own = item.voice {
+            targetVoice = own
+        } else if selection.hasPrefix("typecast:") {
             targetVoice = String(selection.dropFirst(9))
         } else if !tc.selectedVoiceId.isEmpty {
             targetVoice = tc.selectedVoiceId
@@ -211,13 +312,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             return false
         }
         let defaults = UserDefaults.standard
-        guard defaults.double(forKey: "voiceVolume") > 0 else {
+        guard defaults.double(forKey: item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume") > 0 else {
             notice = "브리핑 음량이 0임"
             playbackState = "음량 0"
+            automaticTrace("안내 차단 · 앱 안내 음량 0")
             return true
         }
-        guard Date() < item.expires else {
+        guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             playbackState = "안내 기한 만료"
+            automaticTrace(item.canStartPlayback(at: Date()) ? "길안내 보류 · 현재 위치 또는 안내 지점 확인 필요" : "자동 안내 기한 만료")
             drain()
             return true
         }
@@ -228,6 +331,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let ticket = UUID()
         activeTicket = ticket
         activeManual = item.manual
+        activeText = item.text
         lastText = item.text
         notice = ""
 
@@ -239,9 +343,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         // 2. Online fetch via Typecast API
         playbackState = "타입캐스트 음성 생성 중…"
-        Task {
+        if !item.manual || item.key.hasPrefix("navigation.") { automaticTrace("안내 요청 수신 · 타입캐스트 합성 중") }
+        synthesisTask = Task {
             do {
-                let audioURL = try await tc.synthesize(text: item.text, voiceId: resolvedTarget)
+                let audioURL = try await tc.synthesize(text: item.text, voiceId: resolvedTarget, validUntil: item.key.hasPrefix("navigation.") ? item.expires : nil)
                 await MainActor.run {
                     guard self.activeTicket == ticket else { return }
                     self.playTypecastAudio(audioURL, ticket: ticket, item: item, defaults: defaults)
@@ -250,11 +355,14 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                 await MainActor.run {
                     guard self.activeTicket == ticket else { return }
                     self.activeTicket = nil
+                    self.activeText = ""
                     self.speaking = false
                     self.navigationSpeaking = false
                     self.activePriority = 0
-                    self.notice = "타입캐스트 안내 실패: \(error.localizedDescription)"
-                    self.playbackState = "합성 실패"
+                    let expired = !item.canStartPlayback(at: Date()) || error is CancellationError
+                    self.notice = expired ? "" : "타입캐스트 안내 실패: \(error.localizedDescription)"
+                    self.playbackState = expired ? "지난 안내 건너뜀" : "합성 실패"
+                    if !item.manual || item.key.hasPrefix("navigation.") { self.automaticTrace(expired ? "합성 후 안내 기한 만료 또는 요청 취소" : "합성 실패 · " + error.localizedDescription) }
                     self.drain()
                 }
             }
@@ -266,44 +374,64 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         guard activeTicket == ticket else { return }
         // Network synthesis can finish after the maneuver has already expired.
         // Keep the generated cache, but never play an out-of-date instruction.
-        guard Date() < item.expires else {
+        guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             activeTicket = nil
+            activeText = ""
             activeManual = false
             speaking = false
             navigationSpeaking = false
             activePriority = 0
             playbackState = "안내 기한 만료"
+            automaticTrace(item.canStartPlayback(at: Date()) ? "합성 완료 · 현재 위치 또는 안내 지점 확인 필요" : "합성 완료 · 안내 기한 만료")
             drain()
             return
         }
         do {
             try activateAudio(defaults)
-            let volume = Float(min(1, max(0, defaults.double(forKey: "voiceVolume"))))
-            let p = try AVAudioPlayer(contentsOf: url)
+            let volumeKey = item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume"
+            let volume = Float(min(1, max(0, defaults.double(forKey: volumeKey))))
+            // Trailing silence keeps car/Bluetooth latency from swallowing the last syllable.
+            let p = try AVAudioPlayer(data: TypecastClient.paddedTail(try Data(contentsOf: url)))
             p.delegate = self
             p.volume = volume
             p.prepareToPlay()
-            p.play()
+            guard p.play() else { throw LocalError.message("오디오 출력을 시작하지 못했습니다.") }
+            playbackStarts += 1
             self.typecastPlayer = p
             self.speaking = true
             self.playbackState = "읽는 중 · 타입캐스트 AI 음성"
+            if !item.manual || item.key.hasPrefix("navigation.") { self.automaticTrace("자동 안내 재생 시작") }
             self.refreshOutput()
+            self.lastPlaybackOutput = "최근 재생 " + self.outputDescription
         } catch {
             activeTicket = nil
-            notice = "타입캐스트 오디오 재생 실패"
+            activeText = ""
+            typecastPlayer = nil
+            activeManual = false
+            speaking = false
+            navigationSpeaking = false
+            activePriority = 0
+            releaseAudio()
+            notice = "타입캐스트 오디오 재생 실패: \(error.localizedDescription)"
             playbackState = "재생 실패"
+            automaticTrace("안내 재생 실패 · " + error.localizedDescription)
             drain()
         }
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        finishPlayback()
+        guard player === typecastPlayer else { return }
+        if flag { playbackCompletions += 1 }
+        finishPlayback(success: flag)
+        if !flag { playbackState = "재생 중단"; notice = "오디오가 정상 완료되지 않았습니다." }
     }
 
-    private func finishPlayback() {
+    private func finishPlayback(success: Bool) {
         guard activeTicket != nil || speaking else { return }
+        if !activeManual || navigationSpeaking { automaticTrace(success ? "자동 안내 재생 완료" : "자동 안내 재생 중단") }
         activeTicket = nil
         activeManual = false
+        activeText = ""
         speaking = false
         navigationSpeaking = false
         activePriority = 0
@@ -323,6 +451,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func stop() {
+        navigationPreparation?.cancel()
         queue.clear()
         cancelCurrent()
         playbackState = "중지됨"
@@ -330,8 +459,11 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func cancelCurrent() {
+        synthesisTask?.cancel()
+        synthesisTask = nil
         activeTicket = nil
         activeManual = false
+        activeText = ""
         speaking = false
         navigationSpeaking = false
         activePriority = 0
@@ -344,7 +476,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private func refreshOutput() {
         let audio = AVAudioSession.sharedInstance()
-        let ports = audio.currentRoute.outputs.map { $0.portType == .builtInSpeaker ? "iPhone 스피커" : $0.portName }
+        let ports = audio.currentRoute.outputs.map { port in
+            switch port.portType {
+            case .builtInSpeaker: return "iPhone 스피커"
+            case .bluetoothA2DP: return port.portName + " (Bluetooth 미디어)"
+            case .bluetoothHFP: return port.portName + " (Bluetooth 통화)"
+            case .carAudio: return port.portName + " (차량 오디오)"
+            default: return port.portName
+            }
+        }
         let route = ports.isEmpty ? "출력 준비 중" : ports.joined(separator: ", ")
         let description = "출력: \(route) · 기기 음량 \(Int((audio.outputVolume * 100).rounded()))%"
         if outputDescription != description {
@@ -356,7 +496,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         releaseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.activeTicket == nil, self.typecastPlayer == nil, self.queue.items.isEmpty else { return }
-            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            VoiceAudioRouting.release(owner: self.audioOwner)
         }
         releaseWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
@@ -365,18 +505,108 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func activateAudio(_ defaults: UserDefaults) throws {
         releaseWork?.cancel()
         releaseWork = nil
+        try VoiceAudioRouting.activate(defaults, owner: audioOwner)
+    }
+}
+
+/// Applies the same output policy to automatic speech and Typecast audition.
+/// No audio input is opened or recorded; playAndRecord enables iOS speaker override.
+enum VoiceAudioRouting {
+    private static var owners = Set<String>()
+    static func release(owner: String = "preview") {
+        owners.remove(owner)
+        if owners.isEmpty { try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation]) }
+    }
+    static func activate(_ defaults: UserDefaults = .standard, owner: String = "preview") throws {
         let audio = AVAudioSession.sharedInstance()
-        var options: AVAudioSession.CategoryOptions = [.allowBluetoothA2DP]
-        if defaults.bool(forKey: "voiceDuck") {
-            options.insert(.duckOthers)
+        let phone = defaults.string(forKey: "voiceOutput") == "speaker"
+        var options: AVAudioSession.CategoryOptions = defaults.bool(forKey: "voiceDuck") ? [.duckOthers] : [.mixWithOthers]
+        if defaults.string(forKey: "voiceOutput") == "handsfree" {
+            // HFP requests the vehicle's hands-free path without placing a call.
+            try audio.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
+            try audio.overrideOutputAudioPort(.none)
+            try audio.setActive(true)
+            guard let port = audio.availableInputs?.first(where: { $0.portType == .bluetoothHFP }) else {
+                try? audio.setActive(false, options: [.notifyOthersOnDeactivation])
+                throw LocalError.message("Bluetooth 통화 장치가 없습니다. 차량의 휴대폰 통화 연결을 확인하거나 다른 안내 출력을 선택하세요.")
+            }
+            try audio.setPreferredInput(port)
+        } else if phone {
+            options.insert(.defaultToSpeaker)
+            try audio.setCategory(.playAndRecord, mode: .default, options: options)
+            try audio.setActive(true)
+            try audio.overrideOutputAudioPort(.speaker)
         } else {
-            options.insert(.mixWithOthers)
+            if audio.category == .playAndRecord { try audio.overrideOutputAudioPort(.none) }
+            try audio.setCategory(.playback, mode: .voicePrompt, options: options)
+            try audio.setActive(true)
         }
-        do {
-            try audio.setCategory(.playback, mode: .spokenAudio, options: options)
-        } catch {
-            try? audio.setCategory(.playback, options: options)
+        owners.insert(owner)
+    }
+}
+
+struct VoiceOutputSettings: View {
+    @AppStorage("voiceOutput") private var output = "system"
+    var body: some View {
+        Picker("안내 출력", selection: $output) {
+            Text("시스템·Bluetooth").tag("system")
+            Text("iPhone 스피커").tag("speaker")
+            Text("Bluetooth 통화").tag("handsfree")
+        }.pickerStyle(.menu).accessibilityIdentifier("voice.output")
+        Text("차량 자체 음악을 사용 중이면 Bluetooth 통화 출력을 시험할 수 있습니다. 안내 중 음악이 잠시 멈추거나 통화 화면이 표시될 수 있으며 차량별 확인이 필요합니다. 시스템·Bluetooth는 차량의 휴대폰 미디어 입력을 사용합니다. iPhone 스피커도 선택할 수 있습니다.")
+            .font(.caption).foregroundStyle(.secondary)
+    }
+}
+
+/// v1.34: the overspeed chime is a generated two-tone beep played through AVAudioPlayer so it
+/// follows the user's 경고음 음량 setting (system sounds ignore any volume).
+final class OverspeedChime {
+    static let shared = OverspeedChime()
+    private var player: AVAudioPlayer?
+    /// v1.46: five selectable sounds (설정 → 내비 안내 → 경고음 종류).
+    static let sounds = ["투톤", "짧은 삐", "삐삐 연속", "차임벨", "경보"]
+    private var cache: [Int: Data] = [:]
+    private var wav: Data {
+        let kind = min(4, max(0, UserDefaults.standard.integer(forKey: "overspeed.sound")))
+        if let d = cache[kind] { return d }
+        let d = Self.render(kind); cache[kind] = d; return d
+    }
+    private static func render(_ kind: Int) -> Data {
+        let rate = 44_100.0
+        let dur = [0.28, 0.16, 0.42, 0.9, 0.6][kind]
+        let n = Int(rate * dur)
+        var pcm = Data(capacity: n * 2)
+        for i in 0..<n {
+            let t = Double(i) / rate
+            var s: Double
+            var env = min(1, t / 0.01) * min(1, (dur - t) / 0.03)
+            switch kind {
+            case 1: s = sin(2 * .pi * 2000 * t)                                                     // single short beep
+            case 2: s = sin(2 * .pi * 1900 * t); env *= (Int(t / 0.07) % 2 == 0) ? 1 : 0           // beep-beep-beep
+            case 3: s = 0.6 * sin(2 * .pi * 1046.5 * t) + 0.4 * sin(2 * .pi * 1568 * t)               // soft bell (C6 + G6)
+                    env = min(1, t / 0.005) * exp(-t * 4.5)
+            case 4: let f = 900 + 700 * (0.5 + 0.5 * sin(2 * .pi * 3.3 * t))                          // rising/falling siren
+                    s = sin(2 * .pi * f * t + 0.0) * 0.8 + 0.2 * sin(4 * .pi * f * t)
+            default: s = sin(2 * .pi * (t < dur / 2 ? 1760.0 : 1320.0) * t)                          // original two-tone
+            }
+            var v = Int16(max(-1, min(1, s * env * 0.9)) * Double(Int16.max))
+            pcm.append(Data(bytes: &v, count: 2))
         }
-        try audio.setActive(true)
+        var h = Data()
+        func u32(_ x: UInt32) { var x = x.littleEndian; h.append(Data(bytes: &x, count: 4)) }
+        func u16(_ x: UInt16) { var x = x.littleEndian; h.append(Data(bytes: &x, count: 2)) }
+        h.append("RIFF".data(using: .ascii)!); u32(UInt32(36 + pcm.count)); h.append("WAVEfmt ".data(using: .ascii)!)
+        u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate) * 2); u16(2); u16(16)
+        h.append("data".data(using: .ascii)!); u32(UInt32(pcm.count))
+        return h + pcm
+    }
+    func play() {
+        let d = UserDefaults.standard
+        guard d.object(forKey: "overspeed.beep") == nil || d.bool(forKey: "overspeed.beep") else { return }
+        let volume = d.object(forKey: "overspeed.volume") == nil ? 0.8 : d.double(forKey: "overspeed.volume")
+        guard volume > 0, let p = try? AVAudioPlayer(data: wav) else { return }
+        p.volume = Float(min(1, max(0, volume)))
+        p.play()
+        player = p
     }
 }

@@ -131,7 +131,7 @@ struct VehicleAppearanceView: View {
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(Color.white.opacity(0.85))
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.7)
+                                .minimumScaleFactor(0.5)
                         }
                     }
                     .buttonStyle(.plain)

@@ -3,6 +3,7 @@ import Foundation
 enum FleetAuthPolicy {
     static let tokenURL = URL(string: "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")!
     static let asiaPacificURL = "https://fleet-api.prd.na.vn.cloud.tesla.com"
+    static let requestedScopes = "openid offline_access vehicle_device_data vehicle_location vehicle_cmds vehicle_charging_cmds"
 
     static func preservesRefreshToken(storedAccess: String?, incomingAccess: String) -> Bool {
         let clean = incomingAccess.trimmingCharacters(in: .whitespacesAndNewlines)

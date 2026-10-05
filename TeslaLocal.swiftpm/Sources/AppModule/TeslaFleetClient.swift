@@ -49,6 +49,7 @@ final class TeslaFleetClient: ObservableObject {
     @Published var lastError: String?
     @Published var lastSuccessMessage: String?
     @Published var vehicleSnapshot: FleetVehicleSnapshot?
+    var onVehicleSnapshot: ((FleetVehicleSnapshot) -> Void)?
     @Published var vehicleReadStatus = "차량 미조회"
     @Published var vehicleReadError: String?
     @Published var isReadingVehicle = false
@@ -85,6 +86,15 @@ final class TeslaFleetClient: ObservableObject {
     // MARK: - Tesla Developer OAuth 2.0 Configuration & Token Exchange
     static let defaultClientId = "c469b20e-546a-452e-a151-58768a89ac7c"
     static let defaultRedirectUri = "https://brciae.github.io/callback"
+
+    var virtualKeyPairingURL: URL? {
+        guard let redirect = URLComponents(string: getRedirectUri()), redirect.scheme == "https",
+              let host = redirect.host, !host.isEmpty else { return nil }
+        var link = URLComponents(string: "https://tesla.com")!
+        link.path = "/_ak/" + host
+        if !selectedVin.isEmpty { link.queryItems = [URLQueryItem(name: "vin", value: selectedVin)] }
+        return link.url
+    }
 
     private let clientIdKey = "TeslaFleetClient.ClientId"
     private let redirectUriKey = "TeslaFleetClient.RedirectUri"
@@ -198,7 +208,7 @@ final class TeslaFleetClient: ObservableObject {
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: cid),
             URLQueryItem(name: "redirect_uri", value: rUri),
-            URLQueryItem(name: "scope", value: "openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds"),
+            URLQueryItem(name: "scope", value: FleetAuthPolicy.requestedScopes),
             URLQueryItem(name: "state", value: readKeychain(key: oauthStateKey) ?? ""),
             URLQueryItem(name: "prompt", value: "login"),
             URLQueryItem(name: "code_challenge", value: activeChallenge),
@@ -440,7 +450,7 @@ final class TeslaFleetClient: ObservableObject {
                 vehicleReadStatus = status == "asleep" ? "차량 절전 중" : "차량 오프라인"
                 return
             }
-            let data = try await read("/api/1/vehicles/\(requestVin)/vehicle_data?endpoints=charge_state;climate_state;vehicle_state;drive_state")
+            let data = try await read("/api/1/vehicles/\(requestVin)/vehicle_data?endpoints=charge_state;climate_state;vehicle_state;drive_state;vehicle_config;gui_settings;location_data")
             guard vehicleReadID == requestID, getStoredVin() == requestVin, getStoredToken() == token else { return }
             if let returnedVin = data["vin"] as? String, returnedVin != requestVin {
                 throw FleetAuthPolicy.failure("선택 차량과 응답 차량이 다릅니다. 차량 재선택 필요.")
@@ -448,7 +458,21 @@ final class TeslaFleetClient: ObservableObject {
             let snapshot = FleetVehicleSnapshot(vin: requestVin, receivedAt: Date(), payload: data)
             guard snapshot.hasMeasurements else { throw FleetAuthPolicy.failure("차량은 온라인이나 상태 데이터가 비어 있습니다. 데이터 권한 확인 필요.") }
             vehicleSnapshot = snapshot
+            ChargeNotificationManager.shared.scheduleEstimate(vin: requestVin, minutes: snapshot.number("charge_state", "time_to_full_charge").map { $0 * 60 }, isCharging: snapshot.charging && snapshot.sectionIsRecent("charge_state"))
+            onVehicleSnapshot?(snapshot)
+            FleetTelemetryStore.shared.observe(snapshot)
+            if snapshot.sectionIsRecent("charge_state"), let at = snapshot.number("charge_state", "timestamp"), let status = (snapshot.payload["charge_state"] as? [String: Any])?["charging_state"] as? String {
+                ChargeNotificationManager.shared.observe(ChargeObservation(vin: requestVin, at: Date(timeIntervalSince1970: at / 1000), state: status, soc: snapshot.soc, limit: snapshot.number("charge_state", "charge_limit_soc")))
+            }
             SmartParkingManager.shared.observeFleet(snapshot)
+            let factoryPaint = (snapshot.payload["vehicle_config"] as? [String: Any])?["exterior_color"] as? String
+            Task { @MainActor in VehicleAppearanceStore.shared.adoptFactoryPaint(factoryPaint, vin: requestVin) }
+            // Adopt the car's own display units once, unless the user already chose units in the app.
+            if let gui = snapshot.payload["gui_settings"] as? [String: Any] {
+                let units = UserDefaults.standard
+                if units.object(forKey: "unitDistance") == nil, let distance = gui["gui_distance_units"] as? String { units.set(distance.lowercased().hasPrefix("mi") ? "mi" : "km", forKey: "unitDistance") }
+                if units.object(forKey: "unitTemperature") == nil, let temperature = gui["gui_temperature_units"] as? String { units.set(temperature.uppercased().hasPrefix("F") ? "F" : "C", forKey: "unitTemperature") }
+            }
             lastRemoteChargeData = data["charge_state"] as? [String: Any]
             vehicleReadStatus = snapshot.isRecent() ? "Fleet 상태 수신" : "Fleet 저장값 수신"
         } catch {
@@ -456,6 +480,62 @@ final class TeslaFleetClient: ObservableObject {
             vehicleReadStatus = "차량 조회 실패"
             vehicleReadError = error.localizedDescription
         }
+    }
+
+    /// Explicit, read-only supplementary queries; no polling or implicit wake-up.
+    @MainActor func readSupplement(_ kind: FleetSupplement) async throws -> FleetSupplementResult {
+        guard let vin = getStoredVin(), !vin.isEmpty else { throw FleetAuthPolicy.failure("차량을 먼저 선택해 주세요.") }
+        let token = try await authenticatedToken()
+        let region = currentBaseURL
+        guard var parts = URLComponents(string: region) else { throw URLError(.badURL) }
+        parts.path = kind.path(vin: vin)
+        parts.queryItems = kind.query(vin: vin)
+        guard let url = parts.url else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 25
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        let session = URLSession(configuration: .ephemeral, delegate: FleetCommandRedirectGuard(), delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200...299).contains(http.statusCode) else {
+            throw FleetAuthPolicy.apiFailure(status: http.statusCode, data: data, stage: kind.title, secrets: [token, vin])
+        }
+        guard getStoredVin() == vin, getStoredToken() == token, currentBaseURL == region else { throw CancellationError() }
+        let json = try JSONSerialization.jsonObject(with: data)
+        let root = json as? [String: Any]
+        return FleetSupplementResult(vin: vin, receivedAt: Date(), payload: root?["response"] ?? json)
+    }
+
+    @MainActor func repairLocationStreaming(vin: String) async throws -> FleetSupplementResult {
+        guard commandAllowed?() == true, selectedVin == vin, !isSendingCommand else { throw CancellationError() }
+        isSendingCommand = true
+        defer { isSendingCommand = false }
+        let proxy = try FleetCommandPolicy.proxyURL(commandProxy)
+        let before = try await readSupplement(.telemetryConfig)
+        guard before.vin == vin else { throw CancellationError() }
+        let config = try FleetLocationRepair.configuration(before.payload)
+        let token = try await authenticatedToken()
+        guard selectedVin == vin, commandAllowed?() == true,
+              try FleetCommandPolicy.proxyURL(commandProxy) == proxy else { throw CancellationError() }
+        var request = URLRequest(url: proxy.appendingPathComponent("api/1/vehicles/fleet_telemetry_config"))
+        request.httpMethod = "POST"; request.timeoutInterval = 30
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["vins": [vin], "config": config])
+        let session = URLSession(configuration: .ephemeral, delegate: FleetCommandRedirectGuard(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        guard (200...299).contains(http.statusCode) else {
+            throw FleetAuthPolicy.apiFailure(status: http.statusCode, data: data, stage: "주차 좌표 수집 추가", secrets: [token, vin])
+        }
+        guard selectedVin == vin else { throw CancellationError() }
+        let after = try await readSupplement(.telemetryConfig)
+        guard after.vin == vin, FleetStreamingStatus(payload: after.payload).locationConfigured else {
+            throw FleetCommandPolicy.failure("좌표 수집 설정을 확인하지 못했습니다. 차량 수집 오류를 확인하세요. 자동 재전송하지 않습니다.")
+        }
+        return after
     }
 
     func getStoredVin() -> String? {
@@ -622,16 +702,16 @@ final class TeslaFleetClient: ObservableObject {
     // MARK: - Fleet API: Command Transmission Engine
 
     /// Core helper to dispatch any authenticated command to the Tesla Fleet endpoint with multi-region fallback.
-    @MainActor func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil) async throws -> Bool {
+    @MainActor func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil, authorized: (() -> Bool)? = nil) async throws -> Bool {
         do {
-            guard commandAllowed?() == true else { throw FleetCommandPolicy.failure("현재 상태에서는 차량 제어할 수 없습니다. 데모를 종료하고 앱을 열어 확인하세요.") }
+            guard commandAllowed?() == true, authorized?() ?? true else { throw FleetCommandPolicy.failure("현재 상태에서는 차량 제어할 수 없습니다. 데모를 종료하고 앱을 열어 확인하세요.") }
             guard !isSendingCommand else { throw FleetCommandPolicy.failure("앞선 명령의 응답을 기다리는 중입니다.") }
             isSendingCommand = true
             defer { isSendingCommand = false }
             let activeVin = try resolveVin(vin)
             let base = try FleetCommandPolicy.proxyURL(commandProxy)
             let token = try await authenticatedToken()
-            guard commandAllowed?() == true, activeVin == (vin ?? selectedVin) else { throw FleetCommandPolicy.failure("차량 또는 앱 상태가 변경되어 전송을 중단했습니다.") }
+            guard commandAllowed?() == true, authorized?() ?? true, activeVin == (vin ?? selectedVin) else { throw FleetCommandPolicy.failure("차량 또는 앱 상태가 변경되어 전송을 중단했습니다.") }
             let url = base.appendingPathComponent("api/1/vehicles").appendingPathComponent(activeVin).appendingPathComponent("command").appendingPathComponent(command)
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
@@ -740,20 +820,16 @@ final class TeslaFleetClient: ObservableObject {
     /// heater: 0 (driver front), 1 (passenger front), 2 (rear left), 4 (rear center), 5 (rear right).
     /// level: 0 (Off), 1 (Low), 2 (Medium), 3 (High).
     func setSeatHeater(vin: String? = nil, seatPosition: Int, level: Int) async throws -> Bool {
-        try await sendCommand(vin: vin, command: "remote_seat_heater_request", parameters: [
-            "heater": seatPosition,
-            "level": max(0, min(3, level))
-        ])
+        let parameters = try FleetCommandPolicy.seatHeaterParameters(position: seatPosition, level: level)
+        return try await sendCommand(vin: vin, command: "remote_seat_heater_request", parameters: parameters)
     }
 
     /// Sets seat cooler (ventilation) level:
     /// seat_position: 0 (driver front), 1 (passenger front).
     /// seat_cooler_level: 0 (Off), 1 (Low), 2 (Medium), 3 (High).
     func setSeatCooler(vin: String? = nil, seatPosition: Int, level: Int) async throws -> Bool {
-        try await sendCommand(vin: vin, command: "remote_seat_cooler_request", parameters: [
-            "seat_position": seatPosition,
-            "seat_cooler_level": max(0, min(3, level))
-        ])
+        let parameters = try FleetCommandPolicy.seatCoolerParameters(position: seatPosition, level: level)
+        return try await sendCommand(vin: vin, command: "remote_seat_cooler_request", parameters: parameters)
     }
 
     /// Sets steering wheel heater on/off.
