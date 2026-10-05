@@ -111,12 +111,18 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
                 var m = UnlitMaterial()
                 m.color = .init(tint: .white, texture: .init(textures[i % textures.count]))
                 m.blending = .transparent(opacity: .init(floatLiteral: 1))
-                let h: Float = 0.9 + Float((i * 53) % 7) * 0.12
+                let hStep: Float = Float((i * 53) % 7)
+                let h: Float = 0.9 + hStep * 0.12
                 let e = ModelEntity(mesh: .generatePlane(width: 0.075, height: h), materials: [m])
                 let side: Float = i % 2 == 0 ? -1 : 1
-                let behind = i % 3 != 0
-                let x = side * (behind ? 0.08 + Float((i * 37) % 10) / 10 * 0.85 : 0.42 + Float((i * 29) % 10) / 10 * 0.45)
-                let z: Float = behind ? -0.35 - Float((i * 17) % 10) / 10 * 0.7 : 0.05 + Float((i * 13) % 10) / 10 * 0.2
+                let behind: Bool = i % 3 != 0
+                let fx: Float = Float((i * 37) % 10) / 10
+                let fx2: Float = Float((i * 29) % 10) / 10
+                let fz: Float = Float((i * 17) % 10) / 10
+                let fz2: Float = Float((i * 13) % 10) / 10
+                let spread: Float = behind ? 0.08 + fx * 0.85 : 0.42 + fx2 * 0.45
+                let x: Float = side * spread
+                let z: Float = behind ? -0.35 - fz * 0.7 : 0.05 + fz2 * 0.2
                 e.position = [x, 0, z]
                 e.name = "rain\(i)"
                 rain.addChild(e)
@@ -148,10 +154,12 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
             let fade = Float(max(0, 1 - max(0, age - 1.9) / 0.5))
             beam.isEnabled = fade > 0.01
             if beam.isEnabled {
-                let len = max(0.001, top * shoot)
-                beam.scale = [1 + 2.5 * (1 - fade), len, 1 + 2.5 * (1 - fade)]
+                let len: Float = max(0.001, top * shoot)
+                let widen: Float = 1 + 2.5 * (1 - fade)
+                beam.scale = SIMD3<Float>(widen, len, widen)
                 beam.position.y = len / 2
-                if #available(iOS 18.0, *) { beam.components.set(OpacityComponent(opacity: fade * (0.75 + 0.25 * Float(sin(clock * 40))))) }
+                let pulse: Float = 0.75 + 0.25 * Float(sin(clock * 40))
+                if #available(iOS 18.0, *) { beam.components.set(OpacityComponent(opacity: fade * pulse)) }
             }
         }
         let progress = Float(min(1, max(0, (age - 0.35) / 1.55)))
@@ -169,9 +177,10 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
         if let rain = pad.findEntity(named: "holoRain") {
             rain.isEnabled = age > 0.2
             for (i, e) in rain.children.enumerated() {
-                let speed = 0.35 + Double((i * 41) % 10) / 10 * 0.55
-                let span = 3.2
-                let y = 2.2 - (clock * speed + Double((i * 71) % 100) / 100 * span).truncatingRemainder(dividingBy: span)
+                let speed: Double = 0.35 + Double((i * 41) % 10) / 10 * 0.55
+                let span: Double = 3.2
+                let offset: Double = Double((i * 71) % 100) / 100 * span
+                let y: Double = 2.2 - (clock * speed + offset).truncatingRemainder(dividingBy: span)
                 e.position.y = Float(y)
             }
         }
@@ -198,23 +207,27 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
             ctx.strokeEllipse(in: CGRect(x: 4, y: 4, width: s - 8, height: s - 8))
         }
     }
+    private static func drawRainGlyph(k: Int, count: Int, seed: Int, chars: [Character], width w: CGFloat, step: CGFloat) {
+        let t: CGFloat = CGFloat(k) / CGFloat(max(1, count - 1))     // 0 top … 1 bottom (leading glyph)
+        let index: Int = (seed * 31 + k * 17 + k * k * 7) % chars.count
+        let lead: Bool = k == count - 1
+        let fadeAlpha: CGFloat = 0.08 + 0.7 * pow(t, 1.6)
+        let color: UIColor = lead ? UIColor(white: 1, alpha: 0.95) : UIColor(red: 0.25, green: 1, blue: 0.85, alpha: fadeAlpha)
+        let font: UIFont = UIFont.monospacedSystemFont(ofSize: 30, weight: lead ? .bold : .medium)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let str = NSAttributedString(string: String(chars[index]), attributes: attrs)
+        let sz: CGSize = str.size()
+        str.draw(at: CGPoint(x: (w - sz.width) / 2, y: CGFloat(k) * step))
+    }
     /// One falling code column: glyphs top→bottom, brightest (white) at the leading bottom glyph, fading upward.
     private static func rainColumn(seed: Int) -> CGImage? {
         let chars = Array("ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ0123456789ABCDEFXZ=+*<>:")
         let w: CGFloat = 48, h: CGFloat = 768, step: CGFloat = 38
-        let r = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = false; return f }())
-        let img = r.image { _ in
-            let count = Int(h / step)
-            for k in 0..<count {
-                let t = CGFloat(k) / CGFloat(count - 1)              // 0 top … 1 bottom (leading glyph)
-                let c = chars[(seed * 31 + k * 17 + k * k * 7) % chars.count]
-                let lead = k == count - 1
-                let color = lead ? UIColor(white: 1, alpha: 0.95) : UIColor(red: 0.25, green: 1, blue: 0.85, alpha: 0.08 + 0.7 * pow(t, 1.6))
-                let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedSystemFont(ofSize: 30, weight: lead ? .bold : .medium), .foregroundColor: color]
-                let str = NSAttributedString(string: String(c), attributes: attrs)
-                let sz = str.size()
-                str.draw(at: CGPoint(x: (w - sz.width) / 2, y: CGFloat(k) * step))
-            }
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = false
+        let r = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format)
+        let count = Int(h / step)
+        let img = r.image { (_: UIGraphicsImageRendererContext) -> Void in
+            for k in 0..<count { drawRainGlyph(k: k, count: count, seed: seed, chars: chars, width: w, step: step) }
         }
         return img.cgImage
     }

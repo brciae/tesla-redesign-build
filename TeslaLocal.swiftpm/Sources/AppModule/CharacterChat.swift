@@ -51,7 +51,11 @@ final class CharacterChat: ObservableObject {
         let vin = model.fleet.selectedVin.isEmpty ? model.settings.string("vin") : model.fleet.selectedVin
         let live = FleetTelemetryStore.shared.latest(vin: vin).values.filter { !$0.invalid }.sorted { $0.field < $1.field }
         if !live.isEmpty {
-            lines.append("[실시간 텔레메트리] " + live.map { r in "\(r.field) " + (r.number.map { String(format: "%.2f", $0) } ?? r.text) + " (" + stamp(r.at) + ")" }.joined(separator: ", "))
+            let items: [String] = live.map { (r: FleetTelemetryReading) -> String in
+                let value: String = r.number.map { String(format: "%.2f", $0) } ?? r.text
+                return "\(r.field) \(value) (\(stamp(r.at)))"
+            }
+            lines.append("[실시간 텔레메트리] " + items.joined(separator: ", "))
         }
         return lines.joined(separator: "\n")
     }
@@ -71,7 +75,10 @@ final class CharacterChat: ObservableObject {
             if let s = t.number("start"), let e = t.number("end"), e > s { parts.append("소요 \(Int(((e - s) / 60000).rounded()))분") }
             if let d = t.number("distanceKm") {
                 parts.append(String(format: "거리 %.1fkm", d))
-                if let s = t.number("start"), let e = t.number("end"), e - s > 60000 { parts.append(String(format: "평균 시속 %.0fkm", d / ((e - s) / 3600000))) }
+                if let s = t.number("start"), let e = t.number("end"), e - s > 60000 {
+                    let hours: Double = (e - s) / 3600000
+                    parts.append(String(format: "평균 시속 %.0fkm", d / hours))
+                }
             }
             if let a = t.number("startSOC"), let b = t.number("endSOC") { parts.append("배터리 \(Int(a))%→\(Int(b))%") }
             if let used = t.number("observedMotorNetKWh") { parts.append(String(format: "모터 순사용 %.2fkWh", used)) }
@@ -83,7 +90,7 @@ final class CharacterChat: ObservableObject {
     static func chargeFacts(_ model: AppModel) -> [String] {
         let rows = model.state.rows("charges").sorted { ($0.number("end") ?? $0.number("at") ?? 0) > ($1.number("end") ?? $1.number("at") ?? 0) }
         guard !rows.isEmpty else { return [] }
-        return rows.prefix(2).enumerated().map { i, c in
+        return rows.prefix(2).enumerated().map { (i: Int, c: Object) -> String in
             var parts = [i == 0 ? "마지막 충전" : "그 전 충전", date(c.number("end") ?? c.number("at"))]
             for key in ["place", "location", "label", "name", "kind", "type"] { if let v = c[key] as? String, !v.isEmpty { parts.append(v) } }
             if let a = c.number("startSOC"), let b = c.number("endSOC") { parts.append("배터리 \(Int(a))%→\(Int(b))%") }
