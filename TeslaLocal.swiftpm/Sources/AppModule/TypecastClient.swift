@@ -414,9 +414,20 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
             // v1.50: keep both localized names (search by either) — e.g. a voice listed in English only.
             var english = name
             if let d = item["voice_name"] as? [String: Any], let en = (d["eng"] ?? d["en"]) as? String, !en.isEmpty { english = en }
-            return TypecastCharacter(id: id, nameKo: name, nameEn: english, tone: "", mood: "", category: uses.joined(separator: ", "),
-                                     desc: ([gender, age] + uses.prefix(2)).joined(separator: " · "), gender: gender, age: age,
+            // v1.52: the web directory (same actor_id) is authoritative for Korean name, portrait, gender/age and genres.
+            let web = TypecastWebDirectory.actor(forVoice: id)
+            let ko = (web?.ko).flatMap { $0.isEmpty ? nil : $0 } ?? name
+            let en = (web?.en).flatMap { $0.isEmpty ? nil : $0 } ?? english
+            let g2 = (web?.sex).flatMap { $0.isEmpty ? nil : $0 } ?? gender
+            let a2 = (web?.age).flatMap { $0.isEmpty ? nil : $0 } ?? age
+            var genres = web?.content ?? []
+            if let lang = web.flatMap({ TypecastWebDirectory.langKo[$0.lang] }), lang != "한국어" { genres.append("외국어·\(lang)") }
+            if genres.isEmpty { genres = uses }
+            var c = TypecastCharacter(id: id, nameKo: ko, nameEn: en, tone: "", mood: "", category: genres.joined(separator: ", "),
+                                     desc: ([g2, a2] + genres.prefix(2)).joined(separator: " · "), gender: g2, age: a2,
                                      model: bestModel(models), previewURL: item["preview_url"] as? String ?? "")
+            c.imageURL = web?.img ?? ""
+            return c
         }
     }
 

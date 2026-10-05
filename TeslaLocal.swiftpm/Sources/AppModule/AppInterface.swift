@@ -122,7 +122,30 @@ struct TypecastVoiceThumbnail: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+            } else if let url = webImageURL {
+                // v1.52: real Typecast portrait from the web directory.
+                AsyncImage(url: url) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() } else { monogram }
+                }
             } else {
+                monogram
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+        .accessibilityHidden(true)
+    }
+
+    private var webImageURL: URL? {
+        if let v = TypecastClient.shared.remoteVoices.first(where: { $0.nameKo == cleanName || $0.id == cleanName }), let u = URL(string: v.imageURL) { return u }
+        return TypecastWebDirectory.imageURL(name: cleanName)
+    }
+
+    private var monogram: some View {
+        Group {
+            if true {
                 ZStack {
                     LinearGradient(
                         colors: palette,

@@ -20,6 +20,8 @@ public struct TypecastCharacter: Identifiable, Hashable {
     /// v1.46: TTS model this voice supports best (bundled list = ssfm-v30) and the free API sample clip.
     public var model: String = "ssfm-v30"
     public var previewURL: String = ""
+    /// v1.52: portrait from the Typecast web directory.
+    public var imageURL: String = ""
 
     public var isCuratedPreset: Bool {
         ["은경", "서현", "아엘", "한영"].contains(nameKo)
@@ -1291,4 +1293,31 @@ public enum TypecastCatalog {
             $0.nameKo.replacingOccurrences(of: " ", with: "").lowercased().contains(q.replacingOccurrences(of: " ", with: ""))
         }
     }
+}
+/// v1.52: Typecast web-app actor directory (788 actors, captured from app.typecast.ai).
+/// The public API's tc_<actor_id> voices get their Korean name, portrait, gender/age and genres from here.
+public enum TypecastWebDirectory {
+    public struct Actor { public let ko, en, img, sex, age, lang: String; public let content: [String] }
+    public static let actors: [String: Actor] = {
+        guard let url = Bundle.main.url(forResource: "typecast_web_actors", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: [Any]] else { return [:] }
+        var out: [String: Actor] = [:]
+        for (id, v) in raw where v.count >= 7 {
+            out[id] = Actor(ko: v[0] as? String ?? "", en: v[1] as? String ?? "", img: v[2] as? String ?? "",
+                            sex: v[3] as? String ?? "", age: v[4] as? String ?? "", lang: v[6] as? String ?? "",
+                            content: v[5] as? [String] ?? [])
+        }
+        return out
+    }()
+    public static func actor(forVoice id: String) -> Actor? {
+        let bare = id.hasPrefix("tc_") ? String(id.dropFirst(3)) : id
+        return actors[bare]
+    }
+    public static func imageURL(name: String) -> URL? {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard let a = actors.values.first(where: { $0.ko == n || $0.en.caseInsensitiveCompare(n) == .orderedSame }) else { return nil }
+        return URL(string: a.img)
+    }
+    public static let langKo = ["ko-kr": "한국어", "en-us": "영어", "ja-jp": "일본어", "zh-cn": "중국어", "es-es": "스페인어", "vi-vn": "베트남어", "de-de": "독일어", "it-it": "이탈리아어"]
 }

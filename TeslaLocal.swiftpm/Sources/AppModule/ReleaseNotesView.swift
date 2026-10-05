@@ -10,6 +10,12 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.52 (152)", date: "2026-10-05", items: [
+            "타입캐스트 웹 배우 목록(788명)과 API 보이스를 actor_id로 대조해 한글 이름 정정 (예: Koombot → 쿰봇, 쿰보와 구분)",
+            "목소리 썸네일을 타입캐스트 실제 초상 이미지로 표시",
+            "장르를 웹 기준(게임/애니, 음악/엔터테인먼트, 기자/아나운서, 안내음성/ARS 등)으로 교체, 외국어 보이스는 언어 장르로 분리",
+            "성별·연령도 웹 정보 기준으로 보정",
+        ]),
         ReleaseNote(version: "1.51 (151)", date: "2026-10-05", items: [
             "타입캐스트 음성 즐겨찾기: 목록에서 ☆를 눌러 등록, 즐겨찾기는 목록 맨 위에 표시되고 '즐겨찾기만 보기'로 따로 볼 수 있음",
             "설정 → 음성 화면에 즐겨찾기 음성 줄 추가 — 한 번에 바꾸기",
