@@ -255,7 +255,7 @@ final class InteractionTests: XCTestCase {
     func testBatteryBaselineAndPeriods() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["battery-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["충전 자료가 쌓이면 추정값 표시"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["용량 계산 가능한 충전 0/3회 (SOC 20%p 이상 충전)"].waitForExistence(timeout: 8))
         XCTAssertFalse(app.staticTexts["현재 지수 100%"].exists)
         for period in ["7일", "30일", "90일"] {
             app.segmentedControls.buttons[period].tap()
