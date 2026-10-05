@@ -111,6 +111,8 @@ struct PreferencesView: View {
                 }
             }
         }.navigationTitle("음성·내비 안내").navigationBarTitleDisplayMode(.inline)
+            // v1.48: presented from the screen root so row updates (cache count, status) can't rebuild it mid-use.
+            .sheet(isPresented: $typecast.showVoicePicker) { TypecastCharacterPickerSheet() }
             .onChange(of: enabled) { _, value in if !value { model.stopSpeech() } }
             .onChange(of: identifier) { _, newId in
                 if newId.hasPrefix("typecast:") {
@@ -339,7 +341,7 @@ struct TypecastSettingsSection: View {
 
             // Button to open full 131-character browser sheet
             Button {
-                showCharacterPicker = true
+                typecast.showVoicePicker = true
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "person.crop.rectangle.stack.fill")
@@ -357,9 +359,6 @@ struct TypecastSettingsSection: View {
                 .foregroundStyle(Color.blue)
             }
             .buttonStyle(.plain)
-            .sheet(isPresented: $showCharacterPicker) {
-                TypecastCharacterPickerSheet()
-            }
 
             TextField("Voice ID 또는 캐릭터명 직접 입력 (예: 은경, 나윤, 수아, tc_...)", text: $typecast.selectedVoiceId)
                 .font(.system(size: 13, design: .monospaced))

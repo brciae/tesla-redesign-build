@@ -197,6 +197,8 @@ struct VoiceItem {
     let priority: Int
     let manual: Bool
     var navigationID: String? = nil
+    /// v1.48: Typecast voice for this item only (the floating character's own voice); nil = app voice.
+    var voice: String? = nil
     // Manual reports may finish synthesis after their queue deadline. Maneuvers
     // and automatic events retain their strict real-time playback deadline.
     func canStartPlayback(at now: Date) -> Bool {

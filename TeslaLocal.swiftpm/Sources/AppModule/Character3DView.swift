@@ -21,8 +21,11 @@ struct CharacterOption: Identifiable, Hashable {
         CharacterOption(id: "rfd33e359", name: "아머 로봇", folder: "r_fd33e359", robot: true),
     ]
     /// v1.41: an id that is no longer in the catalog (the 1.38 Tripo models were removed) falls back to 유엘.
-    static var selectedID: String {
-        let id = UserDefaults.standard.string(forKey: "character.id") ?? "yl"
+    static var selectedID: String { selectedID(.dashboard) }
+    /// v1.48: the dashboard (running theme) and the floating helper each keep their own character.
+    static func selectedID(_ slot: CharacterSlot) -> String {
+        let d = UserDefaults.standard
+        let id = d.string(forKey: slot.idKey) ?? (slot == .floating ? d.string(forKey: CharacterSlot.dashboard.idKey) : nil) ?? "yl"
         return all.contains { $0.id == id } ? id : "yl"
     }
     var thumbnail: UIImage? {
@@ -38,7 +41,11 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
     var title: String {
         switch self { case .auto: return "기본"; case .matte: return "무광"; case .metal: return "메탈"; case .gold: return "골드"; case .holo: return "홀로그램" }
     }
-    static var selected: CharacterFinish { CharacterFinish(rawValue: UserDefaults.standard.string(forKey: "character.finish") ?? "") ?? .auto }
+    static var selected: CharacterFinish { selected(.dashboard) }
+    static func selected(_ slot: CharacterSlot) -> CharacterFinish {
+        let d = UserDefaults.standard
+        return CharacterFinish(rawValue: d.string(forKey: slot.finishKey) ?? (slot == .floating ? d.string(forKey: CharacterSlot.dashboard.finishKey) : nil) ?? "") ?? .auto
+    }
     /// v1.46: Metal surface shader (HologramShader.metal) — rim glow, scanlines, sweep band, glitch slices.
     @MainActor static let holoShader: CustomMaterial.SurfaceShader? = {
         guard let device = MTLCreateSystemDefaultDevice(), let library = device.makeDefaultLibrary() else { return nil }
@@ -71,6 +78,81 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
         }
         for c in e.children { apply(f, to: c) }
     }
+
+    /// v1.48: hologram projector under the feet — glowing pad, light column and rotating rings.
+    @MainActor static func addProjector(to root: Entity) {
+        let pad = Entity(); pad.name = "holoProjector"
+        func disc(_ size: Float, _ image: CGImage?, y: Float, name: String = "") -> ModelEntity {
+            var m = UnlitMaterial()
+            if let image, let tex = try? TextureResource.generate(from: image, options: .init(semantic: .color)) {
+                m.color = .init(tint: .white, texture: .init(tex))
+            }
+            m.blending = .transparent(opacity: .init(floatLiteral: 1))
+            let e = ModelEntity(mesh: .generatePlane(width: size, depth: size), materials: [m])
+            e.position.y = y; e.name = name; return e
+        }
+        pad.addChild(disc(0.62, radial(inner: 0.0, outer: 0.5, rim: true), y: 0.002))
+        for (i, r) in [(0, 0.36), (1, 0.48)] { pad.addChild(disc(Float(r) * 2, ring(dashes: i == 0 ? 6 : 10), y: 0.004 + Float(i) * 0.002, name: "holoRing\(i)")) }
+        // light column: four crossed vertical planes with a fading gradient
+        for k in 0..<4 {
+            var m = UnlitMaterial()
+            if let img = column(), let tex = try? TextureResource.generate(from: img, options: .init(semantic: .color)) { m.color = .init(tint: .white, texture: .init(tex)) }
+            m.blending = .transparent(opacity: .init(floatLiteral: 1))
+            let p = ModelEntity(mesh: .generatePlane(width: 0.5, height: 1.25), materials: [m])
+            p.position.y = 0.62
+            p.orientation = simd_quatf(angle: Float(k) * .pi / 4, axis: [0, 1, 0])
+            pad.addChild(p)
+        }
+        root.addChild(pad)
+    }
+    private static func bitmap(_ size: Int, _ draw: (CGContext, CGFloat) -> Void) -> CGImage? {
+        guard let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        draw(ctx, CGFloat(size)); return ctx.makeImage()
+    }
+    private static let cyan = UIColor(red: 0.3, green: 0.95, blue: 1, alpha: 1)
+    private static func radial(inner: CGFloat, outer: CGFloat, rim: Bool) -> CGImage? {
+        bitmap(256) { ctx, s in
+            let colors = [cyan.withAlphaComponent(0.55).cgColor, cyan.withAlphaComponent(0.18).cgColor, cyan.withAlphaComponent(0).cgColor] as CFArray
+            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.7, 1]) {
+                ctx.drawRadialGradient(g, startCenter: CGPoint(x: s / 2, y: s / 2), startRadius: 0, endCenter: CGPoint(x: s / 2, y: s / 2), endRadius: s / 2, options: [])
+            }
+            if rim { ctx.setStrokeColor(cyan.withAlphaComponent(0.9).cgColor); ctx.setLineWidth(3); ctx.strokeEllipse(in: CGRect(x: 6, y: 6, width: s - 12, height: s - 12)) }
+        }
+    }
+    private static func ring(dashes: Int) -> CGImage? {
+        bitmap(256) { ctx, s in
+            ctx.setStrokeColor(cyan.withAlphaComponent(0.85).cgColor); ctx.setLineWidth(4)
+            ctx.setLineDash(phase: 0, lengths: [s * 3.0 / CGFloat(dashes), s * 1.2 / CGFloat(dashes)])
+            ctx.strokeEllipse(in: CGRect(x: 4, y: 4, width: s - 8, height: s - 8))
+        }
+    }
+    private static func column() -> CGImage? {
+        bitmap(128) { ctx, s in
+            let colors = [cyan.withAlphaComponent(0).cgColor, cyan.withAlphaComponent(0.05).cgColor, cyan.withAlphaComponent(0.22).cgColor] as CFArray
+            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.6, 1]) {
+                ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: s), end: CGPoint(x: 0, y: 0), options: [])   // bright at the floor
+            }
+            ctx.setBlendMode(.destinationIn)
+            let mask = [UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor] as CFArray
+            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: mask, locations: [0, 0.5, 1]) {
+                ctx.drawLinearGradient(g, start: .zero, end: CGPoint(x: s, y: 0), options: [])
+            }
+        }
+    }
+}
+
+/// Lets this file (also compiled into the interface probe) open the app-only Typecast picker.
+enum CharacterHooks {
+    @MainActor static var floatingVoicePicker: (() -> AnyView)?
+}
+
+enum CharacterSlot: String, CaseIterable, Identifiable {
+    case dashboard, floating
+    var id: String { rawValue }
+    var title: String { self == .dashboard ? "대시보드" : "떠있는 캐릭터" }
+    var idKey: String { self == .dashboard ? "character.id" : "characterFloat.id" }
+    var finishKey: String { self == .dashboard ? "character.finish" : "characterFloat.finish" }
 }
 
 @MainActor
@@ -139,10 +221,13 @@ struct Character3DView: UIViewRepresentable {
     var yaw: Float = 0.35
     /// v1.40: idle life — gentle sway/breathing plus a random gesture every few seconds.
     var ambient = false
+    var slot: CharacterSlot = .dashboard
     @AppStorage("character.id") private var characterID = "yl" // re-renders every character view on change
     @AppStorage("character.finish") private var finish = "auto"
+    @AppStorage("characterFloat.id") private var floatID = ""
+    @AppStorage("characterFloat.finish") private var floatFinish = ""
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { let c = Coordinator(); c.slot = slot; return c }
     func makeUIView(context: Context) -> ARView {
         let v = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
         v.environment.background = .color(.clear); v.backgroundColor = .clear; v.isOpaque = false
@@ -162,6 +247,7 @@ struct Character3DView: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject {
+        var slot: CharacterSlot = .dashboard
         private weak var view: ARView?
         private let anchor = AnchorEntity(world: .zero)
         private let camera = PerspectiveCamera()
@@ -184,13 +270,19 @@ struct Character3DView: UIViewRepresentable {
             if !on { body?.transform = base }
         }
         private var loadedFinish = CharacterFinish.auto
+        private var projector: Entity?
         private var glitch = 0.0
         /// Breathing bob + slow body sway so the character never looks frozen, and a fidget every 6–12 s.
         private func step(_ dt: Double) {
             clock += dt
             guard let b = body else { return }
-            if loadedFinish == .holo {
-                // hologram: soft flicker with an occasional short dropout
+            if loadedFinish == .holo, let p = projector?.children.first {
+                for (i, name) in ["holoRing0", "holoRing1"].enumerated() {
+                    p.findEntity(named: name)?.orientation = simd_quatf(angle: Float(clock) * (i == 0 ? 0.8 : -0.5), axis: [0, 1, 0])
+                }
+            }
+            if loadedFinish == .holo, CharacterFinish.holoShader == nil {
+                // fallback hologram (no shader): soft flicker with an occasional short dropout
                 if glitch <= 0, Double.random(in: 0...1) < dt * 0.35 { glitch = 0.12 }
                 glitch -= dt
                 let o = glitch > 0 ? 0.35 : 0.82 + 0.1 * sin(clock * 9) + 0.05 * sin(clock * 23)
@@ -229,9 +321,13 @@ struct Character3DView: UIViewRepresentable {
         /// Clone the selected character's body (each view owns its clone so screens never steal it).
         func loadBody() {
             body?.removeFromParent(); body = nil
-            let rig = CharacterRig.shared; loadedID = rig.id
-            loadedFinish = CharacterFinish.selected
+            let rig = CharacterRig.rig(CharacterOption.selectedID(slot)); loadedID = rig.id
+            loadedFinish = CharacterFinish.selected(slot)
+            projector?.removeFromParent(); projector = nil
             if let m = rig.model { let c = m.clone(recursive: true); CharacterFinish.apply(loadedFinish, to: c); body = c; base = c.transform; anchor.addChild(c) }
+            if loadedFinish == .holo {
+                let holder = Entity(); CharacterFinish.addProjector(to: holder); anchor.addChild(holder); projector = holder
+            }
             current = ""; reacting = false
         }
         func detach() {
@@ -241,7 +337,7 @@ struct Character3DView: UIViewRepresentable {
         }
         /// v1.36: one-shot gesture (wave, nod, shake, clap…) then back to the speed/state loop.
         func react(_ name: String) {
-            guard let model = body, let clip = CharacterRig.shared.clips[name], !reacting else { return }
+            guard let model = body, let clip = CharacterRig.rig(loadedID).clips[name], !reacting else { return }
             reacting = true
             controller = model.playAnimation(clip, transitionDuration: 0.3, startsPaused: false)
             let length = max(0.8, min(6, clip.definition.duration))
@@ -266,9 +362,9 @@ struct Character3DView: UIViewRepresentable {
         @objc func reset(_ g: UITapGestureRecognizer) { yaw = baseYaw; pitch = 0.12; placeCamera() }
 
         func update(speed: Double, override: String?) {
-            let rig = CharacterRig.shared
+            let rig = CharacterRig.rig(CharacterOption.selectedID(slot))
             lastSpeed = speed; lastOverride = override
-            if loadedID != CharacterOption.selectedID || loadedFinish != CharacterFinish.selected { loadBody() }
+            if loadedID != CharacterOption.selectedID(slot) || loadedFinish != CharacterFinish.selected(slot) { loadBody() }
             guard let model = body, speed.isFinite, !reacting else { return }
             let name = override ?? (speed < 3 ? "idle" : speed < 20 ? "walk" : "run")
             let rate: Float = name == "run" ? Float(min(1.5, max(0.8, speed / 60))) : name == "walk" ? Float(min(1.3, max(0.7, speed / 10))) : 1
@@ -298,13 +394,32 @@ enum CharacterReact {
 
 /// v1.37: 메뉴 → 캐릭터. Preview each character in 3D (drag to turn) and pick the one used everywhere.
 struct CharacterSelectView: View {
-    @AppStorage("character.id") private var characterID = "yl"
+    @State private var slot: CharacterSlot = .dashboard
     @State private var previewID: String = CharacterOption.selectedID
-    @AppStorage("character.finish") private var finish = "auto"
+    @AppStorage("character.id") private var dashID = "yl"
+    @AppStorage("character.finish") private var dashFinish = "auto"
+    @AppStorage("characterFloat.id") private var floatID = ""
+    @AppStorage("characterFloat.finish") private var floatFinish = ""
+    @AppStorage("characterFloat.voice") private var floatVoice = ""
+    @State private var voicePicker = false
+    private var characterID: String {
+        get { CharacterOption.selectedID(slot) }
+        nonmutating set { if slot == .dashboard { dashID = newValue } else { floatID = newValue } }
+    }
+    private var finishBinding: Binding<String> {
+        Binding(get: { CharacterFinish.selected(slot).rawValue },
+                set: { if slot == .dashboard { dashFinish = $0 } else { floatFinish = $0 } })
+    }
+    private var finish: String { finishBinding.wrappedValue }
     var body: some View {
         List {
             Section {
-                Picker("질감", selection: $finish) {
+                // v1.48: dashboard (running theme) and the floating helper are set separately.
+                Picker("설정 대상", selection: $slot) {
+                    ForEach(CharacterSlot.allCases) { Text($0.title).tag($0) }
+                }.pickerStyle(.segmented)
+                .onChange(of: slot) { _, s in previewID = CharacterOption.selectedID(s) }
+                Picker("질감", selection: finishBinding) {
                     ForEach(CharacterFinish.allCases) { Text($0.title).tag($0.rawValue) }
                 }.pickerStyle(.segmented)
                 ZStack(alignment: .bottom) {
@@ -322,7 +437,18 @@ struct CharacterSelectView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(characterID == previewID)
+                if slot == .floating {
+                    Button { voicePicker = true } label: {
+                        HStack {
+                            Text("떠있는 캐릭터 목소리")
+                            Spacer()
+                            Text(floatVoice.isEmpty ? "앱 안내 음성과 같음" : floatVoice).foregroundStyle(.secondary)
+                        }
+                    }
+                    if !floatVoice.isEmpty { Button("앱 안내 음성과 같게", role: .destructive) { floatVoice = "" } }
+                }
             }
+            .sheet(isPresented: $voicePicker) { CharacterHooks.floatingVoicePicker?() ?? AnyView(Text("음성 목록을 열 수 없음")) }
             Section("캐릭터") {
                 ForEach(CharacterOption.all) { option in
                     Button { previewID = option.id } label: {
@@ -381,7 +507,9 @@ private struct CharacterPreview: UIViewRepresentable {
             turntable.children.removeAll()
             let rig = CharacterRig.rig(id)
             guard let m = rig.model else { return }
-            let c = m.clone(recursive: true); CharacterFinish.apply(CharacterFinish(rawValue: finish) ?? .auto, to: c); turntable.addChild(c)
+            let f = CharacterFinish(rawValue: finish) ?? .auto
+            let c = m.clone(recursive: true); CharacterFinish.apply(f, to: c); turntable.addChild(c)
+            if f == .holo { CharacterFinish.addProjector(to: turntable) }
             if let idle = rig.clips["wave"] ?? rig.clips["idle"] {
                 c.playAnimation(idle, transitionDuration: 0, startsPaused: false)
                 if let loop = rig.clips["idle"] {

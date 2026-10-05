@@ -29,6 +29,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
     @Published var isSynthesizing = false
+    @Published var showVoicePicker = false
     /// v1.42: every voice the account can use (all genders/ages), from GET /v3/voices; cached for offline browsing.
     @Published var remoteVoices: [TypecastCharacter] = TypecastClient.loadRemoteVoices()
     @Published var lastStatus = ""
@@ -342,7 +343,8 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         let voices = Self.parseVoiceMetadata(data)
         if !voices.isEmpty {
             UserDefaults.standard.set(data, forKey: "typecast.voiceListRaw")
-            await MainActor.run { self.remoteVoices = voices }
+            // only publish real changes — reassigning the same list made open pickers jump back to the top
+            await MainActor.run { if voices.map(\.id) != self.remoteVoices.map(\.id) { self.remoteVoices = voices } }
         }
         guard !catalog.isEmpty else {
             throw NSError(domain: "Typecast", code: 502, userInfo: [NSLocalizedDescriptionKey: "HTTP 200이지만 지원 보이스 목록을 해석할 수 없음"])

@@ -208,7 +208,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     /// Speaks an announcement with instant button preemption (cancels previous speech immediately with 0ms delay).
-    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true) {
+    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true, voice: String? = nil) {
         let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
         if category == "voiceControl" && (!d.bool(forKey: "voiceEnabled") || !d.bool(forKey: "voiceControl")) {
@@ -230,7 +230,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             quietUntil = .distantPast
         }
 
-        queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual), now: now)
+        queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual, voice: voice?.isEmpty == false ? voice : nil), now: now)
         drain()
     }
 
@@ -286,7 +286,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         let selection = d.string(forKey: "voiceIdentifier") ?? ""
         let targetVoice: String
-        if selection.hasPrefix("typecast:") {
+        if let own = item.voice {
+            targetVoice = own
+        } else if selection.hasPrefix("typecast:") {
             targetVoice = String(selection.dropFirst(9))
         } else if !tc.selectedVoiceId.isEmpty {
             targetVoice = tc.selectedVoiceId

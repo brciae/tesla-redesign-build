@@ -7,6 +7,10 @@
 import SwiftUI
 
 struct TypecastCharacterPickerSheet: View {
+    /// v1.48: the same browser picks either the app's guidance voice or the floating character's own voice.
+    enum Target { case app, floatingCharacter }
+    var target: Target = .app
+    @AppStorage("characterFloat.voice") private var floatVoice = ""
     @State private var previewing: String?
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
@@ -27,17 +31,37 @@ struct TypecastCharacterPickerSheet: View {
         return bundled + typecast.remoteVoices.filter { !names.contains($0.nameKo.lowercased()) }.sorted { $0.nameKo < $1.nameKo }
     }
 
-    private let categories = ["전체", "대화/일상", "아나운서/기자", "오디오북/낭독", "라디오/팟캐스트", "광고/홍보"]
+    /// v1.48: genres come from the voices themselves (Typecast use_cases), not a fixed short list.
+    private static let useCaseKo: [String: String] = [
+        "Conversational": "대화", "Announcer": "아나운서", "News": "뉴스", "Audiobook": "오디오북", "Storytelling": "스토리텔링",
+        "Radio/Podcast": "라디오·팟캐스트", "Radio": "라디오", "Podcast": "팟캐스트", "Ads": "광고", "Ad": "광고", "Advertisement": "광고",
+        "Promotion": "홍보", "Event": "이벤트", "Game": "게임", "Games": "게임", "Gaming": "게임", "Animation": "애니메이션", "Anime": "애니메이션",
+        "Music": "음악", "Singing": "노래", "Entertainment": "엔터테인먼트", "Education": "교육", "E-learning": "이러닝", "E-Learning": "이러닝",
+        "Documentary": "다큐멘터리", "Meditation": "명상", "Kids": "키즈", "Children": "어린이", "Customer Service": "고객 상담",
+        "Voice Assistant": "음성 비서", "Assistant": "비서", "Character": "캐릭터", "Drama": "드라마", "Movie": "영화", "Film": "영화",
+        "Trailer": "예고편", "ASMR": "ASMR", "Sports": "스포츠", "Narration": "내레이션", "Tutorial": "튜토리얼", "Corporate": "기업",
+        "Comedy": "코미디", "Horror": "공포", "Vlog": "브이로그", "Social Media": "SNS", "YouTube": "유튜브", "Shorts": "쇼츠", "Webtoon": "웹툰",
+    ]
+    static func uses(_ c: TypecastCharacter) -> [String] {
+        c.category.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    static func label(_ raw: String) -> String { raw == "전체" ? "전체" : (useCaseKo[raw] ?? raw) }
+    private var categories: [String] {
+        var count: [String: Int] = [:]
+        for c in pool { for u in Self.uses(c) { count[u, default: 0] += 1 } }
+        return ["전체"] + count.keys.sorted { (count[$0]!, Self.label($1)) > (count[$1]!, Self.label($0)) }
+    }
+    private func matches(_ c: TypecastCharacter, category: String) -> Bool { category == "전체" || Self.uses(c).contains(category) }
 
     private var filteredCharacters: [TypecastCharacter] {
-        TypecastCatalog.search(query: searchQuery, category: selectedCategory, gender: selectedGender, age: selectedAge, in: pool)
+        TypecastCatalog.search(query: searchQuery, gender: selectedGender, age: selectedAge, in: pool).filter { matches($0, category: selectedCategory) }
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 LocalBriefingControls(title: "타입캐스트 캐릭터 선택") {
-                    ["선택 음성 \(TypecastCatalog.find(typecast.selectedVoiceId)?.nameKo ?? "사용자 지정 음성").", "\(selectedCategory) 분류에서 \(filteredCharacters.count)개가 검색됐습니다."]
+                    ["선택 음성 \(TypecastCatalog.find(typecast.selectedVoiceId)?.nameKo ?? "사용자 지정 음성").", "\(Self.label(selectedCategory)) 분류에서 \(filteredCharacters.count)개가 검색됐습니다."]
                 }
                 // Category Pills
                 VStack(spacing: 6) {
@@ -85,7 +109,10 @@ struct TypecastCharacterPickerSheet: View {
                 }
             }
             .onDisappear { if previewing != nil { typecast.stop(); previewing = nil } }
-            .task { await typecast.refreshVoiceCatalog(quiet: true) }
+            .task {
+                await typecast.refreshVoiceCatalog(quiet: true)
+                if !typecast.remoteVoices.isEmpty, !categories.contains(selectedCategory) { selectedCategory = "전체" } // pre-1.48 fixed labels
+            }
         }
     }
 
@@ -96,12 +123,12 @@ struct TypecastCharacterPickerSheet: View {
             HStack(spacing: 8) {
                 ForEach(categories, id: \.self) { cat in
                     let isSelected = selectedCategory == cat
-                    let count = TypecastCatalog.search(query: "", category: cat, gender: selectedGender, age: selectedAge, in: pool).count
+                    let count = TypecastCatalog.search(query: "", gender: selectedGender, age: selectedAge, in: pool).filter { matches($0, category: cat) }.count
                     Button {
                         selectedCategory = cat
                     } label: {
                         HStack(spacing: 4) {
-                            Text(cat)
+                            Text(Self.label(cat))
                             Text("(\(count))")
                                 .font(.caption2)
                                 .opacity(0.8)
@@ -141,9 +168,8 @@ struct TypecastCharacterPickerSheet: View {
     // MARK: - Character Row
 
     private func characterRow(_ char: TypecastCharacter) -> some View {
-        let isSelected = typecast.selectedVoiceId == char.nameKo ||
-                         typecast.selectedVoiceId == char.id ||
-                         typecast.selectedVoiceId == char.nameEn
+        let current = target == .floatingCharacter ? floatVoice : typecast.selectedVoiceId
+        let isSelected = current == char.nameKo || current == char.id || current == char.nameEn
 
         return HStack(spacing: 12) {
             // Face Portrait Thumbnail
@@ -228,6 +254,11 @@ struct TypecastCharacterPickerSheet: View {
 
     private func selectCharacter(_ char: TypecastCharacter) {
         typecast.stop(); previewing = nil
+        if target == .floatingCharacter {
+            floatVoice = char.nameKo
+            model.voice.say("안녕하세요, 이제 제가 이 목소리로 말할게요.", category: "voiceControl", manual: true, voice: char.nameKo)
+            dismiss(); return
+        }
         typecast.selectedVoiceId = char.nameKo
         UserDefaults.standard.set("typecast:\(char.nameKo)", forKey: "voiceIdentifier")
         model.voice.say("\(char.nameKo) 음성을 선택했습니다.", category: "voiceControl", manual: true)

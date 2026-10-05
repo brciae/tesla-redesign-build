@@ -27,7 +27,8 @@ final class CharacterChat: ObservableObject {
             self.messages.append(CharacterChatMessage(fromUser: false, text: answer))
             self.busy = false
             CharacterReact.send("talk")
-            model.voice.say(answer, key: "character.chat", category: "", priority: 3, ttl: 30, manual: true)
+            model.voice.say(answer, key: "character.chat", category: "", priority: 3, ttl: 30, manual: true,
+                            voice: UserDefaults.standard.string(forKey: "characterFloat.voice"))
         }
     }
     func cancel() { task?.cancel(); busy = false }
@@ -89,8 +90,8 @@ struct CharacterChatButton: View {
     var body: some View {
         if enabled {
             Group {
-                if CharacterRig.shared.available {
-                    Character3DView(speedKmh: 0, clipOverride: "idle", interactive: false, yaw: 0.25, ambient: true)
+                if CharacterRig.rig(CharacterOption.selectedID(.floating)).available {
+                    Character3DView(speedKmh: 0, clipOverride: "idle", interactive: false, yaw: 0.25, ambient: true, slot: .floating)
                         .frame(width: 84 * liveScale, height: 132 * liveScale)
                         .background(Circle().fill(Color.white.opacity(0.0001)))
                 } else {
@@ -158,8 +159,8 @@ struct CharacterChatView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 12) {
-                            if CharacterRig.shared.available {
-                                Character3DView(speedKmh: 0, clipOverride: "idle", yaw: 0)
+                            if CharacterRig.rig(CharacterOption.selectedID(.floating)).available {
+                                Character3DView(speedKmh: 0, clipOverride: "idle", yaw: 0, slot: .floating)
                                     .frame(height: 240).padding(.top, 8)
                             } else if let img = CharacterAtlas.shared?.portrait {
                                 Image(uiImage: img).resizable().scaledToFit().frame(height: 220)

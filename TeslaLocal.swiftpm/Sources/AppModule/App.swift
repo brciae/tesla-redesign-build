@@ -9,6 +9,7 @@ struct YLCompanionApp: App {
     @StateObject private var owner = AppOwner()
     @AppStorage("appearance") private var appearance = "dark"
     private var colorScheme: ColorScheme? { appearance == "light" ? .light : (appearance == "system" ? nil : .dark) }
+    init() { CharacterHooks.floatingVoicePicker = { AnyView(TypecastCharacterPickerSheet(target: .floatingCharacter)) } }
     var body: some Scene {
         WindowGroup {
             if let model = owner.model { MainView(model: model, link: model.link, navigation: model.navigation).environmentObject(model).preferredColorScheme(colorScheme) }
