@@ -52,7 +52,7 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
                 switch f {
                 case .holo:
                     if let shader = holoShader, var c = try? CustomMaterial(surfaceShader: shader, lightingModel: .unlit) {
-                        c.baseColor = .init(tint: .white, texture: p.baseColor.texture)
+                        c.baseColor = .init(tint: .white, texture: p.baseColor.texture.map { CustomMaterial.Texture($0.resource) })
                         c.blending = .transparent(opacity: .init(floatLiteral: 1))
                         return c
                     }

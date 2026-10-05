@@ -10,7 +10,7 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
-        ReleaseNote(version: "1.46 (146)", date: "2026-10-05", items: [
+        ReleaseNote(version: "1.47 (147)", date: "2026-10-05", items: [
             "타입캐스트: 음성 목록을 특정 모델(ssfm-v30)로 거르지 않고 계정에서 쓸 수 있는 전체 음성으로 동기화, 음성마다 지원하는 모델로 합성",
             "타입캐스트: 미리듣기를 타입캐스트 제공 샘플로 재생(크레딧 소모 없음), 사진이 없는 음성은 성별 색상 이니셜로 표시",
             "타입캐스트: 목록 동기화가 끝나면 고른 성별·연령·용도 필터가 '전체'로 되돌아가던 문제 수정",
