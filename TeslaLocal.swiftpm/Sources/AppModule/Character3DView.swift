@@ -103,7 +103,34 @@ enum CharacterFinish: String, CaseIterable, Identifiable {
             p.orientation = simd_quatf(angle: Float(k) * .pi / 4, axis: [0, 1, 0])
             pad.addChild(p)
         }
+        // v1.50: data glyphs (code, symbols) orbiting the figure
+        let glyphs = ["0x3F", "∑", "λ", "◇", "101", "▲", "Ω", "⌁", "SYS", "∆", "◎", "π", "7E", "≡"]
+        let orbit = Entity(); orbit.name = "holoGlyphs"
+        for (i, g) in glyphs.enumerated() {
+            var m = UnlitMaterial(color: cyan.withAlphaComponent(0.85))
+            m.blending = .transparent(opacity: .init(floatLiteral: 0.75))
+            let mesh = MeshResource.generateText(g, extrusionDepth: 0.001, font: .monospacedSystemFont(ofSize: 0.05, weight: .semibold), containerFrame: .zero, alignment: .center, lineBreakMode: .byClipping)
+            let e = ModelEntity(mesh: mesh, materials: [m])
+            let a = Float(i) / Float(glyphs.count) * 2 * .pi
+            let r: Float = 0.33 + Float(i % 3) * 0.05
+            e.position = [r * sin(a), 0.15 + Float((i * 37) % 100) / 100 * 1.0, r * cos(a)]
+            e.orientation = simd_quatf(angle: a, axis: [0, 1, 0])   // face outward along the ring
+            e.name = "glyph\(i)"
+            orbit.addChild(e)
+        }
+        pad.addChild(orbit)
         root.addChild(pad)
+    }
+    /// Glyphs circle slowly, bob, and blink on/off like flickering readouts.
+    @MainActor static func animateGlyphs(in pad: Entity, clock: Double) {
+        guard let orbit = pad.findEntity(named: "holoGlyphs") else { return }
+        orbit.orientation = simd_quatf(angle: Float(clock) * 0.25, axis: [0, 1, 0])
+        for (i, g) in orbit.children.enumerated() {
+            let base = 0.15 + Float((i * 37) % 100) / 100 * 1.0
+            g.position.y = base + 0.03 * Float(sin(clock * 0.9 + Double(i)))
+            let blink = sin(clock * (1.3 + Double(i % 4) * 0.4) + Double(i) * 1.7)
+            g.isEnabled = blink > -0.55
+        }
     }
     private static func bitmap(_ size: Int, _ draw: (CGContext, CGFloat) -> Void) -> CGImage? {
         guard let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
@@ -280,6 +307,7 @@ struct Character3DView: UIViewRepresentable {
                 for (i, name) in ["holoRing0", "holoRing1"].enumerated() {
                     p.findEntity(named: name)?.orientation = simd_quatf(angle: Float(clock) * (i == 0 ? 0.8 : -0.5), axis: [0, 1, 0])
                 }
+                CharacterFinish.animateGlyphs(in: p, clock: clock)
             }
             if loadedFinish == .holo, CharacterFinish.holoShader == nil {
                 // fallback hologram (no shader): soft flicker with an occasional short dropout

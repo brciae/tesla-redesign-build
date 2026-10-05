@@ -1286,7 +1286,9 @@ public enum TypecastCatalog {
             $0.nameEn.lowercased().contains(q) ||
             $0.mood.lowercased().contains(q) ||
             $0.tone.lowercased().contains(q) ||
-            $0.desc.lowercased().contains(q)
+            $0.desc.lowercased().contains(q) ||
+            $0.id.lowercased().contains(q) ||
+            $0.nameKo.replacingOccurrences(of: " ", with: "").lowercased().contains(q.replacingOccurrences(of: " ", with: ""))
         }
     }
 }

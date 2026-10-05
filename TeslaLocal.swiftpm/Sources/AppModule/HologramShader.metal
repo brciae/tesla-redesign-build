@@ -36,17 +36,19 @@ void hologramSurface(realitykit::surface_parameters params)
 
     float h = saturate(wp.y * 0.9);                       // feet → head
     float3 deep = float3(0.05, 0.35, 1.0), cyan = float3(0.3, 0.95, 1.0), white = float3(0.85, 1.0, 1.0);
-    float3 body = mix(cyan, deep, h * 0.6) * (0.18 + 0.85 * lum);
+    // v1.50: dimmer and higher-contrast so the character's own features stay readable
+    float detail = pow(lum, 1.35);
+    float3 body = mix(cyan, deep, h * 0.6) * (0.05 + 0.75 * detail);
     float3 col = body
-               + cyan * fres * 2.4
-               + white * band * 1.1
-               + cyan * contour * 0.45
-               + float3(r - g, 0.0, b - g) * 0.35;         // faint chromatic edge
+               + cyan * fres * 0.9
+               + white * band * 0.45
+               + cyan * contour * 0.18
+               + float3(r - g, 0.0, b - g) * 0.25;         // faint chromatic edge
     float flick = 0.9 + 0.1 * sin(t * 47.0) * sin(t * 13.0);
     col *= (0.72 + 0.28 * scan) * flick;
 
     params.surface().set_base_color(half3(0.0));
     params.surface().set_emissive_color(half3(col));
-    float alpha = (0.1 + 0.75 * fres + 0.2 * lum + band * 0.55 + contour * 0.15) * (0.75 + 0.25 * scan) * (1.0 - 0.75 * glitch);
+    float alpha = (0.22 + 0.45 * fres + 0.45 * detail + band * 0.25 + contour * 0.08) * (0.8 + 0.2 * scan) * (1.0 - 0.75 * glitch);
     params.surface().set_opacity(half(saturate(alpha)));
 }

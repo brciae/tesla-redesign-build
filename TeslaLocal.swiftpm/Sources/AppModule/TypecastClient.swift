@@ -411,16 +411,19 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 return (m as? [String: Any])?["version"] as? String ?? (m as? [String: Any])?["model"] as? String
             }
             let gender = genders[g] ?? (g.isEmpty ? "미분류" : g), age = ages[a] ?? (a.isEmpty ? "미분류" : a)
-            return TypecastCharacter(id: id, nameKo: name, nameEn: name, tone: "", mood: "", category: uses.joined(separator: ", "),
+            // v1.50: keep both localized names (search by either) — e.g. a voice listed in English only.
+            var english = name
+            if let d = item["voice_name"] as? [String: Any], let en = (d["eng"] ?? d["en"]) as? String, !en.isEmpty { english = en }
+            return TypecastCharacter(id: id, nameKo: name, nameEn: english, tone: "", mood: "", category: uses.joined(separator: ", "),
                                      desc: ([gender, age] + uses.prefix(2)).joined(separator: " · "), gender: gender, age: age,
                                      model: bestModel(models), previewURL: item["preview_url"] as? String ?? "")
         }
     }
 
-    func refreshVoiceCatalog(quiet: Bool = false) async {
+    func refreshVoiceCatalog(quiet: Bool = false, force: Bool = false) async {
         guard hasKey else { return }
         do {
-            _ = try await fetchVoiceCatalog(apiKey: activeApiKey, force: remoteVoices.isEmpty)
+            _ = try await fetchVoiceCatalog(apiKey: activeApiKey, force: force || remoteVoices.isEmpty)
             if !quiet { await MainActor.run { self.lastStatus = "API 보이스 목록 동기화 완료 (\(self.remoteVoices.count)개)" } }
         } catch {
             if !quiet { await MainActor.run { self.lastStatus = error.localizedDescription } }

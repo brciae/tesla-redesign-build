@@ -82,6 +82,9 @@ struct TypecastCharacterPickerSheet: View {
                         Text("검색된 캐릭터가 없습니다.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
+                        // v1.50: the web studio lists characters the API does not expose to API keys.
+                        Text("API 음성 \(typecast.remoteVoices.count)개 중에서 찾았습니다. 타입캐스트 웹 스튜디오의 일부 캐릭터는 API로 제공되지 않아 앱에서 쓸 수 없습니다. 오른쪽 위 ↻로 목록을 다시 받을 수 있습니다.")
+                            .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal, 24)
                         Spacer()
                     }
                 } else {
@@ -91,7 +94,7 @@ struct TypecastCharacterPickerSheet: View {
                                 characterRow(char)
                             }
                         } header: {
-                            Text("캐릭터 (\(filteredCharacters.count)명)")
+                            Text("캐릭터 (\(filteredCharacters.count)명) · API 음성 \(typecast.remoteVoices.count)개")
                                 .font(.caption.weight(.semibold))
                         }
                     }
@@ -102,6 +105,10 @@ struct TypecastCharacterPickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "이름, 분위기, 톤 검색 (예: 나윤, 차분한, 중음)")
             .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { Task { await typecast.refreshVoiceCatalog(force: true) } } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel("타입캐스트 음성 목록 새로 받기")
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("닫기") {
                         dismiss()
