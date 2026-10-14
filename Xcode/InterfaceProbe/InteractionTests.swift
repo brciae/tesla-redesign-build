@@ -1,6 +1,25 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testPlaybackSourceIconsAcrossThemesAndSourceChanges() {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "media-source-probe"]; app.launch()
+        let icon = app.descendants(matching: .any).matching(identifier: "navigation.media.source").firstMatch
+        for source in ["Spotify", "Apple Music", "YouTube Music", "TIDAL", "Bluetooth", "정보 없음"] {
+            app.segmentedControls.buttons[source].tap()
+            let label = source == "정보 없음" ? "재생 앱 정보 없음" : source
+            XCTAssertTrue(icon.waitForExistence(timeout: 5))
+            XCTAssertEqual(icon.label, "재생 소스: \(label)")
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Playback source \(source)"; shot.lifetime = .keepAlways; add(shot)
+        }
+        app.segmentedControls.buttons["Spotify"].tap()
+        for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+            app.segmentedControls.buttons[title].tap()
+            XCTAssertTrue(icon.waitForExistence(timeout: 5))
+            XCTAssertEqual(icon.label, "재생 소스: Spotify")
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Playback icon theme \(title)"; shot.lifetime = .keepAlways; add(shot)
+        }
+    }
     func testDashboardShadeSliderAndWhiteGuidance() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "shade-probe", "roundabout-probe"]; app.launch()

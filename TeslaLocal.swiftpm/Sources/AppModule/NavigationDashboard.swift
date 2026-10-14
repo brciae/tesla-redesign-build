@@ -138,6 +138,8 @@ struct NavigationReadout {
     var night = false
     // Car media (BLE media state)
     var mediaTitle = "", mediaArtist = "", mediaSource = ""
+    var mediaSourceCode: Double? = nil
+    var mediaApp: MediaPlaybackSource { .resolve(code: mediaSourceCode, sourceName: mediaSource) }
     var mediaPlaying = false
     var mediaElapsed: Double? = nil
     var mediaDuration: Double? = nil
@@ -146,7 +148,7 @@ struct NavigationReadout {
     var mediaStatus = ""
     var mediaBusy = false
 
-    var hasMedia: Bool { !mediaTitle.isEmpty || !mediaSource.isEmpty }
+    var hasMedia: Bool { !mediaTitle.isEmpty || !mediaSource.isEmpty || (mediaSourceCode ?? 0) > 0 }
     var showsMedia: Bool { hasMedia }
     var roadLanes: Int {
         if currentRoadLanes >= 1 { return min(6, currentRoadLanes) }
@@ -1649,11 +1651,11 @@ private struct MediaCard: View {
     private var enabled: Bool { data.connected && !data.mediaBusy }
     private var title: String {
         if !data.mediaTitle.isEmpty { return data.mediaTitle }
-        return data.mediaSource.isEmpty ? "재생 정보 없음" : data.mediaSource
+        return data.hasMedia ? data.mediaApp.name : "재생 정보 없음"
     }
     private var subtitle: String {
         if !data.mediaStatus.isEmpty { return data.mediaStatus }
-        let parts = [data.mediaArtist, data.mediaTitle.isEmpty ? "" : data.mediaSource].filter { !$0.isEmpty }
+        let parts = [data.mediaArtist, data.mediaTitle.isEmpty ? "" : data.mediaApp.name].filter { !$0.isEmpty }
         if !parts.isEmpty { return parts.joined(separator: " · ") }
         return data.connected ? "차량 미디어" : "차량 연결 필요"
     }
@@ -1670,16 +1672,7 @@ private struct MediaCard: View {
     }
 
     private func art(_ side: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: side * 0.22, style: .continuous)
-            .fill(LinearGradient(colors: [NavInk.neon, Color(red: 0.56, green: 0.32, blue: 0.96)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-            .overlay(
-                Image(systemName: data.mediaPlaying ? "waveform" : icon)
-                    .font(.system(size: side * 0.42, weight: .semibold))
-                    .symbolEffect(.variableColor.iterative, isActive: data.mediaPlaying)
-            )
-            .frame(width: side, height: side)
-            .accessibilityHidden(true)
+        PlaybackSourceIcon(source: data.mediaApp, side: side)
     }
 
     private func control(_ name: String, _ symbol: String, _ label: String, size: CGFloat) -> some View {
@@ -1788,13 +1781,66 @@ struct ParkedNavigationActions: View {
     }
 }
 
+/// Small vector source marks stay legible in every media layout without network artwork requests.
+private struct PlaybackSourceIcon: View {
+    let source: MediaPlaybackSource
+    let side: CGFloat
+    var body: some View {
+        Canvas { context, size in
+            let s = size.width
+            let bounds = CGRect(origin: .zero, size: size)
+            switch source.icon {
+            case .spotify:
+                context.fill(Path(ellipseIn: bounds), with: .color(Color(red: 0.12, green: 0.84, blue: 0.38)))
+                for i in 0..<3 {
+                    let inset = (0.21 + Double(i) * 0.035) * s
+                    let y = (0.34 + Double(i) * 0.16) * s
+                    var wave = Path(); wave.move(to: CGPoint(x: inset, y: y))
+                    wave.addQuadCurve(to: CGPoint(x: s - inset, y: y + 0.035 * s), control: CGPoint(x: 0.5 * s, y: y - 0.13 * s))
+                    context.stroke(wave, with: .color(.black), style: StrokeStyle(lineWidth: s * (0.075 - Double(i) * 0.012), lineCap: .round))
+                }
+            case .youtubeMusic:
+                context.fill(Path(ellipseIn: bounds), with: .color(.red))
+                context.stroke(Path(ellipseIn: bounds.insetBy(dx: s * 0.16, dy: s * 0.16)), with: .color(.white), lineWidth: s * 0.035)
+                var play = Path(); play.move(to: CGPoint(x: s * 0.42, y: s * 0.32))
+                play.addLine(to: CGPoint(x: s * 0.69, y: s * 0.5)); play.addLine(to: CGPoint(x: s * 0.42, y: s * 0.68)); play.closeSubpath()
+                context.fill(play, with: .color(.white))
+            case .tidal:
+                context.fill(Path(roundedRect: bounds, cornerRadius: s * 0.2), with: .color(.black))
+                for point in [(0.25, 0.36), (0.5, 0.36), (0.75, 0.36), (0.5, 0.61)] {
+                    let x = point.0 * s, y = point.1 * s, r = s * 0.12
+                    var diamond = Path(); diamond.move(to: CGPoint(x: x, y: y - r))
+                    diamond.addLine(to: CGPoint(x: x + r, y: y)); diamond.addLine(to: CGPoint(x: x, y: y + r)); diamond.addLine(to: CGPoint(x: x - r, y: y)); diamond.closeSubpath()
+                    context.fill(diamond, with: .color(.white))
+                }
+            default:
+                let color: Color = source.icon == .appleMusic ? Color(red: 0.97, green: 0.22, blue: 0.36) : .blue
+                context.fill(Path(roundedRect: bounds, cornerRadius: s * 0.22), with: .color(color))
+                if source.icon == .bluetooth {
+                    var rune = Path(); rune.move(to: CGPoint(x: s * 0.5, y: s * 0.14))
+                    rune.addLine(to: CGPoint(x: s * 0.5, y: s * 0.86)); rune.addLine(to: CGPoint(x: s * 0.76, y: s * 0.66)); rune.addLine(to: CGPoint(x: s * 0.25, y: s * 0.29))
+                    rune.move(to: CGPoint(x: s * 0.25, y: s * 0.71)); rune.addLine(to: CGPoint(x: s * 0.76, y: s * 0.34)); rune.addLine(to: CGPoint(x: s * 0.5, y: s * 0.14))
+                    context.stroke(rune, with: .color(.white), style: StrokeStyle(lineWidth: s * 0.065, lineCap: .round, lineJoin: .round))
+                } else {
+                    let symbol = source.icon == .radio ? "radio.fill" : source.icon == .browser ? "globe" : "music.note"
+                    context.draw(Text(Image(systemName: symbol)).font(.system(size: s * 0.58)).foregroundStyle(.white), at: CGPoint(x: s / 2, y: s / 2))
+                }
+            }
+        }
+        .foregroundStyle(.white).frame(width: side, height: side)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("재생 소스: \(source.name)")
+        .accessibilityIdentifier("navigation.media.source")
+    }
+}
+
 private struct NavigationMediaHeader: View {
     let data: NavigationReadout
     let action: (String) -> Void
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "music.note").foregroundStyle(.blue)
-            Text(data.mediaTitle.isEmpty ? data.mediaSource : data.mediaTitle)
+            PlaybackSourceIcon(source: data.mediaApp, side: 26)
+            Text(data.mediaTitle.isEmpty ? data.mediaApp.name : data.mediaTitle)
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("navigation.media.title")
@@ -1819,7 +1865,7 @@ private struct MediaIsland: View {
 
     var body: some View {
         HStack(spacing: 8 * u) {
-            IslandBars(active: data.mediaPlaying, u: u)
+            PlaybackSourceIcon(source: data.mediaApp, side: 26 * u)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 15 * u, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.5)
@@ -1849,10 +1895,10 @@ private struct MediaIsland: View {
         .accessibilityIdentifier("navigation.media.island")
     }
 
-    private var title: String { data.mediaTitle.isEmpty ? data.mediaSource : data.mediaTitle }
+    private var title: String { data.mediaTitle.isEmpty ? data.mediaApp.name : data.mediaTitle }
     private var subtitle: String {
         if !data.mediaStatus.isEmpty { return data.mediaStatus }
-        return [data.mediaArtist, data.mediaTitle.isEmpty ? "" : data.mediaSource].filter { !$0.isEmpty }.joined(separator: " · ")
+        return [data.mediaArtist, data.mediaTitle.isEmpty ? "" : data.mediaApp.name].filter { !$0.isEmpty }.joined(separator: " · ")
     }
     private var enabled: Bool { data.connected && !data.mediaBusy }
 

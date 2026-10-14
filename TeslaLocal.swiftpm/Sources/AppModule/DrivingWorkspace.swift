@@ -293,10 +293,11 @@ struct DrivingWorkspace: View {
         guard fresh.flag("media") else { return }
         let media = model.groups.object("media"), detail = model.groups.object("mediaDetail")
         r.mediaTitle = media.string("title"); r.mediaArtist = media.string("artist")
+        r.mediaSourceCode = media.number("source")
         r.mediaPlaying = media.flag("playing")
         r.mediaVolume = media.number("volume"); r.mediaVolumeMax = media.number("volumeMax")
         guard fresh.flag("mediaDetail") else { return }
-        r.mediaSource = [detail.string("sourceName"), detail.string("station"), detail.string("device")].first { !$0.isEmpty } ?? ""
+        r.mediaSource = detail.string("sourceName")
         if let duration = detail.number("duration"), duration > 0 {
             // The car reports milliseconds; tolerate seconds.
             let scale = duration > 36_000 ? 1000.0 : 1.0

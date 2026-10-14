@@ -166,6 +166,7 @@ struct FullscreenNavigationProbe: View {
 
 struct NavigationProbe: View {
     @State private var theme: NavigationTheme = .cluster
+    @State private var mediaSource = "Spotify"
     @State private var blank = false
     @State private var bend = 0.0
     @State private var moving = false
@@ -186,6 +187,11 @@ struct NavigationProbe: View {
                 }.padding(.horizontal, 8)
             }.frame(height: 44)
             if ProcessInfo.processInfo.arguments.contains("shade-probe") { DashboardShadeControl().padding(8) }
+            if ProcessInfo.processInfo.arguments.contains("media-source-probe") {
+                Picker("재생 소스", selection: $mediaSource) {
+                    ForEach(["Spotify", "Apple Music", "YouTube Music", "TIDAL", "Bluetooth", "정보 없음"], id: \.self) { Text($0).tag($0) }
+                }.pickerStyle(.segmented)
+            }
             if ProcessInfo.processInfo.arguments.contains("parked-route-probe") {
                 if routeStopped { Text("자유주행").accessibilityIdentifier("navigation.stopped") }
                 else { ParkedNavigationActions { routeStopped = true } }
@@ -214,6 +220,10 @@ struct NavigationProbe: View {
         // Gentle right-hand curve 0…80 m ahead ([left, forward] metres).
         r.routePath = stride(from: 0.0, through: 80.0, by: 10.0).flatMap { f in [-(bend * f * f / 160), f] }
         r.mediaTitle = "Night Drive (샘플 트랙)"; r.mediaArtist = "YL 샘플 아티스트"; r.mediaSource = "Bluetooth"
+        if ProcessInfo.processInfo.arguments.contains("media-source-probe") {
+            r.mediaSource = mediaSource == "정보 없음" ? "" : mediaSource
+            r.mediaSourceCode = mediaSource == "Spotify" ? 12 : mediaSource == "Bluetooth" ? 8 : mediaSource == "TIDAL" ? 20 : nil
+        }
         r.mediaPlaying = true; r.mediaElapsed = 74; r.mediaDuration = 253
         return r
     }
