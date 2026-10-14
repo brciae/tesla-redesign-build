@@ -96,8 +96,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 5))
         app.buttons["음악 동시 표시 시험"].tap()
         let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        safari.activate()
+        XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 30))
         let play = safari.buttons["테스트 음악 재생"]
-        XCTAssertTrue(play.waitForExistence(timeout: 12)); play.tap()
+        guard play.waitForExistence(timeout: 45) else { XCTFail("Local music page did not load in Safari"); return }
+        play.tap()
         XCTAssertTrue(safari.buttons["테스트 음악 재생 중"].waitForExistence(timeout: 5))
         XCUIDevice.shared.press(.home)
         let musicDelay = expectation(description: "Music and Live Activity snapshots")
