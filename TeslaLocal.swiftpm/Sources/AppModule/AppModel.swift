@@ -81,7 +81,8 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             let nav = self.navigation.telemetry
             let navAt = Date(timeIntervalSince1970: nav.number("at") ?? 0)
-            let navFresh = self.navigation.guiding && Date().timeIntervalSince(navAt) < 30
+            let navFresh = self.navigation.guiding && Date().timeIntervalSince(navAt) < 30 &&
+                (nav.flag("gps") || nav.flag("positionEstimated"))
             let seconds = navFresh ? nav.number("remainSeconds") : nil
             let minutes = seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? Int(ceil($0 / 60)) : nil }
             let soc = self.output.object("fresh").flag("charge") ? self.groups.object("charge").number("soc") : nil

@@ -6,6 +6,11 @@ on:
         description: Verify fullscreen captures only (no IPA)
         type: boolean
         default: false
+      probe_focus:
+        description: Focus for screenshot-only diagnostic runs (full builds always run all tests)
+        type: choice
+        options: [fullscreen, junction, new]
+        default: fullscreen
   push:
     branches: [main]
 jobs:
@@ -25,9 +30,10 @@ jobs:
       - name: Build (parse, policy tests, interface probe, unsigned IPA)
         env:
           UI_SCREENS_ONLY: ${{ inputs.ui_screens_only }}
+          PROBE_FOCUS: ${{ inputs.probe_focus }}
         run: |
           if [[ "$UI_SCREENS_ONLY" == true ]]; then
-            bash tools/test-interface.sh fullscreen
+            bash tools/test-interface.sh "${PROBE_FOCUS:-fullscreen}"
           else
             bash tools/build-ios.sh
           fi

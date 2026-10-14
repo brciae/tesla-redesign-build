@@ -1094,7 +1094,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
             SInt32 nextMetres = gpsFresh && location ? [location distToLocation:next.location] : -1; if (nextMetres >= 0) s[@"nextMetres"] = @(nextMetres);
         }
     }
-    if (self.guidance.trip) {
+    if (self.guidance.trip && gpsFresh) {
         SInt32 dist = [self.guidance.trip remainDist], seconds = [self.guidance.trip remainTime];
         if (dist >= 0) s[@"remainMetres"] = @(dist);
         if (seconds >= 0) s[@"remainSeconds"] = @(seconds);

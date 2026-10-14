@@ -331,7 +331,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     var merged = self.lastTelemetry
                     snapshot.forEach { merged[$0.key] = $0.value }
                     // Position-dependent keys and route guidance must be cleared when not present in current snapshot
-                    for key in ["turnMetres", "nextTurn", "nextSymbol", "nextMetres", "nextExitClock", "speedLimit", "speedLimitMetres", "routeBend", "motionValid", "gpsSpeedKmh", "laneCount", "laneSuggested", "laneMetres", "laneRaw", "routePath"] where snapshot[key] == nil {
+                    for key in ["turnMetres", "nextTurn", "nextSymbol", "nextMetres", "nextExitClock", "speedLimit", "speedLimitMetres", "routeBend", "motionValid", "gpsSpeedKmh", "laneCount", "laneSuggested", "laneMetres", "laneRaw", "routePath", "remainMetres", "remainSeconds"] where snapshot[key] == nil {
                         merged.removeValue(forKey: key)
                     }
                     if snapshot["turn"] == nil {

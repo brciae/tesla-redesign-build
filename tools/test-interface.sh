@@ -6,6 +6,15 @@ device_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sy
 test_filter=(-only-testing:InterfaceProbeTests)
 if [[ "${1:-}" == fullscreen ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testFullscreenChromeAcrossThemesAndRotation)
+elif [[ "${1:-}" == junction ]]; then
+  test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit)
+elif [[ "${1:-}" == new ]]; then
+  test_filter=(
+    -only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit
+    -only-testing:InterfaceProbeTests/InteractionTests/testLiveActivityViewsAndBackgroundReturn
+    -only-testing:InterfaceProbeTests/InteractionTests/testRobotWithoutFootRodsSurvivesAppSwitching
+    -only-testing:InterfaceProbeTests/InteractionTests/testTrafficRefreshBlocksRepeatedTapAndKeepsRouteOnFailure
+  )
 fi
 test_status=0
 xcodebuild test -project Xcode/InterfaceProbe.xcodeproj -scheme InterfaceProbe \
