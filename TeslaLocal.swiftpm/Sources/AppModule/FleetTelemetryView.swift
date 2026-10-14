@@ -166,13 +166,16 @@ struct FleetTelemetryView: View {
             await archive.sync(vin: vin)
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+            let selectedVIN = vin
+            Task { @MainActor in
             do {
                 let url = try result.get(); let access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
                 let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                 guard size <= 5_000_000 else { throw FleetTelemetryData.failure("최대 5 MB 파일을 가져올 수 있습니다.") }
-                try store.ingest(Data(contentsOf: url), vin: vin); error = ""
+                try await store.ingest(Data(contentsOf: url), vin: selectedVIN); error = ""
             } catch { self.error = error.localizedDescription }
+            }
         }
     }
     @ViewBuilder private func measurement(_ title: String, field: String, unit: String) -> some View {
