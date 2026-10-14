@@ -468,7 +468,12 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["context-speech-probe"]; app.launch()
         let toggle = app.switches["automation.ai.speech"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-        if toggle.value as? String != "1" { toggle.tap() }
+        // SwiftUI Form exposes a row-sized switch and its actual UISwitch child.
+        // The row midpoint is label whitespace and does not toggle the control.
+        let thumb = toggle.switches.firstMatch
+        XCTAssertTrue(thumb.exists, "Expected the actual switch control")
+        if toggle.value as? String != "1" { thumb.tap() }
+        XCTAssertEqual(toggle.value as? String, "1", "AI setting must actually turn on")
         XCTAssertTrue(app.switches["automation.ai.routine"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["automation.ai.example"].tap()
         XCTAssertTrue(app.staticTexts["automation.ai.preview"].label.contains("82퍼센트"))
@@ -476,7 +481,11 @@ final class InteractionTests: XCTestCase {
         app.buttons["automation.ai.omit.example"].tap()
         XCTAssertTrue(app.staticTexts["automation.ai.preview"].label.contains("생략함"))
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "AI context speech consent settings and nonessential greeting omission"; shot.lifetime = .keepAlways; add(shot)
-        toggle.tap() // Keep subsequent playback tests on their original local-only path.
+        app.terminate(); app.launch()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        XCTAssertEqual(toggle.value as? String, "1", "AI setting must persist after relaunch")
+        thumb.tap() // Keep subsequent playback tests on their original local-only path.
+        XCTAssertEqual(toggle.value as? String, "0")
     }
     func testTripEnergyForecastAcrossThemesAndRotation() {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "energy-forecast-probe"]; app.launch()
