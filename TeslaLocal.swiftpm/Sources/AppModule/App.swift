@@ -127,6 +127,7 @@ struct MainView: View {
             .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
             .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
             .onChange(of: selectedTab) { _, newTab in
+                model.setAnalysisVisible(newTab == .energy || newTab == .drive)
                 if newTab == .menu { menuPath = NavigationPath() }
             }
     }

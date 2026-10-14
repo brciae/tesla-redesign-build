@@ -76,6 +76,12 @@ final class AppModel: ObservableObject {
     private var lastSaved = Date.distantPast
     private var recoveryLock = false
     private var timer: Timer?
+    private var analyticsVisible = false
+    private var lastAnalytics = Date.distantPast
+    private let recordWriteQueue = DispatchQueue(label: "YLCompanion.recordWriter", qos: .utility)
+    private var recordWriteInFlight = false
+    private var recordRevision: UInt64 = 0
+    private var urgentSavePending = false
     private var activityObservedAt = Date.distantPast
     private let phoneCalls = PhoneCallLifecycle()
     func updateLiveActivity() {
@@ -140,7 +146,7 @@ final class AppModel: ObservableObject {
         automations.onNotification = { id, title, body in
             Task { @MainActor in ChargeNotificationManager.shared.notifyAutomation(id: id, title: title, body: body) }
         }
-        refresh()
+        refresh(detailed: true)
         fleet.commandAllowed = { [weak self] in
             guard let self else { return false }
             return !self.demo && UIApplication.shared.applicationState == .active && !self.link.controlBusy && !self.link.preparingControl && self.link.confirmation == nil
@@ -149,6 +155,7 @@ final class AppModel: ObservableObject {
         fleet.onVehicleSnapshot = { [weak self] snapshot in
             guard let self, !self.demo, snapshot.vin == self.fleet.selectedVin else { return }
             let previousTrips = self.state.rows("trips").count
+            let previousCharges = self.state.rows("charges").count
             defer {
                 self.finishObservedTrip(previousCount: previousTrips)
                 let history = self.state
@@ -162,7 +169,7 @@ final class AppModel: ObservableObject {
             if snapshot.sectionIsRecent("drive_state"), !self.link.authentic || fleetDriveAt > (bleDrive.number("at") ?? 0) {
                 let overlay = snapshot.homeOverlay()
                 let history: Object = ["vin": snapshot.vin, "drive": snapshot.driveDisplay(), "charge": overlay["charge"] ?? Object(), "location": overlay["location"] ?? Object()]
-                do { self.output = try self.runtime.call("ingestFleetDrive", history) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+                do { self.applyLiveOutput(try self.runtime.call("ingestFleetDriveLive", history) as? Object ?? [:]); self.saveRecordsWhenAvailable(force: self.state.rows("trips").count > previousTrips) }
                 catch { self.storageStatus = "Fleet 운행 기록 저장: " + error.localizedDescription }
             }
             guard snapshot.sectionIsRecent("charge_state"),
@@ -181,7 +188,7 @@ final class AppModel: ObservableObject {
             if snapshot.sectionIsRecent("drive_state") {
                 input["latitude"] = snapshot.number("drive_state", "latitude"); input["longitude"] = snapshot.number("drive_state", "longitude")
             }
-            do { self.output = try self.runtime.call("ingestFleetCharge", input) as? Object ?? self.output; self.saveRecordsWhenAvailable() }
+            do { self.applyLiveOutput(try self.runtime.call("ingestFleetChargeLive", input) as? Object ?? [:]); self.saveRecordsWhenAvailable(force: self.state.rows("charges").count > previousCharges) }
             catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
         }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
@@ -240,7 +247,7 @@ final class AppModel: ObservableObject {
             do {
                 let previousCount = self.state.rows("trips").count
                 let previousCharges = self.state.rows("charges").count
-                self.output = try self.runtime.call("ingest", snapshot) as? Object ?? [:]
+                self.applyLiveOutput(try self.runtime.call("ingestLive", snapshot) as? Object ?? [:])
                 let charging = snapshot.object("groups").object("charge")
                 if let raw = charging.number("charging"), let status = ChargeEventPolicy.bleState(Int(raw)), let at = charging.number("at") {
                     let observation = ChargeObservation(vin: self.settings.string("vin"), at: Date(timeIntervalSince1970: at / 1000), state: status, soc: charging.number("soc"), limit: charging.number("limit"))
@@ -258,7 +265,8 @@ final class AppModel: ObservableObject {
                         }
                     }
                 }
-                if self.state.rows("trips").count > previousCount || self.state.rows("charges").count > previousCharges || Date().timeIntervalSince(self.lastSaved) > 5 { self.saveRecordsWhenAvailable() }
+                let completed = self.state.rows("trips").count > previousCount || self.state.rows("charges").count > previousCharges
+                self.saveRecordsWhenAvailable(force: completed)
                 self.finishObservedTrip(previousCount: previousCount)
                 self.automations.observe(output: self.output, previousTrips: previousCount, previousCharges: previousCharges, link: self.link, voice: self.voice, demo: self.demo)
             } catch {
@@ -281,6 +289,7 @@ final class AppModel: ObservableObject {
         }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
+            if let self, self.analyticsVisible, UIApplication.shared.applicationState == .active, !self.phoneCalls.isActive, Date().timeIntervalSince(self.lastAnalytics) >= 30 { self.refresh(detailed: true) }
             self?.syncArchiveIfNeeded()
             // Fleet API is billed per call and can wake the car: poll every 30 s, not every 5 s timer tick.
             if let self, !self.demo, !self.link.authentic, UIApplication.shared.applicationState == .active, Date().timeIntervalSince(self.lastFleetPoll) >= 30 {
@@ -328,11 +337,34 @@ final class AppModel: ObservableObject {
         archiveReadings = store.records
         try enrichLocalChargeSOC()
     }
-    func refresh() {
+    private func applyLiveOutput(_ delta: Object) {
+        guard delta.flag("liveDelta") else { if !delta.isEmpty { output = delta }; return }
+        var next = output, current = state
+        for (key, value) in delta.object("state") { current[key] = value }
+        for (key, value) in delta.object("history") {
+            guard let patch = value as? Object else { continue }
+            var rows = current.rows(key)
+            for row in patch.rows("rows") {
+                let identity = row.string("id")
+                if let index = rows.lastIndex(where: { !identity.isEmpty ? $0.string("id") == identity : $0.number("at") == row.number("at") }) {
+                    var merged = rows[index]; for (field, value) in row { merged[field] = value }; rows[index] = merged
+                } else { rows.append(row) }
+            }
+            current[key] = rows
+        }
+        next["state"] = current; next["fresh"] = delta.object("fresh"); next["briefing"] = delta["briefing"]
+        output = next
+    }
+    func setAnalysisVisible(_ visible: Bool) {
+        analyticsVisible = visible
+        if visible && UIApplication.shared.applicationState == .active { refresh(detailed: true) }
+    }
+    func refresh(detailed: Bool = false) {
         defer { updateLiveActivity() }
         do {
             // Read loaded settings before migrating the older standalone preference.
-            output = try runtime.call("view") as? Object ?? [:]
+            if detailed || output.isEmpty { output = try runtime.call("view") as? Object ?? [:]; lastAnalytics = Date() }
+            else { applyLiveOutput(try runtime.call("liveView") as? Object ?? [:]) }
             if !demo && !recoveryLock {
                 let defaults = UserDefaults.standard
                 var rates: Object = [:]
@@ -347,7 +379,8 @@ final class AppModel: ObservableObject {
                 if !rates.isEmpty {
                     _ = try runtime.call("settings", rates)
                     if rates["tariff"] != nil { defaults.set(true, forKey: "cost.legacyTariffMigrated") }
-                    output = try runtime.call("view") as? Object ?? [:]
+                    if detailed || output.isEmpty { output = try runtime.call("view") as? Object ?? [:]; lastAnalytics = Date() }
+            else { applyLiveOutput(try runtime.call("liveView") as? Object ?? [:]) }
                 }
             }
             if !link.connected || !link.authentic { output["fresh"] = Object() }
@@ -358,8 +391,8 @@ final class AppModel: ObservableObject {
         guard !recoveryLock else { throw LocalError.message("원본 기록 보호 중. 정상 백업을 복원하기 전에는 저장하지 않음.") }
         // v29: records use completeUntilFirstUserAuthentication, so saving works under the lock screen after first unlock.
         guard UIApplication.shared.isProtectedDataAvailable || canWriteLocked() else { throw LocalError.message("기기 잠금 해제 후 기록 저장 가능함") }
-        let data = Data(try encodeJSON(runtime.call("export")).utf8)
-        try data.write(to: recordFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        let data = try runtime.exportData()
+        try recordWriteQueue.sync { try data.write(to: recordFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
         lastSaved = Date(); savePending = false; storageStatus = nil; nextSaveAttempt = .distantPast
     }
     private func canWriteLocked() -> Bool {
@@ -371,7 +404,7 @@ final class AppModel: ObservableObject {
         do {
             _ = try runtime.call("load", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true])
             protectedLoadPending = false; recoveryLock = false; storageStatus = nil
-            refresh(); resume()
+            refresh(detailed: true); resume()
         } catch {
             protectedLoadPending = false; recoveryLock = true
             errorMessage = "저장 자료를 읽지 못함. 원본 보호를 위해 저장을 잠금. 백업 복원 필요. \(error.localizedDescription)"
@@ -379,19 +412,32 @@ final class AppModel: ObservableObject {
     }
     // Storage failure must not cancel live telemetry, navigation or automation.
     // Keep only the current runtime state pending; never overwrite a protected original with defaults.
-    private func saveRecordsWhenAvailable() {
+    private func saveRecordsWhenAvailable(force: Bool = false) {
         guard !demo, !recoveryLock else { return }
-        savePending = true
+        recordRevision &+= 1; savePending = true; urgentSavePending = urgentSavePending || force
+        guard !recordWriteInFlight else { return }
         guard UIApplication.shared.isProtectedDataAvailable || canWriteLocked() else {
-            storageStatus = "기록 저장 대기 · 잠금 해제 후 재시도. 저장 전 앱 종료 시 최근 기록이 유실될 수 있음"
-            return
+            storageStatus = "기록 저장 대기 · 잠금 해제 후 재시도. 저장 전 앱 종료 시 최근 기록이 유실될 수 있음"; return
         }
-        guard Date() >= nextSaveAttempt else { return }
-        do { try persist() }
-        catch {
-            nextSaveAttempt = Date().addingTimeInterval(30)
-            storageStatus = "기록 저장 실패 · 최근 변경은 아직 저장되지 않음. 30초 후 재시도"
-        }
+        guard Date() >= nextSaveAttempt, urgentSavePending || Date().timeIntervalSince(lastSaved) >= 30 else { return }
+        do {
+            let data = try runtime.exportData(), destination = recordFile, revision = recordRevision
+            recordWriteInFlight = true; urgentSavePending = false
+            let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Record flush")
+            recordWriteQueue.async { [weak self] in
+                let failure: String?
+                do { try data.write(to: destination, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]); failure = nil }
+                catch { failure = error.localizedDescription }
+                DispatchQueue.main.async {
+                    if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) }
+                    guard let self else { return }
+                    self.recordWriteInFlight = false
+                    if let failure { self.nextSaveAttempt = Date().addingTimeInterval(30); self.storageStatus = "기록 저장 실패 · 재시도 대기: " + failure }
+                    else { self.lastSaved = Date(); self.savePending = self.recordRevision != revision; self.storageStatus = nil; self.nextSaveAttempt = .distantPast }
+                    if self.urgentSavePending { self.saveRecordsWhenAvailable(force: true) }
+                }
+            }
+        } catch { nextSaveAttempt = Date().addingTimeInterval(30); storageStatus = "기록 직렬화 실패 · 재시도 대기" }
     }
     private func observeParkingTelemetry() {
         guard !demo else { return }
@@ -418,10 +464,10 @@ final class AppModel: ObservableObject {
         guard !recoveryLock || demo else { errorMessage = "원본 기록 보호 중. 백업 복원 필요."; return }
         do {
             let previousVIN = settings.string("vin")
-            _ = try runtime.call(operation, value); refresh()
+            _ = try runtime.call(operation, value); refresh(detailed: true)
             if ["addCharge", "updateCharge"].contains(operation) { try enrichLocalChargeSOC() }
             if settings.string("vin") != previousVIN { navigation.reset(); automations.resetObservation(); link.cancelPendingAutomation() }
-            saveRecordsWhenAvailable()
+            saveRecordsWhenAvailable(force: true)
         }
         catch { errorMessage = error.localizedDescription }
     }
@@ -440,7 +486,7 @@ final class AppModel: ObservableObject {
         guard !demo else { errorMessage = "예시 모드를 종료한 뒤 실차에 연결해야 함"; return }
         link.connect(vin: settings.string("vin"))
     }
-    func pause() { link.pauseForBackground(); saveRecordsWhenAvailable() }
+    func pause() { link.pauseForBackground(); saveRecordsWhenAvailable(force: true) }
     func resignActive() { link.resignActive(); navigation.suspendPending() }
     func resume() {
         guard !recoveryLock, !demo, UIApplication.shared.applicationState == .active else { return }
@@ -682,8 +728,8 @@ final class AppModel: ObservableObject {
             let old = try runtime.call("export")
             navigation.reset(); link.disconnect()
             if wasLocked, FileManager.default.fileExists(atPath: recordFile.path) { try FileManager.default.copyItem(at: recordFile, to: folder.appendingPathComponent("recovery-\(UUID().uuidString).json")) }
-            do { _ = try runtime.call("load", cleaned); recoveryLock = false; try persist(); refresh(); errorMessage = "복원 완료. 차량 키는 별도 등록·확인 필요."; resume() }
-            catch { recoveryLock = wasLocked; _ = try? runtime.call("load", old); refresh(); throw error }
+            do { _ = try runtime.call("load", cleaned); recoveryLock = false; try persist(); refresh(detailed: true); errorMessage = "복원 완료. 차량 키는 별도 등록·확인 필요."; resume() }
+            catch { recoveryLock = wasLocked; _ = try? runtime.call("load", old); refresh(detailed: true); throw error }
         } catch { errorMessage = error.localizedDescription }
     }
     func fetchWeather() {

@@ -97,7 +97,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
                 guard address == base else { throw CancellationError() }
                 connected = true
                 if !payloads.isEmpty {
-                    pendingReadings += try FleetTelemetryStore.shared.ingest(JSONSerialization.data(withJSONObject: payloads), vin: vin)
+                    pendingReadings += try await FleetTelemetryStore.shared.ingest(JSONSerialization.data(withJSONObject: payloads), vin: vin)
                     // Bound the batch so raw retention cannot evict a large initial import before analysis.
                     if pendingReadings >= 5000 {
                         guard let onHistoryReady else { throw FleetTelemetryData.failure("기록 분석 준비 중입니다.") }

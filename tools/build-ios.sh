@@ -38,6 +38,11 @@ Xcode/TypecastPolicyTests
 # The original artwork stays unchanged; asset layout adds a 5% margin on each side.
 node tools/js-logic-tests.cjs
 node tools/battery-analysis-tests.cjs
+node tools/stability-runtime-tests.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/LocalRuntime.swift TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift tools/runtime-bridge-tests.swift -o Xcode/RuntimeBridgeTests
+Xcode/RuntimeBridgeTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryJournal.swift tools/telemetry-journal-tests.swift -o Xcode/TelemetryJournalTests
+Xcode/TelemetryJournalTests
 node tools/gps-loss-tests.cjs
 node tools/charge-integrity-tests.cjs
 node tools/charge-cost-tests.cjs

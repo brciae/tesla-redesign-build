@@ -121,10 +121,17 @@ final class LocalRuntime {
     }
     func call(_ operation: String, _ argument: Any = [:]) throws -> Any {
         context.exception = nil
-        let result = context.objectForKeyedSubscript("hostCall")?.call(withArguments: [operation, try encodeJSON(argument)])
+        let result = context.objectForKeyedSubscript("hostCallObject")?.call(withArguments: [operation, try encodeJSON(argument)])
         if let error = context.exception { throw LocalError.message(error.toString()) }
-        guard let json = result?.toString(), let response = try decodeJSON(json) as? Object else { throw LocalError.message("분석 엔진 응답 오류") }
+        guard let response = result?.toDictionary() as? Object else { throw LocalError.message("분석 엔진 응답 오류") }
         guard response.flag("ok") else { throw LocalError.message(response.string("error", "알 수 없는 오류")) }
         return response["value"] ?? NSNull()
+    }
+    func exportData() throws -> Data {
+        context.exception = nil
+        let result = context.objectForKeyedSubscript("hostExportJSON")?.call(withArguments: [])
+        if let error = context.exception { throw LocalError.message(error.toString()) }
+        guard let text = result?.toString() else { throw LocalError.message("기록 직렬화 실패") }
+        return Data(text.utf8)
     }
 }

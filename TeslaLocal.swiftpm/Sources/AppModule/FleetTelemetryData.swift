@@ -2,7 +2,7 @@ import Foundation
 import CoreFoundation
 
 /// The wire value and timestamp are retained; invalid values explicitly supersede earlier data.
-struct FleetTelemetryReading: Codable, Identifiable {
+struct FleetTelemetryReading: Codable, Identifiable, Sendable {
     let vin: String
     let field: String
     let at: Date

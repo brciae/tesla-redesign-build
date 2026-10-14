@@ -7,43 +7,42 @@ import CoreFoundation
     @Published private(set) var status = "Telemetry 이력 없음"
     private let file: URL
     private var writable = true
+    private var persistence: FleetTelemetryJournal?
+    private var appliedRevision: UInt64 = 0
+    private var pendingIngestions = 0
     init() {
         file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/fleet-telemetry.json")
-        if FileManager.default.fileExists(atPath: file.path) {
-            do { records = try JSONDecoder().decode([FleetTelemetryReading].self, from: Data(contentsOf: file)); status = "저장된 표본 \(records.count)개" }
-            catch { writable = false; status = "Telemetry 저장 자료를 읽지 못했습니다. 원본 파일은 보존됩니다." }
-        }
+        do {
+            let restored = try FleetTelemetryJournal.restore(file)
+            records = restored.records; persistence = FleetTelemetryJournal(file: file, restored: restored)
+            if !records.isEmpty { status = "저장된 표본 \(records.count)개" }
+        } catch { writable = false; status = "Telemetry 저장 자료를 읽지 못했습니다. 원본 파일은 보존됩니다." }
     }
     private func pendingKey(_ vin: String) -> String { "fleet.archive.history.pending." + vin }
     func pendingHistoryStart(vin: String) -> Date? {
         guard let stamp = UserDefaults.standard.object(forKey: pendingKey(vin)) as? Double else { return nil }
         return Date(timeIntervalSince1970: stamp)
     }
-    func historySaved(vin: String) { UserDefaults.standard.removeObject(forKey: pendingKey(vin)) }
+    func historySaved(vin: String) { if pendingIngestions == 0 { UserDefaults.standard.removeObject(forKey: pendingKey(vin)) } }
     func requestHistoryRebuild(vin: String) {
         if let first = records.filter({ $0.vin == vin }).map(\.at).min() {
             UserDefaults.standard.set(first.timeIntervalSince1970, forKey: pendingKey(vin))
         }
     }
-    @discardableResult func ingest(_ data: Data, vin: String) throws -> Int {
-        guard writable else { throw FleetTelemetryData.failure("기존 저장 자료를 먼저 복구해야 합니다. 덮어쓰지 않습니다.") }
+    @discardableResult func ingest(_ data: Data, vin: String) async throws -> Int {
+        guard writable, let persistence else { throw FleetTelemetryData.failure("기존 저장 자료를 먼저 복구해야 합니다. 덮어쓰지 않습니다.") }
         let incoming = try FleetTelemetryData.decode(data, vin: vin)
-        let old = Dictionary(records.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-        let changed = incoming.filter { row in
-            guard let previous = old[row.id] else { return true }
-            return previous.number != row.number || previous.text != row.text || previous.invalid != row.invalid
+        guard let first = incoming.map(\.at).min() else { return 0 }
+        // Persist the analysis marker before durable delta append and before the NAS cursor advances.
+        let pending = min(pendingHistoryStart(vin: vin) ?? first, first)
+        UserDefaults.standard.set(pending.timeIntervalSince1970, forKey: pendingKey(vin))
+        pendingIngestions += 1; defer { pendingIngestions -= 1 }
+        let update = try await persistence.ingest(incoming)
+        if update.revision > appliedRevision {
+            appliedRevision = update.revision; records = update.records
+            status = "\(incoming.count)개 확인 · 저장 표본 \(records.count)개" + (update.warning.map { " · " + $0 } ?? "")
         }
-        guard !changed.isEmpty else { return 0 }
-        if let first = changed.map(\.at).min() {
-            // Mark before the atomic raw save. A crash can cause a harmless retry, never a skipped page.
-            let pending = min(pendingHistoryStart(vin: vin) ?? first, first)
-            UserDefaults.standard.set(pending.timeIntervalSince1970, forKey: pendingKey(vin))
-        }
-        let merged = FleetTelemetryData.merge(records, incoming)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(merged).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        records = merged; status = "\(incoming.count)개 확인 · 저장 표본 \(merged.count)개"
-        return changed.count
+        return update.changed
     }
     func latest(vin: String) -> [String: FleetTelemetryReading] { FleetTelemetryData.latest(records, vin: vin) }
     func observe(_ snapshot: FleetVehicleSnapshot) {
@@ -71,7 +70,9 @@ import CoreFoundation
             if !fields.isEmpty { payloads.append(["vin": snapshot.vin, "createdAt": ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: at / 1000)), "data": fields]) }
         }
         guard !payloads.isEmpty else { return }
-        do { try ingest(JSONSerialization.data(withJSONObject: payloads), vin: snapshot.vin) }
-        catch { status = "Fleet 기록 저장 실패: " + error.localizedDescription }
+        Task { @MainActor in
+            do { try await ingest(JSONSerialization.data(withJSONObject: payloads), vin: snapshot.vin) }
+            catch { status = "Fleet 기록 저장 실패: " + error.localizedDescription }
+        }
     }
 }

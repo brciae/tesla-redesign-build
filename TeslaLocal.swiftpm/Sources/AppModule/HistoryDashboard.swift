@@ -433,7 +433,12 @@ struct TeslaMateView: View {
         return (priced.isEmpty ? model.state.rows("charges") : priced).sorted { ($0.number("at") ?? 0) > ($1.number("at") ?? 0) }
     }
     /// Trips with the engine's energy estimates (the same rows 운행 기록 shows).
-    private var trips: [Object] { model.output.object("energyPeriods").object("36500").rows("trips").sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) } }
+    private var trips: [Object] {
+        let raw = Dictionary(model.state.rows("trips").map { ($0.string("id"), $0) }, uniquingKeysWith: { _, last in last })
+        return model.output.object("energyPeriods").object("36500").rows("trips").map { trip in
+            var row = trip; row["points"] = raw[trip.string("id")]?["points"]; return row
+        }.sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) }
+    }
     private var capacity: Double { model.output.object("energy").number("capacityKWh") ?? 75 }
     var body: some View {
         VStack(spacing: 0) {

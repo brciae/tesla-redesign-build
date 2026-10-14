@@ -802,7 +802,8 @@
         if(!Number.isFinite(rate)||rate<=0||rate>2000){rate=personal??own??180;method='기본값 추정';uncertainty=1;}
         const kwh=km*rate/1000;
         if(!mixed&&delta>=3&&km>=5&&rate>=30&&rate<=1000)history.push(rate);
-        const row={...t,duplicate,estimatedKWh:round(kwh,3),estimatedKmPerKWh:km>0?round(1000/rate,2):null,estimatedWhPerKm:km>0?round(rate,1):null,estimateMethod:method,estimateLowKWh:round(Math.max(0,kwh*(1-uncertainty)),3),estimateHighKWh:round(kwh*(1+uncertainty),3),capacityKWh:capacity,capacityAssumed,estimated:true};
+        const summary=Object.fromEntries(Object.entries(t).filter(([k])=>k!=='points'));
+        const row={...summary,duplicate,estimatedKWh:round(kwh,3),estimatedKmPerKWh:km>0?round(1000/rate,2):null,estimatedWhPerKm:km>0?round(rate,1):null,estimateMethod:method,estimateLowKWh:round(Math.max(0,kwh*(1-uncertainty)),3),estimateHighKWh:round(kwh*(1+uncertainty),3),capacityKWh:capacity,capacityAssumed,estimated:true};
         if(t.end>=from&&t.end<=to)rows.push(row);
       }
       let parkingKWh=0,unclassifiedKWh=0,parkingCount=0,parkingEnd=-1;
@@ -911,7 +912,19 @@
       }
       return parts.length ? parts.join(' ') : '최신 차량 상태 미수신.';
     }
+    liveView(now=Date.now()){
+      // BLE/background callbacks must never traverse route history or calculate period statistics.
+      const s=this.state,history={},state={};
+      for(const [key,value] of Object.entries(s)){
+        if(Array.isArray(value)){
+          const last=value.at(-1);history[key]={count:value.length,rows:last?[key==='trips'?Object.fromEntries(Object.entries(last).filter(([k])=>k!=='points')):last]:[]};
+        }else if(key==='activeTrip'&&value){state[key]=Object.fromEntries(Object.entries(value).filter(([k])=>k!=='points'));}
+        else state[key]=value;
+      }
+      return {liveDelta:true,state,history,briefing:this.briefing(now),fresh:Object.fromEntries(Object.entries(s.groups).map(([k,g])=>[k,k==='location'?freshLocation(g,now):fresh(g,now)]))};
+    }
     view(now=Date.now()){
+      if(this._liveOnly)return this.liveView(now);
       this._viewAudit=auditCharges(reconciledCharges(this.state.charges));
       try {
       const s=this.state,charging=this.chargeSummary();
