@@ -116,43 +116,71 @@ struct ChargeDetailView: View {
 }
 
 struct TripDetailView: View {
+    @EnvironmentObject private var model: AppModel
     let trip: Object
     let capacity: Double
+    var comparisons: [Object] = []
+    @State private var startName = "출발 위치"
+    @State private var endName = "도착 위치"
+    @State private var speed: [FleetTelemetryReading] = []
     var body: some View {
-        let start = HistoryData.date(trip, "start") ?? Date(), end = HistoryData.date(trip, "end") ?? start
+        let metrics = TripRecordMetrics(row: trip, capacity: capacity)
         let route = HistoryData.points(trip)
-        let speed = HistoryData.readings(["VehicleSpeed"], from: start, to: end)
-        let km = trip.number("distanceKm") ?? 0
-        // Same estimate as the 운행 기록 cards (engine energyPeriods), so numbers match everywhere.
-        let usedKWh: Double? = trip.number("estimatedKWh") ?? { guard let a = trip.number("startSOC"), let b = trip.number("endSOC"), a >= b else { return nil }; return (a - b) / 100 * capacity }()
-        List {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 16) {
+            TripRecordSummaryCard(metrics: metrics, startName: startName, endName: endName)
+            HStack {
+                Button { UIPasteboard.general.string = summary(metrics) } label: { Label("요약 복사", systemImage: "doc.on.doc") }.buttonStyle(.bordered)
+                if comparisons.count > 1 {
+                    NavigationLink { TripComparisonScreen(current: metrics, candidates: comparisons.map { TripRecordMetrics(row: $0, capacity: capacity) }) } label: { Label("다른 주행과 비교", systemImage: "chart.bar.xaxis") }.buttonStyle(.bordered)
+                }
+            }
+            if let average = metrics.averageSpeed { row("평균 속도", String(format: "%.0f km/h", average)) }
+            if let top = speed.compactMap(\.number).max() { row("최고 속도 · 수신값", String(format: "%.0f km/h", top * 1.609344)) }
+            if let odo = trip.number("endOdo") { row("도착 누적 주행거리", String(format: "%.1f km", odo)) }
             if route.count > 1 {
-                Section {
                     Map { MapPolyline(coordinates: route).stroke(.blue, lineWidth: 4)
                         if let f = route.first { Marker("출발", coordinate: f).tint(.green) }
                         if let l = route.last { Marker("도착", coordinate: l).tint(.red) } }
                         .frame(height: 240).clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-            }
-            Section {
-                row("출발", dateText(trip.number("start")))
-                row("소요", HistoryData.duration(start, end))
-                row("거리", String(format: "%.1f km", km))
-                if end > start, km > 0 { row("평균 속도", String(format: "%.0f km/h", km / end.timeIntervalSince(start) * 3600)) }
-                if let top = speed.compactMap(\.number).max() { row("최고 속도", String(format: "%.0f km/h", top * 1.609344)) }
-                if let a = trip.number("startSOC"), let b = trip.number("endSOC") { row("배터리", "\(Int(a))% → \(Int(b))%") }
-                if let used = usedKWh { row("소모", String(format: "%.1f kWh (추정)", used)) }
-                if let used = usedKWh, used > 0, km > 1 { row("전비", String(format: "%.2f km/kWh", km / used)) }
-            }
+            } else { Text("관측 경로 없음 · 추정 경로를 만들어 표시하지 않음").font(.caption).foregroundStyle(.secondary) }
             if speed.count > 2 {
-                Section("속도 (km/h)") {
+                    Text("수신 속도 · km/h").font(.headline)
                     Chart(speed, id: \.id) { AreaMark(x: .value("시각", $0.at), y: .value("km/h", ($0.number ?? 0) * 1.609344)).foregroundStyle(.blue.opacity(0.4)) }.chartReveal().frame(height: 160)
-                }
             }
-        }.navigationTitle("주행 상세")
+            TripGuidanceTimeline(vin: model.energyVehicleVIN, from: metrics.start, to: metrics.end)
+          }.padding(16)
+        }.navigationTitle("주행 기록")
+            .task(id: trip.string("id")) {
+                if let from = metrics.start, let to = metrics.end { speed = HistoryData.readings(["VehicleSpeed"], from: from, to: to) }
+                if let first = route.first { startName = await placeName(first, fallback: "출발 위치") }
+                if let last = route.last { endName = await placeName(last, fallback: "도착 위치") }
+            }
+    }
+    private func placeName(_ p: CLLocationCoordinate2D, fallback: String) async -> String {
+        let location = CLLocation(latitude: p.latitude, longitude: p.longitude)
+        guard !Task.isCancelled, let mark = try? await CLGeocoder().reverseGeocodeLocation(location, preferredLocale: Locale(identifier: "ko_KR")).first else { return fallback }
+        var seen = Set<String>()
+        let parts = [mark.locality, mark.subLocality, mark.thoroughfare, mark.subThoroughfare].compactMap { $0 }.filter { !$0.isEmpty && seen.insert($0).inserted }
+        return parts.isEmpty ? mark.name ?? fallback : parts.joined(separator: " ")
+    }
+    private func summary(_ m: TripRecordMetrics) -> String {
+        "\(m.start?.formatted(date: .abbreviated, time: .shortened) ?? "시각 미확인")\n\(startName) → \(endName)\n거리 \(valueText(m.distanceKm, digits: 2)) km · 시간 \(valueText(m.minutes))분\n소비 \(valueText(m.energyKWh, digits: 2)) kWh · 전비 \(valueText(m.efficiency, digits: 1)) km/kWh (추정)\n잔량 \(valueText(m.startSOC))% → \(valueText(m.endSOC))%"
     }
     private func row(_ label: String, _ value: String) -> some View {
         HStack { Text(label).foregroundStyle(.secondary); Spacer(); Text(value) }.font(.subheadline)
+    }
+}
+
+@MainActor extension TripRecordMetrics {
+    init(row: Object, capacity: Double) {
+        let route = HistoryData.points(row)
+        let used: Double? = row.number("estimatedKWh") ?? {
+            guard let a = row.number("startSOC"), let b = row.number("endSOC"), a >= b, capacity.isFinite, capacity > 0 else { return nil }; return (a - b) / 100 * capacity
+        }()
+        self.init(id: row.string("id", String(row.number("start") ?? 0)), start: HistoryData.date(row, "start"), end: HistoryData.date(row, "end"),
+            distanceKm: row.number("distanceKm"), energyKWh: used, startSOC: row.number("startSOC"), endSOC: row.number("endSOC"), partial: row.flag("missing"),
+            startPoint: route.first.map { .init(latitude: $0.latitude, longitude: $0.longitude) }, endPoint: route.last.map { .init(latitude: $0.latitude, longitude: $0.longitude) })
     }
 }
 

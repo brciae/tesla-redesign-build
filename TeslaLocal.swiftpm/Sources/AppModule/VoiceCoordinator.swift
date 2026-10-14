@@ -13,6 +13,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     @Published private(set) var lastPlaybackOutput = ""
     @Published private(set) var automaticStatus = "자동 안내 요청 없음"
     @Published private(set) var playbackStarts = 0
+    var automationSpeechContext: (String) -> AutomationSpeechContext = { _ in .init(trigger: "automation", hour: Calendar.current.component(.hour, from: Date()), insideC: nil, scope: "") }
+    var spokenVehicleIdentity: () -> String = { "" }
+    private let contextualSpeech = AutomationContextSpeech()
     @Published private(set) var playbackCompletions = 0
     private func automaticTrace(_ message: String) {
         automaticStatus = Date().formatted(date: .omitted, time: .standard) + " · " + message
@@ -212,17 +215,31 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     /// Speaks an announcement with instant button preemption (cancels previous speech immediately with 0ms delay).
-    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true, voice: String? = nil) {
+    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true, voice: String? = nil, contextualized: Bool = false) {
         let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
         if category == "voiceControl" && (!d.bool(forKey: "voiceEnabled") || !d.bool(forKey: "voiceControl")) {
             automaticTrace("제어 안내 차단 · 음성 설정 꺼짐"); return
         }
         guard manual || (d.bool(forKey: "voiceEnabled") && d.bool(forKey: category)) else { automaticTrace("자동 안내 차단 · 전체 또는 종류별 음성 설정 꺼짐"); return }
-        CharacterReact.say(text) // v1.37: the floating character shows what is being said
         let now = Date()
         if !manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: now), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { automaticTrace("자동 안내 차단 · 방해 금지 시간"); return }
         if !manual { automaticTrace("자동 안내 요청 수신 · 재생 대기") }
+        if !manual, ["voiceAutomations", "voiceTrip", "voiceCharge", "voiceConnection", "voiceDestination"].contains(category),
+           priority < 3 || ["boarding", "departure", "arrival", "chargingLocked", "chargeStart", "chargeEnd"].contains(automationSpeechContext(actualKey).trigger),
+           !contextualized, d.bool(forKey: "automationSpeech.aiEnabled") {
+            let context = automationSpeechContext(actualKey)
+            contextualSpeech.resolve(base: text, key: actualKey, context: context) { [weak self] selected in
+                guard let self, self.automationSpeechContext(actualKey).scope == context.scope,
+                      Date().timeIntervalSince(now) < min(8, ttl) else { return }
+                let resolved = d.bool(forKey: "automationSpeech.aiEnabled") ? selected : text
+                guard !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                self.say(resolved, key: actualKey, category: category, priority: priority,
+                    ttl: max(1, ttl - Date().timeIntervalSince(now)), manual: false, voice: voice, contextualized: true)
+            }
+            return
+        }
+        CharacterReact.say(text)
         let styled = BriefingStyle.selected.phrase(text, category: category)
         let prepared = SpeechText.prepare(styled)
 
@@ -402,6 +419,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             p.prepareToPlay()
             guard p.play() else { throw LocalError.message("오디오 출력을 시작하지 못했습니다.") }
             playbackStarts += 1
+            if !item.manual || item.key.hasPrefix("navigation.") {
+                GuidanceJournal.shared.append(vin: spokenVehicleIdentity(), text: item.text, navigation: item.key.hasPrefix("navigation."))
+            }
             self.typecastPlayer = p
             self.speaking = true
             self.playbackState = "읽는 중 · 타입캐스트 AI 음성"
@@ -448,6 +468,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func stopAutomatic() {
+        contextualSpeech.cancelAll()
         queue.clearAutomatic()
         if activeTicket != nil && !activeManual {
             cancelCurrent()
@@ -456,6 +477,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func callStateChanged(_ active: Bool) {
+        if active { contextualSpeech.cancelAll() }
         guard active != callActive else { return }
         callActive = active
         if active {
@@ -466,6 +488,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
     }
     func stop() {
+        contextualSpeech.cancelAll()
         navigationPreparation?.cancel()
         queue.clear()
         cancelCurrent()

@@ -35,25 +35,26 @@ enum AutomationAPI {
         guard result == errSecSuccess else { throw failure("API 키를 갱신하지 못했습니다.") }
     }
     static func removeKey(_ provider: AutomationAPIProvider) { SecItemDelete(query(provider) as CFDictionary) }
-    static func generate(provider: AutomationAPIProvider, model: String, prompt: String, onRetry: ((Int, TimeInterval) async -> Void)? = nil) async throws -> String {
+    static func generate(provider: AutomationAPIProvider, model: String, prompt: String, timeout: TimeInterval = 60, maxTokens: Int = 4096, retryAllowed: Bool = true, onRetry: ((Int, TimeInterval) async -> Void)? = nil) async throws -> String {
         guard let key = key(provider), !key.isEmpty else { throw failure("선택한 서비스의 API 키를 먼저 등록해 주세요.") }
         let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
         guard model.range(of: "^[A-Za-z0-9._-]{1,100}$", options: .regularExpression) != nil else { throw failure("사용할 모델 ID를 확인해 주세요.") }
         let endpoint: String
         let body: [String: Any]
+        let budget = min(4096, max(64, maxTokens))
         switch provider {
         case .openAI:
             endpoint = "https://api.openai.com/v1/responses"
-            body = ["model": model, "input": prompt, "max_output_tokens": 4096, "store": false]
+            body = ["model": model, "input": prompt, "max_output_tokens": budget, "store": false]
         case .anthropic:
             endpoint = "https://api.anthropic.com/v1/messages"
-            body = ["model": model, "max_tokens": 2048, "messages": [["role": "user", "content": prompt]]]
+            body = ["model": model, "max_tokens": min(2048, budget), "messages": [["role": "user", "content": prompt]]]
         case .gemini:
             endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
-            body = ["contents": [["parts": [["text": prompt]]]], "generationConfig": ["maxOutputTokens": 4096]]
+            body = ["contents": [["parts": [["text": prompt]]]], "generationConfig": ["maxOutputTokens": budget]]
         }
         var request = URLRequest(url: URL(string: endpoint)!)
-        request.httpMethod = "POST"; request.timeoutInterval = 60
+        request.httpMethod = "POST"; request.timeoutInterval = min(60, max(3, timeout))
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         switch provider {
         case .openAI: request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
@@ -65,7 +66,7 @@ enum AutomationAPI {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let session = URLSession(configuration: .ephemeral, delegate: AutomationAPIRedirectGuard(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        return try await complete(provider: provider, onRetry: onRetry) {
+        return try await complete(provider: provider, retryAllowed: retryAllowed, onRetry: onRetry) {
             let (bytes, response) = try await session.bytes(for: request)
             guard let http = response as? HTTPURLResponse else { throw failure("AI 서비스 응답을 확인할 수 없습니다.") }
             var data = Data()
@@ -80,6 +81,7 @@ enum AutomationAPI {
     /// Retry only explicit transient HTTP responses, never ambiguous network failures or invalid drafts.
     /// Each generation owns its retry budget; no failed state carries into the next generation.
     static func complete(provider: AutomationAPIProvider,
+                         retryAllowed: Bool = true,
                          sleep: (TimeInterval) async throws -> Void = { seconds in
                              try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
                          },
@@ -90,7 +92,7 @@ enum AutomationAPI {
             let (data, http) = try await send()
             try Task.checkCancellation()
             if http.statusCode == 200 { return try decodeResponse(data, provider: provider) }
-            if let delay = retryDelay(http: http, data: data, attempt: attempt) {
+            if retryAllowed, let delay = retryDelay(http: http, data: data, attempt: attempt) {
                 await onRetry?(attempt + 1, delay)
                 try await sleep(delay)
                 continue

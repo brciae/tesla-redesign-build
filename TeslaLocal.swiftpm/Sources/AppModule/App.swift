@@ -531,8 +531,8 @@ struct TripListView: View {
                         Spacer(minLength: 4)
                         InfoNote("이 회차의 관측 근거", tripDetail(trip))
                     }
-                    NavigationLink { TripDetailView(trip: trip, capacity: model.output.object("energy").number("capacityKWh") ?? 75) } label: {
-                        Label("경로·속도 상세", systemImage: "map").font(.subheadline)
+                    NavigationLink { TripDetailView(trip: trip, capacity: model.output.object("energy").number("capacityKWh") ?? 75, comparisons: trips) } label: {
+                        Label("상세·지도·주행 비교", systemImage: "map").font(.subheadline)
                     }
                 }
             }

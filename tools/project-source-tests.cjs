@@ -5,7 +5,7 @@ const base = path.resolve(__dirname, '../Xcode');
 const probe = JSON.parse(fs.readFileSync(path.join(base,'InterfaceProbe.json'),'utf8'));
 const declared = probe.targets.InterfaceProbe.sources.map(s=>path.resolve(base,typeof s==='string'?s:s.path));
 const sharedSource = name => path.resolve(base, '../TeslaLocal.swiftpm/Sources/AppModule', name);
-for (const source of ['TripEnergyPrediction.swift','TripEnergyStore.swift','TripEnergyPredictionView.swift']) {
+for (const source of ['TripEnergyPrediction.swift','TripEnergyStore.swift','TripEnergyPredictionView.swift', 'TripComparisonPolicy.swift', 'TripRecordComponents.swift', 'AutomationAPI.swift', 'AutomationSpeechPolicy.swift', 'AutomationContextSpeech.swift', 'ContextSpeechSettings.swift', 'GuidanceJournal.swift']) {
   assert.ok(declared.includes(sharedSource(source)), 'Trip energy shared UI dependency missing: '+source);
 }
 if (declared.includes(sharedSource('FleetTelemetryStore.swift'))) {

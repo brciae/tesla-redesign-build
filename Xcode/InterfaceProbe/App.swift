@@ -32,6 +32,8 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("fullscreen-navigation-probe") { FullscreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("trip-record-probe") { TripRecordProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("context-speech-probe") { ContextSpeechProbe() }
             else if ProcessInfo.processInfo.arguments.contains("energy-history-probe") { TripEnergyHistoryProbe() }
             else if ProcessInfo.processInfo.arguments.contains("home-charging-probe") { HomeChargingProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charging-time-probe") { ChargingTimeProbe() }
@@ -65,6 +67,38 @@ struct TripEnergyHistoryProbe: View {
             initial: forecast, endedAt: start.addingTimeInterval(900), actualArrivalSOC: charged ? 74 : 64, arrived: true,
             chargingObserved: charged, startOdometerKm: 100, points: points,
             chargingStops: charged ? [.init(id: "charge", startedAt: start.addingTimeInterval(400), endedAt: start.addingTimeInterval(450), startSOC: 66, endSOC: 76, batteryAddedKWh: 7.2)] : nil)
+    }
+}
+
+struct TripRecordProbe: View {
+    private let start = Date(timeIntervalSince1970: 1704067200)
+    private var current: TripRecordMetrics { .init(id: "one", start: start, end: start.addingTimeInterval(2400), distanceKm: 28, energyKWh: 4, startSOC: 80, endSOC: 75) }
+    private var other: TripRecordMetrics { .init(id: "two", start: start.addingTimeInterval(-86400), end: start.addingTimeInterval(-86400 + 2280), distanceKm: 28, energyKWh: 3.5, startSOC: 80, endSOC: 75) }
+    var body: some View {
+        NavigationStack { ScrollView { VStack(spacing: 16) {
+            TripRecordSummaryCard(metrics: current, startName: "샘플 출발지", endName: "샘플 목적지")
+            NavigationLink("다른 주행과 비교") { TripComparisonScreen(current: current, candidates: [current, other]) }.buttonStyle(.borderedProminent)
+            TripGuidanceTimeline(vin: "TEST", from: start, to: current.end)
+        }.padding(16) }.navigationTitle("주행 기록") }
+    }
+}
+struct ContextSpeechProbe: View {
+    @State private var preview = "배터리 82퍼센트입니다."
+    private var context: AutomationSpeechContext { .init(trigger: "boarding", hour: 8, insideC: 35, scope: "TEST") }
+    var body: some View {
+        NavigationStack { Form {
+            ContextSpeechSettings()
+            Text(preview).accessibilityIdentifier("automation.ai.preview")
+            Button("상황 멘트 예시") {
+                let options = AutomationSpeechPolicy.options(base: "배터리 82퍼센트입니다.", context: context)
+                preview = AutomationSpeechPolicy.selected("{\"choice\":2}", options: options) ?? options[0]
+            }.accessibilityIdentifier("automation.ai.example")
+            Button("불필요한 인사 생략 예시") {
+                let options = AutomationSpeechPolicy.options(base: "탑승을 환영합니다.", context: context, allowRoutineOmission: true)
+                let value = AutomationSpeechPolicy.selected("{\"choice\":3}", options: options)
+                preview = value == "" ? "새 정보 없는 인사는 생략함" : value ?? options[0]
+            }.accessibilityIdentifier("automation.ai.omit.example")
+        }.navigationTitle("상황별 AI 안내") }
     }
 }
 

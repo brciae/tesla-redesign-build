@@ -132,6 +132,13 @@ final class AppModel: ObservableObject {
         recordFile = folder.appendingPathComponent("records.json")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         automations = try AutomationCoordinator(folder: folder)
+        voice.spokenVehicleIdentity = { [weak self] in guard let self, !self.demo else { return "" }; return self.energyVehicleVIN }
+        voice.automationSpeechContext = { [weak self] key in
+            guard let self else { return .init(trigger: "automation", hour: 12, insideC: nil, scope: "") }
+            let trigger = key.hasPrefix("boarding:") ? "boarding" : self.automations.rules.first(where: { key == "auto:" + $0.id })?.trigger.rawValue ?? "automation"
+            return .init(trigger: trigger, hour: Calendar.current.component(.hour, from: Date()),
+                insideC: self.output.object("fresh").flag("climate") ? self.groups.object("climate").number("insideC") : nil, scope: self.energyVehicleVIN)
+        }
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         var localFolder = folder; try localFolder.setResourceValues(values)
         if FileManager.default.fileExists(atPath: recordFile.path) {

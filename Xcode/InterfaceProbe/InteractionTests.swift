@@ -452,6 +452,32 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["경로 미수신"].waitForExistence(timeout: 5))
         XCUIDevice.shared.orientation = .portrait
     }
+    func testTripRecordSummaryAndSelectedComparison() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["trip-record-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["샘플 출발지"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["28.00"].exists && app.staticTexts["4.00"].exists)
+        let summary = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); summary.name = "Trip record endpoints four metrics and guidance timeline"; summary.lifetime = .keepAlways; add(summary)
+        app.buttons["다른 주행과 비교"].tap()
+        XCTAssertTrue(app.staticTexts["trip.compare.time"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["trip.compare.time"].label.contains("+2분"))
+        XCTAssertTrue(app.staticTexts["trip.compare.efficiency"].label.contains("전비 -"))
+        let comparison = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); comparison.name = "Trip comparison signed time and efficiency with separate units"; comparison.lifetime = .keepAlways; add(comparison)
+    }
+    func testContextSpeechSettingsAndRoutineOmission() {
+        let app = XCUIApplication(); app.launchArguments = ["context-speech-probe"]; app.launch()
+        let toggle = app.switches["automation.ai.speech"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        if toggle.value as? String != "1" { toggle.tap() }
+        XCTAssertTrue(app.switches["automation.ai.routine"].exists)
+        app.buttons["automation.ai.example"].tap()
+        XCTAssertTrue(app.staticTexts["automation.ai.preview"].label.contains("82퍼센트"))
+        XCTAssertTrue(app.staticTexts["automation.ai.preview"].label.contains("실내 온도가 높습니다"))
+        app.buttons["automation.ai.omit.example"].tap()
+        XCTAssertTrue(app.staticTexts["automation.ai.preview"].label.contains("생략함"))
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "AI context speech consent settings and nonessential greeting omission"; shot.lifetime = .keepAlways; add(shot)
+        toggle.tap() // Keep subsequent playback tests on their original local-only path.
+    }
     func testTripEnergyForecastAcrossThemesAndRotation() {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "energy-forecast-probe"]; app.launch()
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
