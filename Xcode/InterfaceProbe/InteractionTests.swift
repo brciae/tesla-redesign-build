@@ -82,6 +82,18 @@ final class InteractionTests: XCTestCase {
         shot.name = "Actual ActivityKit widget extension on home screen"; shot.lifetime = .keepAlways; add(shot)
         app.activate()
         XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 5))
+        app.buttons["음악 동시 표시 시험"].tap()
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        let play = safari.buttons["테스트 음악 재생"]
+        XCTAssertTrue(play.waitForExistence(timeout: 12)); play.tap()
+        XCTAssertTrue(safari.buttons["테스트 음악 재생 중"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.press(.home)
+        let musicDelay = expectation(description: "Music and Live Activity snapshots")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { musicDelay.fulfill() }
+        wait(for: [musicDelay], timeout: 6)
+        let sharedShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        sharedShot.name = "Actual Live Activity with Safari music playback"; sharedShot.lifetime = .keepAlways; add(sharedShot)
+        safari.terminate(); app.activate()
     }
     func testChargingMapDestinationAndRejectedVehicleSend() {
         XCUIDevice.shared.orientation = .portrait
@@ -196,9 +208,9 @@ final class InteractionTests: XCTestCase {
     func testAudioSettingsInterruptionsPreemptionAndRecovery() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["voice-lifecycle-probe"]; app.launch()
-        let result = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "음성 상태 17/17 검증 완료", "실패 ·")).firstMatch
+        let result = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "음성 상태 18/18 검증 완료", "실패 ·")).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 90))
-        XCTAssertEqual(result.label, "음성 상태 17/17 검증 완료")
+        XCTAssertEqual(result.label, "음성 상태 18/18 검증 완료")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Voice settings interruption expiry preemption recovery and Typecast preview"; shot.lifetime = .keepAlways; add(shot)
     }
     func testAllAutomationEventsReachPlayback() {

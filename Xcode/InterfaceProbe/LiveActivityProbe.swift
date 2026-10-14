@@ -18,7 +18,14 @@ struct LiveActivityProbe: View {
             Text("실제 Dynamic Island 표시와 별도인 공통 뷰 검증")
                 .font(.caption).foregroundStyle(.secondary)
             VoiceVolumeControl(title: "길안내 음량", value: $gain)
-            Button("실제 실시간 현황 시작") { manager.update(state, enabled: true) }
+            Button("실제 실시간 현황 시작") {
+                var current = state; current.observedAt = Date(); manager.update(current, enabled: true)
+            }
+            Button("음악 동시 표시 시험") {
+                var current = state; current.observedAt = Date(); current.turnMetres = 280
+                manager.update(current, enabled: true)
+                UIApplication.shared.open(URL(string: "http://127.0.0.1:18757/music.html")!)
+            }
             Text(manager.status).accessibilityIdentifier("live.activity.status")
         }.padding().accessibilityElement(children: .contain)
     }

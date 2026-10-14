@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 swift tools/prepare-icon.swift
+python3 tools/prepare-music-probe.py
+python3 -m http.server 18757 --bind 127.0.0.1 --directory Xcode/BuildOutput/MusicProbe > Xcode/BuildOutput/MusicProbe/server.log 2>&1 &
+music_probe_pid=$!
+trap 'kill "$music_probe_pid" 2>/dev/null || true' EXIT
 xcodegen generate --spec Xcode/InterfaceProbe.json --project Xcode
 # Pick an installed available iPhone simulator, not a guessed model/runtime identifier.
 device_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for a in d["devices"].values() for v in a if v["isAvailable"] and v["name"].startswith("iPhone")))')"
@@ -12,6 +16,7 @@ elif [[ "${1:-}" == junction ]]; then
 elif [[ "${1:-}" == new ]]; then
   test_filter=(
     -only-testing:InterfaceProbeTests/InteractionTests/testActualLiveActivityExtensionOnHomeScreen
+    -only-testing:InterfaceProbeTests/InteractionTests/testAudioSettingsInterruptionsPreemptionAndRecovery
     -only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit
     -only-testing:InterfaceProbeTests/InteractionTests/testLiveActivityViewsAndBackgroundReturn
     -only-testing:InterfaceProbeTests/InteractionTests/testRobotWithoutFootRodsSurvivesAppSwitching

@@ -25,6 +25,8 @@ node tools/control-path-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceGainPolicy.swift tools/voice-gain-tests.swift -o Xcode/VoiceGainTests
 Xcode/VoiceGainTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift tools/navigation-recovery-tests.swift -o Xcode/NavigationRecoveryTests
+Xcode/NavigationRecoveryTests
 xcrun clang -fobjc-arc -framework Foundation tools/navigation-speech-tests.m -o Xcode/NavigationSpeechTests
 Xcode/NavigationSpeechTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests

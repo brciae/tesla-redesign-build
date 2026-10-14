@@ -76,6 +76,7 @@ final class AppModel: ObservableObject {
     private var recoveryLock = false
     private var timer: Timer?
     private var activityObservedAt = Date.distantPast
+    private let phoneCalls = PhoneCallLifecycle()
     func updateLiveActivity() {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -217,6 +218,16 @@ final class AppModel: ObservableObject {
         voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         navigation.onActivityChange = { [weak self] in self?.updateLiveActivity() }
+        voice.callStateChanged(phoneCalls.isActive)
+        phoneCalls.changed = { [weak self] active in
+            guard let self else { return }
+            self.voice.callStateChanged(active)
+            if !active {
+                self.navigation.recoverAfterCall(vin: self.settings.string("vin"))
+                if UIApplication.shared.applicationState == .active { self.link.resume(vin: self.settings.string("vin")) }
+                self.updateLiveActivity()
+            }
+        }
         link.onControlOutcome = { [weak self] message in
             self?.voice.say(message, key: "controlOutcome:" + UUID().uuidString, category: "voiceControl", priority: 2)
         }
@@ -429,7 +440,8 @@ final class AppModel: ObservableObject {
         guard !recoveryLock, !demo, UIApplication.shared.applicationState == .active else { return }
         nextSaveAttempt = .distantPast
         if savePending { saveRecordsWhenAvailable() }
-        link.resume(vin: settings.string("vin")); navigation.foregrounded(); refresh()
+        voice.callStateChanged(phoneCalls.isActive)
+        link.resume(vin: settings.string("vin")); navigation.foregrounded(vin: settings.string("vin")); refresh()
         Task { @MainActor in await fleet.refreshVehicleSnapshot() }
     }
     func refreshVehicle() {

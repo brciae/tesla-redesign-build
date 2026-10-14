@@ -30,6 +30,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var nativeActive = false
     private var quietUntil = Date.distantPast
     private var interrupted = false
+    private var callActive = false
     private var interruptedAt = Date.distantPast
     private var observer: NSObjectProtocol?
     private var routeObserver: NSObjectProtocol?
@@ -127,6 +128,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             if self.interrupted {
                 self.stop()
                 self.notice = "통화·다른 오디오로 안내 일시 중지"
+            } else {
+                self.refreshOutput()
+                self.drain()
             }
         }
     }
@@ -237,11 +241,11 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func drain() {
         // iOS often never delivers the matching "ended" notification (e.g. while this session is
         // inactive), which silently blocked every later announcement. Recover after 20 s.
-        if interrupted, Date().timeIntervalSince(interruptedAt) > 20 {
+        if interrupted, !callActive, Date().timeIntervalSince(interruptedAt) > 20 {
             interrupted = false
             automaticTrace("오디오 중단 해제 · 안내 재개")
         }
-        guard !interrupted, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
+        guard !interrupted, !callActive, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
         guard let item = queue.next(now: Date()) else { return }
         navigationSpeaking = item.key.hasPrefix("navigation.")
         activePriority = item.priority
@@ -451,6 +455,16 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
     }
 
+    func callStateChanged(_ active: Bool) {
+        guard active != callActive else { return }
+        callActive = active
+        if active {
+            interrupted = true; interruptedAt = Date(); stop()
+            notice = "통화 중 · 경로 안내는 유지하고 음성만 대기"
+        } else {
+            interrupted = false; notice = ""; refreshOutput(); drain()
+        }
+    }
     func stop() {
         navigationPreparation?.cancel()
         queue.clear()

@@ -503,6 +503,13 @@ struct VoicePlaybackProbe: View {
         var count = voice.playbackCompletions; request()
         for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
         guard voice.playbackCompletions == count + 1 else { eventResult = "실패 · 통화 종료 후 새 안내"; return }; passed += 1
+        // A call exceeding the old 20-second fallback must remain silent until it ends.
+        voice.callStateChanged(true); let callStarts = voice.playbackStarts
+        request(); try? await Task.sleep(nanoseconds: 21_000_000_000)
+        guard voice.playbackStarts == callStarts else { eventResult = "실패 · 긴 통화 중 안내 재개"; return }
+        count = voice.playbackCompletions; voice.callStateChanged(false)
+        for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackCompletions == count + 1 else { eventResult = "실패 · 긴 통화 후 안내 복구"; return }; passed += 1
         // Safety navigation preempts an automatic clip and itself reaches completion.
         count = voice.playbackCompletions; let starts = voice.playbackStarts
         request(); voice.nativeSession(false); voice.navigationGuide(safetyText, safety: true)
@@ -528,7 +535,7 @@ struct VoicePlaybackProbe: View {
         TypecastClient.shared.testSpeech(text: SpeechText.prepare(text), voiceId: "은경") { previewDone = true }
         for _ in 0..<50 where !previewDone { try? await Task.sleep(nanoseconds: 100_000_000) }
         guard previewDone && TypecastClient.shared.lastStatus == "재생 완료" else { eventResult = "실패 · 타입캐스트 설정 미리듣기"; return }; passed += 1
-        eventResult = "음성 상태 \(passed)/17 검증 완료"
+        eventResult = "음성 상태 \(passed)/18 검증 완료"
     }
     @MainActor private func eventMatrix() async {
         UserDefaults.standard.set(false, forKey: "voiceConnection")
