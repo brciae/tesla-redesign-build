@@ -20,7 +20,7 @@ struct LiveActivityProbe: View {
             VoiceVolumeControl(title: "길안내 음량", value: $gain)
             Button("실제 실시간 현황 시작") { manager.update(state, enabled: true) }
             Text(manager.status).accessibilityIdentifier("live.activity.status")
-        }.padding().accessibilityIdentifier("live.activity.preview")
+        }.padding().accessibilityElement(children: .contain)
     }
 }
 
