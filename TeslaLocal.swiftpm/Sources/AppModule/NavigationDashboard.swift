@@ -636,6 +636,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             }
             .padding(12 * m.u)
             .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 14 * m.u, style: .continuous))
+            .modifier(JunctionGuidance(data: data))
             .frame(width: m.wide ? m.w * 0.29 : m.w - m.pad * 2, alignment: .leading)
             .offset(x: m.pad, y: m.pad)
             if m.wide {
