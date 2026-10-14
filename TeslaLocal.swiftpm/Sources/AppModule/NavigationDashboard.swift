@@ -1813,8 +1813,18 @@ private struct PlaybackSourceIcon: View {
                     diamond.addLine(to: CGPoint(x: x + r, y: y)); diamond.addLine(to: CGPoint(x: x, y: y + r)); diamond.addLine(to: CGPoint(x: x - r, y: y)); diamond.closeSubpath()
                     context.fill(diamond, with: .color(.white))
                 }
+            case .netflix:
+                context.fill(Path(roundedRect: bounds, cornerRadius: s * 0.2), with: .color(.black))
+                context.draw(Text("N").font(.system(size: s * 0.82, weight: .black)).foregroundStyle(.red), at: CGPoint(x: s / 2, y: s / 2))
             default:
-                let color: Color = source.icon == .appleMusic ? Color(red: 0.97, green: 0.22, blue: 0.36) : .blue
+                let color: Color
+                switch source.icon {
+                case .appleMusic: color = Color(red: 0.97, green: 0.22, blue: 0.36)
+                case .youtube: color = .red
+                case .video, .game: color = .purple
+                case .usb, .aux: color = .gray
+                default: color = .blue
+                }
                 context.fill(Path(roundedRect: bounds, cornerRadius: s * 0.22), with: .color(color))
                 if source.icon == .bluetooth {
                     var rune = Path(); rune.move(to: CGPoint(x: s * 0.5, y: s * 0.14))
@@ -1822,7 +1832,16 @@ private struct PlaybackSourceIcon: View {
                     rune.move(to: CGPoint(x: s * 0.25, y: s * 0.71)); rune.addLine(to: CGPoint(x: s * 0.76, y: s * 0.34)); rune.addLine(to: CGPoint(x: s * 0.5, y: s * 0.14))
                     context.stroke(rune, with: .color(.white), style: StrokeStyle(lineWidth: s * 0.065, lineCap: .round, lineJoin: .round))
                 } else {
-                    let symbol = source.icon == .radio ? "radio.fill" : source.icon == .browser ? "globe" : "music.note"
+                    let symbol: String
+                    switch source.icon {
+                    case .radio: symbol = "radio.fill"
+                    case .browser: symbol = "globe"
+                    case .usb: symbol = "externaldrive.fill"
+                    case .aux: symbol = "cable.connector"
+                    case .video, .youtube: symbol = "play.rectangle.fill"
+                    case .game: symbol = "gamecontroller.fill"
+                    default: symbol = "music.note"
+                    }
                     context.draw(Text(Image(systemName: symbol)).font(.system(size: s * 0.58)).foregroundStyle(.white), at: CGPoint(x: s / 2, y: s / 2))
                 }
             }

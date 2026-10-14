@@ -13,6 +13,7 @@ enum ReleaseNotes {
         ReleaseNote(version: "1.58 (158)", date: "2026-10-14", items: [
             "음악 제목 왼쪽에 차량이 알려준 재생 앱·입력 소스 아이콘 표시, 모든 운전 화면 테마에 적용",
             "Spotify·Apple Music·YouTube Music·TIDAL 구분, Bluetooth·라디오 입력 및 앱 정보 없음 표시. Bluetooth만으로 휴대폰 재생 앱을 추정하지 않음",
+            "USB·미디어 파일·AUX·브라우저·시어터·게임 구분 및 차량에서 전달되는 YouTube·Netflix 등 영상 서비스 표시",
         ]),
         ReleaseNote(version: "1.57 (157)", date: "2026-10-14", items: [
             "길안내 카드를 흰 반투명 배경·검은 글씨로 통일, 계기판 그라데이션의 가림 범위·농도를 0~100% 슬라이더로 조절",

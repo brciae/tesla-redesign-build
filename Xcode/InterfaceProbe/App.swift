@@ -188,9 +188,13 @@ struct NavigationProbe: View {
             }.frame(height: 44)
             if ProcessInfo.processInfo.arguments.contains("shade-probe") { DashboardShadeControl().padding(8) }
             if ProcessInfo.processInfo.arguments.contains("media-source-probe") {
-                Picker("재생 소스", selection: $mediaSource) {
-                    ForEach(["Spotify", "Apple Music", "YouTube Music", "TIDAL", "Bluetooth", "정보 없음"], id: \.self) { Text($0).tag($0) }
-                }.pickerStyle(.segmented)
+                HStack {
+                    Text(mediaSource)
+                    Button("다음 재생 소스") {
+                        let sources = ["Spotify", "Apple Music", "YouTube Music", "TIDAL", "Bluetooth", "USB", "AUX", "FM", "YouTube", "Netflix", "Disney+", "브라우저", "게임", "정보 없음"]
+                        mediaSource = sources[((sources.firstIndex(of: mediaSource) ?? 0) + 1) % sources.count]
+                    }.accessibilityIdentifier("media.source.next")
+                }
             }
             if ProcessInfo.processInfo.arguments.contains("parked-route-probe") {
                 if routeStopped { Text("자유주행").accessibilityIdentifier("navigation.stopped") }
@@ -222,7 +226,7 @@ struct NavigationProbe: View {
         r.mediaTitle = "Night Drive (샘플 트랙)"; r.mediaArtist = "YL 샘플 아티스트"; r.mediaSource = "Bluetooth"
         if ProcessInfo.processInfo.arguments.contains("media-source-probe") {
             r.mediaSource = mediaSource == "정보 없음" ? "" : mediaSource
-            r.mediaSourceCode = mediaSource == "Spotify" ? 12 : mediaSource == "Bluetooth" ? 8 : mediaSource == "TIDAL" ? 20 : nil
+            r.mediaSourceCode = ["Spotify": 12.0, "Bluetooth": 8, "TIDAL": 20, "USB": 6, "AUX": 9, "FM": 2, "Netflix": 29, "브라우저": 28, "게임": 30][mediaSource]
         }
         r.mediaPlaying = true; r.mediaElapsed = 74; r.mediaDuration = 253
         return r
