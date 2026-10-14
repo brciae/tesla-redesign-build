@@ -45,7 +45,7 @@
     climate.insideC=number(t.insideC);climate.outsideC=number(t.outsideC);
     charge.isCharging=charge.charging===null||charge.charging===0?null:charge.charging===5;
     location.latitude=number(l.latitude,-90,90);location.longitude=number(l.longitude,-180,180);
-    location.hasCoordinates=location.latitude!==null&&location.longitude!==null;
+    location.hasCoordinates=location.latitude!==null&&location.longitude!==null&&!(location.latitude===0&&location.longitude===0);
     location.subtitle=location.hasCoordinates?`${location.label} · 좌표 확인`:'위치 미수신';
     location.gpsAt=number(l.gpsAt,1);
     const measured=location.gpsAt===null?number(l.at,1):location.gpsAt;

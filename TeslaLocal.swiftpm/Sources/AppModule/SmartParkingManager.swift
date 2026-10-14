@@ -159,6 +159,10 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             return
         }
         let departed = UserDefaults.standard.bool(forKey: "parking.departed." + vin)
+        if !confirmed, departed, let parkedAt = drive.number("at"), coordinateAt.timeIntervalSince1970 * 1000 < parkedAt - 5000 {
+            fleetParkingStatus = "도착 후 새 GPS 확인 중 · 이전 주차 위치 보존"
+            return
+        }
         let samePlace: Bool = {
             guard !departed else { return false }
             guard let old = latestRecord, old.vehicleID == vin || (confirmed && old.vehicleID == nil),
@@ -241,6 +245,10 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
             return
         }
         let observedAt = Date(timeIntervalSince1970: measured / 1000)
+        if newArrival, let parkedAt = vehicleTelemetry.object("drive").number("at"), measured < parkedAt - 5000 {
+            fleetParkingStatus = "도착 후 새 GPS 확인 중 · 이전 주차 기록 보존"
+            return
+        }
 
         // 1. Extract vehicle snapshot
         let vehicleSnapshot = self.buildVehicleSnapshot(from: vehicleTelemetry)

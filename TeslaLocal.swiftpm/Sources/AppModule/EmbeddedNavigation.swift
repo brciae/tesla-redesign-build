@@ -75,6 +75,15 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     }
     private let networkMonitor = NWPathMonitor()
     private var pendingNetworkRoute: (event: Object, vin: String)?
+    private var trafficRecoveryPending = false
+    private func recoverTrafficAfterNetworkLoss() {
+        guard trafficRecoveryPending, guiding, networkAvailable,
+              (UserDefaults.standard.object(forKey: "navigation.autoTrafficReroute") as? Bool) ?? true else { return }
+        if trafficRefreshing { trafficRecoveryPending = false; return }
+        if controller?.refreshTrafficRoute() == true {
+            trafficRecoveryPending = false; trafficRefreshing = true
+        }
+    }
     private let runtime: LocalRuntime
     private let locator = CLLocationManager()
     private var deadline: Timer?
@@ -100,7 +109,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.networkAvailable = available
-                if !available, self.guiding { self.status = "통신 대기 · 기존 경로 안내 유지" }
+                if !available, self.guiding {
+                    self.trafficRecoveryPending = true
+                    self.status = "통신 대기 · 기존 경로 안내 유지"
+                }
+                if available { self.recoverTrafficAfterNetworkLoss() }
                 if available, let pending = self.pendingNetworkRoute {
                     self.pendingNetworkRoute = nil
                     if let received = pending.event.number("receivedAt"), Date().timeIntervalSince1970 * 1000 - received <= 30000 {
@@ -348,6 +361,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     self.lastTelemetry = merged
                     self.telemetry = merged
                     self.onActivityChange?()
+                    self.recoverTrafficAfterNetworkLoss()
                 }
                 if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
             }
@@ -383,7 +397,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         onActivityChange?()
         holdBackgroundLocation(false)
         onVoiceActivity?(false); onAudioSession?(false)
-        busy = false; guiding = false; trafficRefreshing = false; candidate = nil; ticket = nil
+        busy = false; guiding = false; trafficRefreshing = false; trafficRecoveryPending = false; candidate = nil; ticket = nil
         if !keepDisplay { presented = false }
     }
     func stop() { pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }

@@ -18,6 +18,7 @@ command -v xcodegen >/dev/null
 xcodebuild -version
 xcodegen --version
 node tools/embed-js.cjs
+node tools/project-source-tests.cjs
 node tools/typecast-only-audit.cjs
 node tools/briefing-coverage.cjs
 node tools/control-path-audit.cjs

@@ -474,7 +474,11 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
             status = "Bluetooth 준비 대기 · 저장된 연결 유지"
             return
         }
-        if central.state == .poweredOn { if scanRequested { scan() } else if foreground, !busy, !userDisconnected, !wantedVIN.isEmpty, !connected { beginConnection() } }
+        if central.state == .poweredOn {
+            if scanRequested { scan() }
+            else if foreground, !busy, !userDisconnected, !wantedVIN.isEmpty, !connected { beginConnection() }
+            else if !foreground, backgroundWanted, !busy, !userDisconnected, let p = knownPeripheral() { backgroundReconnect(p) }
+        }
         else { resetTransport(); status = central.state == .unauthorized ? "Bluetooth 권한이 필요함" : "Bluetooth 사용 불가 · 켜지면 자동 재검색" }
     }
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
