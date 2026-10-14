@@ -82,7 +82,9 @@
      "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/character",
      "type": "folder",
      "buildPhase": "resources"
-    }
+    },
+    "InterfaceProbe/LiveActivityProbe.swift",
+    "InterfaceProbe/RobotProbe.swift"
    ],
    "settings": {
     "base": {
