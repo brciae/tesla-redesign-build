@@ -485,6 +485,7 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         // Restore only state reads. Authentication/commands are never restored or replayed.
         peripheral = restored; restored.delegate = self; busy = true; backgroundWanted = true
         backgroundRead = !foreground
+        sessionStartedAt = Date().timeIntervalSince1970 * 1000
         _ = try? runtime.call("controlContext", ["foreground": false, "enabled": controlEnabled])
         trace("iOS Bluetooth 상태 복원 · 조회 재인증")
         if restored.state == .connected { restored.discoverServices([service]) }

@@ -1,0 +1,30 @@
+const assert = require('node:assert/strict');
+const C = require('../TeslaLocal.swiftpm/Sources/AppModule/Resources/analysis.js');
+const home = require('../TeslaLocal.swiftpm/Sources/AppModule/Resources/home.js');
+const now = 1800000000000;
+const e = new C.Engine();
+const fix = (at, extra = {}) => ({at, receivedAt: at, gpsAt: at, latitude:37.5, longitude:127.1, positionStatus:'available', ...extra});
+const drive = (at, gear = 'D') => ({at,receivedAt:at,gear,speedKmh:gear==='P'?0:40,odometerKm:100+(at-now)/90000});
+e.ingest({groups:{location:fix(now),drive:drive(now)}},now);
+assert.equal(e.view(now).fresh.location,true);
+assert.equal(e.state.activeTrip.points.length,1);
+e.ingest({groups:{drive:drive(now+1000)}},now+1000);
+assert.equal(e.state.activeTrip.points.length,1,'Repeated last fix is not a new route point');
+e.ingest({groups:{location:fix(now+2000,{estimatedGPSValid:false,positionStatus:'gpsUnavailable'}),drive:drive(now+2000)}},now+2000);
+assert.equal(e.view(now+2000).fresh.location,false);
+assert.equal(e.state.activeTrip.points.length,1,'Invalid location in same packet wins before drive point recording');
+assert.ok(e.state.activeTrip,'GPS loss does not end drive');
+for (const extra of [{gpsAt:now-600000},{gpsAt:now+90000},{latitude:NaN},{latitude:91},{latitude:0,longitude:0}]) {
+  e.state.groups.location=fix(now+3000,extra);
+  assert.equal(e.view(now+3000).fresh.location,false);
+}
+e.ingest({groups:{location:fix(now+4000),drive:drive(now+4000)}},now+4000);
+assert.equal(e.view(now+4000).fresh.location,true);
+assert.equal(e.state.activeTrip.points.length,2);
+assert.equal(e.state.activeTrip.points[1].at,now+4000);
+e.ingest({groups:{drive:drive(now+5000,'P')}},now+5000);
+assert.equal(e.state.activeTrip,null,'Explicit fresh P still ends drive during GPS issues');
+const old=home.presentation({groups:{location:fix(now,{gpsAt:now-600000})},connected:true,authenticated:true,sessionStartedAt:now-1000},now);
+assert.equal(old.location.hasCoordinates,true,'Historical coordinate remains visible');
+assert.equal(old.location.mode,'cached','New receipt cannot make old GPS current');
+console.log('PASS: GPS invalidation, future/stale/range rejection, same-packet ordering, point timestamps/deduplication, drive continuity, reacquisition and historical pin preservation');

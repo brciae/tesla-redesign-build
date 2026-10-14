@@ -16,3 +16,20 @@ struct LiveActivityProbe: View {
         }.padding().accessibilityIdentifier("live.activity.preview")
     }
 }
+
+struct TrafficRefreshProbe: View {
+    @State private var refreshing = false
+    @State private var status = "기존 경로 안내 중"
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("기존 경로 A")
+            NavigationTrafficRefreshButton(enabled: true, refreshing: refreshing) {
+                refreshing = true; status = "재탐색 중"
+            }
+            Text(status)
+            if refreshing {
+                Button("응답 실패") { refreshing = false; status = "갱신 지연 · 기존 경로 유지" }
+            }
+        }.padding()
+    }
+}

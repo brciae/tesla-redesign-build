@@ -28,6 +28,7 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typeca
 Xcode/TypecastPolicyTests
 # The original artwork stays unchanged; asset layout adds a 5% margin on each side.
 node tools/js-logic-tests.cjs
+node tools/gps-loss-tests.cjs
 node tools/charge-integrity-tests.cjs
 node tools/charge-cost-tests.cjs
 node tools/charge-enrichment-tests.cjs

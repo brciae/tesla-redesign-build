@@ -1,6 +1,20 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testTrafficRefreshBlocksRepeatedTapAndKeepsRouteOnFailure() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["traffic-refresh-probe"]; app.launch()
+        let button = app.buttons["navigation.traffic.refresh"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.tap()
+        XCTAssertFalse(button.isEnabled)
+        XCTAssertTrue(app.staticTexts["기존 경로 A"].exists)
+        app.buttons["응답 실패"].tap()
+        XCTAssertTrue(button.isEnabled)
+        XCTAssertTrue(app.staticTexts["갱신 지연 · 기존 경로 유지"].exists)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Traffic refresh control failure preserves existing route fixture"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testRobotWithoutFootRodsSurvivesAppSwitching() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["robot-probe"]; app.launch()
@@ -45,7 +59,7 @@ final class InteractionTests: XCTestCase {
         shot.name = "Live activity shared views compact expanded and stale"; shot.lifetime = .keepAlways; add(shot)
         for _ in 0..<3 {
             XCUIDevice.shared.press(.home)
-            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 3) || app.state == .runningBackgroundSuspended)
             app.activate()
             XCTAssertTrue(app.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 5))
         }

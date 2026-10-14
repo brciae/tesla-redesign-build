@@ -8,6 +8,8 @@ struct OfflineMapSettings: View {
         TimelineView(.periodic(from: .now, by: 5)) { _ in
             let downloaded = navigation.controller?.offlineMapDownloaded == true
             Text(downloaded ? "전체 지도 다운로드 완료" : requested ? "다운로드 요청됨 · 완료 확인 중" : "전체 지도 미다운로드")
+            Text(navigation.controller?.offlineMapInUse == true ? "현재 저장 지도 사용 중" : "현재 실시간 지도 사용 중")
+                .font(.caption).foregroundStyle(.secondary)
             Button(downloaded ? "전체 지도 업데이트" : "전체 지도 다운로드") { confirmDownload = true }
                 .disabled(navigation.controller == nil)
             if requested && !downloaded {

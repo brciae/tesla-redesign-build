@@ -17,6 +17,7 @@ import MapKit
         Group {
             if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("robot-probe") { RobotProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("traffic-refresh-probe") { TrafficRefreshProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charging-map-probe") { ChargingMapProbe() }
             else if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains(where: { ["voice-playback-probe", "voice-events-probe", "voice-lifecycle-probe"].contains($0) }) { VoicePlaybackProbe() }

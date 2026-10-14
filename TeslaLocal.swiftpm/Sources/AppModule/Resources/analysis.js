@@ -333,7 +333,7 @@
     }
     ingest(snapshot,now=Date.now()){
       if(!snapshot?.groups)throw Error('상태 형식 오류');
-      for(const name of ['charge','drive','climate','tire','location','closures','media','mediaDetail']){
+      for(const name of ['location','charge','drive','climate','tire','closures','media','mediaDetail']){
         const g=snapshot.groups[name];if(!g)continue;
         if(!fresh(g,now,300000))continue; // Do not make future or old data current.
         const previous=this.observed[name];
@@ -393,7 +393,9 @@
         if(hasOdometers){if(validDistance)t.distanceKm+=dx;else t.missing=true;}
         else t.missing=true;
         t.lastAt=g.at;t.lastOdo=g.odometerKm;if(c)t.lastSOC=c.soc;
-        const loc=context.location;if(freshLocation(loc,now)&&t.points.length<2000)t.points.push({at:g.at,lat:loc.latitude,lng:loc.longitude});
+        const loc=context.location,fixAt=loc?.gpsAt??loc?.at;
+        if(freshLocation(loc,now)&&fixAt>=t.start&&fixAt<=g.at+5000&&t.points.length<2000&&
+           (!t.points.length||fixAt>t.points[t.points.length-1].at))t.points.push({at:fixAt,lat:loc.latitude,lng:loc.longitude});
         // A fresh explicit P ends an observed drive now; no second packet after exiting is required.
         if(g.gear==='P'&&(g.speedKmh==null||num(g.speedKmh,0,0.5))&&now-g.at<=120000){t.parkAt=g.at;this.finish(g.at,false);}else t.parkAt=null;
       }

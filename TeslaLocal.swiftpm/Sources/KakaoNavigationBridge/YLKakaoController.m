@@ -197,6 +197,18 @@ static NSArray *YLLifecycleObservers;
 - (BOOL)offlineMapDownloaded {
     return YLInitializedKey && [[[KNSDK sharedInstance] sharedMapDownLoader] isDownloadedFullMap];
 }
+- (BOOL)offlineMapInUse { return YLInitializedKey && [[KNSDK sharedInstance] getMapType] == KNMapType_FullMap; }
+- (void)applySavedMapType:(KNSDK *)sdk completion:(void (^)(void))completion {
+    BOOL full = [NSUserDefaults.standardUserDefaults boolForKey:@"navigation.fullMap"] && [[sdk sharedMapDownLoader] isDownloadedFullMap];
+    KNMapType desired = full ? KNMapType_FullMap : KNMapType_CloudMap;
+    if ([sdk getMapType] == desired) { completion(); return; }
+    [sdk setMapType:desired complition:^(KNError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) [self emit:@"status" message:@"저장 지도 적용 실패 · 사용 가능한 기존 지도 유지"];
+            completion();
+        });
+    }];
+}
 - (void)downloadOfflineMap {
     if (!YLInitializedKey) { [self emit:@"status" message:@"지도를 먼저 준비한 뒤 다운로드하세요."]; return; }
     [[[KNSDK sharedInstance] sharedMapDownLoader] downLoadStart];
@@ -333,7 +345,7 @@ static NSArray *YLLifecycleObservers;
             });
         }];
     };
-    if (YLInitializedKey) { buildTrip(); return; }
+    if (YLInitializedKey) { [self applySavedMapType:sdk completion:buildTrip]; return; }
     YLInitializing = YES;
     [sdk initializeWithAppKey:key clientVersion:@"0.22" completion:^(KNError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -343,7 +355,7 @@ static NSArray *YLLifecycleObservers;
             typeof(self) self = weakSelf;
             if (!self || ![self isCurrent:generation]) return;
             if (error) { [self fail:@"카카오 SDK 인증 실패 · Native App Key와 iOS Bundle ID 확인" generation:generation]; return; }
-            buildTrip();
+            [self applySavedMapType:sdk completion:buildTrip];
         });
     }];
 }
@@ -390,9 +402,9 @@ static NSArray *YLLifecycleObservers;
             [self.map moveCamera:[KNMapCameraUpdate fitToRegion:region] withUserLocation:NO];
             self.cameraReady = YES;
         }
-        [self emit:@"ready" message:@"카카오 실시간 지도 준비됨"];
+        [self emit:@"ready" message:@"카카오 지도 준비됨"];
     };
-    if (YLInitializedKey) { setupStandby(); return; }
+    if (YLInitializedKey) { [self applySavedMapType:sdk completion:setupStandby]; return; }
     YLInitializing = YES;
     [sdk initializeWithAppKey:key clientVersion:@"0.22" completion:^(KNError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -402,7 +414,7 @@ static NSArray *YLLifecycleObservers;
             typeof(self) self = weakSelf;
             if (!self || ![self isCurrent:generation]) return;
             if (error) { [self fail:@"카카오 SDK 인증 실패 · Native App Key와 iOS Bundle ID 확인" generation:generation]; return; }
-            setupStandby();
+            [self applySavedMapType:sdk completion:setupStandby];
         });
     }];
 }

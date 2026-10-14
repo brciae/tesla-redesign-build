@@ -8,6 +8,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly, nullable) UIImage *junctionImage;
 @property(nonatomic, readonly) double junctionDistance;
 @property(nonatomic, readonly) BOOL offlineMapDownloaded;
+@property(nonatomic, readonly) BOOL offlineMapInUse;
 - (void)downloadOfflineMap NS_SWIFT_NAME(downloadOfflineMap());
 - (void)pauseOfflineMapDownload NS_SWIFT_NAME(pauseOfflineMapDownload());
 - (void)useOfflineMap:(BOOL)enabled NS_SWIFT_NAME(useOfflineMap(_:));

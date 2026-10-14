@@ -167,6 +167,9 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func observe(_ event: Object, vin: String) {
         if vehicleIdentity != vin { reset(); vehicleIdentity = vin }
         if let manualRouteToken, event.string("token") != manualRouteToken { return }
+        if event.string("type") == "clear" || (event.string("type") == "absent" && event.flag("parked")) {
+            pendingNetworkRoute = nil
+        }
         if event.string("type") == "route", !networkAvailable {
             pendingNetworkRoute = (event, vin)
             status = guiding ? "통신 대기 · 기존 경로 안내 유지" : "통신 복구 후 경로 탐색 대기"
@@ -385,6 +388,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     }
     func stop() { pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
     func endGuidance(arrived: Bool = false) {
+        pendingNetworkRoute = nil
         manualRouteToken = nil; manualDestination = ""
         _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
         returnToFreeDrive(arrived: arrived)
