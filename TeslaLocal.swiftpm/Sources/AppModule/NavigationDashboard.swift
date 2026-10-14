@@ -2020,7 +2020,7 @@ private struct RunningTurnCard: View {
     let u: CGFloat
     var body: some View {
         HStack(spacing: 12 * u) {
-            Image(systemName: data.turnSymbol).font(.system(size: 30 * u, weight: .bold)).foregroundStyle(NavInk.blue)
+            ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 36 * u)
                 .frame(width: 44 * u)
             VStack(alignment: .leading, spacing: 2 * u) {
                 Text(data.turnDistance).font(.system(size: 24 * u, weight: .bold)).monospacedDigit()

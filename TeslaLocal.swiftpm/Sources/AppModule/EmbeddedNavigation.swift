@@ -40,6 +40,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     /// v30: false while the user browses the map; the UI shows a "현위치" button.
     @Published private(set) var following = true
     @Published private(set) var recenterRequest = 0
+    @Published private(set) var renderEpoch = 0
     private var speedSample: (kmh: Double, at: TimeInterval)?
     private var brakeUntil: TimeInterval = 0
     @Published var theme = NavigationTheme(rawValue: UserDefaults.standard.string(forKey: "navigationTheme") ?? "cluster") ?? .cluster {
@@ -465,12 +466,15 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func reset() { clearRecoveryCheckpoint(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
     func foregrounded(vin: String) {
+        renderEpoch += 1
+        controller?.resumeRendering()
         if guiding, controller != nil {
             holdBackgroundLocation(true); applyAudioPreferences()
             if !userDismissed { presented = true }
         } else { restoreRecoveryCheckpoint(vin: vin) }
     }
     func recoverAfterCall(vin: String) {
+        if UIApplication.shared.applicationState == .active { renderEpoch += 1; controller?.resumeRendering() }
         if guiding, controller != nil {
             holdBackgroundLocation(true); applyAudioPreferences()
             status = "통화 종료 · 위치·길안내 수신 재개 요청"
@@ -611,6 +615,7 @@ struct KakaoMapPanel: View {
 
 /// "auto" follows the sun: day between sunrise and sunset at the Korean peninsula's centre, re-checked every minute.
 struct KakaoMapSurface: View {
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
     @AppStorage("navigation.markerScale") private var markerScale = 2.0
@@ -623,6 +628,7 @@ struct KakaoMapSurface: View {
             KakaoMapSurfaceController(controller: controller, theme: theme.rawValue + ":" + resolvedAppearance(context.date),
                                       marker: markerStyle + "@" + String(format: "%.2f", markerScale), anchorX: anchorX, anchorY: anchorY)
         }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { controller.resumeRendering() } }
     }
     private func resolvedAppearance(_ date: Date) -> String {
         guard mapAppearance == "auto" else { return mapAppearance }
@@ -640,6 +646,7 @@ private struct KakaoMapSurfaceController: UIViewControllerRepresentable {
         controller.configureMapAnchor(x: anchorX, y: anchorY)
         controller.configureMapTheme(theme)
         controller.configureMarkerStyle(marker)
+        controller.resumeRendering()
     }
 }
 struct EmbeddedNavigationScreen: View {

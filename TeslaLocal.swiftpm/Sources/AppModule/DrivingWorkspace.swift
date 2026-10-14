@@ -30,6 +30,7 @@ struct DrivingWorkspace: View {
                                     command: VehicleCameraCommand(serial: NavigationTheme.allCases.firstIndex(of: navigation.theme) ?? 0, action: "angle", yaw: camera.yaw, pitch: camera.pitch, zoom: navigation.theme.carZoom),
                                     reducedMotion: true, appearance: appearance.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)),
                                     backgroundColor: .clear) { carError = $0 }
+                                    .id(navigation.renderEpoch)
                                 if carError != nil { Text("차량 모델 표시 불가").font(.caption).foregroundStyle(.orange) }
                             }
                         }
@@ -76,6 +77,7 @@ struct DrivingWorkspace: View {
             }
         }
         .onDisappear { navigation.screenDisappeared() }
+        .onChange(of: navigation.renderEpoch) { _, _ in carError = nil }
     }
 
     private func topBar(compact: Bool) -> some View {
