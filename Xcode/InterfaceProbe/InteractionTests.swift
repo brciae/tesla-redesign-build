@@ -55,6 +55,10 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["업데이트 대기"].exists)
         XCTAssertTrue(app.staticTexts["배터리 72%"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["live.activity.minimal"].firstMatch.exists)
+        let gain = app.sliders["voice.gain.길안내 음량"]
+        gain.adjust(toNormalizedSliderPosition: 1)
+        XCTAssertTrue(app.staticTexts["200%"].exists)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "Live activity shared views compact expanded and stale"; shot.lifetime = .keepAlways; add(shot)
         for _ in 0..<3 {
@@ -63,6 +67,17 @@ final class InteractionTests: XCTestCase {
             app.activate()
             XCTAssertTrue(app.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 5))
         }
+    }
+    func testActualLiveActivityExtensionOnHomeScreen() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["live-activity-probe"]; app.launch()
+        app.buttons["실제 실시간 현황 시작"].tap()
+        XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 8))
+        XCUIDevice.shared.press(.home)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Actual ActivityKit widget extension on home screen"; shot.lifetime = .keepAlways; add(shot)
+        app.activate()
+        XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 5))
     }
     func testChargingMapDestinationAndRejectedVehicleSend() {
         XCUIDevice.shared.orientation = .portrait

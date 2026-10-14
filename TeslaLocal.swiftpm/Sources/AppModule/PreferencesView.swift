@@ -13,6 +13,7 @@ struct PreferencesView: View {
     @AppStorage("voiceDeliveryStyle") private var deliveryStyle = "standard"
     @AppStorage("voiceRate") private var rate = 0.47
     @AppStorage("voiceVolume") private var volume = 0.8
+    @AppStorage("navVoiceVolume") private var navigationVolume = 1.0
     @AppStorage("voiceDuck") private var duck = true
     @AppStorage("voiceQuietEnabled") private var quiet = false
     @AppStorage("voiceQuietStart") private var quietStart = 22
@@ -28,6 +29,7 @@ struct PreferencesView: View {
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
     @AppStorage("liveActivityEnabled") private var liveActivity = true
+    @ObservedObject private var activityManager = VehicleLiveActivityManager.shared
     @ObservedObject private var typecast = TypecastClient.shared
 
     var body: some View {
@@ -35,6 +37,8 @@ struct PreferencesView: View {
             Section("Dynamic Island·잠금화면") {
                 Toggle("차량 연결·길안내 실시간 현황", isOn: $liveActivity)
                     .onChange(of: liveActivity) { _, _ in model.updateLiveActivity() }
+                Text(activityManager.status).font(.caption).foregroundStyle(.secondary)
+                Text("단독 표시: 앱 아이콘·방향·거리. 음악과 동시 표시: 작은 방향 아이콘. 길게 누르면 상세 정보 표시. 표시 활동과 순서는 iOS에서 결정함.").font(.caption).foregroundStyle(.secondary)
                 Caption("차량 연결 또는 길안내 중 앱 아이콘·연결 상태·남은 시간을 표시함. 수신이 오래되면 업데이트 대기로 표시함.")
             }
             Section("음성 안내") {
@@ -99,7 +103,9 @@ struct PreferencesView: View {
                     Form {
                         Section("음성 조절") {
                             slider("속도", value: $rate, range: 0.3...0.6)
-                            slider("안내 음량", value: $volume, range: 0...1)
+                            VoiceVolumeControl(title: "일반 안내 음량", value: $volume)
+                            VoiceVolumeControl(title: "길안내 음량", value: $navigationVolume)
+                            Text("100%는 기존 최대 음량, 200%는 음성 신호를 최대 2배 증폭함. 기기·차량 음량은 별도로 적용되며 큰 소리에서는 음질이 달라질 수 있음.").font(.caption).foregroundStyle(.secondary)
                             Toggle("안내 중 음악 소리 줄이기", isOn: $duck)
                             VoiceAdvancedControls(identifier: $identifier, style: $deliveryStyle)
                         }

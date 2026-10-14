@@ -23,6 +23,8 @@ node tools/typecast-only-audit.cjs
 node tools/briefing-coverage.cjs
 node tools/control-path-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
+swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceGainPolicy.swift tools/voice-gain-tests.swift -o Xcode/VoiceGainTests
+Xcode/VoiceGainTests
 xcrun clang -fobjc-arc -framework Foundation tools/navigation-speech-tests.m -o Xcode/NavigationSpeechTests
 Xcode/NavigationSpeechTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests

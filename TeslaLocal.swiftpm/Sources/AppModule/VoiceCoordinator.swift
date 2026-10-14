@@ -389,11 +389,12 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         do {
             try activateAudio(defaults)
             let volumeKey = item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume"
-            let volume = Float(min(1, max(0, defaults.double(forKey: volumeKey))))
+            let gain = VoiceGainPolicy.gain(defaults.double(forKey: volumeKey))
             // Trailing silence keeps car/Bluetooth latency from swallowing the last syllable.
-            let p = try AVAudioPlayer(data: TypecastClient.paddedTail(try Data(contentsOf: url)))
+            let audio = try VoiceGainPolicy.amplifiedWAV(Data(contentsOf: url), gain: gain)
+            let p = try AVAudioPlayer(data: TypecastClient.paddedTail(audio))
             p.delegate = self
-            p.volume = volume
+            p.volume = Float(min(1, gain))
             p.prepareToPlay()
             guard p.play() else { throw LocalError.message("오디오 출력을 시작하지 못했습니다.") }
             playbackStarts += 1
@@ -542,6 +543,19 @@ enum VoiceAudioRouting {
             try audio.setActive(true)
         }
         owners.insert(owner)
+    }
+}
+
+struct VoiceVolumeControl: View {
+    let title: String
+    @Binding var value: Double
+    var body: some View {
+        VStack(alignment: .leading) {
+            HStack { Text(title); Spacer(); Text("\(Int((VoiceGainPolicy.gain(value) * 100).rounded()))%")
+                .monospacedDigit().accessibilityIdentifier("voice.gain.percent.\(title)") }
+            Slider(value: $value, in: 0...2, step: 0.05)
+                .accessibilityLabel(title).accessibilityIdentifier("voice.gain.\(title)")
+        }
     }
 }
 

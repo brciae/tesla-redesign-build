@@ -17,6 +17,12 @@ struct VehicleLiveActivity: Widget {
                 .widgetURL(URL(string: "ylcompanion://activity"))
         } dynamicIsland: { context in
             DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    VehicleActivityIcon()
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    VehicleActivityCompact(state: context.state, stale: context.isStale)
+                }
                 DynamicIslandExpandedRegion(.bottom) {
                     VehicleActivitySummary(state: context.state, stale: context.isStale)
                         .environment(\.colorScheme, .dark)
@@ -26,7 +32,7 @@ struct VehicleLiveActivity: Widget {
             } compactTrailing: {
                 VehicleActivityCompact(state: context.state, stale: context.isStale)
             } minimal: {
-                VehicleActivityIcon()
+                VehicleActivityMinimal(state: context.state, stale: context.isStale)
             }
             .widgetURL(URL(string: "ylcompanion://activity"))
             .keylineTint(.cyan)

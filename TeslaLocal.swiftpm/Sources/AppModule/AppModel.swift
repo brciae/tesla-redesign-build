@@ -95,7 +95,9 @@ final class AppModel: ObservableObject {
                 instruction: navFresh ? String(nav.string("turn", "길안내 중").prefix(80)) : "길안내 업데이트 대기",
                 remainingMinutes: minutes,
                 batteryPercent: battery,
-                observedAt: max(self.activityObservedAt, navFresh ? navAt : .distantPast))
+                observedAt: max(self.activityObservedAt, navFresh ? navAt : .distantPast),
+                turnSymbol: navFresh ? nav.string("symbol", "arrow.up") : nil,
+                turnMetres: navFresh ? nav.number("turnMetres").flatMap { $0.isFinite && (0...1_000_000).contains($0) ? Int($0.rounded()) : nil } : nil)
             VehicleLiveActivityManager.shared.update(state, enabled: !self.demo && !self.recoveryLock &&
                 ((UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool) ?? true))
         }

@@ -3,8 +3,8 @@ import WidgetKit
 
 struct VehicleActivityIcon: View {
     var body: some View {
-        Image("IslandAppIcon").resizable().scaledToFit()
-            .frame(width: 24, height: 24).clipShape(RoundedRectangle(cornerRadius: 6))
+        Image("IslandAppIcon").renderingMode(.original).resizable().scaledToFit()
+            .frame(width: 20, height: 20).clipShape(RoundedRectangle(cornerRadius: 5))
             .accessibilityLabel("YL Companion")
     }
 }
@@ -42,8 +42,31 @@ struct VehicleActivityCompact: View {
     var stale = false
     var body: some View {
         if stale { Image(systemName: "clock") }
-        else if state.guiding, let minutes = state.remainingMinutes {
-            Text("\(minutes)분").font(.caption.bold()).monospacedDigit()
+        else if state.guiding {
+            HStack(spacing: 3) {
+                Image(systemName: state.turnSymbol ?? "location.fill").foregroundStyle(.cyan)
+                if let metres = state.turnMetres {
+                    Text(metres >= 1000 ? String(format: "%.1fk", Double(metres) / 1000) : "\(metres)m")
+                } else if let minutes = state.remainingMinutes { Text("\(minutes)분") }
+            }.font(.caption.bold()).monospacedDigit()
+                .accessibilityIdentifier("live.activity.compact")
         } else { Image(systemName: state.connected ? "link" : "link.badge.plus") }
+    }
+}
+
+/// iOS uses this small presentation when music or another activity shares the island.
+struct VehicleActivityMinimal: View {
+    let state: VehicleActivityAttributes.ContentState
+    var stale = false
+    var body: some View {
+        Group {
+            if stale { Image(systemName: "clock").foregroundStyle(.orange) }
+            else if state.guiding {
+                Image(systemName: state.turnSymbol ?? "location.fill").foregroundStyle(.cyan)
+                    .font(.system(size: 17, weight: .bold))
+            } else { VehicleActivityIcon() }
+        }.frame(width: 20, height: 20)
+            .accessibilityLabel(stale ? "YL Companion 업데이트 대기" : state.guiding ? "YL Companion \(state.instruction)" : "YL Companion")
+            .accessibilityIdentifier("live.activity.minimal")
     }
 }
