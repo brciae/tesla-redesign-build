@@ -469,7 +469,7 @@ final class InteractionTests: XCTestCase {
         let toggle = app.switches["automation.ai.speech"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 8))
         if toggle.value as? String != "1" { toggle.tap() }
-        XCTAssertTrue(app.switches["automation.ai.routine"].exists)
+        XCTAssertTrue(app.switches["automation.ai.routine"].waitForExistence(timeout: 5), app.debugDescription)
         app.buttons["automation.ai.example"].tap()
         XCTAssertTrue(app.staticTexts["automation.ai.preview"].label.contains("82퍼센트"))
         XCTAssertTrue(app.staticTexts["automation.ai.preview"].label.contains("실내 온도가 높습니다"))
