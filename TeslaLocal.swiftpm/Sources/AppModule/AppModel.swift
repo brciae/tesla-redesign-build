@@ -221,7 +221,7 @@ final class AppModel: ObservableObject {
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
         navigation.onGuidanceEnd = { [weak self] arrived in
             if let self {
-                self.updateTripEnergy()
+                self.updateTripEnergy(force: true)
                 self.tripEnergy.finish(arrived: arrived, vin: self.energyVehicleVIN)
             }
             self?.voice.stop()

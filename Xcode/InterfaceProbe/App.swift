@@ -43,18 +43,28 @@ import MapKit
 }
 
 struct TripEnergyHistoryProbe: View {
+    @State private var charged = false
     private var forecast: TripEnergyEstimate {
         TripEnergyEstimate.calculate(profile: .make(samples: [.init(distanceKm: 40, startSOC: 80, endSOC: 70)], usableKWh: 72), soc: 68, remainingKm: 8.7)!
     }
     var body: some View {
         NavigationStack {
             Form {
-                TripEnergyRecordView(record: .init(vin: "TEST", routeKey: "fixture", destination: "도착 비교 예시", startedAt: Date(), startSOC: 68,
-                    initial: forecast, endedAt: Date(), actualArrivalSOC: 64, arrived: true, startOdometerKm: 100,
-                    points: (0...10).map { i in .init(elapsedSeconds: Double(i) * 90, distanceKm: Double(i), predictedSOC: 68 - Double(i) * 0.25, actualSOC: 68 - Double(i) * 0.4) }))
+                Button("충전 포함 예시") { charged.toggle() }.accessibilityIdentifier("energy.forecast.charge.example")
+                TripEnergyRecordView(record: record)
                 TripEnergyPredictionRow(estimate: TripEnergyEstimate.calculate(profile: .make(samples: [], usableKWh: nil), soc: 5, remainingKm: 100)!)
             }.navigationTitle("트립 에너지 예측")
         }
+    }
+    private var record: TripEnergyRecord {
+        let start = Date(), points: [TripEnergyPoint] = (0...10).map { i in
+            let gain = charged && i >= 5 ? 10.0 : 0.0
+            return .init(elapsedSeconds: Double(i) * 90, distanceKm: Double(i), predictedSOC: 68 - Double(i) * 0.25 + gain, actualSOC: 68 - Double(i) * 0.4 + gain)
+        }
+        return .init(vin: "TEST", routeKey: "fixture", destination: "도착 비교 예시", startedAt: start, startSOC: 68,
+            initial: forecast, endedAt: start.addingTimeInterval(900), actualArrivalSOC: charged ? 74 : 64, arrived: true,
+            chargingObserved: charged, startOdometerKm: 100, points: points,
+            chargingStops: charged ? [.init(id: "charge", startedAt: start.addingTimeInterval(400), endedAt: start.addingTimeInterval(450), startSOC: 66, endSOC: 76, batteryAddedKWh: 7.2)] : nil)
     }
 }
 

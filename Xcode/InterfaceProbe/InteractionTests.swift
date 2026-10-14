@@ -478,6 +478,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["도착 전 배터리 부족 예상"].exists)
         let historyShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         historyShot.name = "Trip energy actual arrival comparison and battery shortage"; historyShot.lifetime = .keepAlways; add(historyShot)
+        app.buttons["energy.forecast.charge.example"].tap()
+        XCTAssertTrue(app.staticTexts["energy.forecast.charging"].label.contains("+10.0%p"))
+        XCTAssertTrue(app.staticTexts["energy.forecast.comparison"].label.contains("실제 74%"))
+        let chargeShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        chargeShot.name = "Trip energy graph with observed intermediate charging"; chargeShot.lifetime = .keepAlways; add(chargeShot)
     }
     func testNavigationThemesAndRotation() {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe"]; app.launch()

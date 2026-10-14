@@ -12,6 +12,7 @@ struct TripEnergyPredictionRow: View {
             }.foregroundStyle(estimate.belowReserve ? Color.orange : Color.primary)
             Text(String(format: "남은 소비 약 %.1f kWh · %@", estimate.remainingKWh, estimate.basis))
                 .accessibilityIdentifier("energy.forecast.consumption")
+            if estimate.belowReserve { Text("충전 검토 필요 · 예상 하한이 설정한 예비 잔량보다 낮음").font(.system(size: 10)).foregroundStyle(.orange) }
             Text(estimate.capacityAssumed ? "kWh는 가정 용량 환산 · 범위는 참고 추정" : "관측 용량 환산 · 범위는 참고 추정")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
         }.font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.8)
@@ -33,7 +34,7 @@ struct TripEnergyHistoryView: View {
                 ForEach(Array(rows.prefix(5))) { row in TripEnergyRecordView(record: row) }
                 if rows.count > 5 { DisclosureGroup("이전 \(rows.count - 5)회 보기") { ForEach(Array(rows.dropFirst(5))) { row in TripEnergyRecordView(record: row) } } }
             }
-            Text("기온·바람·고도·정체를 각각 모델링한 값은 아님. 중간 충전·안내 취소·도착 잔량 미수신은 오차 비교에서 제외함.")
+            Text("기온·바람·고도·정체를 각각 모델링한 값은 아님. 중간 충전은 관측 충전량으로 보정하며, 충전량 미확인·안내 취소·도착 잔량 미수신은 오차 비교에서 제외함.")
                 .font(.caption2).foregroundStyle(.secondary)
         }.padding(14).background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
     }
@@ -47,12 +48,20 @@ struct TripEnergyRecordView: View {
             Text(String(format: "최초 도착 예측 %.0f%% · 실제 %@", record.initial.arrivalSOC,
                         record.actualArrivalSOC.map { String(format: "%.0f%%", $0) } ?? "미수신"))
                 .font(.caption).accessibilityIdentifier("energy.forecast.comparison")
+            if record.chargingObserved {
+                Text(record.chargingAccounted ? String(format: "중간 충전 +%.1f%%p · 충전 반영 도착 예측 %.0f%%", record.addedSOC, record.adjustedArrivalSOC) : "중간 충전 관측 · 충전량 미확인")
+                    .font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("energy.forecast.charging")
+                ForEach(Array((record.chargingStops ?? []).prefix(3))) { stop in
+                    Text("충전 \(stop.startedAt.formatted(date: .omitted, time: .shortened)) · " + (stop.batteryAddedKWh.map { String(format: "배터리 수신 %.1f kWh", $0) } ?? "배터리 충전량 미수신"))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
             if let error = record.errorSOC, let used = record.actualUsedSOC {
                 Text(String(format: "잔량 사용 %.1f%%p · 예측 차이 %+.1f%%p", used, error)).font(.caption).foregroundStyle(.secondary)
                 if let kwh = record.actualUsedKWh { Text(String(format: "예상 소비 %.1f kWh · 실제 잔량 환산 %.1f kWh%@", record.initial.remainingKWh, kwh, record.initial.capacityAssumed ? " (가정 용량)" : "")).font(.caption2).foregroundStyle(.secondary) }
-            } else { Text(record.chargingObserved ? "중간 충전·잔량 증가 포함 · 비교 제외" : record.arrived ? "도착 잔량 미수신 · 비교 제외" : "안내 취소·목적지 변경 · 비교 제외").font(.caption).foregroundStyle(.secondary) }
+            } else { Text(record.chargingObserved && !record.chargingAccounted ? "충전량 미확인 · 소비 합계·오차 비교 보류" : record.arrived ? "도착 잔량 미수신 · 비교 제외" : "안내 취소·목적지 변경 · 비교 제외").font(.caption).foregroundStyle(.secondary) }
             if let points = record.points, points.count >= 2 {
-                TripEnergyTrendChart(points: points, mixedCharging: record.chargingObserved)
+                TripEnergyTrendChart(points: points, mixedCharging: !record.chargingAccounted, hasCharging: record.chargingObserved)
             } else { Text("주행 중 비교 그래프 자료 없음").font(.caption2).foregroundStyle(.secondary) }
         }.padding(.vertical, 4)
     }
@@ -61,6 +70,7 @@ struct TripEnergyRecordView: View {
 struct TripEnergyTrendChart: View {
     let points: [TripEnergyPoint]
     var mixedCharging = false
+    var hasCharging = false
     private var range: ClosedRange<Double> {
         let values = points.flatMap { [$0.actualSOC] + ($0.predictedSOC.map { [$0] } ?? []) }
         return max(0, (values.min() ?? 0) - 3)...min(100, (values.max() ?? 100) + 3)
@@ -68,7 +78,7 @@ struct TripEnergyTrendChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("초기 예상").foregroundStyle(.orange)
+                Text(hasCharging ? "예상 + 충전 반영" : "초기 예상").foregroundStyle(.orange)
                 Text("실제 잔량").foregroundStyle(.blue)
                 Spacer()
                 Text("잔량 %").foregroundStyle(.secondary)
@@ -87,8 +97,8 @@ struct TripEnergyTrendChart: View {
                 .chartXAxisLabel("경과 시간 (분)").frame(height: 150)
                 .accessibilityLabel("트립 초기 예상 잔량과 실제 잔량 변화 그래프")
                 .accessibilityIdentifier("energy.forecast.chart")
-            Text(mixedCharging ? "충전 포함 구간 · 초기 예상선 비교 제외" : points.contains(where: { $0.predictedSOC != nil }) ?
-                 "초기 예측 전비를 관측 주행거리에 적용 · 실제 잔량은 수신 시점 기준" : "주행거리 미수신 · 실제 잔량만 표시")
+            Text(mixedCharging ? "충전량 미확인 · 예상선 비교 보류" : points.contains(where: { $0.predictedSOC != nil }) ?
+                 "초기 예측 전비 + 관측 충전량 · 실제 잔량은 수신 시점 기준" : "주행거리 미수신 · 실제 잔량만 표시")
                 .font(.caption2).foregroundStyle(.secondary)
         }.padding(.top, 6)
     }

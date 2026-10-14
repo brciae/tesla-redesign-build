@@ -90,6 +90,32 @@ extension Dictionary where Key == String, Value == Any {
         precondition(graph.actualUsedKWh == 36, "Observed 50%p is converted with the recorded capacity")
         let restoredGraph = TripEnergyStore(defaults: defaults).history(vin: "A").first!
         precondition(restoredGraph.points == points && restoredGraph.initial == graph.initial)
-        print("PASS: trip prediction units, range, live correction, missing/stale data, reroute, durable initial-versus-arrival, charging exclusion and VIN isolation")
+        let chargedStore = TripEnergyStore(defaults: defaults), departure = end.addingTimeInterval(60)
+        let chargeStart = departure.addingTimeInterval(600), chargeEnd = departure.addingTimeInterval(1200)
+        var activeCharge: Object = ["id": "road-charge", "at": chargeStart.timeIntervalSince1970 * 1000, "startSOC": 70.0, "startSOCObserved": true]
+        func chargedUpdate(time: Date, soc: Double, odo: Double, remaining: Double, active: Object? = nil, completed: [Object] = []) {
+            var context = state
+            context["groups"] = ["drive": ["at": time.timeIntervalSince1970 * 1000, "odometerKm": odo]]
+            context["charges"] = completed
+            if let active { context["activeCharge"] = active }
+            chargedStore.update(vin: "A", state: context, health: ["capacity": 72.0],
+                nav: ["at": time.timeIntervalSince1970, "valid": true, "remainMetres": remaining], guiding: true,
+                routeKey: "charged-journey", destination: "충전 포함 여정", soc: soc, socAt: time, now: time)
+        }
+        chargedUpdate(time: departure, soc: 80, odo: 200, remaining: 80000)
+        chargedUpdate(time: chargeStart, soc: 70, odo: 240, remaining: 40000, active: activeCharge)
+        activeCharge["end"] = chargeEnd.timeIntervalSince1970 * 1000
+        activeCharge["endSOC"] = 90.0; activeCharge["endSOCObserved"] = true; activeCharge["vehicleReportedKWh"] = 14.4
+        var duplicateReceipt = activeCharge; duplicateReceipt["id"] = "receipt"; duplicateReceipt["at"] = chargeStart.timeIntervalSince1970 * 1000 + 120000
+        chargedUpdate(time: chargeEnd, soc: 90, odo: 240, remaining: 40000, completed: [activeCharge, duplicateReceipt])
+        let arrival = departure.addingTimeInterval(1800)
+        chargedUpdate(time: arrival, soc: 80, odo: 280, remaining: 0, completed: [activeCharge, duplicateReceipt])
+        chargedStore.finish(arrived: true, vin: "A", now: arrival)
+        let journey = chargedStore.history(vin: "A").first!
+        precondition(journey.chargingObserved && journey.chargingAccounted && journey.chargingStops!.count == 1)
+        precondition(journey.addedSOC == 20 && journey.actualUsedSOC == 20 && journey.errorSOC == 0)
+        precondition(abs(journey.actualUsedKWh! - 14.4) < 0.001)
+        precondition(journey.points!.last!.actualSOC == 80 && journey.points!.last!.predictedSOC == 80)
+        print("PASS: trip prediction, bounded durable graphs, observed charging accounting/deduplication, missing-data exclusion, reroute and VIN isolation")
     }
 }

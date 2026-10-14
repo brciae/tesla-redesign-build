@@ -2,7 +2,7 @@ import Foundation
 
 extension AppModel {
     var energyVehicleVIN: String { fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin }
-    func updateTripEnergy() {
+    func updateTripEnergy(force: Bool = false) {
         guard !demo else { return }
         let now = Date(), charge = groups.object("charge")
         var soc: Double?, socAt: Date?
@@ -14,6 +14,6 @@ extension AppModel {
         }
         tripEnergy.update(vin: energyVehicleVIN, state: state, health: output.object("health"), nav: navigation.telemetry,
             guiding: navigation.guiding, routeKey: navigation.energyRouteKey, destination: navigation.energyDestination,
-            soc: soc, socAt: socAt, now: now)
+            soc: soc, socAt: socAt, now: now, force: force)
     }
 }

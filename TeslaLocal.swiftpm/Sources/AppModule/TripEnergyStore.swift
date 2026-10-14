@@ -13,6 +13,7 @@ final class TripEnergyStore: ObservableObject {
     private var observedSOC: (value: Double, at: Date)?
     private var observedOdometer: (value: Double, at: Date)?
     private var lastCheckpoint = Date.distantPast
+    private var chargingScannedAt = Date.distantPast
     private var selectedVIN = ""
     private let defaults: UserDefaults
     private let storageKey = "energy.tripForecast.v1"
@@ -27,7 +28,7 @@ final class TripEnergyStore: ObservableObject {
         }
     }
     func update(vin: String, state: Object, health: Object, nav: Object, guiding: Bool,
-                routeKey: String, destination: String, soc: Double?, socAt: Date?, now: Date = Date()) {
+                routeKey: String, destination: String, soc: Double?, socAt: Date?, now: Date = Date(), force: Bool = false) {
         guard !vin.isEmpty else { estimate = nil; return }
         if selectedVIN != vin { selectedVIN = vin; profileKey = ""; estimate = nil; observedSOC = nil; observedOdometer = nil }
         if let soc, soc.isFinite, (0...100).contains(soc), let socAt, (-5...120).contains(now.timeIntervalSince(socAt)) {
@@ -38,13 +39,16 @@ final class TripEnergyStore: ObservableObject {
            (-5000...120000).contains(now.timeIntervalSince1970 * 1000 - at), let odo = drive.number("odometerKm"), (0...1e7).contains(odo) {
             observedOdometer = (odo, Date(timeIntervalSince1970: at / 1000))
         }
+        if force || now.timeIntervalSince(chargingScannedAt) >= 5 {
+            updateChargingStops(state: state, vin: vin, now: now); chargingScannedAt = now
+        }
         // Cached or missing readings must not masquerade as a live arrival forecast.
         guard guiding, let at = nav.number("at"), (-5...10).contains(now.timeIntervalSince1970 - at), nav.flag("valid"),
               let metres = nav.number("remainMetres"), metres.isFinite, metres >= 0,
               let observedSOC, (-5...120).contains(now.timeIntervalSince(observedSOC.at)), !routeKey.isEmpty else {
             estimate = nil; return
         }
-        guard now.timeIntervalSince(updatedAt) >= 5 || estimate == nil || session?.routeKey != routeKey else { return }
+        guard force || now.timeIntervalSince(updatedAt) >= 5 || estimate == nil || session?.routeKey != routeKey else { return }
         updatedAt = now
         let trips = state.rows("trips"), settings = state.object("settings")
         // Never train on another vehicle's records while Fleet selection is changing.
@@ -106,6 +110,40 @@ final class TripEnergyStore: ObservableObject {
     }
     func history(vin: String) -> [TripEnergyRecord] { Array(records.filter { $0.vin == vin }.reversed()) }
     func invalidateProfile() { profileKey = "" }
+    private func updateChargingStops(state: Object, vin: String, now: Date) {
+        guard var row = session, row.vin == vin, state.object("settings").string("vin") == vin else { return }
+        var stops = row.chargingStops ?? []
+        let active = state.object("activeCharge")
+        let candidates = Array(state.rows("charges").suffix(100)) + (active.isEmpty ? [] : [active])
+        var changed = false
+        for c in candidates {
+            guard let start = c.number("at"), start >= row.startedAt.timeIntervalSince1970 * 1000,
+                  start <= now.timeIntervalSince1970 * 1000 + 5000 else { continue }
+            let end = c.number("end").flatMap { $0 >= start && $0 <= now.timeIntervalSince1970 * 1000 + 5000 ? $0 : nil }
+            var stop = TripEnergyChargingStop(id: c.string("id", "charge:\(start)"), startedAt: Date(timeIntervalSince1970: start / 1000),
+                endedAt: end.map { Date(timeIntervalSince1970: $0 / 1000) },
+                startSOC: c.flag("startSOCObserved") && !c.flag("startSOCEstimated") ? c.number("startSOC") : nil,
+                endSOC: end != nil && c.flag("endSOCObserved") && !c.flag("endSOCEstimated") ? c.number("endSOC") : nil,
+                batteryAddedKWh: c.number("vehicleReportedKWh").flatMap { (0...300).contains($0) ? $0 : nil })
+            if let index = stops.firstIndex(where: { old in
+                old.id == stop.id || abs(old.startedAt.timeIntervalSince(stop.startedAt)) < 60 ||
+                old.startedAt < (stop.endedAt ?? now) && stop.startedAt < (old.endedAt ?? now)
+            }) {
+                let old = stops[index]
+                // A duplicate receipt or active row must not erase an observed completed charge.
+                if old.addedSOC != nil && stop.addedSOC == nil { continue }
+                if old.addedSOC != nil, stop.addedSOC != nil, let a = old.endedAt, let b = stop.endedAt,
+                   old.startedAt <= stop.startedAt, a >= b, old.startedAt < stop.startedAt || a > b { continue }
+                stop.id = old.id
+                if stops[index] != stop { stops[index] = stop; changed = true }
+            } else { stops.append(stop); changed = true }
+        }
+        if changed {
+            if stops.count > 50 { row.chargingDataIncomplete = true }
+            row.chargingStops = Array(stops.sorted { $0.startedAt < $1.startedAt }.prefix(50)); row.chargingObserved = true
+            session = row; save()
+        }
+    }
     private func appendPoint(now: Date, force: Bool = false) {
         guard var row = session, row.vin == selectedVIN, let observedSOC,
               (-5...120).contains(now.timeIntervalSince(observedSOC.at)) else { return }
@@ -120,7 +158,7 @@ final class TripEnergyStore: ObservableObject {
             if travelled.isFinite, (0...3000).contains(travelled), travelled >= (points.last?.distanceKm ?? 0) { distance = travelled }
         }
         let point = TripEnergyPoint(elapsedSeconds: elapsed, distanceKm: distance,
-            predictedSOC: distance.map { max(0, row.startSOC - $0 * row.initial.socPerKm) }, actualSOC: observedSOC.value)
+            predictedSOC: distance.flatMap { row.predictedSOC(distanceKm: $0, at: observedSOC.at, actualSOC: observedSOC.value) }, actualSOC: observedSOC.value)
         if points.last?.elapsedSeconds == elapsed { points[points.count - 1] = point } else { points.append(point) }
         // Keep the full trip span when sampling longer journeys, without unbounded graph data.
         if points.count > 120 {
