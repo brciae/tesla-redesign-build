@@ -42,12 +42,12 @@ enum VoiceGainPolicy {
                             let raw = buffer.loadUnaligned(fromByteOffset: position, as: UInt32.self)
                             let value = Double(Float(bitPattern: UInt32(littleEndian: raw)))
                             let output = Float(value.isFinite ? min(1, max(-1, value * boost)) : 0)
-                            buffer.storeBytes(of: output.bitPattern.littleEndian, toByteOffset: position, as: UInt32.self)
+                            for index in 0..<4 { buffer[position + index] = UInt8(truncatingIfNeeded: output.bitPattern >> (index * 8)) }
                         } else {
                             let raw = buffer.loadUnaligned(fromByteOffset: position, as: UInt64.self)
                             let value = Double(bitPattern: UInt64(littleEndian: raw))
                             let output = value.isFinite ? min(1, max(-1, value * boost)) : 0
-                            buffer.storeBytes(of: output.bitPattern.littleEndian, toByteOffset: position, as: UInt64.self)
+                            for index in 0..<8 { buffer[position + index] = UInt8(truncatingIfNeeded: output.bitPattern >> (index * 8)) }
                         }
                     } else if bits == 8 {
                         let output = min(127, max(-128, Int((Double(Int(buffer[position]) - 128) * boost).rounded())))
