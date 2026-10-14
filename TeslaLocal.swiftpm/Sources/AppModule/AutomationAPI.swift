@@ -5,6 +5,9 @@ import Security
 enum AutomationAPIProvider: String, CaseIterable, Identifiable {
     case openAI = "OpenAI", anthropic = "Claude", gemini = "Gemini"
     var id: String { rawValue }
+    static func configured(defaults: UserDefaults = .standard) -> Self {
+        Self(rawValue: defaults.string(forKey: "automationAPI.provider") ?? "") ?? .openAI
+    }
     var exampleModel: String {
         switch self { case .openAI: return "gpt-6-astra"; case .anthropic: return "claude-sonnet-4-6"; case .gemini: return "gemini-2.5-flash" }
     }

@@ -2,6 +2,14 @@ import Foundation
 
 @main struct AutomationAPITests {
     static func main() async throws {
+        let suite = "AutomationProviderTest." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        precondition(AutomationAPIProvider.configured(defaults: defaults) == .openAI)
+        defaults.set("Claude", forKey: "automationAPI.provider")
+        precondition(AutomationAPIProvider.configured(defaults: defaults) == .anthropic)
+        defaults.set("unsupported", forKey: "automationAPI.provider")
+        precondition(AutomationAPIProvider.configured(defaults: defaults) == .openAI)
         func decode(_ object: [String: Any], _ provider: AutomationAPIProvider) throws -> String {
             try AutomationAPI.decodeResponse(JSONSerialization.data(withJSONObject: object), provider: provider)
         }

@@ -10,6 +10,7 @@ final class AutomationContextSpeech {
     func resolve(base: String, key: String, context: AutomationSpeechContext, completion: @escaping (String) -> Void) {
         tasks[key]?.cancel(); tasks[key] = nil; tokens[key] = nil
         let d = UserDefaults.standard
+        let provider = AutomationAPIProvider.configured(defaults: d)
         let omit = (d.object(forKey: "automationSpeech.skipRoutine") as? Bool) ?? true
         let routine = omit && AutomationSpeechPolicy.canOmitRoutine(base: base, context: context)
         let routineKey = context.scope + ":" + context.trigger + ":" + base
@@ -21,7 +22,6 @@ final class AutomationContextSpeech {
             if recentRoutine.count > 64 { recentRoutine.removeAll(); recentRoutine[routineKey] = now }
         }
         guard d.bool(forKey: "automationSpeech.aiEnabled"),
-              let provider = AutomationAPIProvider(rawValue: d.string(forKey: "automationAPI.provider") ?? ""),
               AutomationAPI.key(provider) != nil,
               let model = d.string(forKey: "automationAPI.model." + provider.rawValue), !model.isEmpty,
               Date().timeIntervalSince(lastRequest) >= 15, tasks.count < 3, base.count <= 1200 else { completion(base); return }
