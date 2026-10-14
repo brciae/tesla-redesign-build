@@ -249,6 +249,10 @@ enum CharacterSlot: String, CaseIterable, Identifiable {
 @MainActor
 final class CharacterRig {
     private static var cache: [String: CharacterRig] = [:]
+    static func trimInactiveCaches() {
+        let active = Set(CharacterSlot.allCases.map { CharacterOption.selectedID($0) })
+        cache = cache.filter { active.contains($0.key) }
+    }
     /// The rig for the character chosen in 설정 → 캐릭터 (loaded once, then cached).
     static var shared: CharacterRig { rig(CharacterOption.selectedID) }
     static func rig(_ id: String) -> CharacterRig {
@@ -618,6 +622,7 @@ private struct CharacterPreview: UIViewRepresentable {
         weak var view: ARView?
         var tick: Cancellable?
         var clock = 0.0, holoStart = 0.0
+        var holoHolder: Entity?
         var holoPad: Entity?
         weak var holoBody: Entity?
         func setup(_ v: ARView) {
@@ -648,11 +653,11 @@ private struct CharacterPreview: UIViewRepresentable {
             guard let m = rig.model else { return }
             let f = CharacterFinish(rawValue: finish) ?? .auto
             let c = m.clone(recursive: true); CharacterFinish.apply(f, to: c); turntable.addChild(c)
-            holoPad?.removeFromParent(); holoPad = nil; holoBody = nil
+            holoHolder?.removeFromParent(); holoHolder = nil; holoPad = nil; holoBody = nil
             // v1.53: dark stage for the hologram so it reads like Tripo's viewer; clear for the others
             view?.environment.background = .color(f == .holo ? UIColor(red: 0.02, green: 0.07, blue: 0.075, alpha: 1) : .clear)
             if f == .holo {
-                let holder = Entity(); CharacterFinish.addProjector(to: holder); anchor.addChild(holder)
+                let holder = Entity(); CharacterFinish.addProjector(to: holder); anchor.addChild(holder); holoHolder = holder
                 holoPad = holder.children.first; holoBody = c; holoStart = clock
                 CharacterFinish.setReveal(c, -1)
             }

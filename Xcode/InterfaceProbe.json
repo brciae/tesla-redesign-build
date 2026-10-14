@@ -11,8 +11,8 @@
    "CODE_SIGNING_ALLOWED": "NO",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "GENERATE_INFOPLIST_FILE": "YES",
-   "MARKETING_VERSION": "1.58",
-   "CURRENT_PROJECT_VERSION": "158"
+   "MARKETING_VERSION": "1.59",
+   "CURRENT_PROJECT_VERSION": "159"
   }
  },
  "targets": {
@@ -30,6 +30,9 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/Character3DView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/ManeuverGlyph.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BatteryOverview.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/HomeChargingSettingsView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AttachmentSafety.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeStartTimeChart.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BatteryGauge.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/InfoNote.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/DrivingSceneDecor.swift",

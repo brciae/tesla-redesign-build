@@ -382,13 +382,50 @@ final class InteractionTests: XCTestCase {
     func testBatteryBaselineAndPeriods() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["battery-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["용량 계산 가능한 충전 0/3회 (SOC 20%p 이상 충전)"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["주행·배터리 요약"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["battery.health.reason"].label.contains("기준 용량 미등록"))
         XCTAssertFalse(app.staticTexts["현재 지수 100%"].exists)
+        let top = XCTAttachment(screenshot: app.screenshot()); top.name = "Battery summary and missing same-method reference"; top.lifetime = .keepAlways; add(top)
+        app.buttons["같은 종류 기준 등록 예시"].tap()
+        XCTAssertTrue(app.staticTexts["battery.health.reason"].label.contains("동일 종류 기준"))
         for period in ["7일", "30일", "90일"] {
             app.segmentedControls.buttons[period].tap()
             XCTAssertTrue(app.segmentedControls.buttons[period].isSelected)
         }
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Battery baseline"; shot.lifetime = .keepAlways; add(shot)
+        app.swipeUp()
+        let graphs = XCTAttachment(screenshot: app.screenshot()); graphs.name = "Battery separate SOC events and trip consumption"; graphs.lifetime = .keepAlways; add(graphs)
+        app.swipeUp()
+        let trips = XCTAttachment(screenshot: app.screenshot()); trips.name = "Battery trip rows and parking precision"; trips.lifetime = .keepAlways; add(trips)
+    }
+    func testHomeChargingRadiusAndDatedSave() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["home-charging-probe"]; app.launch()
+        let slider = app.sliders["home.charge.radius"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 8))
+        let initial = XCTAttachment(screenshot: app.screenshot()); initial.name = "Home charging apartment radius and map"; initial.lifetime = .keepAlways; add(initial)
+        slider.adjust(toNormalizedSliderPosition: 0.5)
+        let save = app.buttons["home.charge.save"]
+        for _ in 0..<3 where !save.isHittable {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.88)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.3)))
+        }
+        XCTAssertTrue(save.waitForExistence(timeout: 5)); save.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "주소·범위 저장됨")).firstMatch.waitForExistence(timeout: 5))
+        let saved = XCTAttachment(screenshot: app.screenshot()); saved.name = "Home address effective history saved"; saved.lifetime = .keepAlways; add(saved)
+    }
+    func testChargingFourTimeBands() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["charging-time-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["charging.time.bands"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["charging.time.bands"].label.contains("오전 06:00~11:59"))
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "23~9시")).firstMatch.exists)
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Charging four time bands"; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testAttachmentDownsampleAndMalformedInput() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["attachment-safety-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["PASS 사진 축소·손상 입력 방어"].waitForExistence(timeout: 12))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Bounded image decoding and malformed input"; shot.lifetime = .keepAlways; add(shot)
     }
     func testRouteMotionDirections() {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "motion-probe"]; app.launch()

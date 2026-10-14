@@ -25,6 +25,8 @@ node tools/control-path-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
 swiftc TeslaLocal.swiftpm/Sources/AppModule/MediaPlaybackSource.swift tools/media-source-tests.swift -o Xcode/MediaSourceTests
 Xcode/MediaSourceTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/AttachmentSafety.swift tools/attachment-safety-tests.swift -o Xcode/AttachmentSafetyTests
+Xcode/AttachmentSafetyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceGainPolicy.swift tools/voice-gain-tests.swift -o Xcode/VoiceGainTests
 Xcode/VoiceGainTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift tools/navigation-recovery-tests.swift -o Xcode/NavigationRecoveryTests
@@ -35,6 +37,7 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typeca
 Xcode/TypecastPolicyTests
 # The original artwork stays unchanged; asset layout adds a 5% margin on each side.
 node tools/js-logic-tests.cjs
+node tools/battery-analysis-tests.cjs
 node tools/gps-loss-tests.cjs
 node tools/charge-integrity-tests.cjs
 node tools/charge-cost-tests.cjs

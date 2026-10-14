@@ -290,7 +290,7 @@ struct SmartParkingCard: View {
             .shadow(color: .black.opacity(0.45), radius: 20, y: 10)
             .sheet(isPresented: $showCamera) {
                 CameraPicker { data in
-                    if let image = UIImage(data: data) {
+                    if let image = AttachmentSafety.image(data) {
                         Task {
                             await manager.processParkingPhoto(
                                 image: image,
@@ -361,7 +361,7 @@ struct SmartParkingCard: View {
             }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { data in
-                    if let image = UIImage(data: data) {
+                    if let image = AttachmentSafety.image(data) {
                         Task {
                             await manager.processParkingPhoto(
                                 image: image,

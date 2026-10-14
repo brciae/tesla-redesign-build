@@ -138,28 +138,8 @@ struct ChargeInsightsView: View {
                         .frame(height: 180).chartReveal()
                     }
                 }
-                card("충전 시작 시간대", "최근 200회 · 막대 높이 = 충전 시작 횟수") {
-                    let peak = hours.max { $0.count < $1.count }
-                    // v1.33: bars were invisible (ratio width on a numeric axis = 0 pt). Hours are now
-                    // categories, so every hour gets a real bar; night hours sit on a shaded band.
-                    Chart(hours) { h in
-                        BarMark(x: .value("시", String(h.id)), y: .value("횟수", h.count))
-                            .foregroundStyle(by: .value("구분", h.id >= 23 || h.id < 9 ? "심야 23~9시" : "주간 9~23시"))
-                            .cornerRadius(3)
-                            .annotation(position: .top, spacing: 2) { if h.count > 0 { Text("\(h.count)").font(.system(size: 9, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary) } }
-                    }
-                    .chartForegroundStyleScale(["심야 23~9시": Color.indigo, "주간 9~23시": Color.teal])
-                    .chartLegend(position: .top, alignment: .leading)
-                    .chartXAxis { AxisMarks(values: ["0", "3", "6", "9", "12", "15", "18", "21"]) { v in AxisValueLabel { if let s = v.as(String.self) { Text("\(s)시").font(.caption2) } } } }
-                    .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3])); AxisValueLabel() } }
-                    .chartYScale(domain: 0...Double(max(2, (hours.map(\.count).max() ?? 0) + 1)))
-                    .frame(height: 180)
-                    if let peak, peak.count > 0 {
-                        let night = hours.filter { $0.id >= 23 || $0.id < 9 }.reduce(0) { $0 + $1.count }
-                        let sum = max(1, hours.reduce(0) { $0 + $1.count })
-                        insight("가장 많이 충전을 시작한 시간: \(peak.id)시 · 심야(23~9시) 비율 \(night * 100 / sum)%")
-                    }
-                }
+                ChargeStartTimeChart(charges: charges).padding(16)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
                 NavigationLink { ChargeListView(charges: charges) } label: {
                     Label("충전 기록 전체 보기 (\(charges.count)건)", systemImage: "list.bullet").frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered).controlSize(.large)

@@ -15,6 +15,10 @@ elif [[ "${1:-}" == junction ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit)
 elif [[ "${1:-}" == new ]]; then
   test_filter=(
+    -only-testing:InterfaceProbeTests/InteractionTests/testBatteryBaselineAndPeriods
+    -only-testing:InterfaceProbeTests/InteractionTests/testHomeChargingRadiusAndDatedSave
+    -only-testing:InterfaceProbeTests/InteractionTests/testChargingFourTimeBands
+    -only-testing:InterfaceProbeTests/InteractionTests/testAttachmentDownsampleAndMalformedInput
     -only-testing:InterfaceProbeTests/InteractionTests/testPlaybackSourceIconsAcrossThemesAndSourceChanges
     -only-testing:InterfaceProbeTests/InteractionTests/testActualLiveActivityExtensionOnHomeScreen
     -only-testing:InterfaceProbeTests/InteractionTests/testAudioSettingsInterruptionsPreemptionAndRecovery

@@ -32,6 +32,9 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("fullscreen-navigation-probe") { FullscreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("home-charging-probe") { HomeChargingProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charging-time-probe") { ChargingTimeProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("attachment-safety-probe") { AttachmentSafetyProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-gauge-probe") { BatteryGaugeProbe() }
             else { ProbeRoot() }
         }.preferredColorScheme(.dark)
@@ -271,13 +274,20 @@ struct BatteryGaugeProbe: View {
 }
 struct BatteryProbe: View {
     @State private var days = 30
+    @State private var reference = false
     var body: some View {
         ScrollView {
-            BatteryOverview(index: ["degradationPercent": 0.0, "soh": 100.0, "initial": true, "sampleCount": 0,
-                "note": "신차 기준 SOH 100% · 초기 가정. 실측값 아님.", "forecastNote": "관측 자료 수집 중"],
+            Button("같은 종류 기준 등록 예시") { reference.toggle() }
+            BatteryOverview(index: ["degradationPercent": 5.0, "initial": !reference, "sampleCount": 7, "stableSampleCount": 7,
+                "capacityMedianKWh": 76.0, "capacityMinKWh": 75.5, "capacityMaxKWh": 76.5, "capacityLabel": "차량 보고 완충 용량", "comparisonLabel": "등록 기준 대비 감소",
+                "statusReason": reference ? "등록한 동일 종류 기준 용량 대비 감소 추정" : "같은 종류의 기준 용량 미등록 · 관측 용량 표시", "note": "검증용 관측 자료 · 실제 차량 진단 아님"],
                 usage: ["tripCount": 5, "completeTrips": 4, "excludedRateTrips": 1, "driveSOC": 65.0,
                     "chargeSOC": 125.0, "socPer100Km": 22.4, "distanceKm": 290.0, "observedDischargeCycles": 0.65,
-                    "energy": ["drivingKmPerKWh": 8.02, "overallKmPerKWh": 6.78, "parkingKWh": 0.0, "unclassifiedKWh": 2.25],
+                    "energy": ["drivingKmPerKWh": 8.02, "overallKmPerKWh": 6.78, "drivingKWh": 36.2, "parkingKWh": 0.0, "unclassifiedKWh": 2.25],
+                    "parking": ["count": 4, "excludedCount": 1, "medianPerDay": 1.2],
+                    "tripRows": [["id":"t1","at":1789390800000.0,"km":30.0,"startSOC":80.0,"endSOC":74.0,"kwh":4.5,"whPerKm":150.0,"method":"SOC 기반 추정"],
+                                 ["id":"t2","at":1789394400000.0,"km":18.0,"startSOC":74.0,"endSOC":70.0,"kwh":3.0,"whPerKm":166.7,"method":"SOC 기반 추정"],
+                                 ["id":"t3","at":1789398000000.0,"km":12.0,"startSOC":70.0,"endSOC":67.0,"kwh":2.25,"whPerKm":187.5,"method":"SOC 기반 추정","partial":true]],
                     "medianDischargeDepth": 16.3, "lowEndTrips": 1, "deepDischargeTrips": 0, "highEndCharges": 1,
                     "powerCoverage": 76.0, "observedUsedKWh": 42.1, "observedRecoveredKWh": 6.5,
                     "unexplainedParkingSOC": 1.0, "mixedParkingCount": 1,
@@ -286,6 +296,43 @@ struct BatteryProbe: View {
                               ["id":"c","segment":"charge","at":1789387200000.0,"soc":64.0,"kind":"충전"],
                               ["id":"d","segment":"charge","at":1789390800000.0,"soc":90.0,"kind":"충전"]]], days: $days)
         }.background(Theme.bg)
+    }
+}
+@MainActor struct HomeChargingProbe: View {
+    @StateObject private var model: AppModel
+    init() {
+        let model = AppModel()
+        let place = SavedNavigationPlace(name: "검증용 아파트 단지", address: "검증용 주소 · 실제 집 아님", latitude: 37.5, longitude: 127.1)
+        UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: "navigation.home")
+        model.mutate("settings", ["homePoint": ["latitude": 37.5, "longitude": 127.1, "name": place.name]])
+        _model = StateObject(wrappedValue: model)
+    }
+    var body: some View { NavigationStack { HomeChargingSettingsView().environmentObject(model) } }
+}
+struct ChargingTimeProbe: View {
+    var body: some View {
+        let start = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000
+        let charges: [Object] = [0, 5, 6, 9, 12, 17, 18, 23].enumerated().map { i, hour in
+            ["id": "time-\(i)", "at": start + Double(hour) * 3600000, "startTimeObserved": true]
+        }
+        ChargeStartTimeChart(charges: charges).padding(20).background(Theme.bg)
+    }
+}
+struct AttachmentSafetyProbe: View {
+    @State private var status = "확인 중"
+    @State private var thumbnail: UIImage?
+    var body: some View {
+        VStack {
+            Text(status).accessibilityIdentifier("attachment.safety.status")
+            if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFit().frame(height: 180) }
+        }.task {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 4000, height: 3000), format: format)
+            let data = renderer.jpegData(withCompressionQuality: 0.5) { context in context.cgContext.setFillColor(UIColor.blue.cgColor); context.cgContext.fill(CGRect(x: 0, y: 0, width: 4000, height: 3000)) }
+            thumbnail = AttachmentSafety.image(data, maxPixel: 1024)
+            let safe = thumbnail?.cgImage?.width == 1024 && thumbnail?.cgImage?.height == 768 && AttachmentSafety.image(Data([0,1,2])) == nil
+            status = safe ? "PASS 사진 축소·손상 입력 방어" : "FAIL 사진 방어"
+        }
     }
 }
 struct ProbeRoot: View {

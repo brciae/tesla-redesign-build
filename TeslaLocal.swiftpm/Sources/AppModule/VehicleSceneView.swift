@@ -163,11 +163,12 @@ struct RealityVehicleView: UIViewRepresentable {
         }
         func build(in view: ARView) throws {
             let asset = try VehicleSceneAsset.load()
+            guard asset.meshes.allSatisfy({ !$0.positions.isEmpty && $0.positions.count % 3 == 0 && $0.positions.count < 300000 && $0.positions.allSatisfy({ $0.isFinite }) }) else { throw LocalError.message("3D 메시 좌표 형식 오류") }
             root.addChild(vehicle)
             prepareWheels(asset)
             var bounds: [String: (min: SIMD3<Float>, max: SIMD3<Float>)] = [:]
             for part in asset.parts {
-                guard part.pivot.count == 3, part.axis.count == 3 else { throw LocalError.message("3D 힌지 형식 오류") }
+                guard part.pivot.count == 3, part.axis.count == 3, part.pivot.allSatisfy({ $0.isFinite }), part.axis.allSatisfy({ $0.isFinite }), part.openAngle.isFinite, (abs(part.openAngle) < 0.0001 || part.axis.contains(where: { abs($0) > 0.0001 })) else { throw LocalError.message("3D 힌지 형식 오류") }
                 let node = Entity(); node.name = part.id; node.position = SIMD3(part.pivot[0], part.pivot[1], part.pivot[2]); vehicle.addChild(node); hinges[part.id] = node; definitions[part.id] = part
             }
             for item in asset.meshes {

@@ -49,7 +49,7 @@ import UniformTypeIdentifiers
             guard p.string("classification") == "parking", let s = date(p, "start"), let e = date(p, "end"),
                   let d = p.number("deltaSOC"), d >= 0 else { return nil }
             let h = e.timeIntervalSince(s) / 3600, r = d / h * 24
-            return h >= 6 && r <= 8 ? (s, h, d, r) : nil
+            return h >= 6 && d >= 1 ? (s, h, d, r) : nil
         }
     }
     static func drainPerDay(_ periods: [Object]) -> Double? {
@@ -168,20 +168,22 @@ struct ParkingDrainView: View {
         let sorted = list.map(\.perDay).sorted(), avg: Double? = sorted.isEmpty ? nil : sorted[sorted.count / 2]
         List {
             Section {
-                Text(avg.map { String(format: "하루 %.1f%% 감소 (중앙값)", $0) } ?? "6시간 이상 주차 기록이 아직 없습니다").font(.headline)
-                Text("6시간 이상 주차만 사용합니다. 중간에 운행·충전이 끼어 하루 8%를 넘는 기록은 제외합니다.").font(.caption).foregroundStyle(.secondary)
+                Text(avg.map { String(format: "하루 %.1f%% 감소 (중앙값)", $0) } ?? "하루 환산에 충분한 잔량 변화 자료가 아직 없음").font(.headline)
+                Text("P 주차 구간은 짧아도 기록. 하루 환산 중앙값은 6시간·1%p 이상 변화 구간만 사용. 이는 측정 정밀도 조건이며 주차 판별 기준이 아님.").font(.caption).foregroundStyle(.secondary)
             }
             if list.count > 1 {
                 Section("하루 환산 감소 (%)") {
                     Chart(list.prefix(60)) { BarMark(x: .value("날짜", $0.start, unit: .day), y: .value("%/일", $0.perDay)).foregroundStyle($0.perDay < 1 ? Color.green : ($0.perDay < 2 ? .yellow : .red)) }.chartReveal().frame(height: 180)
                 }
             }
-            Section("주차별") {
-                ForEach(list.prefix(100)) { d in
-                    HStack {
-                        Text(dateText(d.start.timeIntervalSince1970 * 1000)).font(.subheadline)
-                        Spacer()
-                        Text(String(format: "%.0f시간 · -%.0f%% · 하루 %.1f%%", d.hours, d.loss, d.perDay)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            Section("모든 주차 관측 구간") {
+                ForEach(Array(periods.sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) }.prefix(100).enumerated()), id: \.offset) { _, p in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(dateText(p.number("start"))).font(.subheadline)
+                        Text(String(format: "%.0f분 · 잔량 %@ → %@", (p.number("hours") ?? 0) * 60, p.number("startSOC").map { String(format: "%.1f%%", $0) } ?? "미확인", p.number("endSOC").map { String(format: "%.1f%%", $0) } ?? "미확인")).font(.caption).monospacedDigit()
+                        if !p.string("exclusionReason").isEmpty { Text(p.string("exclusionReason")).font(.caption).foregroundStyle(.orange) }
+                        else if p.flag("precisionLimited") { Text("P 주차 기록 · 하루 환산 정밀도 부족").font(.caption).foregroundStyle(.secondary) }
+                        else if let rate = p.number("perDay") { Text(String(format: "하루 환산 %.1f%%p · 실제 주차 시간 기준 변화 아님", rate)).font(.caption).foregroundStyle(.secondary) }
                     }
                 }
             }
@@ -469,11 +471,7 @@ struct TeslaMateView: View {
             links([("자주 가는 장소", "mappin.and.ellipse", AnyView(VisitedPlacesView(trips: trips, charges: charges))),
                    ("주별·월별 통계", "chart.bar", AnyView(MonthlyStatsView(trips: trips, charges: charges)))])
         }
-        case .battery: BatteryView().safeAreaInset(edge: .top) {
-            // Parking location/notes live in 운행 › 위치·주차; only the battery-related drain view is here.
-            links([("주차 중 방전", "moon.zzz", AnyView(ParkingDrainView(periods: model.state.rows("parkingPeriods")))),
-                   ("충전 단가", "wonsign.circle", AnyView(ChargeRateSettingsView()))])
-        }
+        case .battery: BatteryView()
         case .usage:
             VStack(spacing: 0) {
                 Picker("보기", selection: $showCalendar) { Text("소비·비용").tag(false); Text("에너지 달력").tag(true) }
@@ -494,7 +492,7 @@ struct TeslaMateView: View {
         }.padding(.horizontal, 16).padding(.vertical, 6).background(.bar)
     }
     private var overview: some View {
-        TeslaMateOverview(trips: trips, charges: charges, parking: model.state.rows("parkingPeriods"), capacity: capacity) { raw = $0.rawValue }
+        TeslaMateOverview(trips: trips, charges: charges, parking: model.output.object("parking").rows("rows"), capacity: capacity) { raw = $0.rawValue }
     }
 }
 
@@ -585,21 +583,18 @@ struct TeslaMateOverview: View {
                                 Text("%/일").font(.caption2).foregroundStyle(.secondary)
                             }
                         }.frame(width: 110, height: 110).frame(maxWidth: .infinity)
-                        Text(drainPerDay == nil ? "6시간 이상 주차 기록 필요" : "주차 중 하루 감소 (중앙값)").font(.caption2).foregroundStyle(.secondary)
+                        Text(drainPerDay == nil ? "하루 환산 자료 부족" : "주차 중 하루 감소 (중앙값)").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
-                card("전비 추이 (km/kWh)", .trips) {
-                    if efficiency.count < 2 { Text("주행 기록이 더 쌓이면 표시됩니다").font(.caption).foregroundStyle(.secondary).frame(height: 120) }
+                card("트립별 전비 · km/kWh", .trips) {
+                    let points = Array(efficiency.sorted { $0.at < $1.at }.suffix(20))
+                    if points.isEmpty { Text("전비를 계산할 주행 기록 없음").font(.caption).foregroundStyle(.secondary) }
                     else {
-                        let avg = efficiency.map(\.whPerKm).reduce(0, +) / Double(efficiency.count)
-                        Chart {
-                            ForEach(efficiency) { p in
-                                LineMark(x: .value("시각", p.at), y: .value("km/kWh", shown ? p.whPerKm : avg)).interpolationMethod(.catmullRom).foregroundStyle(.teal)
-                                PointMark(x: .value("시각", p.at), y: .value("km/kWh", shown ? p.whPerKm : avg)).foregroundStyle(.teal).symbolSize(18)
-                            }
-                            RuleMark(y: .value("평균", avg)).foregroundStyle(.secondary).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                                .annotation(position: .top, alignment: .leading) { Text(String(format: "평균 %.2f", avg)).font(.caption2).foregroundStyle(.secondary) }
-                        }.chartReveal().frame(height: 140)
+                        Chart(Array(points.enumerated()), id: \.offset) { i, p in
+                            BarMark(x: .value("주행 순서", String(i + 1)), y: .value("km/kWh", p.whPerKm)).foregroundStyle(.teal).cornerRadius(3)
+                        }.chartYAxis { AxisMarks(position: .leading) { _ in AxisGridLine(); AxisValueLabel() } }
+                            .chartXAxisLabel("과거 → 최근 주행 순서").frame(height: 160)
+                        Text("막대 하나 = 주행 한 번 · 높을수록 효율적 · 최근 20회").font(.caption2).foregroundStyle(.secondary)
                         if let wh { Text(String(format: "이번 달 %.2f km/kWh · 운행 %d회 · 충전 %d회", wh, t.count, c.count)).font(.caption2).foregroundStyle(.secondary) }
                     }
                 }

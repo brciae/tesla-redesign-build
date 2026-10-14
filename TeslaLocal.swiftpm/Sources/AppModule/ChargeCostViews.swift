@@ -77,6 +77,7 @@ struct ChargeRateSettingsView: View {
         Form {
             LocalBriefingControls(title: "충전 단가") { ["등록한 단가와 과거 결제 내역으로 예상 충전 금액을 계산합니다.", "직접 입력한 결제액이 우선합니다."] }
             Section("기본 예상 단가 · 원/kWh") {
+                NavigationLink("집 충전 범위·주소 변경") { HomeChargingSettingsView() }
                 TextField("집·완속 기준", text: $slow).keyboardType(.decimalPad)
                 TextField("급속 기준 · 미등록 시 350", text: $fast).keyboardType(.decimalPad)
                 TextField("슈퍼차저 기준 · 미등록 시 급속 기준", text: $supercharger).keyboardType(.decimalPad)

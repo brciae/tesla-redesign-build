@@ -58,6 +58,27 @@ for bits: UInt16 in [32,64] {
     require(values == [0.5,-0.5,1,0], "Float WAV gain and nonfinite sanitization")
 }
 print("PASS: PCM8/16/24/32 and floating32/64, including unaligned RIFF payloads")
+let base = wav([1000, -1000])
+let padded = VoiceGainPolicy.paddedTail(base)
+require(padded.count == base.count + 28800, "0.6-second mono24kHz PCM padding")
+require(VoiceGainPolicy.paddedTail(base, seconds: .nan) == base, "Nonfinite duration rejected")
+require(VoiceGainPolicy.paddedTail(base, seconds: -1) == base, "Negative duration rejected")
+var truncated = Data("RIFF".utf8)
+truncated.append(contentsOf: [100,0,0,0]); truncated.append(Data("WAVEJUNK".utf8))
+truncated.append(contentsOf: [80,0,0,0]); truncated.append(Data(count: 80))
+truncated.append(Data("fmt ".utf8)); truncated.append(contentsOf: [16,0,0,0])
+require(truncated.count == 108 && VoiceGainPolicy.paddedTail(truncated) == truncated, "Truncated fmt payload must never index outside the file")
+var hugeRate = base
+hugeRate.replaceSubrange(28..<32, with: [255,255,255,255])
+require(VoiceGainPolicy.paddedTail(hugeRate) == hugeRate, "Oversized/inconsistent byte rate cannot allocate padding")
+for length in 0..<base.count {
+    let prefix = Data(base.prefix(length))
+    require(VoiceGainPolicy.paddedTail(prefix) == prefix, "Every truncated PCM prefix is rejected safely")
+}
+let eightBit = sampleWAV(format: 1, bits: 8, payload: [128,140])
+let eightBitPadded = VoiceGainPolicy.paddedTail(eightBit)
+require(eightBitPadded.count > eightBit.count && eightBitPadded.last == 128, "Unsigned8-bit silence must be midpoint128")
+print("PASS: WAV tail bounds,108-byte malformed fmt, byte-rate allocation bound, duration and PCM8 silence")
 
 }
 }

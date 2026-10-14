@@ -468,6 +468,17 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func foregrounded(vin: String) {
         renderEpoch += 1
         controller?.resumeRendering()
+        if busy, controller == nil {
+            // Startup paused by lock/call must reacquire GPS and a fresh route event.
+            deadline?.invalidate(); deadline = nil
+            stopNative(keepDisplay: presented)
+            retry()
+            return
+        }
+        if busy, let ticket {
+            deadline?.invalidate()
+            deadline = Timer.scheduledTimer(withTimeInterval: 35, repeats: false) { [weak self] _ in self?.failed("카카오 길안내 시작 응답 지연", ticket: ticket) }
+        }
         if guiding, controller != nil {
             holdBackgroundLocation(true); applyAudioPreferences()
             if !userDismissed { presented = true }
@@ -478,7 +489,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if guiding, controller != nil {
             holdBackgroundLocation(true); applyAudioPreferences()
             status = "통화 종료 · 위치·길안내 수신 재개 요청"
-        } else if UIApplication.shared.applicationState == .active { restoreRecoveryCheckpoint(vin: vin) }
+        } else if UIApplication.shared.applicationState == .active { foregrounded(vin: vin) }
         onActivityChange?()
     }
     func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
@@ -568,7 +579,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     }
     func suspendPending() {
         // App switching is not a route cancellation. Keep the map and pending startup.
-        if busy { status = "앱 전환 중 · 경로 준비 유지" }
+        if busy { deadline?.invalidate(); deadline = nil; status = "앱 전환 중 · 경로 준비 유지" }
     }
     func screenAppeared() {
         if !heldOrientation { previousIdleTimer = UIApplication.shared.isIdleTimerDisabled }

@@ -216,7 +216,7 @@ struct ParkingForm: View {
                         InfoRow("차량 카메라", "센트리·주행 영상은 차 안 USB에만 남고 블루투스로는 받을 수 없어 자동 첨부가 불가함.")
                         Button { camera = true } label: { Label("사진 촬영", systemImage: "camera.fill").frame(minHeight: 44) }
                         PhotosPicker(selection: $picker, matching: .images) { Label("앨범에서 선택", systemImage: "photo").frame(minHeight: 44) }
-                        if let photo, let image = UIImage(data: photo) {
+                        if let photo, let image = AttachmentSafety.image(photo) {
                             Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 220)
                             Button("사진 지우기", role: .destructive) { self.photo = nil; picker = nil }
                         }
@@ -229,7 +229,7 @@ struct ParkingForm: View {
                 }
             }
             .sheet(isPresented: $camera) { CameraPicker { photo = $0 } }
-        }.task(id: picker) { guard let item = picker else { return }; if let data = try? await item.loadTransferable(type: Data.self), !Task.isCancelled { photo = data } }
+        }.task(id: picker) { guard let item = picker else { return }; if let loaded = try? await item.loadTransferable(type: BoundedPhotoTransfer.self), !Task.isCancelled { photo = loaded.data } }
     }
     private func save() {
         do {

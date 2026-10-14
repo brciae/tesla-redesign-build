@@ -69,6 +69,7 @@ final class AppModel: ObservableObject {
     @Published var receiptText = ""
     @Published var ocrBusy = false
     private var liveState: Object?
+    private var recognitionInFlight = false
     private var receiptRequest = UUID()
     private let folder: URL
     private let recordFile: URL
@@ -108,6 +109,7 @@ final class AppModel: ObservableObject {
     private var lastArchiveSync = Date.distantPast
     private var lastFleetPoll = Date.distantPast
     private var protectedDataObserver: NSObjectProtocol?
+    private var memoryPressureObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
     private var protectedLoadPending = false
@@ -274,6 +276,9 @@ final class AppModel: ObservableObject {
             self?.nextSaveAttempt = .distantPast
             if self?.savePending == true { self?.saveRecordsWhenAvailable() }
         }
+        memoryPressureObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in CharacterRig.trimInactiveCaches() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
             self?.syncArchiveIfNeeded()
@@ -288,6 +293,7 @@ final class AppModel: ObservableObject {
     deinit {
         timer?.invalidate()
         if let protectedDataObserver { NotificationCenter.default.removeObserver(protectedDataObserver) }
+        if let memoryPressureObserver { NotificationCenter.default.removeObserver(memoryPressureObserver) }
     }
     private func syncArchiveIfNeeded() {
         Task { @MainActor in
@@ -335,8 +341,8 @@ final class AppModel: ObservableObject {
                    let legacy = defaults.string(forKey: "cost.electricity").flatMap(Double.init), legacy.isFinite, (0...10000).contains(legacy) { rates["tariff"] = legacy }
                 if let data = defaults.data(forKey: "navigation.home"), let home = try? JSONSerialization.jsonObject(with: data) as? Object,
                    let lat = home.number("latitude"), let lon = home.number("longitude"), (-90...90).contains(lat), (-180...180).contains(lon), !(lat == 0 && lon == 0),
-                   settings.object("homePoint").number("latitude") != lat || settings.object("homePoint").number("longitude") != lon {
-                    rates["homePoint"] = ["latitude": lat, "longitude": lon]
+                   settings.object("homePoint").number("latitude") != lat || settings.object("homePoint").number("longitude") != lon || settings.object("homePoint").string("name").isEmpty {
+                    rates["homePoint"] = ["latitude": lat, "longitude": lon, "name": home.string("name"), "address": home.string("address")]
                 }
                 if !rates.isEmpty {
                     _ = try runtime.call("settings", rates)
@@ -596,14 +602,15 @@ final class AppModel: ObservableObject {
     }
     func storePhoto(_ data: Data) throws -> String {
         guard !demo, !recoveryLock else { throw LocalError.message("예시 모드·기록 복구 중에는 사진을 저장하지 않음") }
-        guard data.count <= 15_000_000, let image = UIImage(data: data), let encoded = image.jpegData(compressionQuality: 0.82) else { throw LocalError.message("사진 형식 또는 크기 확인 필요") }
+        guard let encoded = AttachmentSafety.jpeg(data) else { throw LocalError.message("사진 형식 또는 크기 확인 필요") }
         let name = UUID().uuidString + ".jpg"
         try encoded.write(to: attachmentURL(name)!, options: [.atomic, .completeFileProtection]); return name
     }
     func resetReceipt() { receiptRequest = UUID(); receiptText = ""; receiptDraft = [:]; ocrBusy = false }
     func recognize(_ data: Data) {
-        guard data.count <= 15_000_000, let uiImage = UIImage(data: data), let cgImage = uiImage.cgImage else { errorMessage = "지원 이미지·크기 확인 필요"; return }
-        ocrBusy = true; receiptRequest = UUID(); let requestID = receiptRequest
+        guard !recognitionInFlight else { errorMessage = "이전 영수증 인식 완료 후 다시 시도 필요"; return }
+        guard let uiImage = AttachmentSafety.image(data, maxPixel: 3072), let cgImage = uiImage.cgImage else { errorMessage = "지원 이미지·크기 확인 필요"; return }
+        recognitionInFlight = true; ocrBusy = true; receiptRequest = UUID(); let requestID = receiptRequest
         let orientation: CGImagePropertyOrientation
         switch uiImage.imageOrientation { case .up: orientation = .up; case .down: orientation = .down; case .left: orientation = .left; case .right: orientation = .right; case .upMirrored: orientation = .upMirrored; case .downMirrored: orientation = .downMirrored; case .leftMirrored: orientation = .leftMirrored; case .rightMirrored: orientation = .rightMirrored; @unknown default: orientation = .up }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -613,26 +620,31 @@ final class AppModel: ObservableObject {
                 try VNImageRequestHandler(cgImage: cgImage, orientation: orientation).perform([request])
                 let text = request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n") ?? ""
                 DispatchQueue.main.async {
-                    guard let self, self.receiptRequest == requestID else { return }; self.ocrBusy = false; self.receiptText = text
+                    guard let self else { return }; self.recognitionInFlight = false; guard self.receiptRequest == requestID else { return }; self.ocrBusy = false; self.receiptText = text
                     do { self.receiptDraft = try self.runtime.call("receipt", ["text": text]) as? Object ?? [:] }
                     catch { self.errorMessage = error.localizedDescription }
                 }
-            } catch { DispatchQueue.main.async { guard let self, self.receiptRequest == requestID else { return }; self.ocrBusy = false; self.errorMessage = error.localizedDescription } }
+            } catch { DispatchQueue.main.async { guard let self else { return }; self.recognitionInFlight = false; guard self.receiptRequest == requestID else { return }; self.ocrBusy = false; self.errorMessage = error.localizedDescription } }
         }
     }
     func exportBackup() {
         guard !recoveryLock else { errorMessage = "원본 기록 보호 중. 빈 자료로 백업하지 않음. 정상 백업 복원 필요."; return }
         guard !demo else { errorMessage = "예시 자료는 백업하지 않음"; return }
         do {
-            var attachments: [String: String] = [:]
-            for row in state.rows("parkingNotes") {
-                let name = row.string("photoName"); if name.isEmpty { continue }
+            let stateData = Data(try encodeJSON(runtime.call("export")).utf8)
+            let names = Set(state.rows("parkingNotes").map { $0.string("photoName") }.filter { !$0.isEmpty }).sorted()
+            var photos: [String: URL] = [:]
+            for name in names {
                 guard let url = attachmentURL(name) else { throw LocalError.message("사진 경로 오류") }
-                attachments[name] = try Data(contentsOf: url).base64EncodedString()
+                photos[name] = url
             }
-            let data = Data(try encodeJSON(["kind": "YLCompanionBackup", "schema": 1, "state": runtime.call("export"), "attachments": attachments]).utf8)
-            guard data.count <= 100_000_000 else { throw LocalError.message("백업이 100 MB를 초과함") }
-            sharedFile = try exportFile(data, stem: "Backup-테슬라 개인기록", ext: "json")
+            let exportFolder = folder.appendingPathComponent("Exports", isDirectory: true)
+            try FileManager.default.createDirectory(at: exportFolder, withIntermediateDirectories: true)
+            var version = 1
+            var final: URL
+            repeat { final = exportFolder.appendingPathComponent("Backup-테슬라 개인기록 v" + String(format: "%02d", version) + ".json"); version += 1 } while FileManager.default.fileExists(atPath: final.path) || FileManager.default.fileExists(atPath: final.appendingPathExtension("partial").path)
+            try AttachmentSafety.writeBackup(state: stateData, photos: photos, destination: final)
+            sharedFile = final
         } catch { errorMessage = error.localizedDescription }
     }
     func exportCSV() {
@@ -662,7 +674,7 @@ final class AppModel: ObservableObject {
             for row in cleaned.rows("parkingNotes") {
                 let name = row.string("photoName"); if name.isEmpty || remap[name] != nil { continue }
                 guard attachmentURL(name) != nil, let raw = photos[name] as? String, let data = Data(base64Encoded: raw) else { throw LocalError.message("사진이 누락되거나 손상됨") }
-                guard data.count <= 15_000_000, let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.82) else { throw LocalError.message("백업 사진 형식 오류") }
+                guard let jpeg = AttachmentSafety.jpeg(data) else { throw LocalError.message("백업 사진 형식 오류") }
                 let newName = UUID().uuidString + ".jpg"
                 try jpeg.write(to: attachmentURL(newName)!, options: [.atomic, .completeFileProtection]); remap[name] = newName
             }

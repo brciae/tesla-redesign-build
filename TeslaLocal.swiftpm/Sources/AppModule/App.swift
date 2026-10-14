@@ -219,10 +219,15 @@ struct PageBody<Content: View>: View {
     let title: String
     let briefing: BriefingScope
     var briefingText: (() async -> String)? = nil
+    var briefingAtBottom = false
     @ViewBuilder var content: () -> Content
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) { ScreenBriefingControls(scope: briefing, text: briefingText); content() }
+            VStack(alignment: .leading, spacing: 24) {
+                if !briefingAtBottom { ScreenBriefingControls(scope: briefing, text: briefingText) }
+                content()
+                if briefingAtBottom { ScreenBriefingControls(scope: briefing, text: briefingText) }
+            }
                 .frame(maxWidth: 680)
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
@@ -555,13 +560,20 @@ struct BatteryView: View {
     @State private var days = 30
     var body: some View {
         let charges = model.output.object("charging").rows("rows")
-        PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }) {
-            if let count = model.output.object("charging").number("reviewCount"), count > 0 {
-                InfoNote("충전 기록 검증", "중복 의심 \(Int(count))건을 합계에서 제외했습니다. 원본은 보존되어 있습니다.")
-                NavigationLink("중복 의심 기록 확인") { ChargeListView(charges: charges) }
-            }
-            NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin) } label: { Label("배터리 온도·수신 추이", systemImage: "waveform.path.ecg") }
+        PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }, briefingAtBottom: true) {
             BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days)
+            InfoCard {
+                NavigationLink("집 충전 범위·주소 변경") { HomeChargingSettingsView() }
+                NavigationLink("배터리 용량 비교 기준·교체일") { BatteryHealthReferenceSettingsView() }
+                NavigationLink("주차 구간·잔량 감소 상세") { ParkingDrainView(periods: model.output.object("parking").rows("rows")) }
+                DisclosureGroup("자료 확인·기록 관리") {
+                    if let count = model.output.object("charging").number("reviewCount"), count > 0 {
+                        Text("중복 의심 \(Int(count))건 · 합계 제외 · 원본 보존").font(.caption)
+                        NavigationLink("중복 의심 기록 확인") { ChargeListView(charges: charges) }
+                    }
+                    NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin) } label: { Label("배터리 온도·수신 추이", systemImage: "waveform.path.ecg") }
+                }
+            }
             InfoCard {
                 ChargingSummary(rows: charges, days: days)
                 NavigationLink("장소·사업자별 충전 단가") { ChargeRateSettingsView() }
@@ -794,7 +806,7 @@ struct ChargeForm: View {
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("저장") { save() }.disabled(model.ocrBusy) } }
         }.task(id: picker) {
             guard let selected = picker else { return }
-            if let data = try? await selected.loadTransferable(type: Data.self), !Task.isCancelled { model.recognize(data) }
+            if let loaded = try? await selected.loadTransferable(type: BoundedPhotoTransfer.self), !Task.isCancelled { model.recognize(loaded.data) }
         }.onAppear { model.resetReceipt(); loadExisting() }.onDisappear { model.resetReceipt() }
             .onChange(of: model.receiptText) { _, _ in applyReceipt() }
     }

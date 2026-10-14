@@ -64,8 +64,8 @@ struct VehicleAppearanceView: View {
         .task(id: photo) {
             guard let photo else { return }
             do {
-                guard let data = try await photo.loadTransferable(type: Data.self), !Task.isCancelled, capturedKey == key else { return }
-                let id = try store.importImage(data); importedIDs.insert(id); draft.imageID = id; draft.wrap = .image; edited()
+                guard let loaded = try await photo.loadTransferable(type: BoundedPhotoTransfer.self), !Task.isCancelled, capturedKey == key else { return }
+                let id = try store.importImage(loaded.data); importedIDs.insert(id); draft.imageID = id; draft.wrap = .image; edited()
             } catch { self.error = error.localizedDescription }
         }
     }

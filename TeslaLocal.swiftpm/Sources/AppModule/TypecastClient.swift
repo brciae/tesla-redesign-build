@@ -465,26 +465,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static func presetTone(_ text: String) -> Bool { text.count <= 40 }
     /// Appends 0.6 s of silence so car/Bluetooth output latency never clips the last syllable.
     static func paddedTail(_ wav: Data, seconds: Double = 0.6) -> Data {
-        var d = wav
-        func u32(_ o: Int) -> UInt32 { d[d.startIndex + o ..< d.startIndex + o + 4].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) } }
-        func put(_ v: UInt32, _ o: Int) { withUnsafeBytes(of: v.littleEndian) { d.replaceSubrange(d.startIndex + o ..< d.startIndex + o + 4, with: $0) } }
-        var o = 12, byteRate: UInt32 = 0, blockAlign = 0
-        while o + 8 <= d.count {
-            let id = String(data: d[d.startIndex + o ..< d.startIndex + o + 4], encoding: .ascii) ?? ""
-            let size = Int(u32(o + 4))
-            if id == "fmt " { byteRate = u32(o + 16); blockAlign = Int(d[d.startIndex + o + 20]) | Int(d[d.startIndex + o + 21]) << 8 }
-            if id == "data" {
-                guard byteRate > 0, o + 8 + size == d.count else { return wav }
-                var extra = Int(Double(byteRate) * seconds)
-                if blockAlign > 0 { extra -= extra % blockAlign }
-                d.append(Data(count: extra))
-                put(UInt32(size + extra), o + 4)
-                put(UInt32(d.count - 8), 4)
-                return d
-            }
-            o += 8 + size + (size & 1)
-        }
-        return wav
+        VoiceGainPolicy.paddedTail(wav, seconds: seconds)
     }
 
     private func cacheKey(for text: String, voiceId: String) -> String {
@@ -516,14 +497,14 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private func isFileValid(_ url: URL) -> Bool {
         if FileManager.default.fileExists(atPath: url.path),
            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? UInt64, size > 100 {
+           let size = attrs[.size] as? UInt64, size > 100, size <= 32_000_000 {
             return true
         }
         return false
     }
 
     private func saveToCache(data: Data, for text: String, voiceId: String, alias: String? = nil) -> URL? {
-        guard data.count > 100 else { return nil }
+        guard data.count > 100, data.count <= 32_000_000 else { return nil }
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = cacheKey(for: clean, voiceId: voiceId)
         let fileURL = voiceDirectory(voiceId).appendingPathComponent("\(key).wav")
@@ -708,7 +689,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 }
 
                 if httpResponse.statusCode == 200 {
-                    guard data.count >= 12, String(data: data.prefix(4), encoding: .ascii) == "RIFF",
+                    guard data.count >= 12, data.count <= 32_000_000, String(data: data.prefix(4), encoding: .ascii) == "RIFF",
                           String(data: data[8..<12], encoding: .ascii) == "WAVE" else {
                         throw NSError(domain: "Typecast", code: 502, userInfo: [NSLocalizedDescriptionKey: "유효한 WAV 오디오 응답이 아님"])
                     }
