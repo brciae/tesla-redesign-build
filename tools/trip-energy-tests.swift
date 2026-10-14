@@ -116,6 +116,15 @@ extension Dictionary where Key == String, Value == Any {
         precondition(journey.addedSOC == 20 && journey.actualUsedSOC == 20 && journey.errorSOC == 0)
         precondition(abs(journey.actualUsedKWh! - 14.4) < 0.001)
         precondition(journey.points!.last!.actualSOC == 80 && journey.points!.last!.predictedSOC == 80)
+        let correctionStart = arrival.addingTimeInterval(60)
+        chargedStore.update(vin: "A", state: state, health: ["capacity": 72.0], nav: ["at": correctionStart.timeIntervalSince1970, "valid": true, "remainMetres": 1000.0],
+            guiding: true, routeKey: "soc-correction", destination: "보정", soc: 50, socAt: correctionStart, now: correctionStart)
+        let correctionEnd = correctionStart.addingTimeInterval(60)
+        chargedStore.update(vin: "A", state: state, health: ["capacity": 72.0], nav: ["at": correctionEnd.timeIntervalSince1970, "valid": true, "remainMetres": 0.0],
+            guiding: true, routeKey: "soc-correction", destination: "보정", soc: 53, socAt: correctionEnd, now: correctionEnd)
+        chargedStore.finish(arrived: true, vin: "A", now: correctionEnd)
+        let correction = chargedStore.history(vin: "A").first!
+        precondition(!correction.chargingObserved && correction.unexplainedSOCGain == true && correction.actualUsedSOC == nil)
         print("PASS: trip prediction, bounded durable graphs, observed charging accounting/deduplication, missing-data exclusion, reroute and VIN isolation")
     }
 }

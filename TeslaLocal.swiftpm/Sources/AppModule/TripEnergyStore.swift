@@ -92,9 +92,10 @@ final class TripEnergyStore: ObservableObject {
         }
         appendPoint(now: now)
         if now.timeIntervalSince(lastCheckpoint) >= 120 { save(); lastCheckpoint = now }
-        if !state.object("activeCharge").isEmpty || state.object("groups").object("charge").number("charging") == 5 ||
-           observedSOC.value > (session?.startSOC ?? 100) + 1 {
+        if !state.object("activeCharge").isEmpty || state.object("groups").object("charge").number("charging") == 5 {
             if session?.chargingObserved == false { session?.chargingObserved = true; save() }
+        } else if observedSOC.value > (session?.startSOC ?? 100) + (session?.addedSOC ?? 0) + 1 {
+            if session?.unexplainedSOCGain != true { session?.unexplainedSOCGain = true; save() }
         }
     }
     func finish(arrived: Bool, vin: String, now: Date = Date()) {
@@ -104,7 +105,7 @@ final class TripEnergyStore: ObservableObject {
         row.endedAt = now; row.arrived = arrived
         if arrived, let observedSOC, (-5...120).contains(now.timeIntervalSince(observedSOC.at)) {
             row.actualArrivalSOC = observedSOC.value
-            if observedSOC.value > row.startSOC + 1 { row.chargingObserved = true }
+            if observedSOC.value > row.startSOC + row.addedSOC + 1 { row.unexplainedSOCGain = true }
         }
         records.append(row); records = Array(records.suffix(50)); session = nil; save(writeRecords: true)
     }
@@ -141,6 +142,7 @@ final class TripEnergyStore: ObservableObject {
         if changed {
             if stops.count > 50 { row.chargingDataIncomplete = true }
             row.chargingStops = Array(stops.sorted { $0.startedAt < $1.startedAt }.prefix(50)); row.chargingObserved = true
+            if row.chargingStops?.allSatisfy({ $0.addedSOC != nil }) == true { row.unexplainedSOCGain = false }
             session = row; save()
         }
     }

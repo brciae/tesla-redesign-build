@@ -20,7 +20,8 @@ import Foundation
         for i in 0..<500 { restored.append(vin: "A", text: String(repeating: "가", count: 1600), navigation: true, now: now.addingTimeInterval(Double(i))) }
         restored.waitForPendingWrites()
         precondition(restored.records.count < 500, "Byte budget must bound long messages, not just item count")
-        precondition((try path.resourceValues(forKeys: [.fileSizeKey]).fileSize!) < 2097152)
+        let diskBytes = try path.resourceValues(forKeys: [.fileSizeKey]).fileSize!
+        precondition(diskBytes < 2097152)
         let bounded = GuidanceJournal(file: path)
         precondition(!bounded.records.isEmpty && bounded.records.count <= 2000)
         print("PASS: spoken guidance append/reload, VIN isolation, partial-tail recovery and bounded long-message retention")

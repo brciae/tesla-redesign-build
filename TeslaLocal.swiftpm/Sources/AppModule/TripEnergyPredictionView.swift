@@ -59,7 +59,7 @@ struct TripEnergyRecordView: View {
             if let error = record.errorSOC, let used = record.actualUsedSOC {
                 Text(String(format: "잔량 사용 %.1f%%p · 예측 차이 %+.1f%%p", used, error)).font(.caption).foregroundStyle(.secondary)
                 if let kwh = record.actualUsedKWh { Text(String(format: "예상 소비 %.1f kWh · 실제 잔량 환산 %.1f kWh%@", record.initial.remainingKWh, kwh, record.initial.capacityAssumed ? " (가정 용량)" : "")).font(.caption2).foregroundStyle(.secondary) }
-            } else { Text(record.chargingObserved && !record.chargingAccounted ? "충전량 미확인 · 소비 합계·오차 비교 보류" : record.arrived ? "도착 잔량 미수신 · 비교 제외" : "안내 취소·목적지 변경 · 비교 제외").font(.caption).foregroundStyle(.secondary) }
+            } else { Text(record.unexplainedSOCGain == true ? "충전 신호 없는 잔량 증가 · BMS 보정 등 원인 미확인" : record.chargingObserved && !record.chargingAccounted ? "충전량 미확인 · 소비 합계·오차 비교 보류" : record.arrived ? "도착 잔량 미수신 · 비교 제외" : "안내 취소·목적지 변경 · 비교 제외").font(.caption).foregroundStyle(.secondary) }
             if let points = record.points, points.count >= 2 {
                 TripEnergyTrendChart(points: points, mixedCharging: !record.chargingAccounted, hasCharging: record.chargingObserved)
             } else { Text("주행 중 비교 그래프 자료 없음").font(.caption2).foregroundStyle(.secondary) }

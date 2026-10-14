@@ -116,14 +116,15 @@ struct TripEnergyRecord: Codable, Identifiable, Equatable {
     var points: [TripEnergyPoint]?
     var chargingStops: [TripEnergyChargingStop]?
     var chargingDataIncomplete: Bool?
-    var chargingAccounted: Bool { chargingDataIncomplete != true && (!chargingObserved || !(chargingStops ?? []).isEmpty && (chargingStops ?? []).allSatisfy { $0.addedSOC != nil }) }
+    var unexplainedSOCGain: Bool?
+    var chargingAccounted: Bool { unexplainedSOCGain != true && chargingDataIncomplete != true && (!chargingObserved || !(chargingStops ?? []).isEmpty && (chargingStops ?? []).allSatisfy { $0.addedSOC != nil }) }
     var addedSOC: Double { (chargingStops ?? []).compactMap(\.addedSOC).reduce(0, +) }
     var adjustedArrivalSOC: Double { min(100, max(0, initial.rawArrivalSOC + addedSOC)) }
     var actualUsedSOC: Double? { chargingAccounted && arrived ? actualArrivalSOC.flatMap { startSOC + addedSOC >= $0 ? startSOC + addedSOC - $0 : nil } : nil }
     var actualUsedKWh: Double? { actualUsedSOC.map { $0 / 100 * initial.capacityKWh } }
     var errorSOC: Double? { chargingAccounted && arrived ? actualArrivalSOC.map { $0 - adjustedArrivalSOC } : nil }
     func predictedSOC(distanceKm: Double, at: Date, actualSOC: Double) -> Double? {
-        guard chargingDataIncomplete != true, !chargingObserved || !(chargingStops ?? []).isEmpty else { return nil }
+        guard unexplainedSOCGain != true, chargingDataIncomplete != true, !chargingObserved || !(chargingStops ?? []).isEmpty else { return nil }
         var gain = 0.0
         for stop in chargingStops ?? [] where at >= stop.startedAt {
             if let end = stop.endedAt, at >= end {
