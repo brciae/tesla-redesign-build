@@ -1971,7 +1971,7 @@ private struct JunctionGuidance: ViewModifier {
     let data: NavigationReadout
     func body(content: Content) -> some View {
         let visible = data.junctionImage != nil && data.junctionMetres.isFinite && data.junctionMetres > 0
-        content.opacity(visible ? 0 : 1).accessibilityHidden(visible)
+        content.opacity(visible ? 0 : 1)
             .overlay {
                 if visible, let image = data.junctionImage {
                     NavigationJunctionCard(image: image, metres: data.junctionMetres)
@@ -2002,6 +2002,7 @@ struct NavigationJunctionCard: View {
         }.foregroundStyle(.white).background(Color.black.opacity(0.88))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18)))
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("navigation.junction")
     }
 }

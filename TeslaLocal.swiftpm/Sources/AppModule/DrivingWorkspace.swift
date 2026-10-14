@@ -44,6 +44,15 @@ struct DrivingWorkspace: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.75), value: readout.turnSymbol)
             } controls: {
                 topBar(compact: true).frame(maxWidth: .infinity).frame(height: 52)
+                if navigation.guiding {
+                    HStack(spacing: 8) {
+                        NavigationTrafficRefreshButton(enabled: navigation.networkAvailable,
+                                                       refreshing: navigation.trafficRefreshing) { navigation.refreshTrafficRoute() }
+                        Text(navigation.trafficRefreshing ? "교통 반영 재탐색 중" : "교통 반영 재탐색")
+                            .font(.caption).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }.frame(maxWidth: .infinity, minHeight: 44)
+                }
                 if readout.gear == "P", navigation.guiding || navigation.busy {
                     ParkedNavigationActions { navigation.endGuidance() }
                 }
@@ -116,8 +125,6 @@ struct DrivingWorkspace: View {
             }
 
             Spacer(minLength: 4)
-            NavigationTrafficRefreshButton(enabled: navigation.guiding && navigation.networkAvailable,
-                                           refreshing: navigation.trafficRefreshing) { navigation.refreshTrafficRoute() }
             ScreenBriefingControls(scope: .dashboard, compact: true)
             Spacer(minLength: 4)
             Button { settings = true } label: {
