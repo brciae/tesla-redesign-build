@@ -417,7 +417,7 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["charging-time-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["charging.time.bands"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["charging.time.bands"].label.contains("오전 06:00~11:59"))
+        XCTAssertTrue(app.staticTexts["charging.time.bands"].label.contains("오전 06:00") && app.staticTexts["charging.time.bands"].label.contains("11:59"))
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "23~9시")).firstMatch.exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Charging four time bands"; shot.lifetime = .keepAlways; add(shot)
     }

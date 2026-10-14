@@ -52,7 +52,6 @@ struct BatteryOverview: View {
                 }.padding(.top, 8)
             }
         }.padding(18).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
-            .accessibilityIdentifier("battery.overview")
     }
     private var healthCard: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -73,7 +72,6 @@ struct BatteryOverview: View {
             }
             if index.flag("provisional") { Text("신차 기준이 없으면 기록 시작 대비 변화만 제공. Tesla 배터리 상태검사와 동일한 진단이 아님.").font(.caption).foregroundStyle(.secondary) }
         }.padding(14).background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-            .accessibilityIdentifier("battery.health")
     }
     private var socChart: some View {
         let trend = usage.rows("trend").sorted { ($0.number("at") ?? 0) < ($1.number("at") ?? 0) }

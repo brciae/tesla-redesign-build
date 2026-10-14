@@ -28,6 +28,6 @@ struct ChargeStartTimeChart: View {
                 .chartYScale(domain: 0...max(2, (hours.max() ?? 0) + 1)).frame(height: 180)
             Text("심야 00:00~05:59 · 오전 06:00~11:59 · 오후 12:00~17:59 · 저녁 18:00~23:59")
                 .font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("charging.time.bands")
-        }.accessibilityIdentifier("charging.time.chart")
+        }
     }
 }
