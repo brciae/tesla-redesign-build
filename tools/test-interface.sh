@@ -18,6 +18,7 @@ elif [[ "${1:-}" == new ]]; then
     -only-testing:InterfaceProbeTests/InteractionTests/testActualLiveActivityExtensionOnHomeScreen
     -only-testing:InterfaceProbeTests/InteractionTests/testAudioSettingsInterruptionsPreemptionAndRecovery
     -only-testing:InterfaceProbeTests/InteractionTests/testRoundaboutSymbol
+    -only-testing:InterfaceProbeTests/InteractionTests/testDashboardShadeSliderAndWhiteGuidance
     -only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit
     -only-testing:InterfaceProbeTests/InteractionTests/testLiveActivityViewsAndBackgroundReturn
     -only-testing:InterfaceProbeTests/InteractionTests/testRobotWithoutFootRodsSurvivesAppSwitching

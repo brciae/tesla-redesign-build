@@ -143,6 +143,7 @@ struct FullscreenNavigationProbe: View {
                     }
                 }
             }.frame(height: 44)
+            if ProcessInfo.processInfo.arguments.contains("shade-probe") { DashboardShadeControl().padding(8) }
             if !stopped { ParkedNavigationActions { stopped = true } }
             else { Text("안내 종료됨").accessibilityIdentifier("fullscreen.stopped") }
             if ProcessInfo.processInfo.arguments.contains("junction-probe") {

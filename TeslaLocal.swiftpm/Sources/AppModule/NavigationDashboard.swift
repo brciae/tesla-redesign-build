@@ -183,6 +183,8 @@ private struct NavMetrics {
 // MARK: - Dashboard
 
 struct NavigationDashboard<MapContent: View, CarContent: View>: View {
+    @AppStorage("navigation.dashboardShade") private var shadeAmount = 0.45
+    private var shade: Double { shadeAmount.isFinite ? min(1, max(0, shadeAmount)) : 0.45 }
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     let theme: NavigationTheme
     let data: NavigationReadout
@@ -213,14 +215,18 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             map()
                 .frame(width: rect.width, height: rect.height)
                 .background(NavInk.mapBase)
-                .mask { mapMask(rect: rect, m: m) }
+                .mask {
+                    if theme == .cluster || theme == .panorama {
+                        ZStack { Rectangle().opacity(1 - shade); mapMask(rect: rect, m: m).opacity(shade) }
+                    } else { mapMask(rect: rect, m: m) }
+                }
                 .position(x: rect.midX, y: rect.midY)
                 .opacity(theme == .minimal ? 0 : 1)
                 .allowsHitTesting(theme != .minimal)
                 .accessibilityHidden(theme == .minimal)
             // Scrim themes: continue the leading scrim into the camera-side gap so no hard edge appears.
             if m.wide, inset.leading > 0, theme == .cluster || theme == .fleet {
-                Color.black.opacity(theme == .cluster ? 1 : 0.4)
+                Color.black.opacity((theme == .cluster ? 1 : 0.4) * shade)
                     .frame(width: inset.leading + 1, height: m.h)
                     .allowsHitTesting(false)
             }
@@ -311,9 +317,9 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             }
             if !data.next.isEmpty { Text("이후 " + data.next).font(.caption).lineLimit(1).minimumScaleFactor(0.5) }
             if data.laneCount > 0 { LaneStrip(data: data, u: min(1, m.u)).frame(maxHeight: 40) }
-            if wide { Text(data.road).font(.caption).foregroundStyle(NavInk.muted).lineLimit(2).minimumScaleFactor(0.6); Spacer(minLength: 0) }
+            if wide { Text(data.road).font(.caption).foregroundStyle(.black.opacity(0.65)).lineLimit(2).minimumScaleFactor(0.6); Spacer(minLength: 0) }
         }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(theme.canvas)
+            .modifier(TeslaGuidanceSurface(radius: 16))
     }
 
     private func mapRect(_ m: NavMetrics) -> CGRect {
@@ -419,8 +425,9 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .init(color: .black.opacity(0.20), location: 0.90),
                 .init(color: .clear, location: 1.0)
             ], startPoint: m.wide ? .leading : .bottom, endPoint: m.wide ? .trailing : .top)
-                .frame(width: m.wide ? panelW * 1.3 : m.w, height: m.wide ? m.h : panelH * 1.35)
-                .offset(y: m.wide ? 0 : panelY - panelH * 0.35)
+                .opacity(shade)
+                .frame(width: m.wide ? panelW * CGFloat(0.65 + shade * 0.65) : m.w, height: m.wide ? m.h : panelH * CGFloat(0.65 + shade * 0.70))
+                .offset(y: m.wide ? 0 : m.h - panelH * CGFloat(0.65 + shade * 0.70))
                 .allowsHitTesting(false)
             NavBadge(u: m.u).offset(x: m.pad, y: m.pad)
             SpeedRing(data: data, size: ring)
@@ -598,6 +605,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         let carH = center.height * (m.wide ? 0.64 : 0.70)
         return ZStack(alignment: .topLeading) {
             RadialGradient(colors: [NavInk.navyHi.opacity(0.85), .clear], center: UnitPoint(x: 0.5, y: 0.7), startRadius: 0, endRadius: center.width * 0.75)
+                .opacity(shade)
                 .frame(width: center.width, height: center.height)
                 .offset(x: center.minX, y: center.minY)
                 .allowsHitTesting(false)
@@ -631,11 +639,11 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 Text(data.turn).font(.system(size: 16 * m.u, weight: .semibold))
                     .lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
                 if !data.next.isEmpty {
-                    Text("다음 · " + data.next).font(.system(size: 13 * m.u)).foregroundStyle(.white.opacity(0.8)).lineLimit(1).minimumScaleFactor(0.5)
+                    Text("다음 · " + data.next).font(.system(size: 13 * m.u)).foregroundStyle(.black.opacity(0.65)).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
             .padding(12 * m.u)
-            .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 14 * m.u, style: .continuous))
+            .modifier(TeslaGuidanceSurface(radius: 14 * m.u))
             .modifier(JunctionGuidance(data: data))
             .frame(width: m.wide ? m.w * 0.29 : m.w - m.pad * 2, alignment: .leading)
             .offset(x: m.pad, y: m.pad)
@@ -679,6 +687,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             : CGRect(x: 0, y: m.h * 0.20, width: m.w, height: m.h * 0.35)
         return ZStack(alignment: .topLeading) {
             RadialGradient(colors: [Color(white: 0.16), .black], center: UnitPoint(x: 0.5, y: 0.7), startRadius: 4, endRadius: stage.width * 0.7)
+                .opacity(shade)
                 .frame(width: stage.width, height: stage.height)
                 .offset(x: stage.minX, y: stage.minY)
                 .allowsHitTesting(false)
@@ -765,6 +774,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         let rightW = m.wide ? min(300 * m.u, m.w - panelW - m.pad * 3) : m.w - m.pad * 2
         return ZStack(alignment: .topLeading) {
             LinearGradient(colors: [.black.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing)
+                .opacity(shade)
                 .frame(width: panelW + m.pad * 4, height: m.h)
                 .allowsHitTesting(false)
             FleetPanel(data: data, u: m.u)
@@ -915,7 +925,7 @@ private struct ManeuverStack: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(14 * u)
-            .background(NavInk.blueDeep)
+            .background(Color.clear)
             if !data.next.isEmpty {
                 HStack(spacing: 10 * u) {
                     Text(data.next)
@@ -924,22 +934,23 @@ private struct ManeuverStack: View {
                     Spacer(minLength: 4 * u)
                     ManeuverGlyph(symbol: data.nextSymbol, exitClock: data.nextExitClock, size: 22 * u)
                         .padding(3 * u)
-                        .background(NavInk.blue, in: RoundedRectangle(cornerRadius: 5 * u))
+                        .background(Color.black.opacity(0.06), in: RoundedRectangle(cornerRadius: 5 * u))
                 }
                 .padding(.horizontal, 14 * u)
                 .frame(height: 38 * u)
-                .background(NavInk.slate.opacity(0.78))
+                .background(Color.black.opacity(0.04))
             }
             if !data.highway.isEmpty && !data.turn.contains(data.highway) {
                 Text(data.highway)
                     .font(.system(size: 15 * u, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14 * u).frame(height: 28 * u)
-                    .background(NavInk.pill.opacity(0.7))
+                    .background(Color.black.opacity(0.04))
             }
         }
+        .modifier(TeslaGuidanceSurface(radius: 12 * u))
         .clipShape(RoundedRectangle(cornerRadius: 12 * u, style: .continuous))
-        .shadow(color: .black.opacity(0.4), radius: 10 * u, y: 6 * u)
+        .shadow(color: .black.opacity(0.12), radius: 10 * u, y: 6 * u)
         .accessibilityElement(children: .contain)
     }
 }
@@ -966,12 +977,12 @@ private struct TurnBanner: View {
             if !data.next.isEmpty {
                 Text("다음 " + data.next)
                     .font(.system(size: 13 * u, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85)).lineLimit(1).minimumScaleFactor(0.5)
+                    .foregroundStyle(.black.opacity(0.65)).lineLimit(1).minimumScaleFactor(0.5)
             }
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 12 * u)
-        .background(NavInk.blue, in: RoundedRectangle(cornerRadius: 16 * u, style: .continuous))
-        .shadow(color: .black.opacity(0.3), radius: 10 * u, y: 4 * u)
+        .modifier(TeslaGuidanceSurface(radius: 16 * u))
+        .shadow(color: .black.opacity(0.12), radius: 10 * u, y: 4 * u)
         .accessibilityElement(children: .contain)
     }
 }
@@ -989,14 +1000,16 @@ private struct TurnColumn: View {
             }
             Text(data.turn)
                 .font(.system(size: 18 * u, weight: .medium))
-                .foregroundStyle(.white.opacity(0.92))
+                .foregroundStyle(.black)
                 .lineLimit(2).minimumScaleFactor(0.8).fixedSize(horizontal: false, vertical: true)
             if !data.next.isEmpty {
                 Text(data.next)
-                    .font(.system(size: 16 * u)).foregroundStyle(NavInk.muted)
+                    .font(.system(size: 16 * u)).foregroundStyle(.black.opacity(0.65))
                     .lineLimit(2).minimumScaleFactor(0.8).fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(10 * u)
+        .modifier(TeslaGuidanceSurface(radius: 16 * u))
         .accessibilityElement(children: .contain)
     }
 }
@@ -1394,12 +1407,12 @@ private struct FocusTurnPill: View {
         HStack(spacing: 10 * u) {
             ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 26 * u)
             Text(data.turnDistance).font(.system(size: 22 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
-            Rectangle().fill(.white.opacity(0.2)).frame(width: 1, height: 18 * u)
+            Rectangle().fill(.black.opacity(0.15)).frame(width: 1, height: 18 * u)
             Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 8 * u).frame(minHeight: 50 * u)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 25 * u, style: .continuous))
-        .environment(\.colorScheme, .dark)
+        .modifier(TeslaGuidanceSurface(radius: 25 * u))
+        .environment(\.colorScheme, .light)
         .accessibilityElement(children: .contain)
     }
 }
@@ -1968,6 +1981,38 @@ struct NavigationTrafficRefreshButton: View {
     }
 }
 
+private struct TeslaGuidanceSurface: ViewModifier {
+    let radius: CGFloat
+    func body(content: Content) -> some View {
+        content.foregroundStyle(.black)
+            .environment(\.guidanceDarkInk, true)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+                shape.fill(.ultraThinMaterial).environment(\.colorScheme, .light)
+                shape.fill(Color.white.opacity(0.65))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+}
+
+struct DashboardShadeControl: View {
+    @AppStorage("navigation.dashboardShade") private var value = 0.45
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("계기판 그라데이션")
+                Spacer()
+                Text("\(Int(((value.isFinite ? min(1, max(0, value)) : 0.45) * 100).rounded()))%")
+                    .monospacedDigit().accessibilityIdentifier("navigation.shade.percent")
+            }
+            Slider(value: $value, in: 0...1, step: 0.05)
+                .accessibilityLabel("계기판 그라데이션").accessibilityIdentifier("navigation.shade.slider")
+            Text("낮출수록 검정 가림 범위와 농도가 줄어 지도가 더 넓게 보임.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
 private struct JunctionGuidance: ViewModifier {
     let data: NavigationReadout
     func body(content: Content) -> some View {
@@ -2000,7 +2045,7 @@ struct NavigationJunctionCard: View {
                     Text("\(finiteInt(metres)) m").font(.system(size: 12, weight: .bold)).monospacedDigit()
                 }.padding(.horizontal, 6).frame(height: 22)
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
-        }.foregroundStyle(.white).background(Color.black.opacity(0.88))
+        }.foregroundStyle(.black).modifier(TeslaGuidanceSurface(radius: 16))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18)))
             .accessibilityElement(children: .contain)
@@ -2035,7 +2080,7 @@ private struct RunningTurnCard: View {
         }
         .foregroundStyle(Color.black)
         .padding(12 * u)
-        .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 20 * u, style: .continuous))
+        .modifier(TeslaGuidanceSurface(radius: 20 * u))
         .shadow(color: .black.opacity(0.08), radius: 10 * u, y: 3 * u)
     }
 }

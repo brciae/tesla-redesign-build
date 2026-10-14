@@ -493,6 +493,7 @@ struct NavigationDisplaySettings: View {
                         Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
                     }
                     Section("내비 화면") {
+                        DashboardShadeControl()
                         Toggle("교통 변화 시 자동 재탐색", isOn: $autoTrafficReroute)
                             .onChange(of: autoTrafficReroute) { _, _ in navigation.applyTrafficPreferences() }
                         Picker("테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }

@@ -1,6 +1,18 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testDashboardShadeSliderAndWhiteGuidance() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "shade-probe", "roundabout-probe"]; app.launch()
+        let slider = app.sliders["navigation.shade.slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 8))
+        for (position, label) in [(CGFloat(0), "0%"), (CGFloat(1), "100%"), (CGFloat(0.45), "45%")] {
+            slider.adjust(toNormalizedSliderPosition: position)
+            XCTAssertEqual(app.staticTexts["navigation.shade.percent"].label, label)
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = "White guidance dashboard shade \(label)"; shot.lifetime = .keepAlways; add(shot)
+        }
+    }
     func testTrafficRefreshBlocksRepeatedTapAndKeepsRouteOnFailure() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["traffic-refresh-probe"]; app.launch()
