@@ -474,6 +474,7 @@ final class InteractionTests: XCTestCase {
         app.terminate(); app.launchArguments = ["energy-history-probe"]; app.launch()
         let comparison = app.staticTexts["energy.forecast.comparison"]
         XCTAssertTrue(comparison.waitForExistence(timeout: 8)); XCTAssertTrue(comparison.label.contains("실제 64%"))
+        XCTAssertTrue(app.otherElements["energy.forecast.chart"].firstMatch.exists)
         XCTAssertTrue(app.staticTexts["도착 전 배터리 부족 예상"].exists)
         let historyShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         historyShot.name = "Trip energy actual arrival comparison and battery shortage"; historyShot.lifetime = .keepAlways; add(historyShot)

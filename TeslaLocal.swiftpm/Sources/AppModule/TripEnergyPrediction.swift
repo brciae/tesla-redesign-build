@@ -49,6 +49,7 @@ struct TripEnergyEstimate: Codable, Equatable {
     var sampleCount: Int
     var liveAdjusted: Bool
     var capacityAssumed: Bool
+    var capacityKWh: Double
     var insufficient: Bool
     var belowReserve: Bool
     var basis: String { liveAdjusted ? "현재 트립 보정" : sampleCount > 0 ? "개인 트립 \(sampleCount)회" : "기본 전비 가정" }
@@ -73,8 +74,15 @@ struct TripEnergyEstimate: Codable, Equatable {
         return .init(arrivalSOC: min(100, max(0, arrival)), lowSOC: min(100, max(0, arrival - uncertainty)),
                      highSOC: min(100, max(0, arrival + uncertainty)), remainingKWh: use / 100 * profile.usableKWh,
                      socPerKm: rate, sampleCount: profile.sampleCount, liveAdjusted: adjusted,
-                     capacityAssumed: profile.capacityAssumed, insufficient: arrival < 0, belowReserve: arrival - uncertainty < reserve)
+                     capacityAssumed: profile.capacityAssumed, capacityKWh: profile.usableKWh, insufficient: arrival < 0, belowReserve: arrival - uncertainty < reserve)
     }
+}
+
+struct TripEnergyPoint: Codable, Equatable {
+    var elapsedSeconds: Double
+    var distanceKm: Double?
+    var predictedSOC: Double?
+    var actualSOC: Double
 }
 
 struct TripEnergyRecord: Codable, Identifiable, Equatable {
@@ -89,7 +97,10 @@ struct TripEnergyRecord: Codable, Identifiable, Equatable {
     var actualArrivalSOC: Double?
     var arrived = false
     var chargingObserved = false
-    var actualUsedSOC: Double? { !chargingObserved && arrived ? actualArrivalSOC.map { startSOC - $0 } : nil }
+    var startOdometerKm: Double?
+    var points: [TripEnergyPoint]?
+    var actualUsedSOC: Double? { !chargingObserved && arrived ? actualArrivalSOC.flatMap { startSOC >= $0 ? startSOC - $0 : nil } : nil }
+    var actualUsedKWh: Double? { actualUsedSOC.map { $0 / 100 * initial.capacityKWh } }
     var errorSOC: Double? { !chargingObserved && arrived ? actualArrivalSOC.map { $0 - initial.arrivalSOC } : nil }
     func resumable(vin: String, now: Date) -> Bool {
         self.vin == vin && endedAt == nil && (-5...21600).contains(now.timeIntervalSince(startedAt))

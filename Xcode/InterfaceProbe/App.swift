@@ -50,7 +50,8 @@ struct TripEnergyHistoryProbe: View {
         NavigationStack {
             Form {
                 TripEnergyRecordView(record: .init(vin: "TEST", routeKey: "fixture", destination: "도착 비교 예시", startedAt: Date(), startSOC: 68,
-                    initial: forecast, endedAt: Date(), actualArrivalSOC: 64, arrived: true))
+                    initial: forecast, endedAt: Date(), actualArrivalSOC: 64, arrived: true, startOdometerKm: 100,
+                    points: (0...10).map { i in .init(elapsedSeconds: Double(i) * 90, distanceKm: Double(i), predictedSOC: 68 - Double(i) * 0.25, actualSOC: 68 - Double(i) * 0.4) }))
                 TripEnergyPredictionRow(estimate: TripEnergyEstimate.calculate(profile: .make(samples: [], usableKWh: nil), soc: 5, remainingKm: 100)!)
             }.navigationTitle("트립 에너지 예측")
         }

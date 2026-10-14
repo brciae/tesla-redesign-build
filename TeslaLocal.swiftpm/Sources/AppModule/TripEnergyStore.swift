@@ -11,23 +11,32 @@ final class TripEnergyStore: ObservableObject {
     private var profileKey = ""
     private var updatedAt = Date.distantPast
     private var observedSOC: (value: Double, at: Date)?
+    private var observedOdometer: (value: Double, at: Date)?
+    private var lastCheckpoint = Date.distantPast
     private var selectedVIN = ""
     private let defaults: UserDefaults
     private let storageKey = "energy.tripForecast.v1"
-    private struct Saved: Codable { var records: [TripEnergyRecord]; var session: TripEnergyRecord? }
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        if let data = defaults.data(forKey: storageKey), data.count <= 262144,
-           let saved = try? JSONDecoder().decode(Saved.self, from: data) {
-            records = Array(saved.records.suffix(50)); session = saved.session
+        if let data = defaults.data(forKey: storageKey + ".records"), data.count <= 2097152,
+           let rows = try? JSONDecoder().decode([TripEnergyRecord].self, from: data) {
+            records = Array(rows.suffix(50))
+        }
+        if let data = defaults.data(forKey: storageKey + ".session"), data.count <= 131072 {
+            session = try? JSONDecoder().decode(TripEnergyRecord.self, from: data)
         }
     }
     func update(vin: String, state: Object, health: Object, nav: Object, guiding: Bool,
                 routeKey: String, destination: String, soc: Double?, socAt: Date?, now: Date = Date()) {
         guard !vin.isEmpty else { estimate = nil; return }
-        if selectedVIN != vin { selectedVIN = vin; profileKey = ""; estimate = nil; observedSOC = nil }
+        if selectedVIN != vin { selectedVIN = vin; profileKey = ""; estimate = nil; observedSOC = nil; observedOdometer = nil }
         if let soc, soc.isFinite, (0...100).contains(soc), let socAt, (-5...120).contains(now.timeIntervalSince(socAt)) {
             observedSOC = (soc, socAt)
+        }
+        let drive = state.object("groups").object("drive")
+        if state.object("settings").string("vin") == vin, let at = drive.number("at"),
+           (-5000...120000).contains(now.timeIntervalSince1970 * 1000 - at), let odo = drive.number("odometerKm"), (0...1e7).contains(odo) {
+            observedOdometer = (odo, Date(timeIntervalSince1970: at / 1000))
         }
         // Cached or missing readings must not masquerade as a live arrival forecast.
         guard guiding, let at = nav.number("at"), (-5...10).contains(now.timeIntervalSince1970 - at), nav.flag("valid"),
@@ -73,9 +82,12 @@ final class TripEnergyStore: ObservableObject {
         estimate = next
         if session == nil {
             session = TripEnergyRecord(vin: vin, routeKey: routeKey, destination: destination,
-                startedAt: now, startSOC: observedSOC.value, initial: next)
-            save()
+                startedAt: now, startSOC: observedSOC.value, initial: next,
+                startOdometerKm: observedOdometer.flatMap { (-5...120).contains(now.timeIntervalSince($0.at)) ? $0.value : nil })
+            appendPoint(now: now, force: true); save(); lastCheckpoint = now
         }
+        appendPoint(now: now)
+        if now.timeIntervalSince(lastCheckpoint) >= 120 { save(); lastCheckpoint = now }
         if !state.object("activeCharge").isEmpty || state.object("groups").object("charge").number("charging") == 5 ||
            observedSOC.value > (session?.startSOC ?? 100) + 1 {
             if session?.chargingObserved == false { session?.chargingObserved = true; save() }
@@ -83,18 +95,48 @@ final class TripEnergyStore: ObservableObject {
     }
     func finish(arrived: Bool, vin: String, now: Date = Date()) {
         defer { estimate = nil }
+        appendPoint(now: now, force: true)
         guard var row = session, row.vin == vin else { return }
         row.endedAt = now; row.arrived = arrived
         if arrived, let observedSOC, (-5...120).contains(now.timeIntervalSince(observedSOC.at)) {
             row.actualArrivalSOC = observedSOC.value
             if observedSOC.value > row.startSOC + 1 { row.chargingObserved = true }
         }
-        records.append(row); records = Array(records.suffix(50)); session = nil; save()
+        records.append(row); records = Array(records.suffix(50)); session = nil; save(writeRecords: true)
     }
     func history(vin: String) -> [TripEnergyRecord] { Array(records.filter { $0.vin == vin }.reversed()) }
     func invalidateProfile() { profileKey = "" }
-    private func save() {
-        guard let data = try? JSONEncoder().encode(Saved(records: records, session: session)), data.count <= 262144 else { return }
-        defaults.set(data, forKey: storageKey)
+    private func appendPoint(now: Date, force: Bool = false) {
+        guard var row = session, row.vin == selectedVIN, let observedSOC,
+              (-5...120).contains(now.timeIntervalSince(observedSOC.at)) else { return }
+        var points = row.points ?? []
+        let elapsed = max(0, observedSOC.at.timeIntervalSince(row.startedAt))
+        guard elapsed >= (points.last?.elapsedSeconds ?? 0) else { return }
+        guard force || elapsed - (points.last?.elapsedSeconds ?? -60) >= 60 else { return }
+        var distance: Double?
+        if let start = row.startOdometerKm, let odo = observedOdometer,
+           (-5...120).contains(now.timeIntervalSince(odo.at)), abs(odo.at.timeIntervalSince(observedSOC.at)) <= 30 {
+            let travelled = odo.value - start
+            if travelled.isFinite, (0...3000).contains(travelled), travelled >= (points.last?.distanceKm ?? 0) { distance = travelled }
+        }
+        let point = TripEnergyPoint(elapsedSeconds: elapsed, distanceKm: distance,
+            predictedSOC: distance.map { max(0, row.startSOC - $0 * row.initial.socPerKm) }, actualSOC: observedSOC.value)
+        if points.last?.elapsedSeconds == elapsed { points[points.count - 1] = point } else { points.append(point) }
+        // Keep the full trip span when sampling longer journeys, without unbounded graph data.
+        if points.count > 120 {
+            let last = points.last!
+            points = points.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
+            if points.last != last { points.append(last) }
+        }
+        row.points = points; session = row
+    }
+    private func save(writeRecords: Bool = false) {
+        if let session, let data = try? JSONEncoder().encode(session), data.count <= 131072 {
+            defaults.set(data, forKey: storageKey + ".session")
+        } else if session == nil { defaults.removeObject(forKey: storageKey + ".session") }
+        // History is written only at route completion; periodic checkpoints contain the current trip only.
+        if writeRecords, let data = try? JSONEncoder().encode(records), data.count <= 2097152 {
+            defaults.set(data, forKey: storageKey + ".records")
+        }
     }
 }

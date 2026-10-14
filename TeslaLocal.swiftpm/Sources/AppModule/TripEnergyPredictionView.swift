@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct TripEnergyPredictionRow: View {
     let estimate: TripEnergyEstimate
@@ -48,7 +49,47 @@ struct TripEnergyRecordView: View {
                 .font(.caption).accessibilityIdentifier("energy.forecast.comparison")
             if let error = record.errorSOC, let used = record.actualUsedSOC {
                 Text(String(format: "잔량 사용 %.1f%%p · 예측 차이 %+.1f%%p", used, error)).font(.caption).foregroundStyle(.secondary)
+                if let kwh = record.actualUsedKWh { Text(String(format: "예상 소비 %.1f kWh · 실제 잔량 환산 %.1f kWh%@", record.initial.remainingKWh, kwh, record.initial.capacityAssumed ? " (가정 용량)" : "")).font(.caption2).foregroundStyle(.secondary) }
             } else { Text(record.chargingObserved ? "중간 충전·잔량 증가 포함 · 비교 제외" : record.arrived ? "도착 잔량 미수신 · 비교 제외" : "안내 취소·목적지 변경 · 비교 제외").font(.caption).foregroundStyle(.secondary) }
+            if let points = record.points, points.count >= 2 {
+                TripEnergyTrendChart(points: points, mixedCharging: record.chargingObserved)
+            } else { Text("주행 중 비교 그래프 자료 없음").font(.caption2).foregroundStyle(.secondary) }
         }.padding(.vertical, 4)
+    }
+}
+
+struct TripEnergyTrendChart: View {
+    let points: [TripEnergyPoint]
+    var mixedCharging = false
+    private var range: ClosedRange<Double> {
+        let values = points.flatMap { [$0.actualSOC] + ($0.predictedSOC.map { [$0] } ?? []) }
+        return max(0, (values.min() ?? 0) - 3)...min(100, (values.max() ?? 100) + 3)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("초기 예상").foregroundStyle(.orange)
+                Text("실제 잔량").foregroundStyle(.blue)
+                Spacer()
+                Text("잔량 %").foregroundStyle(.secondary)
+            }.font(.caption2)
+            Chart {
+                ForEach(points.indices, id: \.self) { i in
+                    let p = points[i]
+                    LineMark(x: .value("경과 분", p.elapsedSeconds / 60), y: .value("실제 잔량", p.actualSOC), series: .value("종류", "실제"))
+                        .foregroundStyle(Color.blue).interpolationMethod(.stepEnd)
+                    if let predicted = p.predictedSOC, !mixedCharging {
+                        LineMark(x: .value("경과 분", p.elapsedSeconds / 60), y: .value("초기 예상", predicted), series: .value("종류", "초기 예상"))
+                            .foregroundStyle(Color.orange).lineStyle(StrokeStyle(lineWidth: 2, dash: [5, 3]))
+                    }
+                }
+            }.chartYScale(domain: range).chartYAxis { AxisMarks(position: .leading) }
+                .chartXAxisLabel("경과 시간 (분)").frame(height: 150)
+                .accessibilityLabel("트립 초기 예상 잔량과 실제 잔량 변화 그래프")
+                .accessibilityIdentifier("energy.forecast.chart")
+            Text(mixedCharging ? "충전 포함 구간 · 초기 예상선 비교 제외" : points.contains(where: { $0.predictedSOC != nil }) ?
+                 "초기 예측 전비를 관측 주행거리에 적용 · 실제 잔량은 수신 시점 기준" : "주행거리 미수신 · 실제 잔량만 표시")
+                .font(.caption2).foregroundStyle(.secondary)
+        }.padding(.top, 6)
     }
 }

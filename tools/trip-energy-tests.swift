@@ -72,6 +72,24 @@ extension Dictionary where Key == String, Value == Any {
         store.finish(arrived: false, vin: "B", now: now)
         precondition(store.history(vin: "B").count == 1)
         precondition(TripEnergyStore(defaults: defaults).history(vin: "A").count == 4)
+        // A sampled trip keeps its first prediction, actual observations, and the full time span after compaction.
+        let graphStore = TripEnergyStore(defaults: defaults)
+        for i in 0...250 {
+            let time = now.addingTimeInterval(Double(i) * 60)
+            var context = state
+            context["groups"] = ["drive": ["at": time.timeIntervalSince1970 * 1000, "odometerKm": 100.0 + Double(i)]]
+            graphStore.update(vin: "A", state: context, health: ["capacity": 72.0],
+                nav: ["at": time.timeIntervalSince1970, "valid": true, "remainMetres": max(0, 250000.0 - Double(i) * 1000)],
+                guiding: true, routeKey: "graph", destination: "그래프", soc: 90 - Double(i) * 0.2, socAt: time, now: time)
+        }
+        let end = now.addingTimeInterval(250 * 60)
+        graphStore.finish(arrived: true, vin: "A", now: end)
+        let graph = graphStore.history(vin: "A").first!, points = graph.points!
+        precondition(points.count <= 120 && points.first!.elapsedSeconds == 0 && points.last!.elapsedSeconds == 15000)
+        precondition(points.last!.actualSOC == 40 && points.last!.predictedSOC == 27.5)
+        precondition(graph.actualUsedKWh == 36, "Observed 50%p is converted with the recorded capacity")
+        let restoredGraph = TripEnergyStore(defaults: defaults).history(vin: "A").first!
+        precondition(restoredGraph.points == points && restoredGraph.initial == graph.initial)
         print("PASS: trip prediction units, range, live correction, missing/stale data, reroute, durable initial-versus-arrival, charging exclusion and VIN isolation")
     }
 }
