@@ -490,6 +490,12 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(forecast.label.contains("66%"))
                 XCTAssertTrue(forecast.isHittable, "forecast clipped: \(theme)")
                 XCTAssertTrue(app.staticTexts["energy.forecast.consumption"].firstMatch.label.contains("1.6 kWh"))
+                if theme == "파노라마", orientation == .portrait {
+                    let gear = app.descendants(matching: .any).matching(identifier: "navigation.panorama.gear").firstMatch
+                    XCTAssertTrue(gear.waitForExistence(timeout: 3))
+                    XCTAssertGreaterThan(gear.frame.minY, app.staticTexts["energy.forecast.consumption"].firstMatch.frame.maxY + 4,
+                                         "Forecast must not cover the panorama gear selector")
+                }
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Trip energy forecast \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }

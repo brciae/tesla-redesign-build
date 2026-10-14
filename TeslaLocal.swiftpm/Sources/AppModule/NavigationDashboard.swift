@@ -601,9 +601,12 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     // MARK: Panorama (ref 5) — map | speed + chase view | trip + media
 
     private func panoramaLayer(_ m: NavMetrics) -> some View {
+        // The forecast adds a second guidance row in portrait. Reserve its height
+        // above the instruments instead of drawing it over the gear selector.
+        let portraitInstrumentTop: CGFloat = data.energyPrediction == nil ? 0.19 : 0.28
         let center = m.wide
             ? CGRect(x: m.w * 0.31, y: 0, width: m.w * 0.39, height: m.h)
-            : CGRect(x: 0, y: m.h * 0.19, width: m.w, height: m.h * 0.37)
+            : CGRect(x: 0, y: m.h * portraitInstrumentTop, width: m.w, height: m.h * (0.56 - portraitInstrumentTop))
         let right = m.wide ? CGRect(x: m.w * 0.71, y: 0, width: m.w * 0.29, height: m.h) : .zero
         let carH = center.height * (m.wide ? 0.64 : 0.70)
         return ZStack(alignment: .topLeading) {
@@ -617,6 +620,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .offset(x: center.minX, y: center.maxY - carH)
             VStack(spacing: 2 * m.u) {
                 GearRow(gear: data.gear, u: m.u * 0.85, style: .letters)
+                    .accessibilityIdentifier("navigation.panorama.gear")
                 HStack(alignment: .center, spacing: 10 * m.u) {
                     VStack(spacing: 0) {
                         Text(data.speed).overspeed(data.overspeedLevel)
