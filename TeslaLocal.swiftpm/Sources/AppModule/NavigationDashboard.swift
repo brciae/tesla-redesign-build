@@ -122,6 +122,7 @@ struct NavigationReadout {
     var routeProgress: Double? = nil
     var rangeKm: Double? = nil
     var arrivalSOC: Double? = nil
+    var energyPrediction: TripEnergyEstimate?
     var vehicleName = "Model Y"
     /// Kakao lane guidance at the next lane-info point (not the car's measured lane).
     var laneCount = 0
@@ -2082,6 +2083,7 @@ private struct JunctionGuidance: ViewModifier {
     let data: NavigationReadout
     func body(content: Content) -> some View {
         let visible = data.junctionImage != nil && data.junctionMetres.isFinite && data.junctionMetres > 0
+        VStack(spacing: 5) {
         content.opacity(visible ? 0 : 1)
             .overlay {
                 if visible, let image = data.junctionImage {
@@ -2089,6 +2091,8 @@ private struct JunctionGuidance: ViewModifier {
                         .allowsHitTesting(false)
                 }
             }
+        if let prediction = data.energyPrediction { TripEnergyPredictionRow(estimate: prediction) }
+        }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("navigation.junction.region")
     }

@@ -32,6 +32,7 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("fullscreen-navigation-probe") { FullscreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("energy-history-probe") { TripEnergyHistoryProbe() }
             else if ProcessInfo.processInfo.arguments.contains("home-charging-probe") { HomeChargingProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charging-time-probe") { ChargingTimeProbe() }
             else if ProcessInfo.processInfo.arguments.contains("attachment-safety-probe") { AttachmentSafetyProbe() }
@@ -39,6 +40,21 @@ import MapKit
             else { ProbeRoot() }
         }.preferredColorScheme(.dark)
     } }
+}
+
+struct TripEnergyHistoryProbe: View {
+    private var forecast: TripEnergyEstimate {
+        TripEnergyEstimate.calculate(profile: .make(samples: [.init(distanceKm: 40, startSOC: 80, endSOC: 70)], usableKWh: 72), soc: 68, remainingKm: 8.7)!
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                TripEnergyRecordView(record: .init(vin: "TEST", routeKey: "fixture", destination: "도착 비교 예시", startedAt: Date(), startSOC: 68,
+                    initial: forecast, endedAt: Date(), actualArrivalSOC: 64, arrived: true))
+                TripEnergyPredictionRow(estimate: TripEnergyEstimate.calculate(profile: .make(samples: [], usableKWh: nil), soc: 5, remainingKm: 100)!)
+            }.navigationTitle("트립 에너지 예측")
+        }
+    }
 }
 
 struct VoiceCacheProbe: View {
@@ -224,6 +240,10 @@ struct NavigationProbe: View {
         r.next = "1.3 km · 좌회전"; r.nextSymbol = "arrow.turn.up.left"; r.remaining = "22분 남음"; r.remainingDistance = "8.7 km"; r.arrival = "19:02"; r.speedFraction = 34 / 140
         r.destination = "반포대교 남단"; r.speedLimit = 80; r.speedLimitDistance = "2.1 km"; r.clock = "18:40"; r.routeProgress = 0.42; r.odometer = "12,450 km"; r.powerKW = 18; r.laneCount = 4; r.laneSuggested = [1, 2]; r.laneDistance = "416 m"
         r.currentRoadLanes = 3; r.currentRoadClass = "urban"; r.arrivalSOC = 61; r.braking = !moving; r.night = theme != .touring
+        if ProcessInfo.processInfo.arguments.contains("energy-forecast-probe") {
+            let profile = TripEnergyProfile.make(samples: Array(repeating: .init(distanceKm: 40, startSOC: 80, endSOC: 70), count: 8), usableKWh: 72)
+            r.energyPrediction = TripEnergyEstimate.calculate(profile: profile, soc: 68, remainingKm: 8.7)
+        }
         // Gentle right-hand curve 0…80 m ahead ([left, forward] metres).
         r.routePath = stride(from: 0.0, through: 80.0, by: 10.0).flatMap { f in [-(bend * f * f / 160), f] }
         r.mediaTitle = "Night Drive (샘플 트랙)"; r.mediaArtist = "YL 샘플 아티스트"; r.mediaSource = "Bluetooth"

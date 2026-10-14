@@ -14,6 +14,7 @@ final class AppModel: ObservableObject {
     let runtime: LocalRuntime
     let link: VehicleLink
     let navigation: EmbeddedNavigation
+    let tripEnergy = TripEnergyStore.shared
     let automations: AutomationCoordinator
     let aiRules = AutomationAI()
     let voice = VoiceCoordinator()
@@ -219,6 +220,10 @@ final class AppModel: ObservableObject {
         navigation.willStart = { [weak self] in self?.stopSpeech() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
         navigation.onGuidanceEnd = { [weak self] arrived in
+            if let self {
+                self.updateTripEnergy()
+                self.tripEnergy.finish(arrived: arrived, vin: self.energyVehicleVIN)
+            }
             self?.voice.stop()
             self?.voice.navigationGuide(arrived ? "목적지에 도착했습니다. 안내를 종료합니다." : "안내를 종료합니다.", safety: false)
         }
@@ -226,7 +231,7 @@ final class AppModel: ObservableObject {
         navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
         voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
-        navigation.onActivityChange = { [weak self] in self?.updateLiveActivity() }
+        navigation.onActivityChange = { [weak self] in self?.updateTripEnergy(); self?.updateLiveActivity() }
         voice.callStateChanged(phoneCalls.isActive)
         phoneCalls.changed = { [weak self] active in
             guard let self else { return }
@@ -360,7 +365,10 @@ final class AppModel: ObservableObject {
         if visible && UIApplication.shared.applicationState == .active { refresh(detailed: true) }
     }
     func refresh(detailed: Bool = false) {
-        defer { updateLiveActivity() }
+        defer {
+            if detailed { tripEnergy.invalidateProfile() }
+            updateTripEnergy(); updateLiveActivity()
+        }
         do {
             // Read loaded settings before migrating the older standalone preference.
             if detailed || output.isEmpty { output = try runtime.call("view") as? Object ?? [:]; lastAnalytics = Date() }

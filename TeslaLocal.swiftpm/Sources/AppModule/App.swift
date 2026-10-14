@@ -563,6 +563,7 @@ struct BatteryView: View {
         let charges = model.output.object("charging").rows("rows")
         PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }, briefingAtBottom: true) {
             BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days)
+            TripEnergyHistoryView(vin: model.energyVehicleVIN)
             InfoCard {
                 NavigationLink("집 충전 범위·주소 변경") { HomeChargingSettingsView() }
                 NavigationLink("배터리 용량 비교 기준·교체일") { BatteryHealthReferenceSettingsView() }

@@ -8,6 +8,7 @@ struct DrivingWorkspace: View {
     @ObservedObject var navigation: EmbeddedNavigation
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearance = VehicleAppearanceStore.shared
+    @ObservedObject private var tripEnergy = TripEnergyStore.shared
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @State private var settings = false
     @State private var destinationSearch = false
@@ -283,6 +284,10 @@ struct DrivingWorkspace: View {
                 r.remaining = "\(finiteInt(ceil(seconds / 60)))분 남음"
                 r.arrival = Date(timeIntervalSinceNow: seconds).formatted(date: .omitted, time: .shortened)
             }
+        }
+        if navigation.guiding, let prediction = tripEnergy.estimate {
+            r.energyPrediction = prediction
+            if r.arrivalSOC == nil { r.arrivalSOC = prediction.arrivalSOC }
         }
         return r
     }

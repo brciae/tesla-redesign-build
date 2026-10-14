@@ -31,6 +31,8 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceGainPolicy.swift tools/voice-ga
 Xcode/VoiceGainTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift tools/navigation-recovery-tests.swift -o Xcode/NavigationRecoveryTests
 Xcode/NavigationRecoveryTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/TripEnergyPrediction.swift TeslaLocal.swiftpm/Sources/AppModule/TripEnergyStore.swift tools/trip-energy-tests.swift -o Xcode/TripEnergyTests
+Xcode/TripEnergyTests
 xcrun clang -fobjc-arc -framework Foundation tools/navigation-speech-tests.m -o Xcode/NavigationSpeechTests
 Xcode/NavigationSpeechTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift tools/typecast-policy-tests.swift -o Xcode/TypecastPolicyTests

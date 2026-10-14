@@ -452,6 +452,32 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["경로 미수신"].waitForExistence(timeout: 5))
         XCUIDevice.shared.orientation = .portrait
     }
+    func testTripEnergyForecastAcrossThemesAndRotation() {
+        let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "energy-forecast-probe"]; app.launch()
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            for theme in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+                let button = app.segmentedControls.buttons[theme]
+                XCTAssertTrue(button.waitForExistence(timeout: 8)); button.tap()
+                let forecast = app.staticTexts["energy.forecast.arrival"].firstMatch
+                XCTAssertTrue(forecast.waitForExistence(timeout: 5), "forecast absent: \(theme)")
+                XCTAssertTrue(forecast.label.contains("66%"))
+                XCTAssertTrue(forecast.isHittable, "forecast clipped: \(theme)")
+                XCTAssertTrue(app.staticTexts["energy.forecast.consumption"].firstMatch.label.contains("1.6 kWh"))
+                let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                shot.name = "Trip energy forecast \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
+            }
+        }
+        app.buttons["navigation.empty"].tap()
+        XCTAssertFalse(app.staticTexts["energy.forecast.arrival"].firstMatch.exists)
+        XCUIDevice.shared.orientation = .portrait
+        app.terminate(); app.launchArguments = ["energy-history-probe"]; app.launch()
+        let comparison = app.staticTexts["energy.forecast.comparison"]
+        XCTAssertTrue(comparison.waitForExistence(timeout: 8)); XCTAssertTrue(comparison.label.contains("실제 64%"))
+        XCTAssertTrue(app.staticTexts["도착 전 배터리 부족 예상"].exists)
+        let historyShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        historyShot.name = "Trip energy actual arrival comparison and battery shortage"; historyShot.lifetime = .keepAlways; add(historyShot)
+    }
     func testNavigationThemesAndRotation() {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe"]; app.launch()
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {

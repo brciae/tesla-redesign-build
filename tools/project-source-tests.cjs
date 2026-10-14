@@ -5,6 +5,9 @@ const base = path.resolve(__dirname, '../Xcode');
 const probe = JSON.parse(fs.readFileSync(path.join(base,'InterfaceProbe.json'),'utf8'));
 const declared = probe.targets.InterfaceProbe.sources.map(s=>path.resolve(base,typeof s==='string'?s:s.path));
 const sharedSource = name => path.resolve(base, '../TeslaLocal.swiftpm/Sources/AppModule', name);
+for (const source of ['TripEnergyPrediction.swift','TripEnergyStore.swift','TripEnergyPredictionView.swift']) {
+  assert.ok(declared.includes(sharedSource(source)), 'Trip energy shared UI dependency missing: '+source);
+}
 if (declared.includes(sharedSource('FleetTelemetryStore.swift'))) {
   assert.ok(declared.includes(sharedSource('FleetTelemetryJournal.swift')), 'Telemetry store requires its durable journal in the simulator target');
 }

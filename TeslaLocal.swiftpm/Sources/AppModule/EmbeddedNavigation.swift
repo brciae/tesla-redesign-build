@@ -129,6 +129,13 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     private var manualRouteToken: String?
     private var manualCoordinate: CLLocationCoordinate2D?
     @Published private(set) var manualDestination = ""
+    var energyDestination: String { manualDestination.isEmpty ? candidate?.string("name", "목적지") ?? "목적지" : manualDestination }
+    var energyRouteKey: String {
+        let lat = manualRouteToken != nil ? manualCoordinate?.latitude : candidate?.number("latitude")
+        let lng = manualRouteToken != nil ? manualCoordinate?.longitude : candidate?.number("longitude")
+        guard let lat, let lng, lat.isFinite, lng.isFinite else { return "" }
+        return String(format: "%.6f,%.6f", lat, lng)
+    }
     private var heldOrientation = false
     private var previousIdleTimer = false
     /// v29: transient Kakao/GPS failures retry automatically (bounded) instead of blocking the destination.
