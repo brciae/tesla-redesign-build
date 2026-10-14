@@ -4,6 +4,10 @@ const assert = require('node:assert/strict');
 const base = path.resolve(__dirname, '../Xcode');
 const probe = JSON.parse(fs.readFileSync(path.join(base,'InterfaceProbe.json'),'utf8'));
 const declared = probe.targets.InterfaceProbe.sources.map(s=>path.resolve(base,typeof s==='string'?s:s.path));
+const sharedSource = name => path.resolve(base, '../TeslaLocal.swiftpm/Sources/AppModule', name);
+if (declared.includes(sharedSource('FleetTelemetryStore.swift'))) {
+  assert.ok(declared.includes(sharedSource('FleetTelemetryJournal.swift')), 'Telemetry store requires its durable journal in the simulator target');
+}
 for(const file of fs.readdirSync(path.join(base,'InterfaceProbe')).filter(f=>f.endsWith('.swift')&&f!=='InteractionTests.swift')) {
   const actual = path.join(base,'InterfaceProbe',file);
   assert.ok(declared.some(p=>p===actual || fs.statSync(p).isDirectory()&&actual.startsWith(p+path.sep)), 'Unregistered probe source '+file);
