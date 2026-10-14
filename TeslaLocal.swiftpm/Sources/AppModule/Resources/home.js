@@ -48,6 +48,10 @@
     location.hasCoordinates=location.latitude!==null&&location.longitude!==null;
     location.subtitle=location.hasCoordinates?`${location.label} · 좌표 확인`:'위치 미수신';
     location.gpsAt=number(l.gpsAt,1);
+    const measured=location.gpsAt===null?number(l.at,1):location.gpsAt;
+    if(location.mode==='recent'&&(measured===null||measured>now+5000||now-measured>45000)){
+      location.mode='cached';location.label='마지막 GPS 위치';
+    }
     location.diagnostic=({missingCoordinates:'차량 응답 수신 · GPS 좌표 대기',unsupportedCoordinates:'차량 좌표계 미지원 · WGS 좌표 대기',gpsUnavailable:'차량 GPS 위치 확인 중 · 자동 주차 저장 대기'})[l.positionStatus]||'';
     if(location.diagnostic)location.subtitle=location.diagnostic;
     if(location.diagnostic&&location.mode==='recent'){location.mode='cached';location.label='위치 확인 대기';}

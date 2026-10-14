@@ -1,4 +1,25 @@
 #import <Foundation/Foundation.h>
+#import <math.h>
+
+static inline BOOL YLNavigationPositionUsable(BOOL valid, double gpsAge, double callbackAge, BOOL routePosition) {
+    if (!valid) return NO;
+    if (isfinite(gpsAge) && gpsAge >= -3 && gpsAge <= 15) return YES;
+    // The SDK's current, valid matched-route result may advance while raw GPS is unavailable.
+    return routePosition && isfinite(callbackAge) && callbackAge >= 0 && callbackAge <= 3;
+}
+
+// Route distances, not straight-line proximity: nearby parallel roads must not form a cluster.
+static inline NSArray<NSNumber *> *YLHumpClusterDistances(NSInteger first, NSArray<NSNumber *> *distances) {
+    NSMutableArray<NSNumber *> *result = [NSMutableArray arrayWithObject:@(first)];
+    NSInteger last = first;
+    for (NSNumber *value in [distances sortedArrayUsingSelector:@selector(compare:)]) {
+        NSInteger distance = value.integerValue;
+        if (distance <= last) continue;
+        if (distance > first + 1200 || distance - last > 250) break;
+        [result addObject:value]; last = distance;
+    }
+    return result;
+}
 
 // Voice uses approximate distance bands; the map retains the SDK's exact distance.
 // Negative means no fresh distance. Never turn it into an imminent maneuver.

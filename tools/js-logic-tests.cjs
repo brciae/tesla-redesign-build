@@ -61,10 +61,14 @@ for (let i = 0; i < 5; i++) { r = g.observe({ type: 'absent', at: 3000 + i * 500
 r = g.observe(ev(37.5, 40000), false, true); assert(r.type === 'refresh', 'background refresh keeps guidance');
 let cleared = false;
 for (let i = 0; i < 7; i++) { r = g.observe({ type: 'absent', at: 50000 + i * 9000, receivedAt: 50000 + i * 9000 }, true, true); cleared = cleared || r.type === 'clear'; }
-assert(cleared, 'sustained absence clears');
-r = g.observe(ev(37.6, 200000), true, false); assert(r.type === 'start', 'new destination');
-g.finish(r.ticket); r = g.observe(ev(37.6, 201000), true, false); assert(r.type === 'wait', 'finished destination blocked');
-g.retry(); r = g.observe(ev(37.6, 202000), true, false); assert(r.type === 'start', 'manual retry');
+assert(!cleared, 'GPS/network route omission cannot stop established guidance while moving');
+for (let i = 0; i < 20; i++) {
+  r = g.observe({type:'absent',at:120000+i*20000,receivedAt:120000+i*20000},true,true);
+  assert(r.type==='wait','long GPS loss keeps established route');
+}
+r = g.observe(ev(37.6, 600000), true, false); assert(r.type === 'start', 'new destination');
+g.finish(r.ticket); r = g.observe(ev(37.6, 601000), true, false); assert(r.type === 'wait', 'finished destination blocked');
+g.retry(); r = g.observe(ev(37.6, 602000), true, false); assert(r.type === 'start', 'manual retry');
 const now = Date.now();
 assert(C.fresh({ at: now - 600000, receivedAt: now - 1000 }, now, C.TTL.charge), 'old source stamp, fresh receipt');
 assert(!C.fresh({ at: now - 1000, receivedAt: now - 200000 }, now, C.TTL.charge), 'stale receipt');

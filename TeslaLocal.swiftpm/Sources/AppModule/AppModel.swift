@@ -75,6 +75,30 @@ final class AppModel: ObservableObject {
     private var lastSaved = Date.distantPast
     private var recoveryLock = false
     private var timer: Timer?
+    private var activityObservedAt = Date.distantPast
+    func updateLiveActivity() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let nav = self.navigation.telemetry
+            let navAt = Date(timeIntervalSince1970: nav.number("at") ?? 0)
+            let navFresh = self.navigation.guiding && Date().timeIntervalSince(navAt) < 30
+            let seconds = navFresh ? nav.number("remainSeconds") : nil
+            let minutes = seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? Int(ceil($0 / 60)) : nil }
+            let soc = self.output.object("fresh").flag("charge") ? self.groups.object("charge").number("soc") : nil
+            let battery = soc.flatMap { $0.isFinite && (0...100).contains($0) ? Int($0.rounded()) : nil }
+            let destination = self.navigation.manualDestination.isEmpty ? self.groups.object("drive").string("destination") : self.navigation.manualDestination
+            let state = VehicleActivityAttributes.ContentState(
+                connected: self.link.connected && self.link.authentic,
+                guiding: self.navigation.guiding,
+                destination: String(destination.prefix(60)),
+                instruction: navFresh ? String(nav.string("turn", "길안내 중").prefix(80)) : "길안내 업데이트 대기",
+                remainingMinutes: minutes,
+                batteryPercent: battery,
+                observedAt: max(self.activityObservedAt, navFresh ? navAt : .distantPast))
+            VehicleLiveActivityManager.shared.update(state, enabled: !self.demo && !self.recoveryLock &&
+                ((UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool) ?? true))
+        }
+    }
     private var fleetObservation: AnyCancellable?
     private var archiveObservation: AnyCancellable?
     private var lastArchiveSync = Date.distantPast
@@ -189,11 +213,14 @@ final class AppModel: ObservableObject {
         navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
         voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
+        navigation.onActivityChange = { [weak self] in self?.updateLiveActivity() }
         link.onControlOutcome = { [weak self] message in
             self?.voice.say(message, key: "controlOutcome:" + UUID().uuidString, category: "voiceControl", priority: 2)
         }
         link.onSnapshot = { [weak self] snapshot in
             guard let self, !self.demo else { return }
+            self.activityObservedAt = Date()
+            defer { self.updateLiveActivity() }
             do {
                 let previousCount = self.state.rows("trips").count
                 let previousCharges = self.state.rows("charges").count
@@ -282,6 +309,7 @@ final class AppModel: ObservableObject {
         try enrichLocalChargeSOC()
     }
     func refresh() {
+        defer { updateLiveActivity() }
         do {
             // Read loaded settings before migrating the older standalone preference.
             output = try runtime.call("view") as? Object ?? [:]

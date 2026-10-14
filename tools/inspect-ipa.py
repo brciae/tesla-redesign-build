@@ -54,6 +54,14 @@ with zipfile.ZipFile(ipa_path) as archive:
     assert any(n.startswith(app + "AppIcon") and n.endswith(".png") for n in names), "Generated app icon PNG missing"
     assert set(info["UIDeviceFamily"]) == {1, 2}
     assert info.get("NSBluetoothAlwaysUsageDescription")
+    assert info.get("NSSupportsLiveActivities") is True
+    extension = app + "PlugIns/VehicleLiveActivity.appex/"
+    extension_info = plistlib.loads(archive.read(extension + "Info.plist"))
+    assert extension_info["CFBundleIdentifier"] == info["CFBundleIdentifier"] + ".liveactivity"
+    assert extension_info["CFBundleVersion"] == info["CFBundleVersion"]
+    assert extension_info["CFBundleShortVersionString"] == info["CFBundleShortVersionString"]
+    assert extension_info["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.widgetkit-extension"
+    macho_info(archive.read(extension + extension_info["CFBundleExecutable"]))
     assert info.get("NSLocationWhenInUseUsageDescription")
     assert info.get("NSLocationAlwaysAndWhenInUseUsageDescription")
     assert info.get("NSLocationTemporaryUsageDescriptionDictionary", {}).get("NavigationAccuracy")

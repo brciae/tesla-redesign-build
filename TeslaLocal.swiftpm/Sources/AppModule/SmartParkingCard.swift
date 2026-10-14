@@ -458,7 +458,10 @@ struct SmartParkingCard: View {
     }
 
     private func distanceToCarString(record: SmartParkingRecord) -> String {
-        guard let phoneLoc = manager.currentPhoneLocation,
+        guard let phoneLoc = manager.usablePhoneLocation,
+              (-5...30).contains(-phoneLoc.timestamp.timeIntervalSinceNow),
+              phoneLoc.horizontalAccuracy >= 0, phoneLoc.horizontalAccuracy <= 100,
+              CLLocationCoordinate2DIsValid(phoneLoc.coordinate),
               let carLat = record.effectiveLatitude,
               let carLng = record.effectiveLongitude,
               !(carLat == 0 && carLng == 0) else {

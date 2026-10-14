@@ -30,7 +30,7 @@ enum AutomationTrigger: String, Codable, CaseIterable, Identifiable {
         case .batteryLow: return "주행 중 설정한 잔량 이하일 때"
         case .tireLow: return "차량 저압 경고 또는 직접 정한 공기압 기준 사용"
         case .rest: return "연속 수신한 운전 시간이 기준을 넘을 때 · 단절 구간은 제외"
-        case .remaining: return "차량 내비의 남은 시간이 기준을 통과할 때"
+        case .remaining: return "설정한 분 간격으로 남은 시간 안내 · 10분 이하에서 마지막 한 번"
         case .delay: return "같은 목적지의 최초 도착 예상보다 설정 시간 이상 늦어질 때"
         case .destination: return "차량 내비 목적지가 다른 곳으로 변경될 때"
         }
@@ -183,10 +183,11 @@ struct AutomationPolicy {
     private var driveSeconds = 0.0
     private var parkSince: Double?
     private var routeBaseline: Double?
+    private var routeStartedAt: Double?
     private var milestones: Set<String> = []
     mutating func reset() {
         previous = nil; lastPresenceAt = nil; occupancySince = nil; absentSince = nil; exitDoorAt = nil; driveSeconds = 0
-        parkSince = nil; routeBaseline = nil; milestones = []
+        parkSince = nil; routeBaseline = nil; routeStartedAt = nil; milestones = []
     }
     mutating func settingsChanged() {
         reset()
@@ -259,7 +260,17 @@ struct AutomationPolicy {
             reset()
         }
         let presenceGap = sample.speechOnly ? 90.0 : 15.0
-        if let old = previous, sample.now < old.now || sample.now - old.now > max(35, presenceGap) { reset() }
+        if let old = previous, sample.now < old.now || sample.now - old.now > max(35, presenceGap) {
+            let sameRoute = sample.now >= old.now && !sample.route.isEmpty && sample.route == old.route
+            let start = routeStartedAt, baseline = routeBaseline, savedMilestones = milestones
+            reset()
+            if sameRoute {
+                routeStartedAt = start; routeBaseline = baseline; milestones = savedMilestones
+                // Keep route identity only, never restore stale presence/command evidence.
+                var identity = sample; identity.driveFresh = false; identity.closuresFresh = false
+                previous = identity
+            }
+        }
         let old = previous
         defer { previous = sample }
         // Only a new closures receipt advances presence debounce; charge/drive polling
@@ -315,7 +326,7 @@ struct AutomationPolicy {
         if boarding { document.motionLatched = false }
         let departure = sample.moving && old?.driveFresh == true && old?.moving == false && !document.motionLatched
         if sample.moving { document.motionLatched = true }
-        if sample.route != old?.route { routeBaseline = nil; milestones = milestones.filter { !$0.hasPrefix("route:") } }
+        if sample.route != old?.route { routeBaseline = nil; routeStartedAt = sample.now; milestones = milestones.filter { !$0.hasPrefix("route:") } }
         if sample.moving, !sample.route.isEmpty, let minutes = sample.remainingMinutes, routeBaseline == nil { routeBaseline = sample.now + minutes * 60 }
         var effects: [AutomationEffect] = []
         for rule in document.rules where rule.enabled {
@@ -329,7 +340,8 @@ struct AutomationPolicy {
             let key = sample.vehicle + ":" + rule.id
             if let fired = document.lastFired[key] {
                 if fired > sample.now { document.lastFired[key] = sample.now; continue }
-                if sample.now - fired < Double(rule.cooldownMinutes * 60) { continue }
+                let finalArrivalCue = rule.trigger == .remaining && (sample.remainingMinutes ?? .infinity) <= 10
+                if !finalArrivalCue && sample.now - fired < Double(rule.cooldownMinutes * 60) { continue }
             }
             var fire = false, text = "", milestone: String?
             switch rule.trigger {
@@ -348,8 +360,17 @@ struct AutomationPolicy {
                 let stage = Int(driveSeconds / max(60, rule.threshold * 60)); milestone = "rest:\(rule.id):\(stage)"
                 fire = sample.moving && stage > 0; text = "관측 운전 시간 \(Int(rule.threshold))분 초과. 휴식이 필요합니다."
             case .remaining:
-                milestone = "route:\(rule.id):remaining"
-                fire = sample.moving && !sample.route.isEmpty && sample.remainingMinutes != nil && sample.route == old?.route && (old?.remainingMinutes ?? -1) > rule.threshold && (sample.remainingMinutes ?? 1e9) <= rule.threshold
+                if sample.moving, !sample.route.isEmpty, let minutes = sample.remainingMinutes, minutes > 0 {
+                    let finalKey = "route:\(rule.id):final10"
+                    if minutes <= 10 {
+                        milestone = finalKey
+                        fire = !milestones.contains(finalKey)
+                    } else if !milestones.contains(finalKey), let start = routeStartedAt {
+                        let stage = Int(max(0, sample.now - start) / max(60, rule.threshold * 60))
+                        milestone = "route:\(rule.id):interval:\(stage)"
+                        fire = stage > 0
+                    }
+                }
                 text = "목적지까지 약 \(Int(sample.remainingMinutes ?? 0))분 남았습니다."
             case .delay:
                 let delay = sample.now + (sample.remainingMinutes ?? 0) * 60 - (routeBaseline ?? sample.now)

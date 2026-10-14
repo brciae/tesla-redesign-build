@@ -2,6 +2,7 @@ import SwiftUI
 import CoreLocation
 import Security
 import KakaoNavigationBridge
+import Network
 
 /// No secret in source, defaults, JSON backups, route events or diagnostic messages.
 private enum NavigationKey {
@@ -58,6 +59,22 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var onPrepareGuide: ((String) -> Void)?
     func isSpeechTargetAhead(_ identifier: String) -> Bool { controller?.isSpeechTargetAhead(identifier) == true }
     var onAudioSession: ((Bool) -> Void)?
+    var onActivityChange: (() -> Void)?
+    @Published private(set) var networkAvailable = true
+    @Published private(set) var trafficRefreshing = false
+    func refreshTrafficRoute() {
+        guard guiding, networkAvailable, !trafficRefreshing else {
+            status = networkAvailable ? "길안내 중에 교통정보 재탐색 가능함" : "통신 복구 대기 · 기존 경로 안내 유지"
+            return
+        }
+        trafficRefreshing = controller?.refreshTrafficRoute() == true
+        if !trafficRefreshing { status = "현재 위치 확인 또는 재탐색 완료 후 다시 시도 가능함" }
+    }
+    func applyTrafficPreferences() {
+        controller?.configureAutoTrafficReroute((UserDefaults.standard.object(forKey: "navigation.autoTrafficReroute") as? Bool) ?? true)
+    }
+    private let networkMonitor = NWPathMonitor()
+    private var pendingNetworkRoute: (event: Object, vin: String)?
     private let runtime: LocalRuntime
     private let locator = CLLocationManager()
     private var deadline: Timer?
@@ -78,6 +95,21 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     init(runtime: LocalRuntime) {
         self.runtime = runtime
         super.init()
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            let available = path.status == .satisfied
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.networkAvailable = available
+                if !available, self.guiding { self.status = "통신 대기 · 기존 경로 안내 유지" }
+                if available, let pending = self.pendingNetworkRoute {
+                    self.pendingNetworkRoute = nil
+                    if let received = pending.event.number("receivedAt"), Date().timeIntervalSince1970 * 1000 - received <= 30000 {
+                        self.observe(pending.event, vin: pending.vin)
+                    }
+                }
+            }
+        }
+        networkMonitor.start(queue: DispatchQueue(label: "YL.navigation.network"))
         locator.delegate = self
         updateLocationPermission()
         locator.desiredAccuracy = kCLLocationAccuracyBestForNavigation
@@ -101,6 +133,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         do { return try runtime.call("navGate", args) }
         catch { status = "내비 상태 처리 실패 · 안내 중단"; return nil }
     }
+    deinit { networkMonitor.cancel() }
     private func current(_ value: Double) -> Bool { ticket == value && (gate("check", ["ticket": value]) as? Bool == true) }
     func saveSetup(key: String) {
         do {
@@ -134,6 +167,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func observe(_ event: Object, vin: String) {
         if vehicleIdentity != vin { reset(); vehicleIdentity = vin }
         if let manualRouteToken, event.string("token") != manualRouteToken { return }
+        if event.string("type") == "route", !networkAvailable {
+            pendingNetworkRoute = (event, vin)
+            status = guiding ? "통신 대기 · 기존 경로 안내 유지" : "통신 복구 후 경로 탐색 대기"
+            return
+        }
         let auth = locator.authorizationStatus
         let ready = (enabled || manualRouteToken != nil) && consent && hasKey && (auth == .authorizedAlways || auth == .authorizedWhenInUse) && canPresent()
         guard let decision = gate("observe", ["event": event, "ready": ready, "guiding": guiding || busy]) as? Object else { return }
@@ -256,6 +294,8 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                         self.navigationScene = view.view.window?.windowScene
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene); return
                     }
+                    if event == "rerouting" { self.trafficRefreshing = true; self.status = message; return }
+                    if event == "trafficUpdated" { self.trafficRefreshing = false; self.status = message; return }
                     if event == "error" { self.failed(message, ticket: ticket); return }
                     if event == "ended" { self.endGuidance(arrived: true); return }
                     if event == "ready" || event == "started" {
@@ -304,6 +344,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     if let follow = merged["following"] as? Bool, follow != self.following { self.following = follow }
                     self.lastTelemetry = merged
                     self.telemetry = merged
+                    self.onActivityChange?()
                 }
                 if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
             }
@@ -313,7 +354,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         } catch { failed("내비 보안 키 읽기 실패", ticket: ticket) }
     }
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        if (error as? CLError)?.code == .locationUnknown { return }
+        let code = (error as? CLError)?.code
+        if code == .locationUnknown || code == .network || (guiding && code != .denied) {
+            status = "위치 신호 일시 지연 · 기존 길안내 유지"
+            return
+        }
         if let ticket { failed("현재 위치 조회 실패 · 위치 권한·GPS 확인", ticket: ticket) }
     }
     private func failed(_ message: String, ticket: Double) {
@@ -332,12 +377,13 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         deadline?.invalidate(); deadline = nil; locator.stopUpdatingLocation()
         controller?.eventHandler = nil; controller?.telemetryHandler = nil; controller?.stopNavigation(); controller = nil
         telemetry = [:]; lastTelemetry = [:]; following = true; speedSample = nil; brakeUntil = 0
+        onActivityChange?()
         holdBackgroundLocation(false)
         onVoiceActivity?(false); onAudioSession?(false)
-        busy = false; guiding = false; candidate = nil; ticket = nil
+        busy = false; guiding = false; trafficRefreshing = false; candidate = nil; ticket = nil
         if !keepDisplay { presented = false }
     }
-    func stop() { manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
+    func stop() { pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
     func endGuidance(arrived: Bool = false) {
         manualRouteToken = nil; manualDestination = ""
         _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
@@ -359,7 +405,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             catch { status = error.localizedDescription }
         } else { _ = gate("retry"); status = "최신 차량 목적지 다시 수신 중" }
     }
-    func reset() { manualRouteToken = nil; manualDestination = ""; startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
+    func reset() { pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
     func foregrounded() { if guiding, controller != nil, !userDismissed { presented = true } }
     func requestLocationPermission() {
@@ -405,6 +451,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     snapshot.forEach { merged[$0.key] = $0.value }
                     self.lastTelemetry = merged
                     self.telemetry = merged
+                    self.onActivityChange?()
                 }
                 if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
             }
@@ -444,8 +491,8 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         controller?.recenter()
     }
     func suspendPending() {
-        // Established GPS navigation survives BLE loss/background; pending startup does not.
-        if !guiding { _ = gate("cancel", ["block": false]); stopNative() }
+        // App switching is not a route cancellation. Keep the map and pending startup.
+        if busy { status = "앱 전환 중 · 경로 준비 유지" }
     }
     func screenAppeared() {
         if !heldOrientation { previousIdleTimer = UIApplication.shared.isIdleTimerDisabled }

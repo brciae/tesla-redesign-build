@@ -14,7 +14,6 @@ struct DrivingWorkspace: View {
     @State private var carError: String?
     var body: some View {
         GeometryReader { proxy in
-            let isLandscape = proxy.size.width > proxy.size.height
             NavigationWorkspaceChrome {
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
@@ -39,14 +38,6 @@ struct DrivingWorkspace: View {
                         case "mediaVolumeUp": link.mediaCommand("mediaVolume", delta: 1)
                         case "mediaVolumeDown": link.mediaCommand("mediaVolume", delta: -1)
                         default: link.mediaCommand(action)
-                        }
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if let controller = navigation.controller, let image = controller.junctionImage {
-                            NavigationJunctionCard(image: image, metres: controller.junctionDistance)
-                                .frame(width: min(isLandscape ? proxy.size.width * 0.32 : proxy.size.width * 0.66, 340))
-                                .padding(.leading, proxy.safeAreaInsets.leading + 16).padding(.trailing, proxy.safeAreaInsets.trailing).padding(.top, proxy.safeAreaInsets.top + 60)
-                                .allowsHitTesting(false)
                         }
                     }
                     .animation(.smooth(duration: 0.28), value: readout.speed)
@@ -90,6 +81,9 @@ struct DrivingWorkspace: View {
             Image(systemName: link.authentic ? "antenna.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
                 .font(.system(size: compact ? 12 : 14))
                 .foregroundStyle(link.authentic ? Color.green : Color.white.opacity(0.45))
+            if readout.positionEstimated {
+                Text("위치 추정").font(.caption2).foregroundStyle(.orange)
+            }
 
             if !compact {
                 Text(readout.inside)
@@ -122,6 +116,8 @@ struct DrivingWorkspace: View {
             }
 
             Spacer(minLength: 4)
+            NavigationTrafficRefreshButton(enabled: navigation.guiding && navigation.networkAvailable,
+                                           refreshing: navigation.trafficRefreshing) { navigation.refreshTrafficRoute() }
             ScreenBriefingControls(scope: .dashboard, compact: true)
             Spacer(minLength: 4)
             Button { settings = true } label: {
@@ -140,6 +136,8 @@ struct DrivingWorkspace: View {
 
     private var readout: NavigationReadout {
         var r = NavigationReadout()
+        r.junctionImage = navigation.controller?.junctionImage
+        r.junctionMetres = navigation.controller?.junctionDistance ?? -1
         let fresh = model.output.object("fresh"), c = model.groups.object("charge"), t = model.groups.object("climate")
         let fleetDrive = model.fleet.vehicleSnapshot?.vin == model.fleet.selectedVin ? model.fleet.vehicleSnapshot?.driveDisplay() ?? [:] : [:]
         let driveFresh = fresh.flag("drive") || fleetDrive.string("mode") == "recent"
@@ -258,6 +256,7 @@ struct DrivingWorkspace: View {
             if !text("nextTurn").isEmpty { r.next = distance("nextMetres") + " · " + text("nextTurn"); r.nextSymbol = text("nextSymbol", "arrow.up") }
             if n["remainMetres"] != nil { r.remainingDistance = distance("remainMetres") }
             r.gpsLive = n["gps"] as? Bool == true
+            r.positionEstimated = n["positionEstimated"] as? Bool == true
             if let count = n["laneCount"] as? Int, count > 0 {
                 r.laneCount = count
                 r.laneSuggested = (n["laneSuggested"] as? [NSNumber] ?? []).map(\.intValue).filter { $0 >= 0 && $0 < count }
@@ -451,6 +450,7 @@ struct NavigationDisplaySettings: View {
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
     @AppStorage("navigation.markerScale") private var markerScale = 2.0
+    @AppStorage("navigation.autoTrafficReroute") private var autoTrafficReroute = true
     var body: some View { Group {
                     Section("지도 표시") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
@@ -484,9 +484,12 @@ struct NavigationDisplaySettings: View {
                         Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
                     }
                     Section("내비 화면") {
+                        Toggle("교통 변화 시 자동 재탐색", isOn: $autoTrafficReroute)
+                            .onChange(of: autoTrafficReroute) { _, _ in navigation.applyTrafficPreferences() }
                         Picker("테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
                         DirectionPicker(navigation: navigation)
                     }
+                    Section("저장 지도") { OfflineMapSettings(navigation: navigation) }
                     Section { NavigationLink("음성·내비 안내") { PreferencesView() } }
     } }
 }

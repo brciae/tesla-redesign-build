@@ -86,6 +86,8 @@ enum NavigationTheme: String, CaseIterable, Identifiable {
 
 /// Display-only model. Never substitutes a remembered speed, limit, lane or turn for missing data.
 struct NavigationReadout {
+    var junctionImage: UIImage?
+    var junctionMetres: Double = -1
     var speed = "—", speedUnit = "km/h", gear = "—", battery = "—", range = "—"
     var inside = "—", outside = "—", road = "위치 확인 중", turn = "경로 확인 중"
     var turnDistance = "—", turnSymbol = "location.north", next = "", nextSymbol = "arrow.up"
@@ -116,6 +118,7 @@ struct NavigationReadout {
     var odometer = "—"
     var clock = ""
     var gpsLive = false
+    var positionEstimated = false
     var routeProgress: Double? = nil
     var rangeKm: Double? = nil
     var arrivalSOC: Double? = nil
@@ -428,7 +431,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             }
             VStack(spacing: 6 * m.u) {
                 if data.showsMedia { NavigationMediaHeader(data: data, action: onMedia) }
-                ManeuverStack(data: data, u: m.u)
+                ManeuverStack(data: data, u: m.u).modifier(JunctionGuidance(data: data))
                 if data.laneCount > 0 { LaneStrip(data: data, u: m.u) }
             }
             .frame(width: cardW)
@@ -461,7 +464,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .frame(width: card.width, height: card.height)
                 .offset(x: card.minX, y: card.minY)
             HStack(alignment: .top, spacing: 8 * m.u) {
-                TurnBanner(data: data, u: m.u)
+                TurnBanner(data: data, u: m.u).modifier(JunctionGuidance(data: data))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let limit = data.speedLimit {
                     LimitSign(limit: limit, distance: data.speedLimitDistance, size: 46 * m.u)
@@ -546,7 +549,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             .offset(x: m.wide ? m.w * 0.30 : 0, y: m.pad)
 
             if m.wide {
-                TurnColumn(data: data, u: m.u)
+                TurnColumn(data: data, u: m.u).modifier(JunctionGuidance(data: data))
                     .frame(width: side, alignment: .leading)
                     .offset(x: m.pad * 1.5, y: m.h * 0.24)
                 RangeTag(data: data, u: m.u)
@@ -567,7 +570,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .offset(x: m.pad * 1.5, y: m.h * 0.16)
 
                 HStack(alignment: .top) {
-                    TurnColumn(data: data, u: m.u)
+                    TurnColumn(data: data, u: m.u).modifier(JunctionGuidance(data: data))
                     Spacer()
                     ArrivalColumn(data: data, u: m.u)
                 }
@@ -681,7 +684,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             carStage("내 차량 · 주행 시각화")
                 .frame(width: stage.width, height: stage.height)
                 .offset(x: stage.minX, y: stage.minY)
-            FocusTurnPill(data: data, u: m.u)
+            FocusTurnPill(data: data, u: m.u).modifier(JunctionGuidance(data: data))
                 .frame(maxWidth: stage.width - m.pad * 2)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: stage.width)
@@ -741,7 +744,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 .frame(width: stage.width, height: stage.height * 0.94)
                 .offset(x: stage.minX, y: stage.minY + stage.height * 0.04)
                 .allowsHitTesting(true) // v1.37: drag to orbit in portrait and landscape
-            RunningTurnCard(data: data, u: m.u)
+            RunningTurnCard(data: data, u: m.u).modifier(JunctionGuidance(data: data))
                 .frame(width: turn.width, height: turn.height)
                 .offset(x: turn.minX, y: turn.minY)
             RunningInfoPanel(data: data, u: m.u)
@@ -775,7 +778,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
             .offset(x: m.pad, y: m.pad)
             VStack(alignment: .trailing, spacing: 8 * m.u) {
                 if data.showsMedia { NavigationMediaHeader(data: data, action: onMedia).frame(width: rightW) }
-                TurnBanner(data: data, u: m.u)
+                TurnBanner(data: data, u: m.u).modifier(JunctionGuidance(data: data))
                     .frame(width: rightW, alignment: .leading)
                 if data.laneCount > 0 { LaneStrip(data: data, u: m.u).frame(width: rightW) }
                 if !m.wide, let limit = data.speedLimit {
@@ -1948,18 +1951,54 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
 }
 
 
+struct NavigationTrafficRefreshButton: View {
+    let enabled: Bool
+    let refreshing: Bool
+    var action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if refreshing { ProgressView().tint(.cyan) }
+                else { Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 14)) }
+            }.frame(width: 44, height: 44)
+        }.disabled(!enabled || refreshing)
+            .accessibilityLabel("교통 반영 재탐색")
+            .accessibilityIdentifier("navigation.traffic.refresh")
+    }
+}
+
+private struct JunctionGuidance: ViewModifier {
+    let data: NavigationReadout
+    func body(content: Content) -> some View {
+        let visible = data.junctionImage != nil && data.junctionMetres.isFinite && data.junctionMetres > 0
+        content.opacity(visible ? 0 : 1).accessibilityHidden(visible)
+            .overlay {
+                if visible, let image = data.junctionImage {
+                    NavigationJunctionCard(image: image, metres: data.junctionMetres)
+                        .allowsHitTesting(false)
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("navigation.junction.region")
+    }
+}
+
 struct NavigationJunctionCard: View {
     let image: UIImage
     let metres: Double
     var body: some View {
-        VStack(spacing: 0) {
-            Image(uiImage: image).resizable().scaledToFit()
-                .accessibilityLabel("교차로 상세 안내 이미지")
-            HStack {
-                Text("분기점 상세 안내").font(.caption.weight(.semibold))
-                Spacer()
-                Text("\(Int(max(0, metres))) m").font(.subheadline.bold()).monospacedDigit()
-            }.padding(10)
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: max(1, geometry.size.height - 22))
+                    .accessibilityLabel("교차로 상세 안내 이미지")
+                HStack {
+                    Text("진출로 안내").font(.system(size: 11, weight: .semibold))
+                    Spacer(minLength: 2)
+                    Text("\(finiteInt(metres)) m").font(.system(size: 12, weight: .bold)).monospacedDigit()
+                }.padding(.horizontal, 6).frame(height: 22)
+            }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.foregroundStyle(.white).background(Color.black.opacity(0.88))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18)))

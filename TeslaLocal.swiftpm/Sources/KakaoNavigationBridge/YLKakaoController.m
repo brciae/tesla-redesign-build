@@ -2,6 +2,8 @@
 #import "YLNavigationSpeech.h"
 #import <KNSDK/KNSDK.h>
 #import <KNSDK/KNMapView.h>
+#import <KNSDK/KNMapDownLoader.h>
+#import <KNSDK/KNDriveGuidance.h>
 #import <KNSDK/KNMapCameraUpdate.h>
 #import <KNSDK/KNMapTheme.h>
 #import <KNSDK/KNMapUserLocation.h>
@@ -129,6 +131,8 @@ static NSArray *YLLifecycleObservers;
 @property(nonatomic) BOOL forceImminent;
 @property(nonatomic, strong) NSMutableSet<NSString *> *announcedPoints;
 @property(nonatomic, strong) KNLocation *imminentTarget;
+@property(nonatomic) BOOL trafficRerouting;
+@property(nonatomic) NSTimeInterval lastTrafficRequest;
 @property(nonatomic) FloatPoint mapAnchor;
 @property(nonatomic) BOOL cameraReady;
 @property(nonatomic) float trustedBearing;
@@ -186,13 +190,41 @@ static NSArray *YLLifecycleObservers;
 }
 - (double)junctionDistance {
     KNImageDirection *image = self.routeGuide.imgDirection;
-    if (!self.guiding || !image.directionImg || !image.location || !self.locationGuide.location ||
+    if (!self.guiding || ![self locationIsFresh] || !image.directionImg || !image.location || !self.locationGuide.location ||
         [NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt > 8) return -1;
     return [self.locationGuide.location distToLocation:image.location];
 }
+- (BOOL)offlineMapDownloaded {
+    return YLInitializedKey && [[[KNSDK sharedInstance] sharedMapDownLoader] isDownloadedFullMap];
+}
+- (void)downloadOfflineMap {
+    if (!YLInitializedKey) { [self emit:@"status" message:@"지도를 먼저 준비한 뒤 다운로드하세요."]; return; }
+    [[[KNSDK sharedInstance] sharedMapDownLoader] downLoadStart];
+    [self emit:@"status" message:@"전체 지도 다운로드 요청됨 · Wi-Fi와 저장 공간을 확인하세요."];
+}
+- (void)configureAutoTrafficReroute:(BOOL)enabled { self.guidance.useAutoReroute = enabled; }
+- (BOOL)refreshTrafficRoute {
+    NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
+    if (!self.guiding || ![self locationIsFresh] || self.trafficRerouting || now - self.lastTrafficRequest < 30) return NO;
+    self.lastTrafficRequest = now; self.trafficRerouting = YES;
+    [(KNDriveGuidance *)self.guidance reRouteWithPriority:KNRoutePriority_Recommand avoidOptions:KNRouteAvoidOption_None];
+    [self emit:@"rerouting" message:@"최신 교통정보 반영 · 경로 재탐색 중"];
+    return YES;
+}
+- (void)pauseOfflineMapDownload { [[[KNSDK sharedInstance] sharedMapDownLoader] downLoadPause]; }
+- (void)useOfflineMap:(BOOL)enabled {
+    if (self.guiding) { [self emit:@"status" message:@"지도 방식 변경은 길안내 종료 후 가능함"]; return; }
+    if (enabled && !self.offlineMapDownloaded) { [self emit:@"status" message:@"전체 지도 다운로드 완료 후 사용 가능함"]; return; }
+    [[KNSDK sharedInstance] setMapType:enabled ? KNMapType_FullMap : KNMapType_CloudMap complition:^(KNError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!error) [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"navigation.fullMap"];
+            [self emit:@"status" message:error ? @"지도 방식 전환 실패 · 기존 지도 유지" : enabled ? @"다운로드한 전체 지도 사용" : @"실시간 지도 사용"];
+        });
+    }];
+}
 - (UIImage *)junctionImage {
     double distance = self.junctionDistance;
-    return distance >= 0 && distance <= 800 ? self.routeGuide.imgDirection.directionImg : nil;
+    return distance > 0 && distance <= 800 ? self.routeGuide.imgDirection.directionImg : nil;
 }
 - (void)configureMapTheme:(NSString *)theme {
     BOOL changed = ![self.displayTheme isEqualToString:theme];
@@ -389,7 +421,7 @@ static NSArray *YLLifecycleObservers;
     self.guidance.safetyGuideDelegate = self;
     self.guidance.voiceGuideDelegate = self;
     self.guidance.citsGuideDelegate = self;
-    self.guidance.useAutoReroute = YES;
+    self.guidance.useAutoReroute = [NSUserDefaults.standardUserDefaults objectForKey:@"navigation.autoTrafficReroute"] == nil || [NSUserDefaults.standardUserDefaults boolForKey:@"navigation.autoTrafficReroute"];
     self.guidance.useBackgroundUpdate = YES;
     [self loadViewIfNeeded];
     self.map = [sdk makeMapViewWithFrame:self.view.bounds];
@@ -490,7 +522,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     self.map.viewEventListener = nil;
     self.map.paused = YES; [self.map removeRoutesAll]; [self.map removeMarkersAll]; [self.map removeFromSuperview];
     self.map = nil; self.routeStyle = nil; self.guidance = nil; self.locationGuide = nil; self.routeGuide = nil; self.safetyGuide = nil; self.cameraReady = NO;
-    [self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects];
+    [self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects]; [self.announcedPoints removeAllObjects];
     if (self.telemetryHandler) self.telemetryHandler(@{});
 }
 
@@ -499,12 +531,12 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 - (void)guidanceGuideStarted:(KNGuidance *)guidance {
     YL_FORWARD(self.guiding = YES; if (guidance.routesOnGuide.count) [self.map setRoutes:guidance.routesOnGuide]; [self emit:@"started" message:@"길안내 중"]);
 }
-- (void)guidanceCheckingRouteChange:(KNGuidance *)guidance { YL_FORWARD([self emit:@"rerouting" message:@"경로 다시 확인 중"]); }
+- (void)guidanceCheckingRouteChange:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = YES; [self emit:@"rerouting" message:@"교통 상황 반영 · 경로 재탐색 중"]); }
 - (void)guidanceOutOfRoute:(KNGuidance *)guidance { YL_FORWARD(self.routeGuide = nil; [self publishTelemetry]; [self emit:@"rerouting" message:@"경로 이탈 · 다시 탐색 중"]); }
-- (void)guidanceRouteUnchanged:(KNGuidance *)guidance { YL_FORWARD([self emit:@"status" message:@"길안내 중"]); }
-- (void)guidance:(KNGuidance *)guidance routeUnchangedWithError:(KNError *)error { YL_FORWARD([self emit:@"status" message:@"경로 갱신 지연"]); }
+- (void)guidanceRouteUnchanged:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = NO; [self emit:@"trafficUpdated" message:@"교통정보 확인 · 기존 경로 유지"]); }
+- (void)guidance:(KNGuidance *)guidance routeUnchangedWithError:(KNError *)error { YL_FORWARD(self.trafficRerouting = NO; [self emit:@"trafficUpdated" message:@"교통정보 갱신 지연 · 기존 경로 안내 유지"]); }
 - (void)guidanceRouteChanged:(KNGuidance *)guidance fromRoute:(KNRoute *)fromRoute fromLocation:(KNLocation *)fromLocation toRoute:(KNRoute *)toRoute toLocation:(KNLocation *)toLocation reason:(KNGuideRouteChangeReason)reason {
-    YL_FORWARD(self.routeGuide = nil; self.locationGuide = nil; [self.map removeRoutesAll]; if (toRoute) [self.map setRoute:toRoute]; [self publishTelemetry]);
+    YL_FORWARD(self.trafficRerouting = NO; self.routeGuide = nil; self.locationGuide = nil; [self.map removeRoutesAll]; if (toRoute) [self.map setRoute:toRoute]; [self publishTelemetry]; [self emit:@"trafficUpdated" message:@"최신 교통정보 경로로 갱신됨"]);
 }
 - (void)guidanceGuideEnded:(KNGuidance *)guidance {
     YL_FORWARD(self.guiding = NO; self.routeGuide = nil; self.safetyGuide = nil; [self.map removeRoutesAll]; [self publishTelemetry]; [self emit:@"ended" message:@"길안내 종료됨"]);
@@ -537,7 +569,37 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     SInt32 distance = [self.locationGuide.location distToLocation:record[@"target"]];
     return distance > 0 && distance <= [record[@"distance"] intValue] + 10;
 }
+- (NSArray<KNSafety *> *)humpGroupForPoint:(KNSafety *)point {
+    if (!point.location || ![self locationIsFresh]) return @[point];
+    NSInteger first = [self.locationGuide.location distToLocation:point.location];
+    NSMutableArray<NSNumber *> *distances = [NSMutableArray array];
+    NSMutableArray<KNSafety *> *candidates = [NSMutableArray arrayWithObject:point];
+    for (KNSafety *candidate in self.safetyGuide.safetiesOnGuide ?: @[]) {
+        if (candidate.code != KNSafetyCode_Hump || !candidate.location || candidate.safetyId == point.safetyId) continue;
+        NSInteger d = [self.locationGuide.location distToLocation:candidate.location];
+        if (d > first) { [distances addObject:@(d)]; [candidates addObject:candidate]; }
+    }
+    NSArray<NSNumber *> *groupDistances = YLHumpClusterDistances(first, distances);
+    NSMutableArray<KNSafety *> *group = [NSMutableArray array];
+    for (KNSafety *candidate in candidates) {
+        NSInteger d = [self.locationGuide.location distToLocation:candidate.location];
+        if ([groupDistances containsObject:@(d)]) [group addObject:candidate];
+    }
+    return group;
+}
 - (void)emitTimedSpeech:(KNVoiceCode)code object:(id)object safety:(BOOL)safety {
+    if ([object isKindOfClass:KNSafety.class] && ((KNSafety *)object).code == KNSafetyCode_Hump) {
+        KNSafety *point = object;
+        if (![self locationIsFresh] || !point.location) return;
+        SInt32 distance = [self.locationGuide.location distToLocation:point.location];
+        if (distance <= 0 || distance > 150) return;
+        if (!self.announcedPoints) self.announcedPoints = [NSMutableSet set];
+        NSString *key = [NSString stringWithFormat:@"hump:%d", (int)point.safetyId];
+        if ([self.announcedPoints containsObject:key]) return;
+        for (KNSafety *member in [self humpGroupForPoint:point]) {
+            [self.announcedPoints addObject:[NSString stringWithFormat:@"hump:%d", (int)member.safetyId]];
+        }
+    }
     NSString *text = [self spokenTextForCode:code object:object];
     if (!text.length) return;
     NSMutableDictionary *message = [@{@"text":text, @"validUntil":@(NSDate.date.timeIntervalSince1970 + 12)} mutableCopy];
@@ -545,7 +607,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     BOOL stateChange = code == KNVoiceCode_StartGuide || code == KNVoiceCode_EndGuide || code == KNVoiceCode_OutOfRoute || code == KNVoiceCode_RouteChanged;
     message[@"stateChange"] = @(stateChange);
     message[@"incidental"] = @(code == KNVoiceCode_Alert && !target);
-    if (stateChange) [self.speechTargets removeAllObjects];
+    if (stateChange) { [self.speechTargets removeAllObjects]; [self.announcedPoints removeAllObjects]; }
     if (target) {
         if (![self locationIsFresh]) return;
         SInt32 distance = [self.locationGuide.location distToLocation:target];
@@ -642,7 +704,6 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         SInt32 d = [self.locationGuide.location distToLocation:point.location];
         NSString *key = [NSString stringWithFormat:@"hump:%d", (int)point.safetyId];
         if (d <= 0 || d > fmax(60, fmin(150, speed * 5)) || [self.announcedPoints containsObject:key]) continue;
-        [self.announcedPoints addObject:key];
         [self emitTimedSpeech:KNVoiceCode_Safety object:point safety:YES];
     }
     // Tunnels ahead come from the route's facility list: "500미터 앞, OO터널입니다. 길이 1.2킬로미터."
@@ -687,6 +748,9 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     }
     if ([object isKindOfClass:KNSafety.class]) {
         KNSafety *point = object;
+        if (point.code == KNSafetyCode_Hump && [self humpGroupForPoint:point].count > 1) {
+            return [prefix stringByAppendingString:@"과속방지턱이 연속으로 있습니다. 속도를 줄이세요."];
+        }
         NSDictionary *labels = @{@0:@"사고 다발 구간", @1:@"급커브 구간", @2:@"낙석 주의 구간", @3:@"안개 주의 구간", @4:@"추락 주의", @5:@"미끄러운 도로", @6:@"과속 방지턱", @10:@"철도 건널목", @11:@"어린이 보호 구역", @12:@"도로 폭 좁아짐", @13:@"급경사 내리막", @14:@"야생동물 출몰 지역", @15:@"졸음 쉼터", @16:@"졸음운전 사고 다발 구간", @17:@"오르막 구간", @18:@"신호등 주의", @20:@"무정차 요금소", @21:@"차량 사고 다발 구간", @22:@"보행자 사고 다발 구간", @23:@"어린이 사고 다발 구간", @24:@"상습 결빙 구간", @26:@"고의성 교통사고 다발 지점", @28:@"높이 제한", @29:@"중량 제한", @31:@"안개 주의 구간", @32:@"상습 결빙 구간", @40:@"지하차도 침수 주의", @80:@"단속 지점", @81:@"이동식 과속 단속 구간", @82:@"과속 단속", @83:@"교통 정보 수집 카메라", @84:@"버스 전용 차로 단속 구간", @85:@"과적 단속", @86:@"신호 과속 단속 구간", @87:@"주정차 단속 구간", @88:@"적재 불량 단속", @89:@"버스 전용 차로 및 신호 단속 구간", @90:@"고정식 단속 구간", @91:@"차로 및 과속 단속", @92:@"구간 단속 시작", @93:@"구간 단속 종료", @94:@"갓길 단속", @95:@"끼어들기 단속", @96:@"구간 단속", @97:@"지정차로 단속", @98:@"구간 단속 시작", @99:@"구간 단속 종료", @100:@"과속 단속", @101:@"안전띠 단속", @102:@"후면 과속 단속", @103:@"후면 신호 과속 단속 구간", @104:@"노후 경유차 운행 제한 단속", @105:@"후면 구간 단속 시작", @106:@"후면 구간 단속 종료", @692:@"구간 단속 시작", @693:@"구간 단속 종료", @696:@"구간 단속", @705:@"후면 구간 단속 시작", @706:@"후면 구간 단속 종료"};
         // Announce the point ahead, not an event that has supposedly already happened.
         NSDictionary *sentences = @{@93:@"구간 단속 종료 지점입니다.", @99:@"차로 변경 단속 종료 지점입니다.", @106:@"후면 구간 단속 종료 지점입니다.",
@@ -797,8 +861,11 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 - (BOOL)locationIsFresh {
     KNGPSData *gps = self.locationGuide.gpsMatched;
     NSTimeInterval age = gps.timestamp ? -gps.timestamp.timeIntervalSinceNow : INFINITY;
-    // Stale fixes must not drive the camera or navigation distances.
-    return gps && gps.valid && age >= -3 && age <= 15 && isfinite(gps.pos.x) && isfinite(gps.pos.y);
+    KNLocation *matched = self.locationGuide.location;
+    BOOL routePosition = self.guiding && matched && isfinite(matched.pos.x) && isfinite(matched.pos.y);
+    double callbackAge = [NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt;
+    return gps && isfinite(gps.pos.x) && isfinite(gps.pos.y) &&
+        YLNavigationPositionUsable(gps.valid, age, callbackAge, routePosition);
 }
 - (void)updateMap {
     // Route properties may not exist until the SDK asynchronously installs a route.
@@ -974,12 +1041,15 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     // "gps" tells the UI whether the position is live.
     BOOL gpsFresh = [self locationIsFresh];
     KNGPSData *gps = self.locationGuide.gpsMatched;
-    NSMutableDictionary *s = [@{@"valid":@(self.guiding || gpsFresh), @"gps":@(gpsFresh), @"at":@(NSDate.date.timeIntervalSince1970),
+    KNGPSData *origin = self.locationGuide.gpsOrigin;
+    double rawAge = origin.timestamp ? -origin.timestamp.timeIntervalSinceNow : INFINITY;
+    BOOL rawFresh = origin && origin.valid && origin.posTrust && rawAge >= -3 && rawAge <= 15;
+    NSMutableDictionary *s = [@{@"valid":@(self.guiding || gpsFresh), @"gps":@(rawFresh), @"positionEstimated":@(gpsFresh && !rawFresh), @"at":@(NSDate.date.timeIntervalSince1970),
         @"road":self.locationGuide.location.roadName ?: @""} mutableCopy];
     if (gpsFresh && gps.speedTrust && gps.speed >= 0) s[@"gpsSpeedKmh"] = @(gps.speed);
     KNLocation *location = self.locationGuide.location;
     // v30 route shape (throttled to 2 Hz) drives the 3D road; bend is derived from the same shape.
-    if (location) {
+    if (location && gpsFresh) {
         NSTimeInterval now = NSDate.date.timeIntervalSince1970;
         if (!self.routePath || now - self.routePathAt >= 0.5) { self.routePath = [self routeShapeFrom:location]; self.routePathAt = now; }
         if (self.routePath) {
@@ -1006,10 +1076,10 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     if (cur) {
         NSDictionary *info = [self directionInfo:cur];
         s[@"turn"] = info[@"text"]; s[@"symbol"] = info[@"symbol"]; s[@"highway"] = info[@"highway"]; s[@"exitClock"] = info[@"exitClock"];
-        SInt32 metres = location ? [location distToLocation:cur.location] : -1; if (metres >= 0) s[@"turnMetres"] = @(metres);
+        SInt32 metres = gpsFresh && location ? [location distToLocation:cur.location] : -1; if (metres >= 0) s[@"turnMetres"] = @(metres);
         if (next) {
             NSDictionary *info2 = [self directionInfo:next]; s[@"nextTurn"] = info2[@"text"]; s[@"nextSymbol"] = info2[@"symbol"]; s[@"nextExitClock"] = info2[@"exitClock"];
-            SInt32 nextMetres = location ? [location distToLocation:next.location] : -1; if (nextMetres >= 0) s[@"nextMetres"] = @(nextMetres);
+            SInt32 nextMetres = gpsFresh && location ? [location distToLocation:next.location] : -1; if (nextMetres >= 0) s[@"nextMetres"] = @(nextMetres);
         }
     }
     if (self.guidance.trip) {
@@ -1019,7 +1089,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     }
     // v29 lane guidance: count and recommended lanes (left→right) at the next lane-info point.
     KNLane *lane = self.routeGuide.lane;
-    if (lane.laneInfos.count >= 1 && lane.laneInfos.count <= 12) {
+    if (gpsFresh && lane.laneInfos.count >= 1 && lane.laneInfos.count <= 12) {
         SInt32 laneMetres = (location && lane.location) ? [location distToLocation:lane.location] : -1;
         if (laneMetres >= 0 && laneMetres <= 1500) {
             NSMutableArray *suggested = [NSMutableArray array];
@@ -1048,7 +1118,8 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         }
     }
     s[@"following"] = @(self.following);
-    for (KNSafety *safety in self.safetyGuide.safetiesOnGuide) {
+    s[@"trafficRerouting"] = @(self.trafficRerouting);
+    for (KNSafety *safety in gpsFresh ? self.safetyGuide.safetiesOnGuide : @[]) {
         if ([safety isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)safety).speedLimit > 0) {
             s[@"speedLimit"] = @(((KNSafety_Camera *)safety).speedLimit);
             if (location) { SInt32 d = [location distToLocation:safety.location]; if (d >= 0) s[@"speedLimitMetres"] = @(d); }

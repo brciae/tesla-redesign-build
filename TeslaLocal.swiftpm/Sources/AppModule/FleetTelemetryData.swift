@@ -171,10 +171,12 @@ enum FleetTelemetryData {
         if let r = records.filter({ $0.vin == vin && $0.field == "Location" && !$0.invalid && now.timeIntervalSince($0.at) >= -5 && coordinate($0) != nil }).max(by: { $0.at < $1.at }),
            let point = coordinate(r) {
             let stamp = r.at.timeIntervalSince1970 * 1000
-            let fresh = now.timeIntervalSince(r.at) <= 120
+            let lastLocation = records.filter { $0.vin == vin && $0.field == "Location" && now.timeIntervalSince($0.at) >= -5 }.max { $0.at < $1.at }
+            let unavailable = lastLocation.map { $0.at >= r.at && ($0.invalid || coordinate($0) == nil) } ?? false
+            let fresh = now.timeIntervalSince(r.at) <= 120 && !unavailable
             result["location"] = [
                 "latitude": point.latitude, "longitude": point.longitude, "hasCoordinates": true,
-                "gpsAt": stamp, "at": stamp,
+                "gpsAt": stamp, "at": stamp, "positionStatus": unavailable ? "gpsUnavailable" : "available",
                 "mode": fresh ? "recent" : "cached",
                 "label": fresh ? "NAS 차량 수신" : "NAS 마지막 측정",
                 "subtitle": fresh ? "NAS 차량 수신 · 좌표 확인" : "NAS 마지막 측정 · 좌표 확인"

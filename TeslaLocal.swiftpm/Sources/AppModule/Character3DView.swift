@@ -365,10 +365,9 @@ struct Character3DView: UIViewRepresentable {
         private var glitch = 0.0
         private var holoStart = 0.0
         // v1.55: robots fly (Iron-Man style) instead of walking/running: hover when parked, lift off and
-        // lean into the direction of travel as speed rises, with flickering foot thrusters.
+        // lean into the direction of travel as speed rises. Decorative foot rods were removed.
         private var isRobot = false
         private var flight: Float = 0, flightTarget: Float = 0
-        private var thrusters: [ModelEntity] = []
         /// Breathing bob + slow body sway so the character never looks frozen, and a fidget every 6–12 s.
         private func step(_ dt: Double) {
             clock += dt
@@ -407,36 +406,9 @@ struct Character3DView: UIViewRepresentable {
             let bank = simd_quatf(angle: 0.12 * flight * sin(t * 0.8), axis: [0, 0, 1])
             let idleTurn = simd_quatf(angle: (1 - flight) * 0.15 * sin(t * 0.3), axis: [0, 1, 0])
             b.orientation = idleTurn * lean * bank * base.rotation
-            let jitter: Float = 0.85 + 0.15 * Float(sin(clock * 53)) * Float(sin(clock * 31))
-            let power: Float = 0.35 + 0.65 * flight
-            for th in thrusters {
-                th.scale = SIMD3<Float>(1, max(0.05, power * jitter), 1)
-                if #available(iOS 18.0, *) { th.components.set(OpacityComponent(opacity: 0.55 + 0.45 * power)) }
-            }
             if ambient, flight < 0.05, clock >= nextFidget {
                 nextFidget = clock + Double.random(in: 7...13)
                 if !reacting { react(["lookaround", "point", "nod", "wave"].randomElement()!) }
-            }
-        }
-        /// Two thruster flames under the feet (box flame + glow disc), children of the body root.
-        private func addThrusters(to b: Entity) {
-            thrusters.removeAll()
-            let bounds = b.visualBounds(relativeTo: b)
-            let width: Float = max(0.1, bounds.extents.x)
-            var flame = UnlitMaterial(color: UIColor(red: 1, green: 0.75, blue: 0.35, alpha: 1))
-            flame.blending = .transparent(opacity: .init(floatLiteral: 0.75))
-            var core = UnlitMaterial(color: UIColor(red: 0.75, green: 0.95, blue: 1, alpha: 1))
-            core.blending = .transparent(opacity: .init(floatLiteral: 0.9))
-            for side: Float in [-1, 1] {
-                let holder = ModelEntity()
-                holder.position = SIMD3<Float>(bounds.center.x + side * width * 0.14, bounds.min.y + 0.01, bounds.center.z)
-                let outer = ModelEntity(mesh: .generateBox(width: 0.045, height: 0.22, depth: 0.045, cornerRadius: 0.02), materials: [flame])
-                outer.position.y = -0.11
-                let inner = ModelEntity(mesh: .generateBox(width: 0.02, height: 0.14, depth: 0.02, cornerRadius: 0.01), materials: [core])
-                inner.position.y = -0.07
-                holder.addChild(outer); holder.addChild(inner)
-                b.addChild(holder)
-                thrusters.append(holder)
             }
         }
 
@@ -452,11 +424,15 @@ struct Character3DView: UIViewRepresentable {
             v.scene.addAnchor(anchor)
             placeCamera()
             tick = v.scene.subscribe(to: SceneEvents.Update.self) { [weak self] e in
-                MainActor.assumeIsolated { self?.step(e.deltaTime) }
+                let delta = e.deltaTime
+                Task { @MainActor [weak self] in
+                    guard UIApplication.shared.applicationState == .active else { return }
+                    self?.step(min(delta, 0.1))
+                }
             }
             observer = NotificationCenter.default.addObserver(forName: CharacterReact.note, object: nil, queue: .main) { [weak self] n in
                 guard let clip = n.object as? String else { return }
-                MainActor.assumeIsolated { self?.react(clip) }
+                Task { @MainActor [weak self] in self?.react(clip) }
             }
         }
         /// Clone the selected character's body (each view owns its clone so screens never steal it).
@@ -467,8 +443,7 @@ struct Character3DView: UIViewRepresentable {
             projector?.removeFromParent(); projector = nil
             if let m = rig.model { let c = m.clone(recursive: true); CharacterFinish.apply(loadedFinish, to: c); body = c; base = c.transform; anchor.addChild(c) }
             isRobot = CharacterOption.all.first(where: { $0.id == rig.id })?.robot == true
-            flight = 0; flightTarget = 0; thrusters.removeAll()
-            if isRobot, let body { addThrusters(to: body) }
+            flight = 0; flightTarget = 0
             if loadedFinish == .holo {
                 let holder = Entity(); CharacterFinish.addProjector(to: holder); anchor.addChild(holder); projector = holder
                 holoStart = clock
@@ -648,9 +623,10 @@ private struct CharacterPreview: UIViewRepresentable {
         func setup(_ v: ARView) {
             view = v
             tick = v.scene.subscribe(to: SceneEvents.Update.self) { [weak self] e in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.clock += e.deltaTime
+                let delta = e.deltaTime
+                Task { @MainActor [weak self] in
+                    guard let self, UIApplication.shared.applicationState == .active else { return }
+                    self.clock += min(delta, 0.1)
                     if let pad = self.holoPad {
                         // the pad stays put while the figure turns; keep the reveal in sync with the figure
                         CharacterFinish.animateHolo(pad: pad, body: self.holoBody, age: self.clock - self.holoStart, clock: self.clock)

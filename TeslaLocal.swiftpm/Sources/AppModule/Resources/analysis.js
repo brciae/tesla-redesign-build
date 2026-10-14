@@ -23,7 +23,12 @@
     return Math.sqrt(dLat*dLat+dLng*dLng)<=r;
   }
   function validCoordinates(lat,lng){return num(lat,-90,90)&&num(lng,-180,180)&&!(lat===0&&lng===0);}
-  const freshLocation=(g,now)=>fresh(g,now)&&validCoordinates(g.latitude,g.longitude)&&(!g.positionStatus||g.positionStatus==='available')&&g.estimatedGPSValid!==false;
+  const freshLocation=(g,now)=>{
+    if(!fresh(g,now,TTL.location)||!validCoordinates(g.latitude,g.longitude)||
+       (g.positionStatus&&g.positionStatus!=='available')||g.estimatedGPSValid===false)return false;
+    const measured=Number.isFinite(g.gpsAt)?g.gpsAt:g.at;
+    return measured<=now+5000&&now-measured<=TTL.location;
+  };
   // Match the Fleet drive source-age limit; slow-changing charge/climate groups retain their own rules.
   const freshNavigation=(g,now)=>fresh(g,now)&&g.at<=now+5000&&now-g.at<=120000;
   function navURL(drive,now,appname){
@@ -73,7 +78,10 @@
         this.absence=previous&&previous.parked===(event.parked===true)&&event.receivedAt>previous.last&&event.receivedAt-previous.last<=75000?
           {first:previous.first,last:event.receivedAt,count:previous.count+1,parked:event.parked===true}:{first:event.receivedAt,last:event.receivedAt,count:1,parked:event.parked===true};
         // Established guidance tolerates transient empty route groups (stops, Tesla re-routing, BLE partials). 
-        const need=event.parked?{count:1,span:0}:(this.active&&guiding?{count:6,span:45000}:{count:3,span:3000});
+        // Tunnel/GPS/network loss may omit Tesla route fields for minutes. Absence while moving
+        // is not a destination cancellation; keep established local guidance until P/explicit end.
+        if(this.active&&guiding&&!event.parked)return {type:'wait'};
+        const need=event.parked?{count:1,span:0}:{count:3,span:3000};
         if(this.absence.count>=need.count&&this.absence.last-this.absence.first>=need.span){
           this.cancel(false);this.blocked=null;return {type:'clear',reason:'vehicleRouteAbsent'};
         }

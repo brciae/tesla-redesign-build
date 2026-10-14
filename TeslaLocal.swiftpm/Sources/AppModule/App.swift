@@ -115,7 +115,12 @@ struct MainView: View {
             .animation(reduced ? nil : .easeInOut(duration: 0.25), value: navigation.presented)
             .tint(Color.primary)
             .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
-            .onOpenURL { url in model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
+            .onOpenURL { url in
+                if url.scheme == "ylcompanion", url.host == "activity" {
+                    selectedTab = .home
+                    if navigation.guiding { navigation.presented = true }
+                } else { model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
+            }
             .task { if phase == .active { model.resume(); consumeNotificationRoute() } }
             .onChange(of: phase) { _, p in handlePhase(p) }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("YL.openChargingFromNotification"))) { _ in consumeNotificationRoute() }

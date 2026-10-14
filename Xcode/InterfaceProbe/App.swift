@@ -15,7 +15,9 @@ import MapKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("charging-map-probe") { ChargingMapProbe() }
+            if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("robot-probe") { RobotProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charging-map-probe") { ChargingMapProbe() }
             else if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains(where: { ["voice-playback-probe", "voice-events-probe", "voice-lifecycle-probe"].contains($0) }) { VoicePlaybackProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-cost-probe") { ChargeCostProbe() }
@@ -118,6 +120,7 @@ struct NavigationLandingProbe: View {
 struct FullscreenNavigationProbe: View {
     @State private var theme: NavigationTheme = .cluster
     @State private var stopped = false
+    @State private var junctionVisible = ProcessInfo.processInfo.arguments.contains("junction-probe")
     var body: some View {
         NavigationWorkspaceChrome {
             NavigationDashboard(theme: theme, data: sample) { NavigationMapFixture() }
@@ -141,10 +144,17 @@ struct FullscreenNavigationProbe: View {
             }.frame(height: 44)
             if !stopped { ParkedNavigationActions { stopped = true } }
             else { Text("안내 종료됨").accessibilityIdentifier("fullscreen.stopped") }
+            if ProcessInfo.processInfo.arguments.contains("junction-probe") {
+                Button("진출 지점 통과") { junctionVisible = false }
+            }
         }.background(.black).statusBarHidden(true).persistentSystemOverlays(.hidden)
     }
     private var sample: NavigationReadout {
         var r = NavigationReadout()
+        if junctionVisible {
+            r.junctionImage = UIImage(systemName: "arrow.up.right.circle.fill")?.withTintColor(.cyan, renderingMode: .alwaysOriginal)
+            r.junctionMetres = 300
+        }
         r.speed = "0"; r.gear = "P"; r.battery = "71%"; r.range = "399 km"
         r.turn = "출발지 지나고 진행"; r.turnDistance = "0 m"; r.turnSymbol = "arrow.up"
         r.next = "24 m · 좌회전"; r.remaining = "54분 남음"; r.remainingDistance = "29.9 km"; r.arrival = "18:19"

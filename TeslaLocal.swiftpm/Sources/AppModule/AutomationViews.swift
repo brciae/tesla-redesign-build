@@ -113,7 +113,8 @@ struct AutomationRuleEditor: View {
                 LocalBriefingControls(title: "자동화 편집") {
                     var lines = ["\(rule.name). \(rule.enabled ? "활성" : "비활성") 설정입니다.", "조건은 \(rule.trigger.title), 동작은 \(rule.action.title)입니다."]
                     if rule.trigger == .batteryLow { lines.append("잔량 \(Int(rule.threshold))퍼센트 이하입니다.") }
-                    if [.rest, .remaining, .delay].contains(rule.trigger) { lines.append("기준 \(Int(rule.threshold))분입니다.") }
+                    if [.rest, .delay].contains(rule.trigger) { lines.append("기준 \(Int(rule.threshold))분입니다.") }
+                    if rule.trigger == .remaining { lines.append("\(Int(rule.threshold))분마다 안내하고, 10분 이하에서 마지막으로 안내합니다.") }
                     if rule.trigger == .tireLow && rule.customTireThreshold { lines.append("공기압 \(rule.threshold)바 미만입니다.") }
                     if rule.cabinCondition != "always" { lines.append("실내 \(rule.cabinThresholdC)도 \(rule.cabinCondition == "above" ? "이상" : "이하") 조건입니다.") }
                     if rule.action == .temperature { lines.append("목표 온도 \(rule.targetC)도입니다.") }
@@ -128,7 +129,8 @@ struct AutomationRuleEditor: View {
                     Picker("언제", selection: $rule.trigger) { ForEach(AutomationTrigger.allCases) { Text($0.title).tag($0) } }
                     Caption(rule.trigger.detail)
                     if rule.trigger == .batteryLow { Stepper("잔량 \(Int(rule.threshold))% 이하", value: $rule.threshold, in: 1...100, step: 1) }
-                    if [.rest, .remaining, .delay].contains(rule.trigger) { Stepper("기준 \(Int(rule.threshold))분", value: $rule.threshold, in: 1...300, step: 1) }
+                    if [.rest, .delay].contains(rule.trigger) { Stepper("기준 \(Int(rule.threshold))분", value: $rule.threshold, in: 1...300, step: 1) }
+                    if rule.trigger == .remaining { Stepper("안내 간격 \(Int(rule.threshold))분", value: $rule.threshold, in: 1...300, step: 1) }
                     if rule.trigger == .tireLow {
                         Toggle("직접 정한 압력 기준도 사용", isOn: $rule.customTireThreshold)
                         if rule.customTireThreshold { Stepper("\(valueText(rule.threshold, digits: 2)) bar 미만", value: $rule.threshold, in: 1...4, step: 0.05); Caption("차량 권장 냉간 압력을 참고해 직접 설정함. 표시는 다른 단위로 바꿔도 이 기준의 원단위는 bar임.") }

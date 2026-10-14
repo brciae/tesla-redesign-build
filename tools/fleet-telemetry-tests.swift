@@ -37,6 +37,11 @@ import Foundation
         let remembered = FleetTelemetryData.homeOverlay([stableLocation, noGPS], vin: "DISPLAY", now: now)["location"] as! [String: Any]
         precondition(remembered["latitude"] as? Double == 37.5 && remembered["mode"] as? String == "cached")
         precondition(remembered["gpsAt"] as? Double == stableLocation.at.timeIntervalSince1970 * 1000)
+        let recentLocation = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now.addingTimeInterval(-10), number: nil, text: stableLocation.text, invalid: false)
+        let lost = FleetTelemetryData.homeOverlay([recentLocation, noGPS], vin: "DISPLAY", now: now)["location"] as! [String: Any]
+        precondition(lost["mode"] as? String == "cached" && lost["positionStatus"] as? String == "gpsUnavailable")
+        let reacquired = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now.addingTimeInterval(1), number: nil, text: stableLocation.text, invalid: false)
+        precondition((FleetTelemetryData.homeOverlay([recentLocation, noGPS, reacquired], vin: "DISPLAY", now: now.addingTimeInterval(1))["location"] as! [String: Any])["mode"] as? String == "recent")
         let stableState = FleetTelemetryReading(vin: "DISPLAY", field: "DetailedChargeState", at: now.addingTimeInterval(-3600), number: nil, text: "{\"stringValue\":\"DetailedChargeStateComplete\"}", invalid: false)
         let frequentSOC = (0..<20).map { FleetTelemetryReading(vin: "DISPLAY", field: "Soc", at: now.addingTimeInterval(Double($0)), number: 80, text: "", invalid: false) }
         let retained = FleetTelemetryData.merge([stableLocation, stableState], frequentSOC, limit: 5)

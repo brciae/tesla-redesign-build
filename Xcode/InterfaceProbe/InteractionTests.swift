@@ -1,6 +1,55 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testRobotWithoutFootRodsSurvivesAppSwitching() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["robot-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["로봇 모델 로드됨"].waitForExistence(timeout: 15))
+        for title in ["대기", "비행"] {
+            if title == "비행" { app.buttons["비행"].tap() }
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = "Robot removed foot rods \(title)"; shot.lifetime = .keepAlways; add(shot)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertTrue(app.otherElements["robot.scene"].waitForExistence(timeout: 5))
+        }
+    }
+    func testJunctionStaysInGuidanceAndDisappearsAfterExit() {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication(); app.launchArguments = ["fullscreen-navigation-probe", "junction-probe"]; app.launch()
+        for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+            XCTAssertTrue(app.buttons["navigation.chrome.open"].waitForExistence(timeout: 5))
+            app.buttons["navigation.chrome.open"].tap()
+            app.buttons[title].tap()
+            app.buttons["navigation.chrome.close"].tap()
+            let junction = app.otherElements["navigation.junction"]
+            XCTAssertTrue(junction.waitForExistence(timeout: 3))
+            let region = app.otherElements["navigation.junction.region"].firstMatch
+            XCTAssertTrue(region.exists)
+            XCTAssertTrue(region.frame.insetBy(dx: -1, dy: -1).contains(junction.frame))
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = "Junction contained in guidance \(title)"; shot.lifetime = .keepAlways; add(shot)
+        }
+        app.buttons["navigation.chrome.open"].tap()
+        app.buttons["진출 지점 통과"].tap()
+        app.buttons["navigation.chrome.close"].tap()
+        XCTAssertFalse(app.otherElements["navigation.junction"].exists)
+    }
+    func testLiveActivityViewsAndBackgroundReturn() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["live-activity-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["업데이트 대기"].exists)
+        XCTAssertTrue(app.staticTexts["배터리 72%"].exists)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Live activity shared views compact expanded and stale"; shot.lifetime = .keepAlways; add(shot)
+        for _ in 0..<3 {
+            XCUIDevice.shared.press(.home)
+            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 5))
+            app.activate()
+            XCTAssertTrue(app.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 5))
+        }
+    }
     func testChargingMapDestinationAndRejectedVehicleSend() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["charging-map-probe"]; app.launch()

@@ -77,6 +77,18 @@ import Foundation
         s.soc = 10; s.now += 1; precondition(p.evaluate(s).count == 1)
         p = only(.remaining); s.remainingMinutes = 11; s.route = "집"; _ = p.evaluate(s); s.remainingMinutes = 9; s.now += 2
         precondition(p.evaluate(s).count == 1); s.now += 90; precondition(p.evaluate(s).isEmpty)
+        p = only(.remaining); p.document.rules[0].threshold = 2
+        s = sample(2000); s.gear = "D"; s.speed = 30; s.route = "연속 경로"; s.remainingMinutes = 40
+        precondition(p.evaluate(s).isEmpty)
+        for second in stride(from: 2020.0, through: 2100.0, by: 20) { s.now = second; precondition(p.evaluate(s).isEmpty) }
+        s.now = 2120; precondition(p.evaluate(s).count == 1)
+        s.now = 2125; precondition(p.evaluate(s).isEmpty)
+        for second in stride(from: 2140.0, through: 2220.0, by: 20) { s.now = second; precondition(p.evaluate(s).isEmpty) }
+        s.now = 2240; precondition(p.evaluate(s).count == 1)
+        s.now = 2245; s.remainingMinutes = 9.5; precondition(p.evaluate(s).count == 1, "Final cue must bypass periodic cooldown")
+        s.now = 2250; s.remainingMinutes = 12; precondition(p.evaluate(s).isEmpty, "ETA increase does not rearm final cue")
+        s.now = 2370; s.remainingMinutes = 8; precondition(p.evaluate(s).isEmpty, "Reconnect does not repeat final cue")
+        s.now = 2375; s.route = "새 경로"; s.remainingMinutes = 7; precondition(p.evaluate(s).count == 1)
         p = only(.boarding); var physical = AutomationRule(name: "공조", trigger: .boarding, action: .climateOn, vehicle: vin)
         try physical.validate(); p.document.rules = [physical]; _ = p.evaluate(sample(1)); precondition(p.evaluate(sample(4)).count == 1)
         p = only(.boarding); p.document.rules = [physical]; var waiting = sample(1); waiting.boardingReady = false

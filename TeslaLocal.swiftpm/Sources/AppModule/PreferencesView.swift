@@ -27,10 +27,16 @@ struct PreferencesView: View {
     @State private var floatVoicePicker = false
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
+    @AppStorage("liveActivityEnabled") private var liveActivity = true
     @ObservedObject private var typecast = TypecastClient.shared
 
     var body: some View {
         Form {
+            Section("Dynamic Island·잠금화면") {
+                Toggle("차량 연결·길안내 실시간 현황", isOn: $liveActivity)
+                    .onChange(of: liveActivity) { _, _ in model.updateLiveActivity() }
+                Caption("차량 연결 또는 길안내 중 앱 아이콘·연결 상태·남은 시간을 표시함. 수신이 오래되면 업데이트 대기로 표시함.")
+            }
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceOutputSettings()

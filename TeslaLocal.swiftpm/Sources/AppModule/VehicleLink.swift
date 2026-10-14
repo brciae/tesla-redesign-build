@@ -94,6 +94,17 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         commandUncertain = UserDefaults.standard.bool(forKey: "manualControlPending") || UserDefaults.standard.bool(forKey: "manualControlUncertain")
         if commandUncertain { UserDefaults.standard.set(true, forKey: "manualControlUncertain") }
         if commandUncertain { controlStatus = "이전 실행의 제어 결과 미확인 · 차량을 직접 확인해야 함" }
+        if supportsBackgroundRead,
+           (UserDefaults.standard.object(forKey: "backgroundBLERead") as? Bool) ?? true,
+           let vin = UserDefaults.standard.string(forKey: "ble.restoreVIN"),
+           vin.range(of: "^[A-HJ-NPR-Z0-9]{17}$", options: .regularExpression) != nil {
+            wantedVIN = vin; backgroundWanted = true
+            foreground = UIApplication.shared.applicationState == .active
+            runtime.crypto.configure(vin); runtime.controlCrypto.configure(vin)
+            expectedName = (try? runtime.call("wireInit", ["vin": vin])) as? String ?? ""
+            central = CBCentralManager(delegate: self, queue: .main,
+                options: [CBCentralManagerOptionRestoreIdentifierKey: "YLCompanion.vehicle.read"])
+        }
     }
     func enableControls(_ enabled: Bool) {
         guard !commandInFlight else { return }
@@ -343,6 +354,7 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
     func connect(vin: String) {
         foreground = UIApplication.shared.applicationState == .active
         selectVehicle(vin); userDisconnected = false; retryCount = 0
+        UserDefaults.standard.set(vin, forKey: "ble.restoreVIN")
         guard foreground else { return }
         beginConnection()
     }
@@ -353,9 +365,10 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         _ = try? runtime.call("controlContext", ["foreground": true, "enabled": controlEnabled])
         if !alreadyActive { userDisconnected = false; retryTimer?.invalidate(); retryTimer = nil }
         guard !vin.isEmpty, !userDisconnected else { return }
+        UserDefaults.standard.set(vin, forKey: "ble.restoreVIN")
         if vin != wantedVIN { selectVehicle(vin); resetTransport() }
         guard !busy, retryTimer == nil else { return }
-        if connected { if authentic { refreshNow(retryUnavailable: !alreadyActive) } else if !awaitingReply, !writeInFlight, chunks.isEmpty, !controlBusy { authenticate() }; return }
+        if connected { if authentic { startPolling(); refreshNow(retryUnavailable: !alreadyActive) } else if !awaitingReply, !writeInFlight, chunks.isEmpty, !controlBusy { authenticate() }; return }
         retryCount = 0; beginConnection()
     }
     private func beginConnection() {
@@ -371,7 +384,8 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
             trace("차량 연결 준비 · 저장된 키 사용")
             guard !expectedName.isEmpty else { throw LocalError.message("차량 식별 실패") }
             scanRequested = true; busy = true; status = "Bluetooth 준비 중"
-            if central == nil { central = CBCentralManager(delegate: self, queue: .main) }
+            if central == nil { central = CBCentralManager(delegate: self, queue: .main,
+                options: [CBCentralManagerOptionRestoreIdentifierKey: "YLCompanion.vehicle.read"]) }
             else if central?.state == .poweredOn { scan() }
             else { status = "Bluetooth 설정·권한 확인 필요"; busy = false }
         } catch { status = error.localizedDescription; busy = false }
@@ -391,6 +405,7 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         deadline?.invalidate(); let timer = Timer(timeInterval: seconds, repeats: false) { _ in action() }; deadline = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func disconnect() {
+        UserDefaults.standard.removeObject(forKey: "ble.restoreVIN")
         userDisconnected = true; backgroundWanted = false; resetTransport(); status = "연결 해제됨 · 다시 열거나 연결을 눌러 최신화"
     }
     private func resetTransport() {
@@ -402,18 +417,19 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         _ = try? runtime.call("wireAbandon")
         onReadAvailabilityChange?()
         scanRequested = false; pollTimer?.invalidate(); pollTimer = nil; deadline?.invalidate(); deadline = nil
-        central?.stopScan(); if let p = peripheral { central?.cancelPeripheralConnection(p) }
+        central?.stopScan(); if let p = peripheral, p.state != .disconnected { central?.cancelPeripheralConnection(p) }
         peripheral = nil; writer = nil; reader = nil; chunks = []; writeInFlight = false; connected = false; authentic = false; busy = false; awaitingReply = false; pairing = false; status = "차량 연결 전"
         refreshing = false; burst = []; refreshedGroups = []; sessionStartedAt = 0
     }
     func pauseForBackground() {
         foreground = false; cancelConfirmation()
         _ = try? runtime.call("controlContext", ["foreground": false, "enabled": controlEnabled])
-        if supportsBackgroundRead, connected, authentic, !controlBusy, !commandInFlight, !userDisconnected,
+        if supportsBackgroundRead, connected, !controlBusy, !commandInFlight, !userDisconnected,
            UserDefaults.standard.object(forKey: "backgroundBLERead") == nil || UserDefaults.standard.bool(forKey: "backgroundBLERead") {
             backgroundRead = true; backgroundWanted = true
             status = "백그라운드 BLE 조회 유지 · iOS 허용 범위"
             trace("백그라운드 조회 유지 · 제어 취소")
+            if !authentic, !awaitingReply, !writeInFlight, chunks.isEmpty { authenticate() }
             return
         }
         // Not connected right now (car out of range, link dropped earlier): still leave a pending
@@ -454,8 +470,25 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         poll()
     }
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state == .poweredOn { if scanRequested { scan() } else if foreground, !userDisconnected, !wantedVIN.isEmpty, !connected { beginConnection() } }
+        if central.state == .unknown || central.state == .resetting {
+            status = "Bluetooth 준비 대기 · 저장된 연결 유지"
+            return
+        }
+        if central.state == .poweredOn { if scanRequested { scan() } else if foreground, !busy, !userDisconnected, !wantedVIN.isEmpty, !connected { beginConnection() } }
         else { resetTransport(); status = central.state == .unauthorized ? "Bluetooth 권한이 필요함" : "Bluetooth 사용 불가 · 켜지면 자동 재검색" }
+    }
+    func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        guard !userDisconnected, !wantedVIN.isEmpty,
+              let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
+              let id = UserDefaults.standard.string(forKey: "blePeripheral." + wantedVIN),
+              let restored = peripherals.first(where: { $0.identifier.uuidString == id }) else { return }
+        // Restore only state reads. Authentication/commands are never restored or replayed.
+        peripheral = restored; restored.delegate = self; busy = true; backgroundWanted = true
+        backgroundRead = !foreground
+        _ = try? runtime.call("controlContext", ["foreground": false, "enabled": controlEnabled])
+        trace("iOS Bluetooth 상태 복원 · 조회 재인증")
+        if restored.state == .connected { restored.discoverServices([service]) }
+        else if restored.state != .connecting { central.connect(restored) }
     }
     func centralManager(_ central: CBCentralManager, didDiscover p: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? p.name ?? ""
@@ -484,6 +517,15 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
     /// A pending CoreBluetooth connect has no timeout and completes when the car is back in range,
     /// even while the phone is locked (bluetooth-central background mode).
     private func backgroundReconnect(_ p: CBPeripheral) {
+        // Wait for cancellation to finish before reusing the same peripheral. Cancelling and
+        // reconnecting immediately lets the old disconnect callback cancel the new attempt.
+        if p.state == .connected {
+            backgroundWanted = true
+            central?.cancelPeripheralConnection(p)
+            return
+        }
+        if p.state == .disconnecting { backgroundWanted = true; return }
+        if p.state == .connecting { backgroundWanted = true; busy = true; return }
         trace("백그라운드 연결 끊김 · 차량 재접속 대기")
         let vin = wantedVIN
         resetTransport()
@@ -685,7 +727,7 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         // Transport/protocol errors must not leave an idle, unauthenticated link.
         // Registration/permission failures require explicit vehicle approval.
         let needsApproval = message.contains("키 미등록") || message.contains("키 권한") || message.contains("not registered")
-        if !needsApproval, foreground, !userDisconnected, !wantedVIN.isEmpty {
+        if !needsApproval, readAllowed, !userDisconnected, !wantedVIN.isEmpty {
             recoverTransport(message); return
         }
         // Never reuse a transport with an unfinished write. A healthy idle BLE

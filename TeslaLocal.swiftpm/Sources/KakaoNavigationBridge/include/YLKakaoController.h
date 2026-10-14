@@ -7,6 +7,12 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) BOOL guiding;
 @property(nonatomic, readonly, nullable) UIImage *junctionImage;
 @property(nonatomic, readonly) double junctionDistance;
+@property(nonatomic, readonly) BOOL offlineMapDownloaded;
+- (void)downloadOfflineMap NS_SWIFT_NAME(downloadOfflineMap());
+- (void)pauseOfflineMapDownload NS_SWIFT_NAME(pauseOfflineMapDownload());
+- (void)useOfflineMap:(BOOL)enabled NS_SWIFT_NAME(useOfflineMap(_:));
+- (BOOL)refreshTrafficRoute NS_SWIFT_NAME(refreshTrafficRoute());
+- (void)configureAutoTrafficReroute:(BOOL)enabled NS_SWIFT_NAME(configureAutoTrafficReroute(_:));
 - (void)configureMapAnchorX:(double)x y:(double)y NS_SWIFT_NAME(configureMapAnchor(x:y:));
 - (void)configureMapTheme:(NSString *)theme NS_SWIFT_NAME(configureMapTheme(_:));
 /// "arrow.blue" | "arrow.green" | "arrow.orange" | "car" — the map's own-vehicle marker.

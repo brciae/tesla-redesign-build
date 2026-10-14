@@ -5,6 +5,15 @@ static void check(BOOL value, NSString *message) {
     if (!value) { NSLog(@"FAIL: %@", message); exit(1); }
 }
 int main(void) { @autoreleasepool {
+    check(YLNavigationPositionUsable(YES, 1, 1, YES), @"Fresh matched GPS usable");
+    check(YLNavigationPositionUsable(YES, 90, 1, YES), @"Current valid SDK route estimate survives raw GPS loss");
+    check(!YLNavigationPositionUsable(YES, 90, 9, YES), @"Stale callback is not dead reckoning");
+    check(!YLNavigationPositionUsable(NO, 1, 1, YES), @"Invalid matched result rejected");
+    check(!YLNavigationPositionUsable(YES, 90, 1, NO), @"Old standalone GPS not revived by callback");
+    check([YLHumpClusterDistances(80, @[@500, @210, @350]) isEqual:@[@80, @210, @350, @500]], @"Consecutive humps are sorted and grouped along route");
+    check([YLHumpClusterDistances(80, @[@400, @500]) isEqual:@[@80]], @"Separate hump sections remain separate");
+    check([YLHumpClusterDistances(80, @[@-1, @50, @80, @200, @200]) isEqual:@[@80, @200]], @"Passed and duplicate points excluded");
+    check(YLHumpClusterDistances(80, @[@300, @550, @800, @1050, @1300]).count == 5, @"Long cluster has bounded lookahead");
     check([YLNavigationSpeech(14, nil, nil, 200) isEqual:@"200미터 앞, 고가도로로 진입하세요."], @"Overpass must not say generic proceed");
     check([YLNavigationSpeech(17, nil, nil, 200) containsString:@"지하차도 옆길"], @"Underpass side road differs from entering underpass");
     check([YLNavigationSpeech(2, @"교차로", @[@"서울", @"서울", @"  "], 200) isEqual:@"200미터 앞, 서울 방면, 우회전하세요."], @"Use direction signs once without reading screen labels");

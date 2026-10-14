@@ -11,6 +11,13 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     @Published var isAnalyzing = false
     @Published var showCapturePrompt = false
     @Published var currentPhoneLocation: CLLocation?
+    var usablePhoneLocation: CLLocation? {
+        guard [.authorizedAlways, .authorizedWhenInUse].contains(locationManager.authorizationStatus),
+              let point = currentPhoneLocation, (-5...30).contains(-point.timestamp.timeIntervalSinceNow),
+              point.horizontalAccuracy >= 0, point.horizontalAccuracy <= 100,
+              CLLocationCoordinate2DIsValid(point.coordinate), !(point.coordinate.latitude == 0 && point.coordinate.longitude == 0) else { return nil }
+        return point
+    }
     @Published var fleetParkingStatus = "주차 상태 미수신"
     private var fleetSample: FleetVehicleSnapshot?
     @Published private(set) var vehicleTelemetry: Object = [:]
@@ -21,7 +28,9 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
               !["D", "R", "N"].contains(drive.string("gear")), (drive.number("speedKmh") ?? 0) <= 0,
               location.flag("hasCoordinates"), let lat = location.number("latitude"), let lon = location.number("longitude"),
               CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)), !(lat == 0 && lon == 0),
-              let at = location.number("gpsAt") ?? location.number("at"), at > 0, at <= Date().timeIntervalSince1970 * 1000 + 5000 else { return false }
+              location.string("positionStatus") != "gpsUnavailable", location["estimatedGPSValid"] as? Bool != false,
+              let at = location.number("gpsAt") ?? location.number("at"), at > 0,
+              (-5...120).contains(Date().timeIntervalSince1970 - at / 1000) else { return false }
         return true
     }
     private var recordRevision = 0
@@ -50,13 +59,22 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy < 100,
-              abs(loc.timestamp.timeIntervalSinceNow) <= 30 else { return }
+              (-5...30).contains(-loc.timestamp.timeIntervalSinceNow),
+              CLLocationCoordinate2DIsValid(loc.coordinate), !(loc.coordinate.latitude == 0 && loc.coordinate.longitude == 0) else { return }
         self.currentPhoneLocation = loc
         self.lastKnownValidCoordinates = (loc.coordinate.latitude, loc.coordinate.longitude)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Fallback to vehicle GPS or cached coordinates if phone GPS fails
+        currentPhoneLocation = nil
+    }
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if [.authorizedAlways, .authorizedWhenInUse].contains(manager.authorizationStatus) {
+            manager.startUpdatingLocation()
+        } else {
+            currentPhoneLocation = nil
+            manager.stopUpdatingLocation()
+        }
     }
 
     // MARK: - Persistence
@@ -135,6 +153,11 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         let location = telemetry.object("location")
         let coordinateAt = (location.number("gpsAt") ?? location.number("at")).map { Date(timeIntervalSince1970: $0 / 1000) }
         guard let coordinateAt, coordinateAt.timeIntervalSince1970 > 0, coordinateAt.timeIntervalSinceNow <= 5 else { return }
+        if !confirmed, (Date().timeIntervalSince(coordinateAt) > 120 ||
+            location.string("positionStatus") == "gpsUnavailable" || location["estimatedGPSValid"] as? Bool == false) {
+            fleetParkingStatus = "현재 차량 위치 확인 중 · 이전 주차 위치 보존"
+            return
+        }
         let departed = UserDefaults.standard.bool(forKey: "parking.departed." + vin)
         let samePlace: Bool = {
             guard !departed else { return false }
@@ -208,13 +231,23 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     @MainActor private func autoSaveUnifiedRecord(vehicleTelemetry: Object, newArrival: Bool, vin: String) async {
         let revision = recordRevision
         if !newArrival, latestRecord != nil { return }
+        let location = vehicleTelemetry.object("location")
+        guard location.string("positionStatus", "available") == "available", location["estimatedGPSValid"] as? Bool != false,
+              let measured = location.number("gpsAt") ?? location.number("at"),
+              (-5...45).contains(Date().timeIntervalSince1970 - measured / 1000),
+              let lat = location.number("latitude"), let lon = location.number("longitude"),
+              CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)), !(lat == 0 && lon == 0) else {
+            fleetParkingStatus = "새 주차 위치 확인 중 · 이전 기록 보존"
+            return
+        }
+        let observedAt = Date(timeIntervalSince1970: measured / 1000)
 
         // 1. Extract vehicle snapshot
         let vehicleSnapshot = self.buildVehicleSnapshot(from: vehicleTelemetry)
 
         // 2. Extract mobile snapshot
         var mobileSnapshot = MobileParkingSnapshot()
-        let phoneLoc = self.currentPhoneLocation
+        let phoneLoc = self.usablePhoneLocation
         if let loc = phoneLoc, abs(loc.timestamp.timeIntervalSinceNow) <= 30 {
             mobileSnapshot.mobileLatitude = loc.coordinate.latitude
             mobileSnapshot.mobileLongitude = loc.coordinate.longitude
@@ -248,7 +281,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
         var record = SmartParkingRecord(
             id: UUID(),
-            timestamp: Date(),
+            timestamp: observedAt,
             locationType: locType,
             vehicle: vehicleSnapshot,
             mobile: mobileSnapshot,
@@ -256,7 +289,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         )
 
         record.vehicleID = vin.isEmpty ? nil : vin
-        record.vehicleUpdatedAt = Date()
+        record.vehicleUpdatedAt = observedAt
         DispatchQueue.main.async {
             guard ParkingWritePolicy.canComplete(revision: revision, currentRevision: self.recordRevision, vin: vin, selectedVIN: self.selectedVehicleID) else { return }
             self.saveRecord(record)
@@ -429,10 +462,13 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
         // 1. Location Cross-Verification
         if let vLat = vehicle.vehicleLatitude, let vLng = vehicle.vehicleLongitude, !(vLat == 0 && vLng == 0),
-           let mLat = mobile.mobileLatitude, let mLng = mobile.mobileLongitude, !(mLat == 0 && mLng == 0) {
+           let mLat = mobile.mobileLatitude, let mLng = mobile.mobileLongitude, !(mLat == 0 && mLng == 0),
+           CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: vLat, longitude: vLng)),
+           CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: mLat, longitude: mLng)) {
             let vLoc = CLLocation(latitude: vLat, longitude: vLng)
             let mLoc = CLLocation(latitude: mLat, longitude: mLng)
             let dist = vLoc.distance(from: mLoc)
+            guard dist.isFinite, dist >= 0 else { return ver }
             ver.locationDistanceMeters = dist
 
             if dist < 60 {
@@ -629,6 +665,9 @@ enum VehicleStateMerge {
             let existing = older.object(name).filter { !($0.value is NSNull) }
             let inAt = fresh.number("at") ?? 0, exAt = existing.number("at") ?? 0
             var merged = inAt >= exAt ? existing.merging(fresh) { _, new in new } : fresh.merging(existing) { _, old in old }
+            // Coordinates and their validity/time are one observation. Filling missing/invalid
+            // coordinates from an older fix falsely promotes that old fix to the newer timestamp.
+            if name == "location" { merged = inAt >= exAt ? incoming : older.object(name) }
             if name == "closures", let a = fresh["locked"] as? Bool, let b = existing["locked"] as? Bool, a != b, abs(inAt - exAt) <= 60000 {
                 merged["sourceConflict"] = true
             } else if name == "closures" {

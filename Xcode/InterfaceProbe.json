@@ -71,7 +71,18 @@
     },
     "../TeslaLocal.swiftpm/Sources/AppModule/TirePressureDiagram.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeCostViews.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeCostViews.swift",
+    {
+     "path": "LiveActivityShared"
+    },
+    {
+     "path": "IslandAssets.xcassets"
+    },
+    {
+     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/character",
+     "type": "folder",
+     "buildPhase": "resources"
+    }
    ],
    "settings": {
     "base": {
