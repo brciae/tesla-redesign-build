@@ -10,7 +10,7 @@ struct BatteryOverview: View {
     private static let batteryChartDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "ko_KR")
-        f.dateFormat = "M/d HH시"
+        f.dateFormat = "M/d HH:mm"
         return f
     }()
 
@@ -92,7 +92,9 @@ struct BatteryOverview: View {
                     }
                 }.chartYScale(domain: 0...100)
                     .chartYAxis { AxisMarks(position: .leading, values: [0, 20, 40, 60, 80, 100]) { _ in AxisGridLine(); AxisValueLabel() } }
-                    .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { AxisValueLabel(format: .dateTime.month(.defaultDigits).day()) } }
+                    .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                        AxisValueLabel { if let date = value.as(Date.self) { Text(Self.batteryChartDateFormatter.string(from: date)).font(.caption2) } }
+                    } }
                     .frame(height: 180).accessibilityIdentifier("battery.soc.chart")
             }
         }
