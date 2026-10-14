@@ -143,7 +143,6 @@ struct FullscreenNavigationProbe: View {
                     }
                 }
             }.frame(height: 44)
-            if ProcessInfo.processInfo.arguments.contains("shade-probe") { DashboardShadeControl().padding(8) }
             if !stopped { ParkedNavigationActions { stopped = true } }
             else { Text("안내 종료됨").accessibilityIdentifier("fullscreen.stopped") }
             if ProcessInfo.processInfo.arguments.contains("junction-probe") {
@@ -186,6 +185,7 @@ struct NavigationProbe: View {
                     }
                 }.padding(.horizontal, 8)
             }.frame(height: 44)
+            if ProcessInfo.processInfo.arguments.contains("shade-probe") { DashboardShadeControl().padding(8) }
             if ProcessInfo.processInfo.arguments.contains("parked-route-probe") {
                 if routeStopped { Text("자유주행").accessibilityIdentifier("navigation.stopped") }
                 else { ParkedNavigationActions { routeStopped = true } }
