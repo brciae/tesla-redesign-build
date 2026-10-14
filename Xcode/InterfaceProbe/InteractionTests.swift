@@ -74,6 +74,10 @@ final class InteractionTests: XCTestCase {
         app.buttons["실제 실시간 현황 시작"].tap()
         XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 8))
         XCUIDevice.shared.press(.home)
+        // Activity.request returns before the widget service finishes its first snapshot.
+        let snapshotDelay = expectation(description: "Widget service first snapshot")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { snapshotDelay.fulfill() }
+        wait(for: [snapshotDelay], timeout: 6)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "Actual ActivityKit widget extension on home screen"; shot.lifetime = .keepAlways; add(shot)
         app.activate()

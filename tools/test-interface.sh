@@ -25,6 +25,13 @@ xcodebuild test -project Xcode/InterfaceProbe.xcodeproj -scheme InterfaceProbe \
   -retry-tests-on-failure -test-iterations 2 \
   "${test_filter[@]}" -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO || test_status=$?
 mkdir -p Xcode/BuildOutput/InterfaceScreens
+xcrun simctl spawn "$device_id" log show --last 30m --style compact --predicate '(process == "chronod" OR process == "liveactivitiesd" OR process == "SpringBoard" OR process == "ProbeLiveActivity") AND (eventMessage CONTAINS[c] "ylcompanion" OR eventMessage CONTAINS[c] "error" OR eventMessage CONTAINS[c] "widget")' > Xcode/BuildOutput/InterfaceScreens/live-activity-system.log 2>&1 || true
+for info in Xcode/ProbeDerivedData/Build/Products/Debug-iphonesimulator/InterfaceProbe.app/Info.plist Xcode/ProbeDerivedData/Build/Products/Debug-iphonesimulator/InterfaceProbe.app/PlugIns/ProbeLiveActivity.appex/Info.plist; do
+  if [ -f "$info" ]; then
+    echo "$info" >> Xcode/BuildOutput/InterfaceScreens/live-activity-bundles.log
+    plutil -p "$info" >> Xcode/BuildOutput/InterfaceScreens/live-activity-bundles.log
+  fi
+done
 xcrun xcresulttool export attachments --path Xcode/InterfaceResults.xcresult --output-path Xcode/BuildOutput/InterfaceScreens
 if [ "$test_status" -ne 0 ]; then
   xcrun xcresulttool export diagnostics --path Xcode/InterfaceResults.xcresult --output-path Xcode/BuildOutput/InterfaceScreens/Diagnostics || true
