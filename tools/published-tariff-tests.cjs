@@ -17,6 +17,8 @@ assert.equal(q(e,{chargeOperator:'(주)지에스차지비'}).estimatedCost,4700)
 assert.equal(q(e,{chargeOperator:'LG유플러스',memberPricing:false}).estimatedCost,null,'missing nonmember never becomes member price');
 assert.equal(q(e,{chargeOperator:'볼트업',memberPricing:true}).estimatedCost,2950);
 assert.equal(q(e,{chargeOperator:'GS차지비',memberPricing:true,chargerRatedKW:3}).estimatedCost,null,'metered outlet is a different product');
+assert.equal(q(e,{chargeOperator:'GS차지비',memberPricing:true}).estimatedCost,null,'member AC power band must be known');
+assert.equal(q(e,{chargeOperator:'GS차지비',memberPricing:true,chargerRatedKW:7}).estimatedCost,2950);
 assert.equal(q(e,{chargeOperator:'파워큐브',memberPricing:true}).estimatedCost,null,'high/low-voltage ambiguity is not silently resolved');
 assert.equal(q(e,{chargeType:'dc',memberPricing:true}).estimatedCost,null,'unknown DC power band');
 assert.equal(q(e,{chargeOperator:'해피차저',chargeType:'dc'}).estimatedCost,5500);

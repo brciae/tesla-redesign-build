@@ -189,11 +189,12 @@ struct PublishedChargeRatePreview: View {
     @EnvironmentObject private var model: AppModel
     let operatorName: String
     let kind: String
+    var ratedKW: Double? = nil
     @State private var quote: Object = [:]
     private var key: String {
         let membership = ((model.settings["chargeMemberOperators"] as? [String]) ?? []).joined(separator: "|")
         let rules = model.settings.rows("chargeRates").map { $0.string("scope") + $0.string("match") + $0.string("kind") + String($0.number("rate") ?? -1) }.joined(separator: "|")
-        return operatorName + "|" + kind + "|" + membership + "|" + rules
+        return operatorName + "|" + kind + "|" + String(ratedKW ?? -1) + "|" + membership + "|" + rules
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -204,7 +205,9 @@ struct PublishedChargeRatePreview: View {
             if !quote.string("tariffCondition").isEmpty { Text(quote.string("tariffCondition")).font(.caption2).foregroundStyle(.secondary) }
             NavigationLink("단가·회원가 설정") { PublishedChargeRateSettings() }.font(.caption)
         }.task(id: key) {
-            quote = (try? model.runtime.call("chargeTariffQuote", ["at": Date().timeIntervalSince1970 * 1000, "chargeOperator": operatorName, "chargeType": kind])) as? Object ?? [:]
+            var request: Object = ["at": Date().timeIntervalSince1970 * 1000, "chargeOperator": operatorName, "chargeType": kind]
+            if let ratedKW { request["chargerRatedKW"] = ratedKW }
+            quote = (try? model.runtime.call("chargeTariffQuote", request)) as? Object ?? [:]
         }
     }
 }

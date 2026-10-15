@@ -73,6 +73,7 @@ struct NearbyChargingSite: Identifiable {
     var categoryAvailability: [String: String] = [:]
     var providerID = ""
     var providerName = ""
+    var tariffRatedKW: Double?
     var category: String {
         if kind.contains("급속") || kind == "완속" { return kind }
         if kind == "슈퍼차저" { return "슈퍼차저" }

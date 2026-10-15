@@ -418,8 +418,10 @@ final class AppModel: ObservableObject {
             let sites = await PublicChargingAPI.shared.cachedIdentitySites()
             guard !Task.isCancelled, !self.demo, !self.recoveryLock, self.settings.string("vin") == vin else { return }
             let rows: [Object] = sites.prefix(20000).map { site in
-                ["id": site.id, "name": site.name, "operator": site.providerName, "latitude": site.latitude, "longitude": site.longitude,
+                var row: Object = ["id": site.id, "name": site.name, "operator": site.providerName, "latitude": site.latitude, "longitude": site.longitude,
                  "kind": site.category == "완속" ? "ac" : site.category == "급속" ? "dc" : "unknown"]
+                if let power = site.tariffRatedKW { row["ratedKW"] = power }
+                return row
             }
             if (try? self.runtime.call("enrichChargeSites", ["vin": vin, "sites": rows])) as? Bool == true {
                 self.refresh(detailed: true); self.saveRecordsWhenAvailable(force: true)

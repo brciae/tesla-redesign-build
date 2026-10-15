@@ -245,10 +245,12 @@
     if(rate==null&&catalog){
       const effective=Date.parse((catalog.from??catalog.checked)+'T00:00:00+09:00');
       const publicRate=isMember?catalog.member:catalog.nonmember;
-      const acPower=c.chargerRatedKW;
+      const acPower=c.chargerRatedKW??c.siteMatch?.ratedKW;
+      const memberPowerUnknown=isMember&&kind==='ac'&&(['GS차지비','채비','해피차저'].includes(catalog.operator))&&!num(acPower,0.1,1000);
       const powerExcluded=kind==='ac'&&num(acPower,0,1000)&&((catalog.operator==='GS차지비'&&(acPower<=3||acPower>=30))||(catalog.operator==='채비'&&acPower>=30)||(catalog.operator==='플러그링크'&&acPower>=40)||(catalog.operator==='볼트업'&&acPower>=50));
-      if(c.roamingPricing||c.at<effective||powerExcluded||!num(publicRate,0,10000)){
-        result.costRateSource=c.roamingPricing?'로밍 단가 별도 확인 필요':c.at<effective?'해당 충전일의 사업자 공시 단가 미확인':powerExcluded?'충전기 출력 구간별 단가 확인 필요':(isMember?'회원':'비회원')+' 공시 단가 미확인';
+      const productMismatch=isMember&&catalog.operator==='해피차저'&&kind==='ac'&&acPower!==7;
+      if(c.roamingPricing||c.at<effective||powerExcluded||memberPowerUnknown||productMismatch||!num(publicRate,0,10000)){
+        result.costRateSource=c.roamingPricing?'로밍 단가 별도 확인 필요':c.at<effective?'해당 충전일의 사업자 공시 단가 미확인':(powerExcluded||memberPowerUnknown||productMismatch)?'충전기 출력 구간별 단가 확인 필요':(isMember?'회원':'비회원')+' 공시 단가 미확인';
         return result;
       }
       rate=publicRate;source='사업자 공식 '+(isMember?'자체 회원가':'비회원가')+' · '+catalog.checked+' 확인 · 현장 예외 요금 미확인';
@@ -771,7 +773,7 @@
         const groups=new Map();for(const p of candidates)groups.set(p.id,p);
         if(groups.size!==1)continue; // Several operators/places in a basement cannot be distinguished by GPS.
         const p=[...groups.values()][0];
-        c.siteMatch={id:p.id,name:text(p.name,120),operator:canonicalOperator(p.operator),matchedAt:Date.now(),source:'공공 충전소 위치 대조 · 추정'};
+        c.siteMatch={id:p.id,name:text(p.name,120),operator:canonicalOperator(p.operator),ratedKW:num(p.ratedKW,0.1,1000)?p.ratedKW:null,matchedAt:Date.now(),source:'공공 충전소 위치 대조 · 추정'};
         if(!c.chargeType&&['ac','dc'].includes(p.kind))c.chargeType=p.kind;
         changed=true;
       }
