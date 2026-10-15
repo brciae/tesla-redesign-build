@@ -219,7 +219,7 @@ struct FleetSupplementView: View {
                     if !site.chargingDetail.isEmpty { Text(site.chargingDetail).font(.caption) }
                     if !site.providerName.isEmpty {
                         Text(site.providerName).font(.caption)
-                        PublishedChargeRatePreview(operatorName: site.providerName, kind: site.category == "완속" ? "ac" : site.category == "급속" ? "dc" : "unknown", ratedKW: site.tariffRatedKW)
+                        PublishedChargeRatePreview(operatorName: site.providerName, kind: category == "완속" || site.category == "완속" ? "ac" : category == "급속" || site.category == "급속" ? "dc" : "unknown", ratedKW: site.tariffRatedKW)
                     }
                     if !site.restriction.isEmpty { Text(site.restriction).font(.caption).foregroundStyle(.orange) }
                     if let at = site.fetchedAt { Text("조회 " + at.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
