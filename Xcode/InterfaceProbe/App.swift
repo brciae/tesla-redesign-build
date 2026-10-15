@@ -880,7 +880,7 @@ struct PublishedTariffProbe: View {
             ChargeCostDetails(charge: quote)
             NavigationLink("사업자 전체 요금표") { PublishedChargeRateSettings() }
         }.navigationTitle("사업자 단가 검증") }.environmentObject(model)
-            .onAppear { if !ready { ready = true; model.enterDemo(); model.mutate("settings", ["chargeRates": [], "chargeMemberOperators": []]) } }
+            .onAppear { if !ready { ready = true; model.mutate("settings", ["chargeRates": [], "chargeMemberOperators": []]) } }
     }
 }
 struct ChargeCostProbe: View {
