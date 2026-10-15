@@ -110,6 +110,15 @@ final class InteractionTests: XCTestCase {
         wait(for: [snapshotDelay], timeout: 6)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "Actual ActivityKit widget extension on home screen"; shot.lifetime = .keepAlways; add(shot)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        // A successful Activity.request alone does not prove the extension rendered.
+        let island = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.038))
+        island.press(forDuration: 1.2)
+        let rendered = springboard.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 10)
+        let expandedShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        expandedShot.name = "Actual Live Activity expanded rendering verification"
+        expandedShot.lifetime = .keepAlways; add(expandedShot)
+        XCTAssertTrue(rendered, "ActivityKit request succeeded but the real widget extension did not render guidance")
         app.activate()
         XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 5))
         app.buttons["음악 동시 표시 시험"].tap()

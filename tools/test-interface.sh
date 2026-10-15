@@ -13,6 +13,8 @@ if [[ "${1:-}" == fullscreen ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testFullscreenChromeAcrossThemesAndRotation)
 elif [[ "${1:-}" == junction ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit)
+elif [[ "${1:-}" == island ]]; then
+  test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testActualLiveActivityExtensionOnHomeScreen)
 elif [[ "${1:-}" == new ]]; then
   test_filter=(
       -only-testing:InterfaceProbeTests/InteractionTests/testTripEnergyForecastAcrossThemesAndRotation
@@ -35,11 +37,24 @@ elif [[ "${1:-}" == new ]]; then
   )
 fi
 test_status=0
+mkdir -p Xcode/BuildOutput/InterfaceScreens
+# Capture while the simulator is alive: xcodebuild may shut its test device down on exit.
+collect_activity_logs() {
+  while true; do
+    for booted in $(xcrun simctl list devices booted -j | python3 -c 'import json,sys; print(" ".join(v["udid"] for a in json.load(sys.stdin)["devices"].values() for v in a if v["state"] == "Booted"))'); do
+      xcrun simctl spawn "$booted" log show --last 20s --style compact --predicate '(process == "chronod" OR process == "liveactivitiesd" OR process == "SpringBoard" OR process == "ProbeLiveActivity" OR process == "runningboardd" OR process == "chronod") AND (eventMessage CONTAINS[c] "ylcompanion" OR eventMessage CONTAINS[c] "activity" OR eventMessage CONTAINS[c] "widget" OR eventMessage CONTAINS[c] "signature")' >> Xcode/BuildOutput/InterfaceScreens/live-activity-during-test.log 2>&1 || true
+    done
+    sleep 15
+  done
+}
+collect_activity_logs &
+activity_log_pid=$!
 xcodebuild test -project Xcode/InterfaceProbe.xcodeproj -scheme InterfaceProbe \
   -destination "platform=iOS Simulator,id=$device_id" -destination-timeout 90 \
   -derivedDataPath Xcode/ProbeDerivedData -resultBundlePath Xcode/InterfaceResults.xcresult \
   -retry-tests-on-failure -test-iterations 2 \
-  "${test_filter[@]}" -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO || test_status=$?
+  "${test_filter[@]}" -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- || test_status=$?
+kill "$activity_log_pid" 2>/dev/null || true
 mkdir -p Xcode/BuildOutput/InterfaceScreens
 xcrun simctl spawn "$device_id" log show --last 30m --style compact --predicate '(process == "chronod" OR process == "liveactivitiesd" OR process == "SpringBoard" OR process == "ProbeLiveActivity") AND (eventMessage CONTAINS[c] "ylcompanion" OR eventMessage CONTAINS[c] "error" OR eventMessage CONTAINS[c] "widget")' > Xcode/BuildOutput/InterfaceScreens/live-activity-system.log 2>&1 || true
 for info in Xcode/ProbeDerivedData/Build/Products/Debug-iphonesimulator/InterfaceProbe.app/Info.plist Xcode/ProbeDerivedData/Build/Products/Debug-iphonesimulator/InterfaceProbe.app/PlugIns/ProbeLiveActivity.appex/Info.plist; do
