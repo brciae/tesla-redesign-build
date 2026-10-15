@@ -198,7 +198,7 @@
     {operator:'채비',aliases:['대영채비','chaevi','채비(주)'],kind:'ac',member:275,nonmember:null,from:'2025-03-20',url:'https://www.chaevi.com/kr/customer/notice.php?bgu=view&idx=496',condition:'2025-03-20 완속 회원 공지 · 중속 30kW 315원/kWh · 비회원가/이후 변경 미확인 · 위탁/구독 할인 제외'}
   ].map((r,i)=>({...r,id:'public-tariff-'+i,checked:'2026-10-15'}));
   const canonicalOperator=value=>{const clean=v=>rateKey(v).replace(/주식회사|\(주\)/g,'');const key=clean(value);return tariffCatalog.find(r=>[r.operator,...r.aliases].some(n=>clean(n)===key))?.operator??String(value??'').trim();};
-  const memberPricing=(c,s)=>typeof c.memberPricing==='boolean'?c.memberPricing:(s.chargeMemberOperators??[]).some(x=>canonicalOperator(x)===canonicalOperator(c.chargeOperator||c.siteMatch?.operator));
+  const memberPricing=(c,s)=>typeof c.memberPricing==='boolean'?c.memberPricing:(s.chargeMemberOperators??[]).some(x=>rateKey(canonicalOperator(x))===chargeIdentity(c,s).operator);
   function validateRates(s){
     if(s.chargeMemberOperators!=null&&(!Array.isArray(s.chargeMemberOperators)||s.chargeMemberOperators.length>100||s.chargeMemberOperators.some(x=>typeof x!=='string'||x.length>120)))throw Error('회원가 사업자 설정 오류');
     for(const k of ['fastTariff','superchargerTariff'])if(!optional(s[k],0,10000))throw Error('충전 단가 범위 오류');

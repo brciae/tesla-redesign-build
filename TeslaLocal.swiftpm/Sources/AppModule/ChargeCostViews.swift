@@ -190,7 +190,11 @@ struct PublishedChargeRatePreview: View {
     let operatorName: String
     let kind: String
     @State private var quote: Object = [:]
-    private var key: String { operatorName + "|" + kind + "|" + ((model.settings["chargeMemberOperators"] as? [String]) ?? []).joined(separator: "|") }
+    private var key: String {
+        let membership = ((model.settings["chargeMemberOperators"] as? [String]) ?? []).joined(separator: "|")
+        let rules = model.settings.rows("chargeRates").map { $0.string("scope") + $0.string("match") + $0.string("kind") + String($0.number("rate") ?? -1) }.joined(separator: "|")
+        return operatorName + "|" + kind + "|" + membership + "|" + rules
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if quote.string("tariffURL").isEmpty { Text("사업자 공식 단가 미확인").font(.caption) }

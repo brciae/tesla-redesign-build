@@ -7,6 +7,7 @@ assert.equal(q(e).estimatedCost,3570,'default is nonmember');
 assert.equal(q(e).memberPricingApplied,false);
 e.settings({chargeMemberOperators:['플러그링크']});
 assert.equal(q(e).estimatedCost,2920);
+assert.equal(q(e,{chargeOperator:undefined,place:'플러그링크 샘플 단지'}).estimatedCost,2920,'place-derived operator uses the same membership selection');
 assert.equal(q(e,{memberPricing:false}).estimatedCost,3570,'per-record nonmember override');
 assert.equal(q(e,{roamingPricing:true}).estimatedCost,null,'roaming is not own-member billing');
 assert.equal(q(e,{at:Date.parse('2026-07-31T12:00:00+09:00')}).estimatedCost,null,'no retroactive public tariff');
