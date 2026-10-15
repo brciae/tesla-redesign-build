@@ -183,7 +183,24 @@
   }
   // Estimates are derived at read time. Never overwrite a paid amount or learn from an estimate.
   const rateKey=v=>String(v??'').toLowerCase().replace(/\s+/g,'').trim();
+  // Public standard tariffs checked 2026-10-15. Unknown prices stay null.
+  // No inferred roaming direction, card discount, subscription or negotiated site price.
+  const tariffCatalog=[
+    {operator:'플러그링크',aliases:['pluglink'],kind:'ac',member:292,nonmember:357,from:'2026-08-01',url:'https://pluglink.kr/charge',condition:'완속 40kW 미만 · 비회원 IC 카드 결제 가능 기기 · 별도 협의 장소 제외'},
+    {operator:'플러그링크',aliases:['pluglink'],kind:'dc',member:null,nonmember:528,from:'2026-08-01',url:'https://pluglink.kr/charge',condition:'40kW 이상 · 회원가는 출력 구간 확인 필요 · 비회원 IC 카드 결제 가능 기기'},
+    {operator:'GS차지비',aliases:['차지비','gschargev','chargev','지에스차지비'],kind:'ac',member:295,nonmember:470,from:'2026-08-01',url:'https://www.gschargev.co.kr/pricing.html',condition:'일반 완속 3kW 초과 30kW 미만 · 서울시 지원사업/과금형 3kW/개별 요금 제외'},
+    {operator:'GS차지비',aliases:['차지비','gschargev','chargev','지에스차지비'],kind:'dc',member:null,nonmember:470,from:'2026-08-01',url:'https://www.gschargev.co.kr/pricing.html',condition:'일반 급속 50kW 이상 · 회원가는 커넥터 정격 출력 확인 필요 · 서울시 지원사업 제외'},
+    {operator:'볼트업',aliases:['LG유플러스','LG유플러스볼트업','LG U+','voltup','엘지유플러스볼트업'],kind:'ac',member:295,nonmember:null,from:null,url:'https://voltup.kr/',condition:'50kW 미만 · 비회원가 미확인 · 주말/공휴일 프로모션 별도'},
+    {operator:'볼트업',aliases:['LG유플러스','LG유플러스볼트업','LG U+','voltup','엘지유플러스볼트업'],kind:'dc',member:350,nonmember:null,from:null,url:'https://voltup.kr/',condition:'50kW 이상 · 비회원가 미확인 · 제휴 충전소 제외'},
+    {operator:'해피차저',aliases:['한국전기차충전서비스','한국전기차충전서비스(주)','happecharger','happycharger'],kind:'ac',member:298,nonmember:null,from:null,url:'https://tweb.happecharger.com/happecharger/membership',condition:'해피차저·현대엔지니어링 완속 7kW · 비회원 완속가는 표 구간 확인 필요'},
+    {operator:'해피차저',aliases:['한국전기차충전서비스','한국전기차충전서비스(주)','happecharger','happycharger'],kind:'dc',member:398,nonmember:550,from:null,url:'https://tweb.happecharger.com/happecharger/membership',condition:'해피차저·현대엔지니어링 급속 50kW 이상 · 로밍 제외'},
+    {operator:'파워큐브',aliases:['파워큐브코리아','powercube','(주)파워큐브코리아'],kind:'ac',member:null,nonmember:null,from:'2025-01-06',url:'https://www.powercube.co.kr/noticedetail.php?idx=13212',condition:'완속 고압 295·저압 309원/kWh · 과금형 콘센트 269원/kWh · 전압/상품/회원 조건 확인 필요'},
+    {operator:'채비',aliases:['대영채비','chaevi','채비(주)'],kind:'ac',member:275,nonmember:null,from:'2025-03-20',url:'https://www.chaevi.com/kr/customer/notice.php?bgu=view&idx=496',condition:'2025-03-20 완속 회원 공지 · 중속 30kW 315원/kWh · 비회원가/이후 변경 미확인 · 위탁/구독 할인 제외'}
+  ].map((r,i)=>({...r,id:'public-tariff-'+i,checked:'2026-10-15'}));
+  const canonicalOperator=value=>{const clean=v=>rateKey(v).replace(/주식회사|\(주\)/g,'');const key=clean(value);return tariffCatalog.find(r=>[r.operator,...r.aliases].some(n=>clean(n)===key))?.operator??String(value??'').trim();};
+  const memberPricing=(c,s)=>typeof c.memberPricing==='boolean'?c.memberPricing:(s.chargeMemberOperators??[]).some(x=>canonicalOperator(x)===canonicalOperator(c.chargeOperator||c.siteMatch?.operator));
   function validateRates(s){
+    if(s.chargeMemberOperators!=null&&(!Array.isArray(s.chargeMemberOperators)||s.chargeMemberOperators.length>100||s.chargeMemberOperators.some(x=>typeof x!=='string'||x.length>120)))throw Error('회원가 사업자 설정 오류');
     for(const k of ['fastTariff','superchargerTariff'])if(!optional(s[k],0,10000))throw Error('충전 단가 범위 오류');
     if(s.homePoint!=null&&!validCoordinates(s.homePoint.latitude,s.homePoint.longitude))throw Error('집 좌표 오류');
     if(!optional(s.healthReferenceKWh,20,200)||!optional(s.healthBatteryStartAt,0,Date.now()+5000)||(s.healthReferenceMethod!=null&&!['bmsNominal','chargeUsable'].includes(s.healthReferenceMethod)))throw Error('배터리 비교 기준 오류');
@@ -198,29 +215,43 @@
     for(const r of s.chargeRates??[])if(!r||typeof r.match!=='string'||!r.match.trim()||r.match.length>120||!['place','operator'].includes(r.scope)||!['any','ac','dc','supercharger'].includes(r.kind)||!num(r.rate,0,10000))throw Error('장소·사업자 단가 형식 오류');
   }
   function chargeIdentity(c,s){
-    const place=rateKey(c.place), provider=rateKey(c.chargeOperator);
+    const place=rateKey(c.place||c.siteMatch?.name), provider=rateKey(canonicalOperator(c.chargeOperator||c.siteMatch?.operator));
     const supercharger=c.chargeType==='supercharger'||/supercharger|슈퍼차저|수퍼차저/.test(place+provider);
     const regions=s.homeRegions?.length?s.homeRegions.filter(h=>c.at>=h.start&&(h.end==null||c.at<h.end)):[{...s.homePoint,radius:s.homeRadiusM??600}];
     const home=(!supercharger&&c.chargeType!=='dc')&&((place&&['집','집완속','자택','home'].includes(place))||regions.some(p=>nearby(c,p,p.radius??600)||(rateKey(p.name).length>=4&&place.includes(rateKey(p.name))))||(!s.homeRegions?.length&&(s.homeSpots??[]).some(p=>nearby(c,p,s.homeRadiusM??600))));
     const kind=supercharger?'supercharger':c.chargeType==='dc'?'dc':c.chargeType==='ac'||home||num(c.nasSupplyKWh,0.01,300)||num(c.supplyKWh,0.01,300)&&c.source==='NAS'?'ac':'unknown';
     const operator=provider||(/채비|chaevi/.test(place)?'채비':/환경부|기후부/.test(place)?'환경부':/한전|한국전력/.test(place)?'한국전력':/에버온/.test(place)?'에버온':/파워큐브/.test(place)?'파워큐브':/차지비/.test(place)?'차지비':/플러그링크/.test(place)?'플러그링크':supercharger?'tesla':'');
-    return {place,operator,kind,home};
+    return {place,operator:rateKey(canonicalOperator(operator)),kind,home};
   }
   function costEstimate(c,s,history){
     const identity=chargeIdentity(c,s), {place,operator,kind,home}=identity;
     const kwh=c.supplyKWh??c.nasSupplyKWh??c.vehicleReportedKWh??c.estimatedStoredKWh;
     const basis=c.supplyKWh!=null||c.nasSupplyKWh!=null?'공급량':c.vehicleReportedKWh!=null?'차량 보고량 · 충전 손실 미포함':'SOC 추정량 · 충전 손실 미포함';
-    const result={estimatedCost:null,estimatedUnitPrice:null,costBasis:basis,costRateSource:'',chargeTypeLabel:home?'집 완속':({ac:'완속 AC',dc:'급속 DC',supercharger:'슈퍼차저'})[kind]??'충전 방식 미확인'};
+    const isMember=memberPricing(c,s);
+    const catalog=tariffCatalog.find(r=>rateKey(r.operator)===operator&&r.kind===kind);
+    const result={estimatedCost:null,estimatedUnitPrice:null,costBasis:basis,costRateSource:'',memberPricingApplied:isMember,chargeOperator:c.chargeOperator||c.siteMatch?.operator||'',place:c.place||c.siteMatch?.name||'',tariffURL:catalog?.url??'',tariffChecked:catalog?.checked??'',tariffCondition:catalog?.condition??'',chargeTypeLabel:home?'집 완속':({ac:'완속 AC',dc:'급속 DC',supercharger:'슈퍼차저'})[kind]??'충전 방식 미확인'};
     if(num(c.cost,0,1e7)){result.costRateSource='확인 결제액';return result;}
     let rate=null,source='';
-    const rules=(s.chargeRates??[]).filter(r=>(r.kind==='any'||r.kind===kind)&&rateKey(r.match)===(r.scope==='place'?place:operator));
+    const rules=(s.chargeRates??[]).filter(r=>(r.kind==='any'||r.kind===kind)&&(r.scope==='place'?rateKey(r.match)===place:rateKey(canonicalOperator(r.match))===operator));
     const rule=rules.sort((a,b)=>(a.scope==='place'?0:1)-(b.scope==='place'?0:1)||(a.kind==='any'?1:0)-(b.kind==='any'?1:0))[0];
     if(rule){rate=rule.rate;source=(rule.scope==='place'?'장소':'사업자')+' 등록 단가 · '+rule.match;}
     // Only past confirmed payments with supplied kWh from the same place/operator and charging type.
     if(rate==null){
       const past=list=>(list??[]).find(x=>x.id!==c.id&&x.at<c.at&&c.at-x.at<=180*DAY);
-      const previous=past(history.get(kind+'|place|'+place))??past(history.get(kind+'|operator|'+operator));
+      const eligible=list=>(list??[]).filter(x=>(!catalog||typeof x.memberPricing==='boolean')&&memberPricing(x,s)===isMember&&!!x.roamingPricing===!!c.roamingPricing);
+      const previous=past(eligible(history.get(kind+'|place|'+place)))??past(eligible(history.get(kind+'|operator|'+operator)));
       if(previous&&num(previous.cost/previous.supplyKWh,0,10000)){rate=previous.cost/previous.supplyKWh;source='최근 확인 결제 단가 · '+(previous.place||previous.chargeOperator);}
+    }
+    if(rate==null&&catalog){
+      const effective=Date.parse((catalog.from??catalog.checked)+'T00:00:00+09:00');
+      const publicRate=isMember?catalog.member:catalog.nonmember;
+      const acPower=c.chargerRatedKW;
+      const powerExcluded=kind==='ac'&&num(acPower,0,1000)&&((catalog.operator==='GS차지비'&&(acPower<=3||acPower>=30))||(catalog.operator==='채비'&&acPower>=30)||(catalog.operator==='플러그링크'&&acPower>=40)||(catalog.operator==='볼트업'&&acPower>=50));
+      if(c.roamingPricing||c.at<effective||powerExcluded||!num(publicRate,0,10000)){
+        result.costRateSource=c.roamingPricing?'로밍 단가 별도 확인 필요':c.at<effective?'해당 충전일의 사업자 공시 단가 미확인':powerExcluded?'충전기 출력 구간별 단가 확인 필요':(isMember?'회원':'비회원')+' 공시 단가 미확인';
+        return result;
+      }
+      rate=publicRate;source='사업자 공식 '+(isMember?'자체 회원가':'비회원가')+' · '+catalog.checked+' 확인 · 현장 예외 요금 미확인';
     }
     if(rate==null&&home&&s.tariff!=null){rate=s.tariff;source='등록한 집·완속 단가';}
     if(rate==null&&kind==='ac'&&s.tariff!=null){rate=s.tariff;source='등록 완속 기준 · 현장 단가 미확인';}
@@ -265,6 +296,7 @@
     return clean;
   }
   function validateCharge(c){
+    for(const key of ['memberPricing','roamingPricing'])if(c[key]!=null&&typeof c[key]!=='boolean')throw Error('충전 회원·로밍 조건 오류');
     if(!num(c.at,0,1e14)||!optional(c.startSOC,0,100)||!optional(c.endSOC,0,100)||!optional(c.supplyKWh,0,300)||!optional(c.storedKWh,0,300)||!optional(c.cost,0,10000000))throw Error('충전 기록 수치 오류');
     if(!optional(c.durationMinutes,0,10080))throw Error('충전 소요시간 오류');
     if(c.end!=null&&!num(c.end,c.at,Math.min(1e14,c.at+7*DAY)))throw Error('충전 종료 시각은 시작 이후 7일 이내여야 합니다.');
@@ -338,7 +370,7 @@
       for(const k of ['name','model'])if(k in v)s[k]=text(v[k],80);
       if('vin'in v){if(typeof v.vin!=='string')throw Error('VIN 형식 오류');const vin=v.vin.trim().toUpperCase();if(vin&&!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin))throw Error('VIN은 I/O/Q를 제외한 영문·숫자 17자리임');const recorded=['trips','charges','maintenance','parkingNotes','parkingPeriods','tires'].some(k=>this.state[k].length)||Object.keys(this.state.groups).length;if(this.state.settings.vin&&vin!==this.state.settings.vin&&recorded)throw Error('기존 기록의 차량과 VIN이 다름. 먼저 백업하고 새 프로필이 필요함.');s.vin=vin;}
       for(const [k,lo,hi]of [['assumedCapacityKWh',20,200],['reserveSOC',0,80],['dailyLimit',1,100],['tariff',0,10000],['plannedKm',0,3000]])if(k in v){if(!optional(v[k],lo,hi)||(k==='reserveSOC'&&v[k]==null))throw Error('설정 범위를 확인해야 함: '+k);s[k]=v[k]??null;}
-      for(const k of ['fastTariff','superchargerTariff','chargeRates','homePoint','homeRadiusM','homeRegions','healthReferenceMethod','healthReferenceKWh','healthBatteryStartAt'])if(k in v)s[k]=v[k];
+      for(const k of ['fastTariff','superchargerTariff','chargeRates','chargeMemberOperators','homePoint','homeRadiusM','homeRegions','healthReferenceMethod','healthReferenceKWh','healthBatteryStartAt'])if(k in v)s[k]=v[k];
       if(v.homePoint&&!('homeRegions'in v)&&(!this.state.settings.homePoint||!nearby(v.homePoint,this.state.settings.homePoint,1))){
         const previous=this.state.settings.homePoint,now=Date.now();
         const history=(this.state.settings.homeRegions??(previous?[{...previous,radius:this.state.settings.homeRadiusM??600,start:0}]:[])).map(h=>h.end==null?{...h,end:now}:h);
@@ -524,6 +556,8 @@
       if('end'in v)c.end=v.end;if('timeBasis'in v)c.timeBasis=v.timeBasis;if('durationMinutes'in v)c.durationMinutes=v.durationMinutes;
       validateCharge(c);if(c.storedKWh!=null&&!c.storageVerified)throw Error('저장 에너지로 확인된 자료만 입력해야 함. 영수증은 공급량 칸 사용.');
       c.chargeType=['ac','dc','supercharger'].includes(v.chargeType)?v.chargeType:null;c.chargeTypeManual=!!c.chargeType;c.chargeOperator=text(v.chargeOperator,120);
+      if(typeof v.memberPricing==='boolean')c.memberPricing=v.memberPricing;
+      if(typeof v.roamingPricing==='boolean')c.roamingPricing=v.roamingPricing;
       c.receiptText=text(v.receiptText,20000);c.estimatedCost=null;
       const duplicate=this.state.charges.some(x=>Math.abs(x.at-c.at)<60000&&x.cost===c.cost&&x.supplyKWh===c.supplyKWh);if(duplicate)throw Error('같은 시각·금액·공급량 기록이 존재함. 중복 확인 필요.');
       append(this.state.charges,c);return c;
@@ -540,6 +574,8 @@
       c.estimatedCost=null;
       if('chargeType'in v){c.chargeType=['ac','dc','supercharger'].includes(v.chargeType)?v.chargeType:null;c.chargeTypeManual=!!c.chargeType;}
       if('chargeOperator'in v)c.chargeOperator=text(v.chargeOperator,120);
+      if(typeof v.memberPricing==='boolean')c.memberPricing=v.memberPricing;
+      if(typeof v.roamingPricing==='boolean')c.roamingPricing=v.roamingPricing;
       Object.assign(row,c);return row;
     }
     addMaintenance(v){
@@ -716,6 +752,31 @@
       target.trips=staged.trips.sort((a,b)=>a.start-b.start);target.charges=staged.charges.sort((a,b)=>a.at-b.at);return counts;
     }
     auditedCharges(){return this._viewAudit??auditCharges(reconciledCharges(this.state.charges));}
+    chargeTariffQuote(c){return costEstimate(c,this.state.settings,new Map());}
+    enrichChargeSites(v){
+      if(!this.state.settings.vin||v.vin!==this.state.settings.vin)return false;
+      const sites=(v.sites??[]).slice(0,20000).filter(p=>validCoordinates(p.latitude,p.longitude)&&typeof p.id==='string'&&p.id.length<100&&typeof p.operator==='string'&&p.operator.trim());
+      const grid=new Map(),cell=(lat,lon)=>Math.floor(lat*100)+','+Math.floor(lon*100);
+      for(const p of sites){const key=cell(p.latitude,p.longitude);if(!grid.has(key))grid.set(key,[]);grid.get(key).push(p);}
+      let changed=false;
+      for(const c of [...this.state.charges.slice(-1000),this.state.activeCharge].filter(Boolean)){
+        if(c.chargeOperator||c.siteMatch||!validCoordinates(c.latitude,c.longitude))continue;
+        const local=[];let dense=false;
+        for(let y=-1;y<=1;y++)for(let x=-1;x<=1;x++){
+          const bucket=grid.get((Math.floor(c.latitude*100)+y)+','+(Math.floor(c.longitude*100)+x))??[];
+          if(bucket.length>200){dense=true;continue;}local.push(...bucket);
+        }
+        if(dense)continue;
+        const candidates=local.filter(p=>nearby(c,p,75)&&(!c.chargeType||p.kind===c.chargeType));
+        const groups=new Map();for(const p of candidates)groups.set(p.id,p);
+        if(groups.size!==1)continue; // Several operators/places in a basement cannot be distinguished by GPS.
+        const p=[...groups.values()][0];
+        c.siteMatch={id:p.id,name:text(p.name,120),operator:canonicalOperator(p.operator),matchedAt:Date.now(),source:'공공 충전소 위치 대조 · 추정'};
+        if(!c.chargeType&&['ac','dc'].includes(p.kind))c.chargeType=p.kind;
+        changed=true;
+      }
+      return changed;
+    }
     capacitySamples(from=0,now=Date.now()){
       // v1.55: verified manual entries plus automatic sessions where the car itself reported the energy added
       // (charge_energy_added) over a ≥20 %p SOC window. Before this, auto sessions never qualified, so the
@@ -943,5 +1004,5 @@
       s.charges=[{id:'demo-charge',at:now-DAY,startSOC:30,endSOC:80,supplyKWh:42,storedKWh:null,cost:10500,source:'예시',complete:true}];s.lastBrief='예시 운행 18.2 km, 30분. 실제 차량 기록이 아님.';return this.view(now);
     }
   }
-  const api={Engine,initial,fresh,TTL,median,navURL,navigationEvent,embeddedDestination,EmbeddedRouteGate,parseReceipt,validateState};root.YLCore=api;if(typeof module!=='undefined')module.exports=api;
+  const api={Engine,initial,fresh,TTL,median,navURL,navigationEvent,embeddedDestination,EmbeddedRouteGate,parseReceipt,validateState,tariffCatalog,canonicalOperator};root.YLCore=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

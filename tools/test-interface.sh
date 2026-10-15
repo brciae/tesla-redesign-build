@@ -18,6 +18,7 @@ elif [[ "${1:-}" == new ]]; then
       -only-testing:InterfaceProbeTests/InteractionTests/testTripEnergyForecastAcrossThemesAndRotation
       -only-testing:InterfaceProbeTests/InteractionTests/testTripRecordSummaryAndSelectedComparison
       -only-testing:InterfaceProbeTests/InteractionTests/testContextSpeechSettingsAndRoutineOmission
+      -only-testing:InterfaceProbeTests/InteractionTests/testPublishedTariffDefaultsToNonmemberAndMemberCheckbox
     -only-testing:InterfaceProbeTests/InteractionTests/testBatteryBaselineAndPeriods
     -only-testing:InterfaceProbeTests/InteractionTests/testHomeChargingRadiusAndDatedSave
     -only-testing:InterfaceProbeTests/InteractionTests/testChargingFourTimeBands

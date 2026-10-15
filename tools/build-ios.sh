@@ -54,6 +54,7 @@ Xcode/TelemetryJournalTests
 node tools/gps-loss-tests.cjs
 node tools/charge-integrity-tests.cjs
 node tools/charge-cost-tests.cjs
+node tools/published-tariff-tests.cjs
 node tools/charge-enrichment-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendarAnalysis.swift tools/energy-calendar-tests.swift -o Xcode/EnergyCalendarTests
 Xcode/EnergyCalendarTests

@@ -375,6 +375,7 @@ final class AppModel: ObservableObject {
         defer {
             if detailed { tripEnergy.invalidateProfile() }
             updateTripEnergy(); updateLiveActivity()
+            scheduleChargeSiteMetadata()
         }
         do {
             // Read loaded settings before migrating the older standalone preference.
@@ -400,6 +401,30 @@ final class AppModel: ObservableObject {
             }
             if !link.connected || !link.authentic { output["fresh"] = Object() }
         } catch { output["fresh"] = Object(); errorMessage = error.localizedDescription }
+    }
+    private var chargeSiteLookupKey = ""
+    private var chargeSiteLookupAt = Date.distantPast
+    private var chargeSiteLookupBusy = false
+    private func scheduleChargeSiteMetadata() {
+        guard !demo, !recoveryLock, !chargeSiteLookupBusy else { return }
+        let vin = settings.string("vin")
+        guard !vin.isEmpty else { return }
+        let key = vin + "|" + String(state.rows("charges").count) + "|" + state.object("activeCharge").string("id")
+        guard key != chargeSiteLookupKey || Date().timeIntervalSince(chargeSiteLookupAt) >= 60 else { return }
+        chargeSiteLookupKey = key; chargeSiteLookupAt = Date(); chargeSiteLookupBusy = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.chargeSiteLookupBusy = false }
+            let sites = await PublicChargingAPI.shared.cachedIdentitySites()
+            guard !Task.isCancelled, !self.demo, !self.recoveryLock, self.settings.string("vin") == vin else { return }
+            let rows: [Object] = sites.prefix(20000).map { site in
+                ["id": site.id, "name": site.name, "operator": site.providerName, "latitude": site.latitude, "longitude": site.longitude,
+                 "kind": site.category == "완속" ? "ac" : site.category == "급속" ? "dc" : "unknown"]
+            }
+            if (try? self.runtime.call("enrichChargeSites", ["vin": vin, "sites": rows])) as? Bool == true {
+                self.refresh(detailed: true); self.saveRecordsWhenAvailable(force: true)
+            }
+        }
     }
     private func persist() throws {
         guard !demo else { return }

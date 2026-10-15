@@ -33,6 +33,17 @@ actor PublicChargingAPI {
     private var cacheLoaded = false
     private var loading = false
     private let cacheURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("public-charging-regions.json")
+    /// Identity lookup reuses the existing catalog; never polls the network per telemetry packet.
+    func cachedIdentitySites() -> [NearbyChargingSite] {
+        if !cacheLoaded {
+            if let size = try? cacheURL.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 20_000_000,
+               let data = try? Data(contentsOf: cacheURL) { caches = (try? JSONDecoder().decode([String: Cache].self, from: data)) ?? [:] }
+            cacheLoaded = true
+        }
+        let now = Date()
+        return caches.values.filter { now.timeIntervalSince($0.catalogAt) >= -5 && now.timeIntervalSince($0.catalogAt) <= 30 * 86400 }
+            .flatMap { PublicChargingData.sites($0.rows, fetchedAt: $0.fetchedAt) }
+    }
     /// Several sigungu at once ("41460,41130"); each keeps its own cache. Rows are merged by charger ID.
     func sites(regions: String) async throws -> [NearbyChargingSite] {
         let codes = regions.split(separator: ",").map(String.init).filter { !$0.isEmpty }

@@ -56,6 +56,10 @@ struct ChargeCostDetails: View {
                     Caption("적용 단가 " + valueText(rate, digits: 2) + "원/kWh · " + charge.string("costBasis"))
                 }
                 Caption(charge.string("costRateSource"))
+                if !charge.string("tariffURL").isEmpty {
+                    Caption(charge.string("tariffCondition"))
+                    if let url = URL(string: charge.string("tariffURL")) { Link("사업자 공식 요금 · " + charge.string("tariffChecked") + " 확인", destination: url).font(.caption) }
+                }
                 Caption("예상액은 현재 기준으로 계산합니다. 할인·로밍·시간대·혼잡 요금은 실제 결제액과 다를 수 있습니다.")
             }
         }
@@ -77,6 +81,7 @@ struct ChargeRateSettingsView: View {
         Form {
             LocalBriefingControls(title: "충전 단가") { ["등록한 단가와 과거 결제 내역으로 예상 충전 금액을 계산합니다.", "직접 입력한 결제액이 우선합니다."] }
             Section("기본 예상 단가 · 원/kWh") {
+                NavigationLink("사업자 공식 단가·회원가 적용") { PublishedChargeRateSettings() }
                 NavigationLink("집 충전 범위·주소 변경") { HomeChargingSettingsView() }
                 TextField("집·완속 기준", text: $slow).keyboardType(.decimalPad)
                 TextField("급속 기준 · 미등록 시 350", text: $fast).keyboardType(.decimalPad)
@@ -133,6 +138,70 @@ struct ChargeRateSettingsView: View {
             guard model.errorMessage == nil else { message = model.errorMessage ?? "저장 실패"; return false }
             rules = next; message = "저장했습니다. 기존 기록의 예상 금액도 다시 계산했습니다."; return true
         } catch { message = error.localizedDescription; return false }
+    }
+}
+
+struct PublishedChargeRateSettings: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var catalog: [Object] = []
+    private var operators: [String] { Array(Set(catalog.map { $0.string("operator") })).sorted() }
+    var body: some View {
+        Form {
+            Section {
+                Text("기본은 비회원가. 체크한 사업자만 자체 회원가를 적용함. 로밍 카드·구독·단지 계약 요금은 별도이며, 직접 등록한 단가와 확인 결제액이 우선함.").font(.caption)
+                Text("검색으로 확인한 공식 표준 요금의 저장본임. 실시간 요금 조회가 아니며, 충전일에 유효한 근거가 없으면 예상액을 계산하지 않음.").font(.caption)
+            }
+            ForEach(operators, id: \.self) { name in
+                Section(name) {
+                    PublishedChargeMemberToggle(operatorName: name)
+                    ForEach(catalog.filter { $0.string("operator") == name }, id: \.selfID) { row in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(row.string("kind") == "ac" ? "완속" : "급속").font(.subheadline.bold())
+                            Text("비회원 " + tariffText(row.number("nonmember")) + " · 회원 " + tariffText(row.number("member"))).font(.caption)
+                            Text(row.string("condition")).font(.caption).foregroundStyle(.secondary)
+                            Text((row.string("from").isEmpty ? "시행일 미확인 · 확인일부터 참고" : row.string("from") + " 기준") + " · 확인 " + row.string("checked")).font(.caption2)
+                            if let url = URL(string: row.string("url")) { Link("공식 요금 확인", destination: url).font(.caption) }
+                        }
+                    }
+                }
+            }
+        }.navigationTitle("사업자 공식 충전 단가")
+            .onAppear { catalog = (try? model.runtime.call("chargeTariffCatalog")) as? [Object] ?? [] }
+    }
+    private func tariffText(_ value: Double?) -> String { value.map { valueText($0, digits: 2) + "원/kWh" } ?? "미확인" }
+}
+
+struct PublishedChargeMemberToggle: View {
+    @EnvironmentObject private var model: AppModel
+    let operatorName: String
+    var body: some View {
+        Toggle("자체 회원가 적용", isOn: Binding(get: {
+            ((model.settings["chargeMemberOperators"] as? [String]) ?? []).contains(operatorName)
+        }, set: { enabled in
+            var names = model.settings["chargeMemberOperators"] as? [String] ?? []
+            names.removeAll { $0 == operatorName }; if enabled { names.append(operatorName) }
+            model.mutate("settings", ["chargeMemberOperators": names])
+        })).accessibilityIdentifier("charging.member." + operatorName)
+    }
+}
+
+struct PublishedChargeRatePreview: View {
+    @EnvironmentObject private var model: AppModel
+    let operatorName: String
+    let kind: String
+    @State private var quote: Object = [:]
+    private var key: String { operatorName + "|" + kind + "|" + ((model.settings["chargeMemberOperators"] as? [String]) ?? []).joined(separator: "|") }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if quote.string("tariffURL").isEmpty { Text("사업자 공식 단가 미확인").font(.caption) }
+            else if let rate = quote.number("estimatedUnitPrice") {
+                Text((quote.flag("memberPricingApplied") ? "회원 표준가 " : "비회원 표준가 ") + valueText(rate, digits: 2) + "원/kWh").font(.caption.bold())
+            } else { Text(quote.string("costRateSource")).font(.caption) }
+            if !quote.string("tariffCondition").isEmpty { Text(quote.string("tariffCondition")).font(.caption2).foregroundStyle(.secondary) }
+            NavigationLink("단가·회원가 설정") { PublishedChargeRateSettings() }.font(.caption)
+        }.task(id: key) {
+            quote = (try? model.runtime.call("chargeTariffQuote", ["at": Date().timeIntervalSince1970 * 1000, "chargeOperator": operatorName, "chargeType": kind])) as? Object ?? [:]
+        }
     }
 }
 

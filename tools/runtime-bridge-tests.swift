@@ -20,6 +20,14 @@ import Foundation
         precondition(restored.rows("trips")[0].rows("points").count == 20, "Live presentation must not alter persisted history")
         let full = try runtime.call("view") as! Object
         precondition(full.object("state").rows("trips").count == 100 && !full.flag("liveDelta"))
+        let tariffs = try runtime.call("chargeTariffCatalog") as! [Object]
+        precondition(Set(tariffs.map { $0.string("operator") }).count == 6)
+        let request: Object = ["at": 1792033200000.0, "chargeOperator": "플러그링크", "chargeType": "ac", "supplyKWh": 10]
+        let nonmember = try runtime.call("chargeTariffQuote", request) as! Object
+        precondition(nonmember.number("estimatedCost") == 3570 && !nonmember.flag("memberPricingApplied"))
+        _ = try runtime.call("settings", ["chargeMemberOperators": ["플러그링크"]])
+        let member = try runtime.call("chargeTariffQuote", request) as! Object
+        precondition(member.number("estimatedCost") == 2920 && member.flag("memberPricingApplied"))
         print("PASS: native JS object bridge, bounded live callbacks, full history retention and checkpoint roundtrip")
     }
 }

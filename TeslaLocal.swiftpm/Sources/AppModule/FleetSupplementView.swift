@@ -217,6 +217,10 @@ struct FleetSupplementView: View {
                         else if let available = site.available { Text("\(available)대 가능") }
                     }.font(.subheadline).foregroundStyle(.secondary)
                     if !site.chargingDetail.isEmpty { Text(site.chargingDetail).font(.caption) }
+                    if !site.providerName.isEmpty {
+                        Text(site.providerName).font(.caption)
+                        PublishedChargeRatePreview(operatorName: site.providerName, kind: site.category == "완속" ? "ac" : site.category == "급속" ? "dc" : "unknown")
+                    }
                     if !site.restriction.isEmpty { Text(site.restriction).font(.caption).foregroundStyle(.orange) }
                     if let at = site.fetchedAt { Text("조회 " + at.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary) }
                     Button { destination = SavedNavigationPlace(name: site.name, address: site.address, latitude: site.latitude, longitude: site.longitude) } label: {

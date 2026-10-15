@@ -22,6 +22,7 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains(where: { ["voice-playback-probe", "voice-events-probe", "voice-lifecycle-probe"].contains($0) }) { VoicePlaybackProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-cost-probe") { ChargeCostProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("published-tariff-probe") { PublishedTariffProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-audit-probe") { ChargeAuditCalendarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
@@ -866,6 +867,22 @@ struct CareView: View { var body: some View { ScrollView { TirePressureDiagram()
 enum Page: Hashable { case chargingSettings }
 
 // This uses the real JS estimate policy and the production cost details view.
+struct PublishedTariffProbe: View {
+    @StateObject private var model = AppModel()
+    @State private var ready = false
+    private var quote: Object {
+        (try? model.runtime.call("chargeTariffQuote", ["at": Date().timeIntervalSince1970 * 1000, "chargeOperator": "플러그링크", "chargeType": "ac", "supplyKWh": 10])) as? Object ?? [:]
+    }
+    var body: some View {
+        NavigationStack { Form {
+            Text("기본 비회원가 · 플러그링크 완속 10kWh")
+            PublishedChargeMemberToggle(operatorName: "플러그링크")
+            ChargeCostDetails(charge: quote)
+            NavigationLink("사업자 전체 요금표") { PublishedChargeRateSettings() }
+        }.navigationTitle("사업자 단가 검증") }.environmentObject(model)
+            .onAppear { if !ready { ready = true; model.enterDemo(); model.mutate("settings", ["chargeRates": [], "chargeMemberOperators": []]) } }
+    }
+}
 struct ChargeCostProbe: View {
     @StateObject private var model = AppModel()
     var body: some View {

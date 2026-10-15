@@ -18,7 +18,7 @@ const priced=(e,id)=>e.chargeSummary().rows.find(r=>r.id===id);
  const e=new Engine();e.settings({tariff:200,chargeRates:[{scope:'operator',match:'채비',kind:'dc',rate:390},{scope:'place',match:'채비 A점',kind:'any',rate:300}]});
  e.state.charges=[row('place',{place:'채비 A점',chargeType:'dc'}),row('operator',{place:'채비 B점',chargeType:'dc'}),row('ac',{place:'채비 C점',chargeType:'ac'}),row('temp',{chargeType:'supercharger'})];
  assert.equal(priced(e,'place').estimatedCost,6000);assert.equal(priced(e,'operator').estimatedCost,7800);
- assert.equal(priced(e,'ac').estimatedCost,4000,'DC tariff must not leak into AC');
+ assert.equal(priced(e,'ac').estimatedCost,null,'unknown CHAEVI nonmember rate must not use a generic AC price or DC rule');
  assert.equal(priced(e,'temp').estimatedCost,7000);assert.match(priced(e,'temp').costRateSource,/임시/);
 }
 {

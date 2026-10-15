@@ -107,6 +107,8 @@ import Foundation
         let decoded = try! PublicChargingData.decode(sample)
         precondition(decoded.total == 1 && decoded.rows[0].id == "A:01" && decoded.rows[0].value("stat") == "2")
         precondition((try? PublicChargingData.decode(Data("{\"resultCode\":\"30\"}".utf8))) == nil)
+        let identity = PublicChargingData.sites([PublicCharger(fields: ["statId": "identity", "chgerId": "01", "lat": "37.5", "lng": "127.1", "chgerType": "02", "busiNm": "GS차지비", "bnm": "fallback"])], fetchedAt: Date())
+        precondition(identity.first?.providerName == "GS차지비")
         print("PASS: Fleet snapshots and validated, deduplicated charging map coordinates")
     }
 }

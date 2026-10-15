@@ -74,6 +74,7 @@ enum PublicChargingData {
                 powerKW: rows.compactMap { Double($0.value("output")) }.filter { $0.isFinite && $0 > 0 }.max())
             site.address = first.value("addr"); site.source = "한국환경공단"; site.fetchedAt = fetchedAt
             site.providerID = first.value("busiId")
+            site.providerName = first.value("busiNm").isEmpty ? first.value("bnm") : first.value("busiNm")
             site.chargingDetail = detail + (known.count < rows.count ? " · 상태 확인 필요 \(rows.count - known.count)대" : "")
             if fresh {
                 for kind in kinds {

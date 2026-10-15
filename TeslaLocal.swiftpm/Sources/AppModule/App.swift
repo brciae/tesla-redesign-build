@@ -749,6 +749,8 @@ struct ChargeForm: View {
     @State private var place = ""
     @State private var chargeType = ""
     @State private var chargeOperator = ""
+    @State private var memberPricing = false
+    @State private var roamingPricing = false
     @State private var note = ""
     @State private var verified = false
     @State private var complete = false
@@ -788,6 +790,9 @@ struct ChargeForm: View {
                     Text("시작·종료 시각을 확인하면 같은 시간의 차량 배터리 기록을 대조해 잔량을 보완합니다.").font(.caption)
                     TextField("장소", text: $place)
                     TextField("충전 사업자", text: $chargeOperator)
+                    Toggle("회원가 적용 · 해당 사업자 자체 회원", isOn: $memberPricing)
+                    Toggle("타사 카드로 로밍 결제", isOn: $roamingPricing)
+                    Text("기본은 비회원가. 로밍 결제는 자체 회원가와 다르며 별도 단가 확인이 필요함. 확인한 결제액·직접 등록 단가가 우선함.").font(.caption)
                     Picker("충전 방식", selection: $chargeType) {
                         Text("미확인").tag(""); Text("완속 AC").tag("ac"); Text("급속 DC").tag("dc"); Text("슈퍼차저").tag("supercharger")
                     }
@@ -866,12 +871,15 @@ struct ChargeForm: View {
         stored = row.number("storedKWh").map(trimmed) ?? ""
         place = row.string("place"); note = row.string("note")
         chargeType = row.string("chargeType"); chargeOperator = row.string("chargeOperator")
+        memberPricing = (row["memberPricing"] as? Bool) ?? row.flag("memberPricingApplied")
+        roamingPricing = row.flag("roamingPricing")
         complete = row.flag("complete"); verified = row.flag("storageVerified"); comparable = row.flag("comparable")
     }
     private func save() {
         do {
             var input: Object = ["at": date.timeIntervalSince1970*1000, "startSOC": try jsonNumber(start), "endSOC": try jsonNumber(end), "supplyKWh": try jsonNumber(supply), "storedKWh": verified ? try jsonNumber(stored) : NSNull(), "cost": try jsonNumber(cost), "place": place, "note": note, "receiptText": model.receiptText, "complete": complete, "storageVerified": verified, "comparable": comparable, "source": model.receiptText.isEmpty ? "manual" : "OCR"]
             input["chargeType"] = chargeType; input["chargeOperator"] = chargeOperator
+            input["memberPricing"] = memberPricing; input["roamingPricing"] = roamingPricing
             input["timeBasis"] = timeBasis
             input["durationMinutes"] = try jsonNumber(duration)
             input["end"] = NSNull()

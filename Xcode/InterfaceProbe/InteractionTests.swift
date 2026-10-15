@@ -225,6 +225,23 @@ final class InteractionTests: XCTestCase {
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Navigation landing search recent places and compact actions"; shot.lifetime = .keepAlways; add(shot)
     }
 
+    func testPublishedTariffDefaultsToNonmemberAndMemberCheckbox() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["published-tariff-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["예상 충전금액 3570원"].waitForExistence(timeout: 10))
+        let toggle = app.switches["charging.member.플러그링크"]
+        XCTAssertEqual(toggle.value as? String, "0")
+        let baseline = XCTAttachment(screenshot: app.screenshot()); baseline.name = "Published operator tariff defaults to nonmember with source"; baseline.lifetime = .keepAlways; add(baseline)
+        toggle.switches.firstMatch.tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertTrue(app.staticTexts["예상 충전금액 2920원"].waitForExistence(timeout: 5))
+        let member = XCTAttachment(screenshot: app.screenshot()); member.name = "Published operator tariff after own member checkbox"; member.lifetime = .keepAlways; add(member)
+        toggle.switches.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["예상 충전금액 3570원"].waitForExistence(timeout: 5))
+        app.buttons["사업자 전체 요금표"].tap()
+        XCTAssertTrue(app.navigationBars["사업자 공식 충전 단가"].waitForExistence(timeout: 5))
+        let catalog = XCTAttachment(screenshot: app.screenshot()); catalog.name = "Published operator catalog conditions and missing rates"; catalog.lifetime = .keepAlways; add(catalog)
+    }
     func testChargeCostsAutomaticallyUseRegisteredRates() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["charge-cost-probe"]; app.launch()

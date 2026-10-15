@@ -32,6 +32,9 @@ function hostCallObject(op,json){
       case 'weather':engine.state.weather=a;value=a;break;
       case 'export':value=engine.state;break;
       case 'settings':value=engine.settings(a);break;
+      case 'chargeTariffCatalog':value=YLCore.tariffCatalog;break;
+      case 'chargeTariffQuote':value=engine.chargeTariffQuote(a);break;
+      case 'enrichChargeSites':value=engine.enrichChargeSites(a);break;
       case 'ingestLive':case 'ingest':value=engine.ingest(a,now);break;
       case 'enrichChargeSOC':value=engine.enrichChargeSOC(a);break;
       case 'ingestArchive':value=engine.ingestArchive(a);break;
