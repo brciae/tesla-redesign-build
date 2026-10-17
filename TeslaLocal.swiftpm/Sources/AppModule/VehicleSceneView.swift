@@ -6,9 +6,32 @@ import simd
 struct VehicleCameraCommand { var serial = 0; var action = "reset"; var yaw: Float = .pi/4; var pitch: Float = atan(0.34); var zoom: Float? = nil }
 
 private struct VehicleSceneAsset: Decodable {
-    struct Part: Decodable { let id: String; let pivot: [Float]; let axis: [Float]; let openAngle: Float }
+    struct Part: Decodable {
+        let id: String; let pivot: [Float]; let axis: [Float]; let openAngle: Float
+        // v1.28: the model faces +Z, so the left-hand driver side is +X. The source asset labelled the
+        // sides the other way round, which opened the passenger door for a driver-door state.
+        enum CodingKeys: String, CodingKey { case id, pivot, axis, openAngle }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            id = VehicleSceneAsset.sideFix(try c.decode(String.self, forKey: .id))
+            pivot = try c.decode([Float].self, forKey: .pivot); axis = try c.decode([Float].self, forKey: .axis)
+            openAngle = try c.decode(Float.self, forKey: .openAngle)
+        }
+    }
+    static func sideFix(_ s: String) -> String {
+        s.hasPrefix("driver") ? "passenger" + s.dropFirst(6) : s.hasPrefix("passenger") ? "driver" + s.dropFirst(9) : s
+    }
     struct Surface: Decodable { let color: [Float]; let roughness: Float; let metallic: Float; let unlit: Bool? }
-    struct Mesh: Decodable { let name: String; let parent: String; let material: String; let positions: [Float]; let normals: [Float]; let triangles: [UInt32] }
+    struct Mesh: Decodable {
+        let name: String; let parent: String; let material: String; let positions: [Float]; let normals: [Float]; let triangles: [UInt32]
+        enum CodingKeys: String, CodingKey { case name, parent, material, positions, normals, triangles }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            name = try c.decode(String.self, forKey: .name); parent = VehicleSceneAsset.sideFix(try c.decode(String.self, forKey: .parent))
+            material = try c.decode(String.self, forKey: .material); positions = try c.decode([Float].self, forKey: .positions)
+            normals = try c.decode([Float].self, forKey: .normals); triangles = try c.decode([UInt32].self, forKey: .triangles)
+        }
+    }
     let schema: Int
     let parts: [Part]
     let materials: [String: Surface]
@@ -33,7 +56,7 @@ struct RealityVehicleView: UIViewRepresentable {
     let command: VehicleCameraCommand
     let reducedMotion: Bool
     var appearance: VehicleAppearance = .original
-    var backgroundColor = UIColor(red: 23/255, green: 24/255, blue: 26/255, alpha: 1)
+    var backgroundColor = UIColor.clear // transparent so the car sits on the light or dark page
     let onError: (String?) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(runtime: runtime, onError: onError) }
     func makeUIView(context: Context) -> VehicleARView {
@@ -88,9 +111,9 @@ struct RealityVehicleView: UIViewRepresentable {
         private var reduced = false
         private var yaw: Float = .pi/4
         private var pitch: Float = atan(0.34)
-        private var zoom: Float = 1.08
+        private var zoom: Float = 0.86
         private var panStart: Float = 0
-        private var pinchStart: Float = 1.08
+        private var pinchStart: Float = 0.86
         private var lastCommand = -1
         private var viewport = CGSize.zero
         private var cameraBoxes: [Object] = []
@@ -140,11 +163,12 @@ struct RealityVehicleView: UIViewRepresentable {
         }
         func build(in view: ARView) throws {
             let asset = try VehicleSceneAsset.load()
+            guard asset.meshes.allSatisfy({ !$0.positions.isEmpty && $0.positions.count % 3 == 0 && $0.positions.count < 300000 && $0.positions.allSatisfy({ $0.isFinite }) }) else { throw LocalError.message("3D 메시 좌표 형식 오류") }
             root.addChild(vehicle)
             prepareWheels(asset)
             var bounds: [String: (min: SIMD3<Float>, max: SIMD3<Float>)] = [:]
             for part in asset.parts {
-                guard part.pivot.count == 3, part.axis.count == 3 else { throw LocalError.message("3D 힌지 형식 오류") }
+                guard part.pivot.count == 3, part.axis.count == 3, part.pivot.allSatisfy({ $0.isFinite }), part.axis.allSatisfy({ $0.isFinite }), part.openAngle.isFinite, (abs(part.openAngle) < 0.0001 || part.axis.contains(where: { abs($0) > 0.0001 })) else { throw LocalError.message("3D 힌지 형식 오류") }
                 let node = Entity(); node.name = part.id; node.position = SIMD3(part.pivot[0], part.pivot[1], part.pivot[2]); vehicle.addChild(node); hinges[part.id] = node; definitions[part.id] = part
             }
             for item in asset.meshes {
@@ -240,7 +264,7 @@ struct RealityVehicleView: UIViewRepresentable {
             if driving, decor == nil { decor = DrivingSceneDecor(root: root, vehicle: vehicle) }
             decor?.configure(state, lightsEnabled: driving)
             // Charging decor: cable, flowing green energy wave, and pulsing port LED
-            let charging = state.flag("charging") || (state.number("chargerKW") ?? 0) > 0.5 || state.flag("chargingActive")
+            let charging = state.chargingNow
             let plugged = charging || state.flag("plugged") || state.flag("chargingPlugged")
             if plugged {
                 if chargingDecor == nil { chargingDecor = ChargingSceneDecor(vehicle: vehicle) }
@@ -275,10 +299,10 @@ struct RealityVehicleView: UIViewRepresentable {
                 pitch = command.pitch.isFinite ? min(1.45, max(0.1, command.pitch)) : atan(0.34)
                 var nextYaw = yaw, nextZoom = zoom
                 switch command.action {
-                case "angle": nextYaw = command.yaw; if let z = command.zoom, z.isFinite { nextZoom = min(2.5, max(1, z)) }
-                case "in": nextZoom = max(1, zoom - 0.15)
+                case "angle": nextYaw = command.yaw; if let z = command.zoom, z.isFinite { nextZoom = min(2.5, max(0.72, z)) }
+                case "in": nextZoom = max(0.72, zoom - 0.15)
                 case "out": nextZoom = min(2.5, zoom + 0.15)
-                default: nextYaw = .pi/4; nextZoom = 1.08
+                default: nextYaw = .pi/4; nextZoom = 0.86
                 }
                 moveCamera(yaw: nextYaw, zoom: nextZoom, animated: allow && !reduced)
             }
@@ -347,9 +371,9 @@ struct RealityVehicleView: UIViewRepresentable {
         }
         @objc func pinch(_ gesture: UIPinchGestureRecognizer) {
             guard allow else { return }; if gesture.state == .began { stopTween(); pinchStart = zoom }
-            zoom = min(2.5, max(1, pinchStart/Float(max(0.1, gesture.scale)))); placeCamera()
+            zoom = min(2.5, max(0.72, pinchStart/Float(max(0.1, gesture.scale)))); placeCamera()
         }
-        @objc func reset(_ gesture: UITapGestureRecognizer) { guard allow else { return }; moveCamera(yaw: .pi/4, zoom: 1.08, animated: !reduced) }
+        @objc func reset(_ gesture: UITapGestureRecognizer) { guard allow else { return }; moveCamera(yaw: .pi/4, zoom: 0.86, animated: !reduced) }
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
             guard allow else { return false }
             if let pan = gesture as? UIPanGestureRecognizer {

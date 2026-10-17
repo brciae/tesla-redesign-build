@@ -22,7 +22,7 @@ enum AutomationTransfer {
     private static let keys: Set<String> = ["name", "trigger", "action", "message", "speech", "timeGreeting", "hoursEnabled", "startHour", "endHour", "cooldownMinutes", "threshold", "customTireThreshold", "targetC", "cabinCondition", "cabinThresholdC"]
     static func decode(_ text: String, vehicle: String) throws -> AutomationRule {
         guard text.utf8.count <= 32_768 else { throw AutomationError.invalid }
-        var clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var clean = text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         if clean.hasPrefix("```json\n"), clean.hasSuffix("```") { clean = String(clean.dropFirst(8).dropLast(3)) }
         else if clean.hasPrefix("```\n"), clean.hasSuffix("```") { clean = String(clean.dropFirst(4).dropLast(3)) }
         guard let data = clean.data(using: .utf8), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -51,8 +51,8 @@ enum AutomationTransfer {
         let sample = try encode(AutomationRule(name: "아침 탑승 인사", trigger: .boarding, enabled: false, message: "{인사} 안전한 운행 되세요.", hoursEnabled: true, startHour: 5, endHour: 12))
         return """
         YL Companion 자동화 JSON 한 개를 만들어 주세요. 설명이나 마크다운 없이 JSON만 반환하세요.
-        지원 조건 trigger: boarding(탑승 신호+운전석문 닫힘+P 2초), departure(D/R 실제 이동), arrival(운행기록 종료), chargeStart, chargeEnd, batteryLow(주행중 SOC), tireLow(주행중 차량 저압경고), rest(관측운전시간), remaining(남은시간 통과), delay(최초 ETA 대비 지연), destination(목적지명 변경).
-        action: speech, climateOn, climateOff, temperature. 물리 제어는 boarding에서만 가능하며 규칙당 명령 한 개만 가능. climateOn은 차량의 기존 목표 온도를 사용함. temperature는 온도만 설정함. 명령 조합이나 순서 실행은 지원하지 않음.
+        지원 조건 trigger: chargingLocked(충전 중+차량 잠김, 충전 회차당 1회), boarding(탑승 신호+운전석문 닫힘+P 2초), departure(D/R 실제 이동), arrival(운행기록 종료), chargeStart, chargeEnd, batteryLow(주행중 SOC), tireLow(주행중 차량 저압경고), rest(관측운전시간), remaining(남은시간 통과), delay(최초 ETA 대비 지연), destination(목적지명 변경).
+        action: speech, climateOn, climateOff, temperature, sentryOn. sentryOn은 chargingLocked에서만 가능함. 공조 제어는 boarding에서만 가능하며 규칙당 명령 한 개만 가능. climateOn은 차량의 기존 목표 온도를 사용함. temperature는 온도만 설정함. 명령 조합이나 순서 실행은 지원하지 않음.
         name 60자, message 400자 이내. message의 변수는 {인사}, {배터리}, {목적지}만 가능. timeGreeting=true는 시간대 인사를 앞에 붙임.
         hoursEnabled/startHour(0~23)/endHour(0~24), cooldownMinutes(1~1440), threshold: batteryLow 1~100%, tireLow 1~4bar, rest/remaining/delay 1~300분. customTireThreshold=true일 때만 수치 저압 기준 사용. targetC 16~28, 0.5 단위. cabinCondition always/above/below, cabinThresholdC -20~60°C. 조건이 없는 필드는 예시 기본값 유지.
         알 수 없는 조건·동작·다중 단계·위치 조건을 임의로 생략/단순화하지 마세요. 지원 불가능하면 {"error":"이유"}만 반환하세요. 코드/URL/차량ID/활성화 플래그는 넣지 마세요. 이 JSON은 앱에서 검토 후 비활성 상태로 저장합니다.

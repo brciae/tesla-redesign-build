@@ -22,3 +22,15 @@ CGImageDestinationAddImage(destination, image, nil)
 precondition(CGImageDestinationFinalize(destination))
 precondition(image.width == 1024 && image.height == 1024 && image.alphaInfo == .noneSkipLast)
 print("PASS: original icon at 90% scale, centered on opaque 1024px white canvas")
+
+// Live Activity snapshots must decode a small icon, not a full-size app artwork.
+let islandPath = "Xcode/IslandAssets.xcassets/IslandAppIcon.imageset/IslandAppIcon.png"
+guard let small = CGContext(data: nil, width: 60, height: 60, bitsPerComponent: 8,
+    bytesPerRow: 240, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { fatalError("Island canvas failed") }
+small.interpolationQuality = .high
+small.draw(original, in: CGRect(x: 0, y: 0, width: 60, height: 60))
+guard let islandImage = small.makeImage(), let islandOutput = CGImageDestinationCreateWithURL(
+    URL(fileURLWithPath: islandPath) as CFURL, UTType.png.identifier as CFString, 1, nil) else { fatalError("Island icon failed") }
+CGImageDestinationAddImage(islandOutput, islandImage, nil)
+precondition(CGImageDestinationFinalize(islandOutput))
+print("PASS: original artwork resized to a 60px Live Activity asset")

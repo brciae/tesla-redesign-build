@@ -40,7 +40,11 @@ with zipfile.ZipFile(ipa_path) as archive:
     expected = json.loads((Path(__file__).resolve().parent.parent / "Xcode/project.json").read_text(encoding="utf-8"))["settings"]["base"]
     assert info["CFBundleShortVersionString"] == str(expected["MARKETING_VERSION"]), "IPA version differs from requested source"
     assert info["CFBundleVersion"] == str(expected["CURRENT_PROJECT_VERSION"]), "IPA build differs from requested source"
-    assert Path(ipa_path).name == f"App-Tesla {info['CFBundleShortVersionString']} Build{info['CFBundleVersion']} v01 Review.ipa", "IPA filename version/build mismatch"
+    # The separator has to match tools/build-ios.sh, which names the artifact. It was changed there
+    # from spaces to hyphens without this check following, and the build failed on its very last
+    # line with a message that did not say what it had compared. Name both sides in the failure.
+    expected_name = f"App-Tesla-{info['CFBundleShortVersionString']}-Build{info['CFBundleVersion']}-v01-Review.ipa"
+    assert Path(ipa_path).name == expected_name, f"IPA filename version/build mismatch: {Path(ipa_path).name} != {expected_name}"
     home_source = (Path(__file__).resolve().parent.parent / "TeslaLocal.swiftpm/Sources/AppModule/HomeViews.swift").read_text(encoding="utf-8")
     assert "CFBundleShortVersionString" in home_source and "CFBundleVersion" in home_source, "Home must read its version from the installed bundle"
     assert "v0.73 (Build 73)" not in home_source, "Stale hard-coded home version"
@@ -50,6 +54,14 @@ with zipfile.ZipFile(ipa_path) as archive:
     assert any(n.startswith(app + "AppIcon") and n.endswith(".png") for n in names), "Generated app icon PNG missing"
     assert set(info["UIDeviceFamily"]) == {1, 2}
     assert info.get("NSBluetoothAlwaysUsageDescription")
+    assert info.get("NSSupportsLiveActivities") is True
+    extension = app + "PlugIns/VehicleLiveActivity.appex/"
+    extension_info = plistlib.loads(archive.read(extension + "Info.plist"))
+    assert extension_info["CFBundleIdentifier"] == info["CFBundleIdentifier"] + ".liveactivity"
+    assert extension_info["CFBundleVersion"] == info["CFBundleVersion"]
+    assert extension_info["CFBundleShortVersionString"] == info["CFBundleShortVersionString"]
+    assert extension_info["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.widgetkit-extension"
+    macho_info(archive.read(extension + extension_info["CFBundleExecutable"]))
     assert info.get("NSLocationWhenInUseUsageDescription")
     assert info.get("NSLocationAlwaysAndWhenInUseUsageDescription")
     assert info.get("NSLocationTemporaryUsageDescriptionDictionary", {}).get("NavigationAccuracy")
@@ -68,7 +80,7 @@ with zipfile.ZipFile(ipa_path) as archive:
         checksum = hashlib.file_digest(stream, "sha256").hexdigest()
     result = {
         "native_package_check": "PASS", "device_install_test": "NOT_RUN",
-        "signing": "Unsigned CI output; local Apple account re-sign required",
+        "signing": "CI ad-hoc integrity seal; Apple account re-signing and device provisioning still required",
         "bundle_id": info["CFBundleIdentifier"], "version": info["CFBundleShortVersionString"],
         "build": info["CFBundleVersion"],
         "entries": len(names), "sha256": checksum, "binaries": binary_results,

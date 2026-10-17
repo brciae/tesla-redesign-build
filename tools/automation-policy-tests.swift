@@ -3,6 +3,15 @@ import Foundation
 @main struct AutomationPolicyTests {
     static func main() throws {
         let vin = "7SAYGDEE0PF000001"
+        var sentry = AutomationRule(name: "충전 감시", trigger: .chargingLocked, enabled: false, action: .sentryOn)
+        sentry.vehicle = vin
+        try sentry.validate()
+        let sentryJSON = try AutomationTransfer.encode(sentry)
+        let decodedSentry = try AutomationTransfer.decode("```json\r\n" + sentryJSON + "\r\n```", vehicle: vin)
+        precondition(decodedSentry.action == .sentryOn && decodedSentry.trigger == .chargingLocked && !decodedSentry.enabled)
+        sentry.trigger = .boarding
+        precondition((try? sentry.validate()) == nil)
+
         func sample(_ now: Double) -> AutomationSample {
             var s = AutomationSample(now: now, vehicle: vin)
             s.driveFresh = true; s.closuresFresh = true; s.gear = "P"; s.speed = 0
@@ -53,7 +62,7 @@ import Foundation
         precondition(p.evaluate(sample(1712)).isEmpty && p.evaluate(sample(1715)).count == 1)
         p.settingsChanged(); precondition(p.evaluate(sample(1300)).isEmpty && p.evaluate(sample(1303)).isEmpty)
         var initialEdit = only(.boarding); initialEdit.settingsChanged()
-        precondition(initialEdit.evaluate(sample(1)).isEmpty && initialEdit.evaluate(sample(4)).isEmpty)
+        precondition(initialEdit.evaluate(sample(1)).isEmpty && initialEdit.evaluate(sample(4)).count == 1, "new speech rule may greet after fresh boarding confirmation; physical commands remain latched")
         var unknown = sample(1400); unknown.present = nil; p = only(.boarding)
         _ = p.evaluate(unknown); unknown.now += 3; precondition(p.evaluate(unknown).isEmpty)
         p = only(.departure); var s = sample(1000); _ = p.evaluate(s); s.gear = "D"; s.now += 1
@@ -68,12 +77,48 @@ import Foundation
         s.soc = 10; s.now += 1; precondition(p.evaluate(s).count == 1)
         p = only(.remaining); s.remainingMinutes = 11; s.route = "집"; _ = p.evaluate(s); s.remainingMinutes = 9; s.now += 2
         precondition(p.evaluate(s).count == 1); s.now += 90; precondition(p.evaluate(s).isEmpty)
+        p = only(.remaining); p.document.rules[0].threshold = 2
+        s = sample(2000); s.gear = "D"; s.speed = 30; s.route = "연속 경로"; s.remainingMinutes = 40
+        precondition(p.evaluate(s).isEmpty)
+        for second in stride(from: 2020.0, through: 2100.0, by: 20) { s.now = second; precondition(p.evaluate(s).isEmpty) }
+        s.now = 2120; precondition(p.evaluate(s).count == 1)
+        s.now = 2125; precondition(p.evaluate(s).isEmpty)
+        for second in stride(from: 2140.0, through: 2220.0, by: 20) { s.now = second; precondition(p.evaluate(s).isEmpty) }
+        s.now = 2240; precondition(p.evaluate(s).count == 1)
+        s.now = 2245; s.remainingMinutes = 9.5; precondition(p.evaluate(s).count == 1, "Final cue must bypass periodic cooldown")
+        s.now = 2250; s.remainingMinutes = 12; precondition(p.evaluate(s).isEmpty, "ETA increase does not rearm final cue")
+        s.now = 2370; s.remainingMinutes = 8; precondition(p.evaluate(s).isEmpty, "Reconnect does not repeat final cue")
+        s.now = 2375; s.route = "새 경로"; s.remainingMinutes = 7; precondition(p.evaluate(s).count == 1)
         p = only(.boarding); var physical = AutomationRule(name: "공조", trigger: .boarding, action: .climateOn, vehicle: vin)
         try physical.validate(); p.document.rules = [physical]; _ = p.evaluate(sample(1)); precondition(p.evaluate(sample(4)).count == 1)
         p = only(.boarding); p.document.rules = [physical]; var waiting = sample(1); waiting.boardingReady = false
         _ = p.evaluate(waiting); waiting.now = 4; precondition(p.evaluate(waiting).isEmpty && !p.document.boardingLatched)
         waiting.now = 5; waiting.boardingReady = true; precondition(p.evaluate(waiting).count == 1)
         waiting.now = 8; precondition(p.evaluate(waiting).isEmpty, "authentication readiness must consume boarding once")
+        // A pending HVAC key or Fleet-only source must not block a speech-only greeting.
+        p = only(.boarding); p.document.rules.append(physical)
+        waiting = sample(2000); waiting.boardingReady = false
+        _ = p.evaluate(waiting); waiting.now = 2003
+        let greeting = p.evaluate(waiting)
+        precondition(greeting.count == 1 && greeting[0].rule.action == .speech && !p.document.boardingLatched)
+        waiting.now = 2004; waiting.boardingReady = true
+        let hvac = p.evaluate(waiting)
+        precondition(hvac.count == 1 && hvac[0].rule.action == .climateOn)
+        p = only(.boarding); p.document.rules.append(physical)
+        var fleet = sample(3000); fleet.speechOnly = true; fleet.driveFresh = false; fleet.gear = nil; fleet.closuresAt = 3000
+        _ = p.evaluate(fleet); fleet.now = 3030; fleet.closuresAt = 3030
+        let fleetGreeting = p.evaluate(fleet)
+        precondition(fleetGreeting.count == 1 && fleetGreeting[0].rule.action == .speech && !p.document.boardingLatched)
+        fleet.now = 3060; precondition(p.evaluate(fleet).isEmpty, "same Fleet source timestamp cannot create an event")
+        p.reset(); fleet.now = 3070; fleet.closuresAt = 3070; _ = p.evaluate(fleet)
+        fleet.now = 3100; fleet.closuresAt = 3100; precondition(p.evaluate(fleet).isEmpty, "Fleet reconnect cannot repeat greeting")
+        // A missed door cycle can rearm speech using two new locked-and-empty receipts only.
+        p.document.boardingLatched = true
+        fleet.present = false; fleet.locked = true; fleet.now = 3130; fleet.closuresAt = 3130; _ = p.evaluate(fleet)
+        fleet.now = 3160; fleet.closuresAt = 3160; _ = p.evaluate(fleet)
+        precondition(p.document.boardingVoiceLatched == false && p.document.boardingLatched)
+        fleet.present = true; fleet.locked = false; fleet.now = 3190; fleet.closuresAt = 3190; _ = p.evaluate(fleet)
+        fleet.now = 3220; fleet.closuresAt = 3220; precondition(p.evaluate(fleet).count == 1)
         var gate = AutomationWriteGate(now: 100)
         gate.receive(groups: ["closures", "drive"], now: 100)
         precondition(!gate.consume(now: 100, authorized: true, domainReady: true), "old/unrequested data cannot authorize a write")

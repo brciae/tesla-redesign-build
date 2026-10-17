@@ -18,8 +18,8 @@
    "SWIFT_VERSION": "5.0",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "CODE_SIGNING_ALLOWED": "NO",
-   "MARKETING_VERSION": "0.83",
-   "CURRENT_PROJECT_VERSION": "83"
+   "MARKETING_VERSION": "1.62",
+   "CURRENT_PROJECT_VERSION": "162"
   }
  },
  "targets": {
@@ -82,6 +82,18 @@
      "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/typecast_portraits",
      "type": "folder",
      "buildPhase": "resources"
+    },
+    {
+     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/character",
+     "type": "folder",
+     "buildPhase": "resources"
+    },
+    {
+     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/typecast_web_actors.json",
+     "buildPhase": "resources"
+    },
+    {
+     "path": "LiveActivityShared"
     }
    ],
    "dependencies": [
@@ -92,6 +104,10 @@
     {
      "package": "KNSDK-UI",
      "product": "KNSDK"
+    },
+    {
+     "target": "VehicleLiveActivity",
+     "embed": true
     }
    ],
    "settings": {
@@ -148,7 +164,42 @@
       "UIInterfaceOrientationPortraitUpsideDown",
       "UIInterfaceOrientationLandscapeLeft",
       "UIInterfaceOrientationLandscapeRight"
-     ]
+     ],
+     "NSSupportsLiveActivities": true
+    }
+   }
+  },
+  "VehicleLiveActivity": {
+   "type": "app-extension",
+   "platform": "iOS",
+   "sources": [
+    {
+     "path": "VehicleLiveActivity"
+    },
+    {
+     "path": "LiveActivityShared"
+    },
+    {
+     "path": "IslandAssets.xcassets"
+    }
+   ],
+   "settings": {
+    "base": {
+     "PRODUCT_BUNDLE_IDENTIFIER": "local.ylcompanion.app.liveactivity",
+     "PRODUCT_NAME": "VehicleLiveActivity",
+     "APPLICATION_EXTENSION_API_ONLY": "YES",
+     "SKIP_INSTALL": "YES"
+    }
+   },
+   "info": {
+    "path": "Generated/LiveActivity-Info.plist",
+    "properties": {
+     "CFBundleDisplayName": "YL Companion 현황",
+     "CFBundleShortVersionString": "$(MARKETING_VERSION)",
+     "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
+     "NSExtension": {
+      "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
+     }
     }
    }
   }

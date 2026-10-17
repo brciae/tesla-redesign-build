@@ -16,20 +16,30 @@ function present(value,now){
 }
 function controlSession(domain){if(![2,3].includes(domain)||!controlSessions[domain])throw Error('제어 키 인증 준비 필요');return controlSessions[domain];}
 function requireControlReady(domain,now){const s=controlSession(domain),why=gate.reason(now);if(why)throw Error(why);if(!wireSession?.info||!s.info||now<s.info.local)throw Error('제어 키 인증 필요 · 인증 후 다시 확인');return s;}
-function hostCall(op,json){
+function hostCallObject(op,json){
+  engine._liveOnly=op.endsWith('Live');
   try{
     const a=JSON.parse(json),now=Date.now();let value;
     switch(op){
       case 'view':value=engine.view(now);break;
+      case 'liveView':value=engine.liveView(now);break;
       case 'vehicle3D':value=YL3D.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
       case 'vehicleCamera':value=YL3D.fitCamera(a);break;
+      case 'homeMotion':value=YLHome.motion(a);break;
       case 'home':value=YLHome.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
       case 'load':value=engine.load(a.state??a,{resumeActive:a.resume===true});clearLive();navigationGate.reset();break;
       case 'validate':value=YLCore.validateState(a);break;
       case 'weather':engine.state.weather=a;value=a;break;
       case 'export':value=engine.state;break;
       case 'settings':value=engine.settings(a);break;
-      case 'ingest':value=engine.ingest(a,now);break;
+      case 'chargeTariffCatalog':value=YLCore.tariffCatalog;break;
+      case 'chargeTariffQuote':value=engine.chargeTariffQuote(a);break;
+      case 'enrichChargeSites':value=engine.enrichChargeSites(a);break;
+      case 'ingestLive':case 'ingest':value=engine.ingest(a,now);break;
+      case 'enrichChargeSOC':value=engine.enrichChargeSOC(a);break;
+      case 'ingestArchive':value=engine.ingestArchive(a);break;
+      case 'ingestFleetDriveLive':case 'ingestFleetDrive':value=engine.ingestFleetDrive(a,now);break;
+      case 'ingestFleetChargeLive':case 'ingestFleetCharge':value=engine.ingestFleetCharge(a,now);break;
       case 'finish':value=engine.finish(now,true);break;
       case 'addCharge':value=engine.addCharge(a);break;
       case 'maintenance':value=engine.addMaintenance(a);break;
@@ -86,6 +96,9 @@ function hostCall(op,json){
       case 'wirePush':value=wireBuffer.push(TeslaWire.unhex(a.hex)).map(TeslaWire.hex);break;
       default:throw Error('허용되지 않는 작업');
     }
-    return JSON.stringify({ok:true,value:present(value,now)});
-  }catch(e){return JSON.stringify({ok:false,error:String(e.message||e)});}
+    return {ok:true,value:present(value,now)};
+  }catch(e){return {ok:false,error:String(e.message||e)};}finally{engine._liveOnly=false;}
 }
+
+function hostCall(op,json){return JSON.stringify(hostCallObject(op,json));}
+function hostExportJSON(){return JSON.stringify(engine.state);}

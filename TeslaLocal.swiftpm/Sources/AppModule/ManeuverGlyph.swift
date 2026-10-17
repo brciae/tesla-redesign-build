@@ -1,18 +1,29 @@
 import SwiftUI
 
+private struct GuidanceDarkInkKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var guidanceDarkInk: Bool {
+        get { self[GuidanceDarkInkKey.self] }
+        set { self[GuidanceDarkInkKey.self] = newValue }
+    }
+}
+
 /// Clock direction, not an invented exit ordinal. No inferred lane guidance.
 struct ManeuverGlyph: View {
+    @Environment(\.guidanceDarkInk) private var darkInk
     let symbol: String
     var exitClock: Int = 0
     let size: CGFloat
     private var rotary: Bool { (1...12).contains(exitClock) }
     private var branch: Bool { symbol == "arrow.up.right" || symbol == "arrow.up.left" }
+    private var ink: Color { darkInk ? .black : .white }
     var body: some View {
         Group {
             if rotary || branch {
                 Canvas { context, _ in
                     context.scaleBy(x: size / 100, y: size / 100)
-                    let stroke = StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round)
+                    let stroke = StrokeStyle(lineWidth: 9, lineCap: .round, lineJoin: .round)
+                    let halo = StrokeStyle(lineWidth: 14, lineCap: .round, lineJoin: .round)
                     func point(_ angle: Double, _ radius: Double = 27) -> CGPoint {
                         let a = angle * .pi / 180
                         return CGPoint(x: 50 + radius * sin(a), y: 50 - radius * cos(a))
@@ -27,6 +38,8 @@ struct ManeuverGlyph: View {
                     }
                     var route = Path()
                     if rotary {
+                        let ring = Path(ellipseIn: CGRect(x: 23, y: 23, width: 54, height: 54))
+                        context.stroke(ring, with: .color(ink.opacity(0.25)), style: StrokeStyle(lineWidth: 4))
                         let target = Double(exitClock % 12) * 30
                         let sweep = (160 - target + 360).truncatingRemainder(dividingBy: 360)
                         let start = point(160)
@@ -35,23 +48,30 @@ struct ManeuverGlyph: View {
                         for step in 1...90 { route.addLine(to: point(160 - sweep * Double(step) / 90)) }
                         let tip = point(target, 44)
                         route.addLine(to: tip)
-                        context.stroke(route, with: .color(.white), style: stroke)
-                        context.stroke(arrow(tip, target), with: .color(.white), style: stroke)
+                        context.stroke(route, with: .color((darkInk ? Color.white : .black).opacity(0.9)), style: halo)
+                        context.stroke(route, with: .color(ink), style: stroke)
+                        context.fill(arrow(tip, target), with: .color(darkInk ? .blue : .cyan))
+                        if size >= 44 {
+                            context.draw(Text("\(exitClock)시").font(.system(size: 16, weight: .bold)).foregroundColor(ink), at: CGPoint(x: 50, y: 50))
+                        }
                     } else {
                         var straight = Path()
                         straight.move(to: CGPoint(x: 50, y: 90)); straight.addLine(to: CGPoint(x: 50, y: 10))
-                        context.stroke(straight, with: .color(.white.opacity(0.4)), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        context.stroke(straight, with: .color(ink.opacity(0.4)), style: StrokeStyle(lineWidth: 4, lineCap: .round))
                         let right = symbol == "arrow.up.right"
                         let tip = CGPoint(x: right ? 82 : 18, y: 18)
                         route.move(to: CGPoint(x: 50, y: 90)); route.addLine(to: CGPoint(x: 50, y: 58)); route.addLine(to: tip)
-                        context.stroke(route, with: .color(.white), style: stroke)
-                        context.stroke(arrow(tip, right ? 39 : -39), with: .color(.white), style: stroke)
+                        context.stroke(route, with: .color((darkInk ? Color.white : .black).opacity(0.9)), style: halo)
+                        context.stroke(route, with: .color(ink), style: stroke)
+                        context.stroke(arrow(tip, right ? 39 : -39), with: .color(ink), style: stroke)
                     }
                 }
             } else {
-                Image(systemName: symbol).resizable().scaledToFit().foregroundStyle(.white).padding(size * 0.08)
+                Image(systemName: symbol).resizable().scaledToFit().foregroundStyle(ink).padding(size * 0.08)
+                    .shadow(color: darkInk ? .clear : .black, radius: 1, x: 0, y: 1)
             }
         }.frame(width: size, height: size)
+            .background((darkInk ? Color.white : .black).opacity(darkInk ? 0.12 : 0.45), in: RoundedRectangle(cornerRadius: size * 0.18))
             .accessibilityLabel(rotary ? "회전교차로 \(exitClock)시 방향 출구" : "진행 방향")
     }
 }

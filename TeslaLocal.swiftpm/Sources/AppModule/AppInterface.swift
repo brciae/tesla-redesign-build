@@ -1,4 +1,26 @@
 import SwiftUI
+
+struct CompanionToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 16) {
+                configuration.label.frame(maxWidth: .infinity, alignment: .leading)
+                ZStack {
+                    Capsule().fill(configuration.isOn ? Color(uiColor: .systemGreen) : Color(uiColor: .systemGray4))
+                    HStack {
+                        if configuration.isOn { Text("I").font(.caption).foregroundStyle(.white.opacity(0.8)); Spacer(minLength: 0) }
+                        Circle().fill(.white).frame(width: 30, height: 30).shadow(color: .black.opacity(0.16), radius: 2, y: 1)
+                        if !configuration.isOn { Spacer(minLength: 0); Text("○").font(.caption).foregroundStyle(.white.opacity(0.5)) }
+                    }.padding(.horizontal, 5)
+                }.frame(width: 64, height: 38).accessibilityHidden(true)
+            }.frame(minHeight: 48).contentShape(Rectangle()).opacity(enabled ? 1 : 0.45)
+        }.buttonStyle(.plain)
+            .accessibilityValue(configuration.isOn ? "켜짐" : "꺼짐")
+            .animation(reduced ? nil : .easeInOut(duration: 0.18), value: configuration.isOn)
+    }
+}
 import UIKit
 import AVFoundation
 
@@ -84,6 +106,15 @@ struct VoicePortrait: View {
 struct TypecastVoiceThumbnail: View {
     let voice: String
     var size: CGFloat = 38
+    /// v1.46: API voices have no portrait — draw a gender-coloured monogram instead of a blank.
+    var gender: String? = nil
+    private var palette: [Color] {
+        switch gender ?? TypecastClient.shared.remoteVoices.first(where: { $0.nameKo == cleanName })?.gender {
+        case "남성": return [Color(red: 0.15, green: 0.45, blue: 0.95), Color(red: 0.1, green: 0.75, blue: 0.75)]
+        case "여성": return [Color(red: 0.95, green: 0.4, blue: 0.6), Color(red: 0.6, green: 0.35, blue: 0.95)]
+        default: return [Color.gray, Color.blue.opacity(0.7)]
+        }
+    }
 
     var body: some View {
         Group {
@@ -91,10 +122,33 @@ struct TypecastVoiceThumbnail: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
+            } else if let url = webImageURL {
+                // v1.52: real Typecast portrait from the web directory.
+                AsyncImage(url: url) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() } else { monogram }
+                }
             } else {
+                monogram
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
+        .accessibilityHidden(true)
+    }
+
+    private var webImageURL: URL? {
+        if let v = TypecastClient.shared.remoteVoices.first(where: { $0.nameKo == cleanName || $0.id == cleanName }), let u = URL(string: v.imageURL) { return u }
+        return TypecastWebDirectory.imageURL(name: cleanName)
+    }
+
+    private var monogram: some View {
+        Group {
+            if true {
                 ZStack {
                     LinearGradient(
-                        colors: [Color.blue.opacity(0.8), Color.purple.opacity(0.8)],
+                        colors: palette,
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -193,11 +247,117 @@ struct InfoRow: View {
     }
 }
 
+struct VoiceCacheRow: View {
+    let entry: TypecastClient.VoiceCacheEntry
+    var delete: () -> Void
+    @State private var confirming = false
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name).font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                Text("\(entry.count)개 · \(String(format: "%.1f", entry.megabytes))MB").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("삭제", role: .destructive) { confirming = true }
+                .font(.caption.weight(.semibold)).buttonStyle(.bordered).controlSize(.small)
+                .confirmationDialog("\(entry.name) 음성 캐시를 삭제할까요?", isPresented: $confirming, titleVisibility: .visible) {
+                    Button("\(entry.name) 캐시 삭제", role: .destructive, action: delete)
+                    Button("취소", role: .cancel) {}
+                } message: { Text("다른 음성의 캐시는 그대로 남습니다. 이 음성은 다음 재생 때 다시 합성됩니다.") }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// v1.49: all cached voices (by character name) → tap one for its sentences.
+struct VoiceCacheManagerView: View {
+    @ObservedObject private var typecast = TypecastClient.shared
+    var body: some View {
+        List {
+            Section {
+                ForEach(typecast.cacheByVoice) { entry in
+                    NavigationLink { VoiceCacheDetailView(entry: entry) } label: {
+                        HStack(spacing: 10) {
+                            TypecastVoiceThumbnail(voice: entry.name, size: 32)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.name).font(.subheadline.weight(.semibold))
+                                Text("\(entry.count)개 · \(String(format: "%.1f", entry.megabytes))MB").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .swipeActions { Button("전체 삭제", role: .destructive) { typecast.clearCache(voice: entry.id) } }
+                }
+            } footer: { Text("캐릭터를 눌러 문구별로 골라 지우거나, 왼쪽으로 밀어 그 캐릭터 캐시를 모두 지울 수 있습니다.") }
+            Section { VoiceCacheDeleteButton { typecast.clearCache() } }
+        }
+        .navigationTitle("음성 캐시")
+        .task { await typecast.refreshVoiceCatalog(quiet: true) }
+    }
+}
+
+/// v1.46: one voice's cache, grouped by what the sentence is about; pick single clips or whole groups to delete.
+struct VoiceCacheDetailView: View {
+    let entry: TypecastClient.VoiceCacheEntry
+    @ObservedObject private var typecast = TypecastClient.shared
+    @State private var items: [TypecastClient.CachedPhrase] = []
+    @State private var selection = Set<URL>()
+    @State private var editMode: EditMode = .inactive
+    @State private var confirmGroup: String?
+    @State private var confirmSelected = false
+    private var groups: [(String, [TypecastClient.CachedPhrase])] {
+        Dictionary(grouping: items, by: \.group).map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 }
+    }
+    var body: some View {
+        List(selection: $selection) {
+            ForEach(groups, id: \.0) { group, phrases in
+                Section {
+                    ForEach(phrases) { p in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(p.text.isEmpty ? "(문구 기록 없음)" : p.text).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                            Text("\(p.kilobytes)KB · \(p.date.formatted(date: .abbreviated, time: .shortened))").font(.caption2).foregroundStyle(.secondary)
+                        }.tag(p.id)
+                    }
+                } header: {
+                    HStack {
+                        Text("\(group) · \(phrases.count)개")
+                        Spacer()
+                        Button("그룹 삭제", role: .destructive) { confirmGroup = group }.font(.caption.weight(.semibold))
+                    }
+                }
+            }
+        }
+        .environment(\.editMode, $editMode)
+        .navigationTitle(entry.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(editMode.isEditing ? "완료" : "선택") { withAnimation { editMode = editMode.isEditing ? .inactive : .active; selection.removeAll() } }
+            }
+            ToolbarItem(placement: .bottomBar) {
+                if editMode.isEditing {
+                    Button("선택한 \(selection.count)개 삭제", role: .destructive) { confirmSelected = true }.disabled(selection.isEmpty)
+                }
+            }
+        }
+        .confirmationDialog("선택한 캐시를 삭제할까요?", isPresented: $confirmSelected, titleVisibility: .visible) {
+            Button("\(selection.count)개 삭제", role: .destructive) { delete(items.filter { selection.contains($0.id) }) }
+        } message: { Text("삭제한 문구는 다음 재생 때 다시 합성됩니다.") }
+        .confirmationDialog("\(confirmGroup ?? "") 그룹을 모두 삭제할까요?", isPresented: Binding(get: { confirmGroup != nil }, set: { if !$0 { confirmGroup = nil } }), titleVisibility: .visible) {
+            Button("그룹 삭제", role: .destructive) { if let g = confirmGroup { delete(items.filter { $0.group == g }) } }
+        }
+        .onAppear(perform: reload)
+    }
+    private func reload() { items = typecast.cachedPhrases(voice: entry.id) }
+    private func delete(_ list: [TypecastClient.CachedPhrase]) {
+        typecast.deleteCached(list); selection.removeAll(); reload()
+    }
+}
+
 struct VoiceCacheDeleteButton: View {
     var delete: () -> Void
     @State private var confirming = false
     var body: some View {
-        Button("캐시 비우기") { confirming = true }
+        Button("전체 캐시 비우기") { confirming = true }
             .font(.caption)
             .foregroundStyle(.red)
             .buttonStyle(.borderless)
@@ -259,7 +419,7 @@ struct Commercial5TabScaffold<Home: View, Controls: View, Energy: View, Drive: V
     private func styled<Content: View>(_ content: Content) -> some View {
         content
             .safeAreaPadding(.bottom, 8)
-            .toolbarBackground(Color(white: 0.12).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
+            .toolbarBackground(Theme.adaptive(dark: UIColor(white: 0.12, alpha: 1), light: UIColor.white).opacity(min(1, max(0.5, tabBarOpacity))), for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
     }
 }
@@ -279,4 +439,3 @@ struct VoicePreviewControls: View {
         }
     }
 }
-
