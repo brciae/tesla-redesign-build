@@ -498,7 +498,7 @@
           const capacity=this.health().capacity??s.settings.assumedCapacityKWh??75;
           const estimate=num(g.soc,0,100)&&num(g.addedKWh,0,300)?round(Math.max(0,g.soc-g.addedKWh/capacity*100),1):null;
           const start=boundary?(num(prev.soc,0,100)?prev.soc:g.soc):estimate;
-          s.activeCharge={id:id(),at:g.at,startTimeObserved:boundary||g.startTransitionObserved===true,startTimeBasis:boundary||g.startTransitionObserved===true?'stateTransition':'firstChargingObservation',startSOC:num(start,0,100)?start:null,startSOCObserved:boundary&&num(start,0,100),startSOCEstimated:!boundary&&estimate!=null,endSOC:num(g.soc,0,100)?g.soc:null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
+          s.activeCharge={id:id(),at:g.at,startTimeObserved:boundary||g.startTransitionObserved===true,startTimeBasis:boundary||g.startTransitionObserved===true?'stateTransition':'firstChargingObservation',initialAddedKWh:g.addedKWh??null,startSOC:num(start,0,100)?start:null,startSOCObserved:boundary&&num(start,0,100),startSOCEstimated:!boundary&&estimate!=null,endSOC:num(g.soc,0,100)?g.soc:null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
         }
         const c=s.activeCharge;if(g.addedKWh!=null&&c.lastAdded!=null&&g.addedKWh<c.lastAdded)c.partial=true;
         c.endSOC=num(g.soc,0,100)?g.soc:c.endSOC;c.lastAt=g.at;
@@ -723,7 +723,7 @@
             for(const key of ['chargeType','chargeOperator','latitude','longitude','startSOC','endSOC','vehicleReportedKWh','supplyKWh'])if(merged[key]==null&&row[key]!=null)merged[key]=row[key];
             if(!old.startSOCObserved&&row.startSOCObserved){merged.startSOC=row.startSOC;merged.startSOCObserved=true;merged.startSOCEstimated=false;}
             if(!old.endSOCObserved&&row.endSOCObserved){merged.endSOC=row.endSOC;merged.endSOCObserved=true;merged.endSOCEstimated=false;}
-            if(!old.startTimeObserved&&row.startTimeObserved){merged.at=row.at;merged.startTimeObserved=true;merged.startTimeBasis=row.startTimeBasis;merged.collectedAfterEnd=false;}
+            if(!old.startTimeObserved&&row.startTimeObserved){merged.at=row.at;merged.startTimeObserved=true;merged.startTimeBasis=row.startTimeBasis;merged.initialAddedKWh=row.initialAddedKWh;merged.collectedAfterEnd=false;}
             if(!old.endTimeObserved&&row.endTimeObserved){merged.end=row.end;merged.endTimeObserved=true;}
             merged.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};list[same]=merged;
           }else list[same]=row;
@@ -742,7 +742,7 @@
               if(key==='startSOC'){existing.startSOCObserved=row.startSOCObserved===true;existing.startSOCEstimated=row.startSOCEstimated===true;}
               if(key==='endSOC'){existing.endSOCObserved=row.endSOCObserved===true;existing.endSOCEstimated=row.endSOCEstimated===true;}
             }
-            if(!row.collectedAfterEnd&&row.end>row.at){existing.receiptAt??=existing.at;existing.at=row.at;existing.end=row.end;existing.startTimeObserved=row.startTimeObserved;existing.endTimeObserved=row.endTimeObserved;}
+            if(!row.collectedAfterEnd&&row.end>row.at){existing.receiptAt??=existing.at;existing.at=row.at;existing.end=row.end;existing.startTimeObserved=row.startTimeObserved;existing.endTimeObserved=row.endTimeObserved;existing.initialAddedKWh=row.initialAddedKWh;}
             existing.source=[...new Set((existing.source??'차량').split('+').concat('NAS'))].join('+');
             if(!existing.startSOCObserved&&row.startSOCObserved){existing.startSOC=row.startSOC;existing.startSOCObserved=true;existing.startSOCEstimated=false;}
             if(!existing.endSOCObserved&&row.endSOCObserved){existing.endSOC=row.endSOC;existing.endSOCObserved=true;existing.endSOCEstimated=false;}
@@ -779,6 +779,7 @@
         if(row.collectedAfterEnd||row.atPrecision==='day')continue;
         for(const [key,time] of [['startSOC',kind==='trips'?row.start:row.at],['endSOC',row.end]]){
           if(kind==='charges'&&key==='startSOC'&&row.startTimeObserved===false)continue;
+          if(kind==='charges'&&key==='startSOC'&&row.startSOCEstimated&&num(row.initialAddedKWh,0.5,300))continue;
           if(!num(time,1,1e14)||row[key]!=null&&!row[key==='startSOC'?'startSOCEstimated':'endSOCEstimated']&&!(key==='endSOC'&&row.endSOCLastObserved))continue;
           const sample=nearest(time);if(!sample)continue;
           if(kind==='charges'&&((key==='startSOC'&&num(row.endSOC,0,100)&&sample.number>row.endSOC)||(key==='endSOC'&&num(row.startSOC,0,100)&&sample.number<row.startSOC)))continue;

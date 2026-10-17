@@ -41,3 +41,9 @@ const rows=[r(-3600000,'ChargeState','Disconnected'),r(0,'ChargeState','Charging
  assert.equal(f.state.trips[0].startSOC,undefined);assert.equal(f.state.trips[0].endSOC,undefined,'invalid near endpoint prevents inference');
 }
 console.log('PASS: active NAS completion, recorded transition timestamps, stale-flag upgrade, non-erasing SOC, raw endpoint backfill/reload/invalid guards');
+{
+ const e=new C.Engine();e.state.settings.vin=vin;
+ e.ingestArchive({vin,rows:[r(-3600000,'ChargeState','Disconnected'),r(0,'ChargeState','Charging'),r(0,'Soc',60),r(0,'ChargeEnergyAdded',15),r(3600000,'ChargeState','Stopped'),r(3600000,'Soc',80),r(3600000,'ChargeEnergyAdded',30)]});
+ const c=e.state.charges[0];assert.equal(c.startSOCEstimated,true,'first observation after energy has already accumulated cannot become a measured start SOC');
+ assert.equal(e.capacitySamples().length,0,'late start observation must not create false health evidence');
+}
