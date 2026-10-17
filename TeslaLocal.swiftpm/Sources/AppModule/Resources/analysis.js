@@ -771,6 +771,14 @@
       const nearest=time=>{
         let lo=0,hi=samples.length;while(lo<hi){const mid=(lo+hi)>>1;if(samples[mid].at<time-120000)lo=mid+1;else hi=mid;}
         const nearby=[];for(let i=lo;i<samples.length&&samples[i].at<=time+120000;i++)nearby.push(samples[i]);
+        const distance=nearby.length?Math.min(...nearby.map(r=>Math.abs(r.at-time))):Infinity;
+        const direct=nearby.filter(r=>Math.abs(r.at-time)===distance);
+        // An actual endpoint packet is stronger evidence than the wider window.
+        // Normal SOC change elsewhere in four minutes must not hide that packet.
+        if(distance<=15000&&direct.length){
+          if(direct.some(r=>r.invalid||!num(r.number,0,100))||Math.max(...direct.map(r=>r.number))-Math.min(...direct.map(r=>r.number))>1)return null;
+          return direct[0];
+        }
         if(!nearby.length||nearby.some(r=>r.invalid||!num(r.number,0,100)))return null;
         if(Math.max(...nearby.map(r=>r.number))-Math.min(...nearby.map(r=>r.number))>2)return null;
         return nearby.sort((a,b)=>Math.abs(a.at-time)-Math.abs(b.at-time))[0];

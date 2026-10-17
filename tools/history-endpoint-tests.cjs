@@ -37,8 +37,13 @@ const rows=[r(-3600000,'ChargeState','Disconnected'),r(0,'ChargeState','Charging
  const copy=JSON.parse(JSON.stringify(e.state));const restored=new C.Engine();restored.load(copy);
  assert.equal(restored.state.trips[0].endSOC,75,'backfill survives upgrade/reload');
  const f=new C.Engine();f.state.settings.vin=vin;f.state.trips=[{id:'unknown',start:t,end:t+3600000,points:[]}];
- f.ingestArchive({vin,rows:[r(300000,'Soc',80),r(3601000,'Soc',75),{...r(3602000,'Soc',75),invalid:true}]});
+ f.ingestArchive({vin,rows:[r(300000,'Soc',80),r(3602000,'Soc',75),{...r(3601000,'Soc',75),invalid:true}]});
  assert.equal(f.state.trips[0].startSOC,undefined);assert.equal(f.state.trips[0].endSOC,undefined,'invalid near endpoint prevents inference');
+}
+{
+ const e=new C.Engine();e.state.settings.vin=vin;e.state.trips=[{id:'direct',start:t,end:t+3600000,points:[]}];
+ e.ingestArchive({vin,rows:[r(-120000,'Soc',90),r(0,'Soc',85),r(120000,'Soc',80),r(3480000,'Soc',75),r(3600000,'Soc',70),r(3720000,'Soc',65)]});
+ assert.equal(e.state.trips[0].startSOC,85);assert.equal(e.state.trips[0].endSOC,70,'exact endpoint observation wins over legitimate wider-window SOC change');
 }
 console.log('PASS: active NAS completion, recorded transition timestamps, stale-flag upgrade, non-erasing SOC, raw endpoint backfill/reload/invalid guards');
 {
