@@ -620,7 +620,10 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         KNSafety *point = object;
         if (![self locationIsFresh] || !point.location) return;
         SInt32 distance = [self.locationGuide.location distToLocation:point.location];
-        if (distance <= 0 || distance > 150) return;
+        KNGPSData *gps = self.locationGuide.gpsMatched;
+        double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
+        NSString *phrase = [self spokenTextForCode:code object:point];
+        if (distance <= 0 || distance > YLNavigationLeadDistance(speed, YLNavigationSpeechSeconds(phrase))) return;
         if (!self.announcedPoints) self.announcedPoints = [NSMutableSet set];
         NSString *key = [NSString stringWithFormat:@"hump:%d", (int)point.safetyId];
         if ([self.announcedPoints containsObject:key]) return;
@@ -708,8 +711,18 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 }
 /// "잠시 후" cue a few seconds before the maneuver; the SDK's own last call comes too early for it.
 /// Free-form cue (zones, tunnels) using the same timed message the SDK-driven cues use.
-- (void)emitPlainSpeech:(NSString *)text safety:(BOOL)safety {
-    NSDictionary *message = @{@"text": text, @"validUntil": @(NSDate.date.timeIntervalSince1970 + 8), @"stateChange": @NO, @"incidental": @NO};
+- (void)emitPlainSpeech:(NSString *)text safety:(BOOL)safety target:(KNLocation *)target {
+    if (!target || ![self locationIsFresh]) return;
+    SInt32 distance = [self.locationGuide.location distToLocation:target];
+    if (distance <= 0) return;
+    NSString *identifier = [NSString stringWithFormat:@"facility:%.0f:%.0f", (double)target.pos.x, (double)target.pos.y];
+    if (!self.speechTargets) self.speechTargets = [NSMutableDictionary dictionary];
+    if (self.speechTargets.count >= 16) [self.speechTargets removeAllObjects];
+    self.speechTargets[identifier] = @{@"target":target, @"distance":@(distance)};
+    KNGPSData *gps = self.locationGuide.gpsMatched;
+    double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
+    double lifetime = speed > 1 ? fmin(12, fmax(0, distance / speed - 0.8)) : 12;
+    NSDictionary *message = @{@"text": text, @"targetID": identifier, @"validUntil": @(NSDate.date.timeIntervalSince1970 + lifetime), @"stateChange": @NO, @"incidental": @NO, @"imminent": @([text hasPrefix:@"잠시 후"])};
     NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
     if (data) [self emit:safety ? @"spokenSafety" : @"spokenGuide" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
 }
@@ -728,7 +741,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         if (d <= 0 || d > fmax(150, fmin(400, speed * 12)) || [self.announcedPoints containsObject:key]) continue;
         [self.announcedPoints addObject:key];
         NSString *name = (zone.safetyZoneType & KNSafetyZoneType_SchoolZone) ? @"어린이 보호구역" : (zone.safetyZoneType & KNSafetyZoneType_SilverZone) ? @"노인 보호구역" : @"장애인 보호구역";
-        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다. 속도를 줄이고 주의하세요.", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name] safety:YES];
+        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다. 속도를 줄이고 주의하세요.", YLNavigationDistancePrefix(d), name] safety:YES target:zone.fromLocation];
     }
     for (KNSafety *point in self.safetyGuide.safetiesOnGuide ?: @[]) {
         if (!point.location) continue;
@@ -749,7 +762,8 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         }
         if (point.code != KNSafetyCode_Hump) continue;
         NSString *key = [NSString stringWithFormat:@"hump:%d", (int)point.safetyId];
-        if (d <= 0 || d > fmax(60, fmin(150, speed * 5)) || [self.announcedPoints containsObject:key]) continue;
+        NSString *phrase = [self spokenTextForCode:KNVoiceCode_Safety object:point];
+        if (d <= 0 || d > YLNavigationLeadDistance(speed, YLNavigationSpeechSeconds(phrase)) || [self.announcedPoints containsObject:key]) continue;
         [self emitTimedSpeech:KNVoiceCode_Safety object:point safety:YES];
     }
     // Tunnels ahead come from the route's facility list: "500미터 앞, OO터널입니다. 길이 1.2킬로미터."
@@ -764,7 +778,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         NSString *name = f.name.length ? ([f.name hasSuffix:@"터널"] ? f.name : [f.name stringByAppendingString:@" 터널"]) : @"터널";
         NSString *length = len >= 1000 ? [NSString stringWithFormat:@" 길이 %@킬로미터.", YLNavigationCompactNumber(round(len / 100.0) / 10.0)]
                                        : len >= 100 ? [NSString stringWithFormat:@" 길이 %d미터.", (int)(len / 100 * 100)] : @"";
-        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.%@", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name, length] safety:YES];
+        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.%@", YLNavigationDistancePrefix(d), name, length] safety:YES target:f.fromLocation];
     }
 }
 - (void)emitImminentTurn {
