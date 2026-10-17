@@ -17,6 +17,7 @@ elif [[ "${1:-}" == island ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testActualLiveActivityExtensionOnHomeScreen)
 elif [[ "${1:-}" == new ]]; then
   test_filter=(
+      -only-testing:InterfaceProbeTests/InteractionTests/testRecoveredChargeTimingAndRemovedScreenBriefing
       -only-testing:InterfaceProbeTests/InteractionTests/testTripEnergyForecastAcrossThemesAndRotation
       -only-testing:InterfaceProbeTests/InteractionTests/testTripRecordSummaryAndSelectedComparison
       -only-testing:InterfaceProbeTests/InteractionTests/testContextSpeechSettingsAndRoutineOmission

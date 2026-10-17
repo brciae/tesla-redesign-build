@@ -38,6 +38,8 @@ struct PreferencesView: View {
                 Toggle("차량 연결·길안내 실시간 현황", isOn: $liveActivity)
                     .onChange(of: liveActivity) { _, _ in model.updateLiveActivity() }
                 Text(activityManager.status).font(.caption).foregroundStyle(.secondary)
+                Button("실시간 현황 다시 시작") { activityManager.restart() }
+                Text(activityManager.installationSummary).font(.caption2).foregroundStyle(.secondary)
                 Text("단독 표시: 앱 아이콘·방향·거리. 음악과 동시 표시: 작은 방향 아이콘. 길게 누르면 상세 정보 표시. 표시 활동과 순서는 iOS에서 결정함.").font(.caption).foregroundStyle(.secondary)
                 Caption("차량 연결 또는 길안내 중 앱 아이콘·연결 상태·남은 시간을 표시함. 수신이 오래되면 업데이트 대기로 표시함.")
             }

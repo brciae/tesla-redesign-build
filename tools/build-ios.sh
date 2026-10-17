@@ -56,6 +56,7 @@ node tools/charge-integrity-tests.cjs
 node tools/charge-cost-tests.cjs
 node tools/published-tariff-tests.cjs
 node tools/charge-enrichment-tests.cjs
+node tools/history-endpoint-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendarAnalysis.swift tools/energy-calendar-tests.swift -o Xcode/EnergyCalendarTests
 Xcode/EnergyCalendarTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests
@@ -93,8 +94,14 @@ bash tools/test-interface.sh
 app_path="$repo_root/Xcode/DerivedData/Build/Products/Release-iphoneos/YLCompanion.app"
 test -s "$app_path/YLCompanion"
 test -s "$app_path/Info.plist"
-# Keep the original app/framework bundles unchanged for the local signing tool.
-# No codesign removal, binary rewriting, or signing bypass is performed here.
+# Seal every executable bundle before distribution; the installer must still
+# re-sign app AND extension with its own Apple identity and provisioning profiles.
+while IFS= read -r -d '' framework; do
+  codesign --force --sign - --generate-entitlement-der "$framework"
+done < <(find "$app_path/Frameworks" -depth -type d -name '*.framework' -print0)
+codesign --force --sign - --generate-entitlement-der "$app_path/PlugIns/VehicleLiveActivity.appex"
+codesign --force --sign - --generate-entitlement-der "$app_path"
+codesign --verify --deep --strict --verbose=2 "$app_path"
 stage_dir="$(mktemp -d "$repo_root/Xcode/package.XXXXXX")"
 mkdir "$stage_dir/Payload"
 ditto "$app_path" "$stage_dir/Payload/YLCompanion.app"
@@ -106,4 +113,4 @@ ditto -c -k --keepParent "$stage_dir/Payload" "$artifact_path"
 unzip -t "$artifact_path"
 shasum -a 256 "$artifact_path"
 python3 tools/inspect-ipa.py "$artifact_path"
-echo "UNSIGNED build created. Local re-signing and actual iPhone installation are still unverified."
+echo "Ad-hoc integrity-sealed IPA created. Apple account re-signing/provisioning and actual iPhone installation are still unverified."

@@ -294,7 +294,7 @@ struct BriefingView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         PageBody(title: "오늘의 브리핑", briefing: .daily) {
-            InfoCard { Label("출발 전", systemImage: "sun.horizon").font(.headline); Text(model.output.string("briefing")).font(.system(size: 23)).lineSpacing(7); HStack { Button("읽어주기") { model.speak() }; Spacer(); Button("음성 중지") { model.stopSpeech() } } }
+            InfoCard { Label("출발 전", systemImage: "sun.horizon").font(.headline); Text(model.output.string("briefing")).font(.system(size: 23)).lineSpacing(7) }
             InfoCard {
                 CardTitle(title: "마지막 회차 요약", systemImage: "flag.checkered",
                           info: "저장된 마지막 회차를 기준으로 계산한 요약임. 실시간 주행 값이 아니며, 연결 중 수신한 값만 반영됨.")
@@ -703,16 +703,7 @@ struct ChargeListView: View {
                     Caption("\(c.flag("startSOCEstimated") ? "약 " : "")\(valueText(c.number("startSOC")))% → \(c.flag("endSOCEstimated") ? "약 " : "")\(valueText(c.number("endSOC")))% · \(c.flag("active") ? "충전 중" : "충전 기록")")
                     if c.flag("startSOCEstimated") || c.flag("endSOCEstimated") { InfoNote("잔량 계산 근거", "충전 도중 연결된 경우 시작 잔량은 차량 충전량과 배터리 용량으로 계산합니다. 완료 신호를 늦게 받은 경우 종료 잔량은 차량 충전 한도를 참고합니다. 직접 수신한 시작·완료 잔량은 그대로 보존합니다.") }
                     if c.flag("collectedAfterEnd") { Caption("종료 후 수집한 기록 · 표시 시각은 차량 자료 수집 시각") }
-                    if c.flag("collectedAfterEnd") || c["startTimeObserved"] as? Bool == false {
-                        Caption("충전 시작 시각 미확인 · 수집 시각을 시작 시각으로 사용하지 않습니다.")
-                    } else {
-                        Caption("충전 시작: \(dateText(c.number("at"), time: true))")
-                    }
-                    if c.flag("collectedAfterEnd") || c["endTimeObserved"] as? Bool == false {
-                        Caption("최종 종료 시각 미확인 · 충전 상태 전환 기록 대조 필요")
-                    } else if c.number("end") != nil {
-                        Caption("충전 종료: \(dateText(c.number("end"), time: true))")
-                    }
+                    ChargeRecordTiming(row: c)
                     if c.flag("endSOCLastObserved") { Caption("종료 잔량에는 충전 중 마지막으로 수신한 값을 보존했습니다.") }
                     NavigationLink { ChargeDetailView(charge: c) } label: { Label("출력 곡선·위치 상세", systemImage: "chart.xyaxis.line").font(.subheadline) }
                 }

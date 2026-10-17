@@ -404,7 +404,7 @@ struct HomeView: View {
             if summaryOpen {
                 VStack(alignment: .leading, spacing: 12) {
                     Caption(model.output.string("briefing"))
-                    HStack { NavigationLink("브리핑 열기", value: Page.briefing); Spacer(); Button("읽어주기") { model.speak() } }.frame(minHeight: 44)
+                    NavigationLink("요약 열기", value: Page.briefing).frame(minHeight: 44)
                 }.transition(.opacity.combined(with: .move(edge: .top)))
             }
         }.sensoryFeedback(.selection, trigger: summaryOpen).padding(.bottom, 12)

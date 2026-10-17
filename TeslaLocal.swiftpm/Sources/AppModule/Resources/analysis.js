@@ -413,7 +413,7 @@
     }
     drive(g,now,context=this.state.groups){
       if(!fresh(g,now)||this.lastDrive&&g.at<=this.lastDrive.at)return;
-      const s=this.state,prev=this.lastDrive,c=fresh(context.charge,now,TTL.charge)?context.charge:null;
+      const s=this.state,prev=this.lastDrive,c=fresh(context.charge,now,TTL.charge)&&num(context.charge.soc,0,100)?context.charge:null;
       if(s.lastPark&&['D','R','N'].includes(g.gear)){const parkedDistance=num(s.lastPark.odometerKm,0,1e7)&&num(g.odometerKm,0,1e7)?g.odometerKm-s.lastPark.odometerKm:null;append(s.parkingPeriods,{id:id(),start:s.lastPark.at,end:g.at,startSOC:s.lastPark.soc,endSOC:c?.soc??null,deltaSOC:s.lastPark.soc==null||c?.soc==null?null:round(s.lastPark.soc-c.soc),startGear:'P',endGear:g.gear,startOdo:s.lastPark.odometerKm??null,endOdo:g.odometerKm??null,classification:parkedDistance!=null&&parkedDistance>=0&&parkedDistance<=0.2?'parking':'unclassified',note:'양 끝 주행거리로 주차 추정 · 미관측 충전·온도 영향 가능'});s.lastPark=null;}
       if(!s.lastPark&&!s.activeTrip&&g.gear==='P'&&c&&num(c.soc,0,100))s.lastPark={at:g.at,soc:c.soc,odometerKm:g.odometerKm,gear:'P',startObserved:false};
       const moving=['D','R'].includes(g.gear)&&num(g.speedKmh,1,350);
@@ -494,20 +494,20 @@
         // A counter correction is not a new start/stop event. Never split a session on kWh alone.
         if(s.activeCharge&&num(g.addedKWh,0,300)&&num(s.activeCharge.lastAdded,0,300)&&s.activeCharge.lastAdded-g.addedKWh>Math.max(2,s.activeCharge.lastAdded*0.25)){s.activeCharge.chargeCounterConflict=true;s.activeCharge.partial=true;}
         if(!s.activeCharge){
-          const boundary=!!prev&&[2,3,4,6,7].includes(prev.charging)&&g.at-prev.at<=120000;
+        const boundary=!!prev&&[2,3,4,6,7].includes(prev.charging)&&g.at-prev.at<=120000;
           const capacity=this.health().capacity??s.settings.assumedCapacityKWh??75;
           const estimate=num(g.soc,0,100)&&num(g.addedKWh,0,300)?round(Math.max(0,g.soc-g.addedKWh/capacity*100),1):null;
           const start=boundary?(num(prev.soc,0,100)?prev.soc:g.soc):estimate;
-          s.activeCharge={id:id(),at:g.at,startTimeObserved:boundary,startSOC:num(start,0,100)?start:null,startSOCObserved:boundary&&num(start,0,100),startSOCEstimated:!boundary&&estimate!=null,endSOC:num(g.soc,0,100)?g.soc:null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
+          s.activeCharge={id:id(),at:g.at,startTimeObserved:boundary||g.startTransitionObserved===true,startTimeBasis:boundary||g.startTransitionObserved===true?'stateTransition':'firstChargingObservation',startSOC:num(start,0,100)?start:null,startSOCObserved:boundary&&num(start,0,100),startSOCEstimated:!boundary&&estimate!=null,endSOC:num(g.soc,0,100)?g.soc:null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
         }
         const c=s.activeCharge;if(g.addedKWh!=null&&c.lastAdded!=null&&g.addedKWh<c.lastAdded)c.partial=true;
         c.endSOC=num(g.soc,0,100)?g.soc:c.endSOC;c.lastAt=g.at;
         if(num(g.addedKWh,0,300)){c.lastAdded=g.addedKWh;c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);}
-      }else if(s.activeCharge&&[2,6,7].includes(g.charging)){
+      }else if(s.activeCharge&&[2,3,4,6,7].includes(g.charging)){
         const c=s.activeCharge;const near=(g.at-(c.lastAt??c.at))<=120000;
         const observedEnd=near&&num(g.soc,0,100)&&(c.startSOC==null||g.soc>=c.startSOC);
         const estimatedEnd=!observedEnd&&g.charging===6&&num(g.limit,1,100)&&g.limit>=(c.endSOC??c.startSOC??0)?g.limit:null;
-        c.endSOC=observedEnd?g.soc:estimatedEnd??c.endSOC;c.endSOCObserved=observedEnd;c.endSOCEstimated=estimatedEnd!=null;c.endSOCLastObserved=!observedEnd&&estimatedEnd==null;c.end=near?g.at:c.lastAt??g.at;c.endTimeObserved=near;c.source=c.source===g.source||!g.source?c.source:[...new Set((c.source??'BLE').split('+').concat(g.source))].join('+');c.storedKWh=null;c.supplyKWh=null;c.cost=null;c.complete=c.startSOCObserved===true&&observedEnd;
+        c.endSOC=observedEnd?g.soc:estimatedEnd??c.endSOC;c.endSOCObserved=observedEnd;c.endSOCEstimated=estimatedEnd!=null;c.endSOCLastObserved=!observedEnd&&estimatedEnd==null;c.end=near||g.endTransitionObserved===true?g.at:c.lastAt??g.at;c.endTimeObserved=near||g.endTransitionObserved===true;c.source=c.source===g.source||!g.source?c.source:[...new Set((c.source??'BLE').split('+').concat(g.source))].join('+');c.storedKWh=null;c.supplyKWh=null;c.cost=null;c.complete=c.startSOCObserved===true&&observedEnd;
         if(num(g.addedKWh,0,300))c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);
         append(s.charges,c);s.activeCharge=null;this.completedChargeID=c.id;
       }
@@ -649,10 +649,16 @@
       const scalar=field=>{const r=latest[field];if(!r||r.invalid)return null;if(Number.isFinite(r.number))return r.number;try{return Object.values(JSON.parse(r.text))[0];}catch{return null;}};
       for(const at of [...byTime.keys()].sort((a,b)=>a-b)){
         for(const row of byTime.get(at))latest[row.field]=row;
-        if(num(input.replayFrom,1,Date.now()+5000)&&at<input.replayFrom)continue;
-        const soc=scalar('Soc')??scalar('BatteryLevel'),odo=scalar('Odometer'),speed=scalar('VehicleSpeed');
+        if(num(input.replayFrom,1,Date.now()+5000)&&at<input.replayFrom){
+          const k=['DetailedChargeState','ChargeState'].filter(k=>latest[k]).sort((a,b)=>latest[b].at-latest[a].at)[0];
+          previousCharge={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[String(scalar(k)??'').replace('DetailedChargeState','')];
+          continue;
+        }
+        const fields=new Set(byTime.get(at).map(r=>r.field));
+        const socField=['Soc','BatteryLevel'].filter(k=>latest[k]).sort((a,b)=>latest[b].at-latest[a].at)[0];
+        const soc=socField&&at-latest[socField].at<=180000?scalar(socField):null,odo=scalar('Odometer'),speed=scalar('VehicleSpeed');
         const gear=String(scalar('Gear')??'').replace('ShiftState','');
-        const stateFields=['DetailedChargeState','ChargeState'].filter(k=>latest[k]&&!latest[k].invalid).sort((a,b)=>latest[b].at-latest[a].at);
+        const stateFields=['DetailedChargeState','ChargeState'].filter(k=>latest[k]).sort((a,b)=>latest[b].at-latest[a].at);
         const detail=String(scalar(stateFields[0])??'').replace('DetailedChargeState','');
         const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
         if(charging===5&&previousCharge!==5){chargeBegan=at;finishedCharge=null;}
@@ -663,10 +669,12 @@
         const added=energyField?scalar(energyField):null;
         const dc=(latest.DCChargingPower?.at>=(chargeBegan??at)-120000&&num(scalar('DCChargingPower'),0.01,1500))||replay.state.activeCharge?.chargeType==='dc'||finishedCharge?.chargeType==='dc';
         const supply=!dc&&validEnergy('ACChargingEnergyIn')?scalar('ACChargingEnergyIn'):null;
-        if(charging!==undefined){
+        const chargePacket=[...fields].some(k=>['ChargeState','DetailedChargeState','Soc','BatteryLevel','DCChargingEnergyIn','ACChargingEnergyIn','ChargeEnergyAdded','ChargeLimitSoc','ACChargingPower','DCChargingPower','ChargePower'].includes(k));
+        if(charging!==undefined&&chargePacket){
           // A terminal state remains cached for hours. Later SOC drift is not another charge.
           const terminal=[6,7].includes(charging), repeatedEnd=terminal&&[6,7].includes(previousCharge)&&finishedCharge;
-          if(!repeatedEnd)replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS'},at);
+          const stateEvent=fields.has(stateFields[0]);
+          if(!repeatedEnd)replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS',startTransitionObserved:stateEvent&&charging===5&&previousCharge!=null&&previousCharge!==5,endTransitionObserved:stateEvent&&previousCharge===5&&[2,3,4,6,7].includes(charging)},at);
           if(!repeatedEnd&&!replay.state.activeCharge&&terminal&&added==null&&supply>0&&num(soc,0,100)&&!replay.state.charges.some(c=>c.end===at)){
             // A completion-only AC packet still proves supplied energy, but not starting SOC.
             const duplicate=replay.state.charges.some(c=>c.supplyKWh===supply&&c.endSOC===soc&&at-c.end<48*3600000);
@@ -686,11 +694,21 @@
           }
           previousCharge=charging;
         }
-        if(['P','D','R','N'].includes(gear))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at,soc},location:{}});
+        if(['P','D','R','N'].includes(gear)&&['Gear','VehicleSpeed','Odometer'].some(k=>fields.has(k)))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at:socField?latest[socField].at:0,soc},location:{}});
       }
       for(const kind of ['trips','charges'])for(const source of replay.state[kind]){
         const start=kind==='trips'?source.start:source.at,end=source.end??start;
         const row={...source,id:'nas:'+vin+':'+kind+':'+start,source:'NAS'};
+        const activeKey=kind==='trips'?'activeTrip':'activeCharge',active=this.state[activeKey];
+        const activeStart=active&&(kind==='trips'?active.start:active.at);
+        // A completed NAS interval can close the same phone session. Do not discard it
+        // simply because the phone still has an active row after suspension/restart.
+        if(active&&end>start&&activeStart>=start-120000&&activeStart<=end&&
+           (active.lastAt??activeStart)<=end+120000){
+          row.id=active.id;
+          for(const key of ['cost','note','place','chargeOperator','memberPricing','roamingPricing','chargeTypeManual','receiptText','siteMatch'])if(active[key]!=null)row[key]=active[key];
+          this.state[activeKey]=null;
+        }
         const list=this.state[kind],same=list.findIndex(x=>x.id===row.id);
         if(same>=0){
           const old=list[same];
@@ -705,6 +723,8 @@
             for(const key of ['chargeType','chargeOperator','latitude','longitude','startSOC','endSOC','vehicleReportedKWh','supplyKWh'])if(merged[key]==null&&row[key]!=null)merged[key]=row[key];
             if(!old.startSOCObserved&&row.startSOCObserved){merged.startSOC=row.startSOC;merged.startSOCObserved=true;merged.startSOCEstimated=false;}
             if(!old.endSOCObserved&&row.endSOCObserved){merged.endSOC=row.endSOC;merged.endSOCObserved=true;merged.endSOCEstimated=false;}
+            if(!old.startTimeObserved&&row.startTimeObserved){merged.at=row.at;merged.startTimeObserved=true;merged.startTimeBasis=row.startTimeBasis;merged.collectedAfterEnd=false;}
+            if(!old.endTimeObserved&&row.endTimeObserved){merged.end=row.end;merged.endTimeObserved=true;}
             merged.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};list[same]=merged;
           }else list[same]=row;
           continue;
@@ -724,6 +744,10 @@
             }
             if(!row.collectedAfterEnd&&row.end>row.at){existing.receiptAt??=existing.at;existing.at=row.at;existing.end=row.end;existing.startTimeObserved=row.startTimeObserved;existing.endTimeObserved=row.endTimeObserved;}
             existing.source=[...new Set((existing.source??'차량').split('+').concat('NAS'))].join('+');
+            if(!existing.startSOCObserved&&row.startSOCObserved){existing.startSOC=row.startSOC;existing.startSOCObserved=true;existing.startSOCEstimated=false;}
+            if(!existing.endSOCObserved&&row.endSOCObserved){existing.endSOC=row.endSOC;existing.endSOCObserved=true;existing.endSOCEstimated=false;}
+          }else{
+            for(const key of ['startSOC','endSOC'])if(existing[key]==null&&num(row[key],0,100))existing[key]=row[key];
           }
           continue;
         }
@@ -738,7 +762,32 @@
         if(index>=0)this.state.parkingPeriods[index]=row;
         else if(!this.state.parkingPeriods.some(p=>p.start<row.end&&row.start<p.end))append(this.state.parkingPeriods,row);
       }
+      this.enrichRecordEndpoints(rows);
       return this.view();
+    }
+    enrichRecordEndpoints(rows){
+      // Nearest real sample in a bounded window, never an SOC interpolated from kWh.
+      const samples=rows.filter(r=>['Soc','BatteryLevel'].includes(r.field)&&num(r.at,1,1e14)).sort((a,b)=>a.at-b.at);
+      const nearest=time=>{
+        let lo=0,hi=samples.length;while(lo<hi){const mid=(lo+hi)>>1;if(samples[mid].at<time-120000)lo=mid+1;else hi=mid;}
+        const nearby=[];for(let i=lo;i<samples.length&&samples[i].at<=time+120000;i++)nearby.push(samples[i]);
+        if(!nearby.length||nearby.some(r=>r.invalid||!num(r.number,0,100)))return null;
+        if(Math.max(...nearby.map(r=>r.number))-Math.min(...nearby.map(r=>r.number))>2)return null;
+        return nearby.sort((a,b)=>Math.abs(a.at-time)-Math.abs(b.at-time))[0];
+      };
+      for(const kind of ['trips','charges'])for(const row of this.state[kind]){
+        if(row.collectedAfterEnd||row.atPrecision==='day')continue;
+        for(const [key,time] of [['startSOC',kind==='trips'?row.start:row.at],['endSOC',row.end]]){
+          if(kind==='charges'&&key==='startSOC'&&row.startTimeObserved===false)continue;
+          if(!num(time,1,1e14)||row[key]!=null&&!row[key==='startSOC'?'startSOCEstimated':'endSOCEstimated']&&!(key==='endSOC'&&row.endSOCLastObserved))continue;
+          const sample=nearest(time);if(!sample)continue;
+          if(kind==='charges'&&((key==='startSOC'&&num(row.endSOC,0,100)&&sample.number>row.endSOC)||(key==='endSOC'&&num(row.startSOC,0,100)&&sample.number<row.startSOC)))continue;
+          row[key]=sample.number;row[key+'Observed']=true;row[key+'TelemetryAt']=sample.at;
+          row[key==='startSOC'?'startSOCEstimated':'endSOCEstimated']=false;
+          if(key==='endSOC')row.endSOCLastObserved=false;
+        }
+        if(kind==='charges'&&row.startSOCObserved===true&&row.endSOCObserved===true&&row.endTimeObserved===true)row.complete=true;
+      }
     }
     mergeHistory(value){
       const source=validateState(value),target=this.state;

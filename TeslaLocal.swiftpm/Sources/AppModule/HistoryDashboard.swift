@@ -75,14 +75,14 @@ struct ChargeDetailView: View {
     private var start: Date? { HistoryData.date(charge, "at") }
     private var end: Date? { HistoryData.date(charge, "end") }
     var body: some View {
-        let from = start ?? Date(), to = end ?? from.addingTimeInterval(3600)
+        let from = start ?? Date(), to = end ?? HistoryData.date(charge, "lastAt") ?? from
         let power = HistoryData.readings(["DCChargingPower", "ACChargingPower", "ChargePower"], from: from, to: to)
         let soc = HistoryData.readings(["Soc", "BatteryLevel"], from: from, to: to)
         let spot = HistoryData.location(near: from)
         List {
+            Section { ChargeRecordTiming(row: charge) }
             Section {
-                row("시작", dateText(charge.number("at")))
-                row("소요", HistoryData.duration(start, end))
+                row(charge["startTimeObserved"] as? Bool == false || charge["endTimeObserved"] as? Bool == false ? "관측 구간" : "소요", HistoryData.duration(start, end))
                 row("종류", HistoryData.typeName(charge))
                 if let a = charge.number("startSOC"), let b = charge.number("endSOC") { row("배터리", "\(Int(a))% → \(Int(b))% (+\(Int(b - a))%)") }
                 if let e = HistoryData.energy(charge) { row("충전량", String(format: "%.2f kWh", e)) }

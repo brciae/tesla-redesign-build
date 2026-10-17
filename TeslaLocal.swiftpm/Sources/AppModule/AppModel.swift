@@ -215,6 +215,18 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.archiveReadings = FleetTelemetryStore.shared.records
             self.observeParkingTelemetry()
+            let vin = self.settings.string("vin")
+            let repairKey = "history.endpointRepair.v161." + vin
+            if !self.demo, !vin.isEmpty, !UserDefaults.standard.bool(forKey: repairKey),
+               self.archiveReadings.contains(where: { $0.vin == vin }) {
+                do {
+                    FleetTelemetryStore.shared.requestHistoryRebuild(vin: vin)
+                    try self.mergeArchiveHistory(vin: vin)
+                    try self.persist()
+                    FleetTelemetryStore.shared.historySaved(vin: vin)
+                    UserDefaults.standard.set(true, forKey: repairKey)
+                } catch { self.storageStatus = "과거 기록 재대조 대기: " + error.localizedDescription }
+            }
             do { try self.enrichLocalChargeSOC(); self.saveRecordsWhenAvailable() }
             catch { self.storageStatus = "충전 배터리 기록 보완: " + error.localizedDescription }
         }

@@ -24,6 +24,7 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("charge-cost-probe") { ChargeCostProbe() }
             else if ProcessInfo.processInfo.arguments.contains("published-tariff-probe") { PublishedTariffProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charge-audit-probe") { ChargeAuditCalendarProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("record-recovery-probe") { RecordRecoveryProbe() }
             else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
             else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
             else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
@@ -815,6 +816,39 @@ struct VoicePlaybackProbe: View {
         do { let file = try AVAudioFile(forWriting: dir.appendingPathComponent(key + ".wav"), settings: format.settings, commonFormat: .pcmFormatInt16, interleaved: true); try file.write(from: buffer) }
         catch { fatalError("Fixture WAV failed: \(error)") }
         precondition(TypecastClient.shared.cachedURL(for: prepared, voiceId: "은경") != nil)
+    }
+}
+struct RecordRecoveryProbe: View {
+    @StateObject private var model: AppModel
+    init() {
+        let m = AppModel(), vin = "5YJYGDEE0LF000001"
+        let now = Date().timeIntervalSince1970 * 1000, t = now - 3602000
+        _ = try! m.runtime.call("settings", ["vin": vin])
+        _ = try! m.runtime.call("ingestFleetCharge", ["vin": vin, "at": now - 2000, "charging": 5, "soc": 52, "addedKWh": 13.48])
+        func sample(_ offset: Double, _ field: String, _ value: Any) -> Object {
+            var row: Object = ["at": t + offset, "field": field, "invalid": false]
+            if let n = value as? Double { row["number"] = n }
+            else { row["text"] = String(data: try! JSONSerialization.data(withJSONObject: ["stringValue": value]), encoding: .utf8)! }
+            return row
+        }
+        let rows = [sample(-3600000, "ChargeState", "Disconnected"), sample(0, "ChargeState", "Charging"), sample(0, "Soc", 36.0), sample(0, "ChargeEnergyAdded", 0.0), sample(3600000, "Soc", 52.0), sample(3600000, "ChargeEnergyAdded", 13.48), sample(3601000, "ChargeState", "Stopped")]
+        m.output = try! m.runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": t]) as! Object
+        _model = StateObject(wrappedValue: m)
+    }
+    var body: some View {
+        let charge = model.state.rows("charges").first ?? [:]
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("충전 기록 복구").font(.title2.bold())
+                ScreenBriefingControls(scope: .charges)
+                LocalBriefingControls(title: "주행·소비 분석", summary: { ["제거된 음성 브리핑"] })
+                Text(charge.isEmpty ? "충전 기록 없음" : "충전 종료 반영됨").font(.headline)
+                Text(String(format: "%.0f%% → %.0f%% · %.2f kWh", charge.number("startSOC") ?? -1, charge.number("endSOC") ?? -1, charge.number("vehicleReportedKWh") ?? -1)).font(.title3)
+                ChargeRecordTiming(row: charge)
+                Divider()
+                ChargeRecordTiming(row: ["at": charge["at"] ?? 0, "lastAt": charge["end"] ?? 0, "active": true, "startTimeObserved": false])
+            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        }.environmentObject(model).environment(\.colorScheme, .light).foregroundStyle(.black).background(.white)
     }
 }
 struct ChargeAuditCalendarProbe: View {

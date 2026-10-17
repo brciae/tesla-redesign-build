@@ -94,9 +94,9 @@ for (const [state, expected] of [[5,true],[3,false],[0,null],[undefined,null]]) 
 console.log(`PASS: ${count} view structures + 1 nested screen; explicit scoped bindings (source audit, not rendered UI QA)`);
 
 const scoped = fs.readFileSync(root+'ScreenBriefing.swift','utf8');
-assert(scoped.includes('if scope.supportsSpeech'), 'Settings/menu scopes must not render voice controls');
+assert(scoped.includes('EmptyView()')&&!scoped.includes('Button'), 'Screen narration controls were removed by user request');
 const local = fs.readFileSync(root+'LocalBriefingControls.swift','utf8');
-assert(local.includes('].contains(title)'), 'Local editor voice controls must be opt-in');
+assert(local.includes('EmptyView()')&&!local.includes('Button'), 'Local narration controls were removed by user request');
 assert(!fs.readFileSync(root+'DrivingWorkspace.swift','utf8').includes('announceDashboardStart('), 'Opening a dashboard must be silent');
 const voiceSource = fs.readFileSync(root+'VoiceCoordinator.swift','utf8');
 assert(!voiceSource.includes('guard category != "voiceControl"') && voiceSource.includes('!d.bool(forKey: "voiceControl")'), 'Control speech must honor its setting instead of an unconditional silent return');

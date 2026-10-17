@@ -80,7 +80,7 @@ with zipfile.ZipFile(ipa_path) as archive:
         checksum = hashlib.file_digest(stream, "sha256").hexdigest()
     result = {
         "native_package_check": "PASS", "device_install_test": "NOT_RUN",
-        "signing": "Unsigned CI output; local Apple account re-sign required",
+        "signing": "CI ad-hoc integrity seal; Apple account re-signing and device provisioning still required",
         "bundle_id": info["CFBundleIdentifier"], "version": info["CFBundleShortVersionString"],
         "build": info["CFBundleVersion"],
         "entries": len(names), "sha256": checksum, "binaries": binary_results,

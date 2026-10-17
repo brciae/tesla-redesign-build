@@ -1,6 +1,17 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testRecoveredChargeTimingAndRemovedScreenBriefing() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["record-recovery-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["충전 종료 반영됨"].waitForExistence(timeout: 8))
+        for prefix in ["충전 시작:", "충전 종료:", "충전 최초 관측:", "마지막 수신:"] {
+            XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch.exists)
+        }
+        XCTAssertFalse(app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "브리핑")).firstMatch.exists)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Recovered charge timing without screen briefing"; shot.lifetime = .keepAlways; add(shot)
+    }
     func testPlaybackSourceIconsAcrossThemesAndSourceChanges() {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "media-source-probe"]; app.launch()
@@ -102,7 +113,7 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["live-activity-probe"]; app.launch()
         app.buttons["실제 실시간 현황 시작"].tap()
-        XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["실시간 현황 요청됨 · 화면 표시 별도 확인"].waitForExistence(timeout: 8))
         XCUIDevice.shared.press(.home)
         // Activity.request returns before the widget service finishes its first snapshot.
         let snapshotDelay = expectation(description: "Widget service first snapshot")
@@ -120,7 +131,9 @@ final class InteractionTests: XCTestCase {
         expandedShot.lifetime = .keepAlways; add(expandedShot)
         XCTAssertTrue(rendered, "ActivityKit request succeeded but the real widget extension did not render guidance")
         app.activate()
-        XCTAssertTrue(app.staticTexts["실시간 현황 사용 중"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["실시간 현황 요청됨 · 화면 표시 별도 확인"].waitForExistence(timeout: 5))
+        app.buttons["실시간 현황 다시 시작"].tap()
+        XCTAssertTrue(app.staticTexts["실시간 현황 요청됨 · 화면 표시 별도 확인"].waitForExistence(timeout: 8))
         app.buttons["음악 동시 표시 시험"].tap()
         let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
         safari.activate()

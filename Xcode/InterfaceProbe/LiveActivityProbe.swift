@@ -27,6 +27,7 @@ struct LiveActivityProbe: View {
                 UIApplication.shared.open(URL(string: "http://127.0.0.1:18757/music.html")!)
             }
             Text(manager.status).accessibilityIdentifier("live.activity.status")
+            Button("실시간 현황 다시 시작") { manager.restart() }
         }.padding().accessibilityElement(children: .contain)
     }
 }

@@ -11,8 +11,8 @@
    "CODE_SIGNING_ALLOWED": "NO",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "GENERATE_INFOPLIST_FILE": "YES",
-   "MARKETING_VERSION": "1.60",
-   "CURRENT_PROJECT_VERSION": "160"
+   "MARKETING_VERSION": "1.61",
+   "CURRENT_PROJECT_VERSION": "161"
   }
  },
  "targets": {
@@ -83,6 +83,7 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefing.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeRecordTiming.swift",
     {
      "path": "Assets.xcassets"
     },
@@ -163,8 +164,8 @@
     "path": "Generated/ProbeLiveActivity-Info.plist",
     "properties": {
      "CFBundleDisplayName": "YL Companion 현황",
-     "CFBundleShortVersionString": "1.57",
-     "CFBundleVersion": "157",
+     "CFBundleShortVersionString": "$(MARKETING_VERSION)",
+     "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
      "NSExtension": {
       "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
      }
