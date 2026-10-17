@@ -590,8 +590,10 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     if (!record || ![self locationIsFresh] || YLGuidanceOwner != self) return NO;
     if (-self.locationGuide.gpsMatched.timestamp.timeIntervalSinceNow > 2.5) return NO;
     SInt32 distance = [self.locationGuide.location distToLocation:record[@"target"]];
-    double age = fmax(0, [NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt);
     KNGPSData *gps = self.locationGuide.gpsMatched;
+    // A newly delivered callback can still contain an older matched GPS sample.
+    double age = fmax(0, fmax([NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt,
+                             -gps.timestamp.timeIntervalSinceNow));
     double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
     // A cached clip can also become late in the queue or on a Bluetooth route.
     return distance <= [record[@"distance"] intValue] + 10 &&
