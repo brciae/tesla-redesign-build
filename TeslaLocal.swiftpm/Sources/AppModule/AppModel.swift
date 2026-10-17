@@ -215,18 +215,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.archiveReadings = FleetTelemetryStore.shared.records
             self.observeParkingTelemetry()
-            let vin = self.settings.string("vin")
-            let repairKey = "history.endpointRepair.v161." + vin
-            if !self.demo, !vin.isEmpty, !UserDefaults.standard.bool(forKey: repairKey),
-               self.archiveReadings.contains(where: { $0.vin == vin }) {
-                do {
-                    FleetTelemetryStore.shared.requestHistoryRebuild(vin: vin)
-                    try self.mergeArchiveHistory(vin: vin)
-                    try self.persist()
-                    FleetTelemetryStore.shared.historySaved(vin: vin)
-                    UserDefaults.standard.set(true, forKey: repairKey)
-                } catch { self.storageStatus = "과거 기록 재대조 대기: " + error.localizedDescription }
-            }
+            self.repairSavedHistoryIfNeeded()
             do { try self.enrichLocalChargeSOC(); self.saveRecordsWhenAvailable() }
             catch { self.storageStatus = "충전 배터리 기록 보완: " + error.localizedDescription }
         }
@@ -360,6 +349,18 @@ final class AppModel: ObservableObject {
         output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
         archiveReadings = store.records
         try enrichLocalChargeSOC()
+    }
+    @MainActor private func repairSavedHistoryIfNeeded() {
+        guard UIApplication.shared.applicationState == .active, !demo, !recoveryLock else { return }
+        let vin = settings.string("vin"), key = "history.endpointRepair.v161." + settings.string("vin")
+        guard !vin.isEmpty, !UserDefaults.standard.bool(forKey: key),
+              FleetTelemetryStore.shared.records.contains(where: { $0.vin == vin }) else { return }
+        do {
+            FleetTelemetryStore.shared.requestHistoryRebuild(vin: vin)
+            try mergeArchiveHistory(vin: vin); try persist()
+            FleetTelemetryStore.shared.historySaved(vin: vin)
+            UserDefaults.standard.set(true, forKey: key)
+        } catch { storageStatus = "과거 기록 재대조 대기: " + error.localizedDescription }
     }
     private func applyLiveOutput(_ delta: Object) {
         guard delta.flag("liveDelta") else { if !delta.isEmpty { output = delta }; return }
@@ -548,7 +549,7 @@ final class AppModel: ObservableObject {
         if savePending { saveRecordsWhenAvailable() }
         voice.callStateChanged(phoneCalls.isActive)
         link.resume(vin: settings.string("vin")); navigation.foregrounded(vin: settings.string("vin")); refresh()
-        Task { @MainActor in await fleet.refreshVehicleSnapshot() }
+        Task { @MainActor in repairSavedHistoryIfNeeded(); await fleet.refreshVehicleSnapshot() }
     }
     func refreshVehicle() {
         guard !recoveryLock, !demo else { return }
