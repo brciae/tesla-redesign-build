@@ -1,6 +1,18 @@
 #import <Foundation/Foundation.h>
 #import <math.h>
 
+// Estimate only until the cached clip is opened; playback uses its actual duration.
+static inline double YLNavigationSpeechSeconds(NSString *text) {
+    return fmax(1, text.length / 5.0);
+}
+static inline double YLNavigationLeadDistance(double speed, double speechSeconds) {
+    return fmax(25, fmax(0, speed) * (speechSeconds + 1.5 + fmax(0, speed) / 20.0));
+}
+static inline BOOL YLNavigationCanFinish(double distance, double speed, double age, double duration) {
+    if (!isfinite(distance) || distance <= 0 || !isfinite(speed) || !isfinite(duration) || !isfinite(age) || age < 0 || age > 3) return NO;
+    return distance - fmax(0, speed) * (age + fmax(0, duration) + 0.8) > 0;
+}
+
 static inline BOOL YLNavigationPositionUsable(BOOL valid, double gpsAge, double callbackAge, BOOL routePosition) {
     if (!valid) return NO;
     if (isfinite(gpsAge) && gpsAge >= -3 && gpsAge <= 15) return YES;

@@ -583,11 +583,19 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     return nil;
 }
 - (BOOL)isSpeechTargetAhead:(NSString *)identifier {
+    return [self canFinishSpeech:identifier duration:0];
+}
+- (BOOL)canFinishSpeech:(NSString *)identifier duration:(double)duration {
     NSDictionary *record = self.speechTargets[identifier];
     if (!record || ![self locationIsFresh] || YLGuidanceOwner != self) return NO;
     if (-self.locationGuide.gpsMatched.timestamp.timeIntervalSinceNow > 2.5) return NO;
     SInt32 distance = [self.locationGuide.location distToLocation:record[@"target"]];
-    return distance > 0 && distance <= [record[@"distance"] intValue] + 10;
+    double age = fmax(0, [NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt);
+    KNGPSData *gps = self.locationGuide.gpsMatched;
+    double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
+    // A cached clip can also become late in the queue or on a Bluetooth route.
+    return distance <= [record[@"distance"] intValue] + 10 &&
+        YLNavigationCanFinish(distance, speed, age, duration);
 }
 - (NSArray<KNSafety *> *)humpGroupForPoint:(KNSafety *)point {
     if (!point.location || ![self locationIsFresh]) return @[point];
@@ -627,6 +635,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     BOOL stateChange = code == KNVoiceCode_StartGuide || code == KNVoiceCode_EndGuide || code == KNVoiceCode_OutOfRoute || code == KNVoiceCode_RouteChanged;
     message[@"stateChange"] = @(stateChange);
     message[@"incidental"] = @(code == KNVoiceCode_Alert && !target);
+    message[@"imminent"] = @(self.forceImminent || [text hasPrefix:@"잠시 후"]);
     if (stateChange) { [self.speechTargets removeAllObjects]; [self.announcedPoints removeAllObjects]; }
     if (target) {
         if (![self locationIsFresh]) return;
@@ -639,15 +648,15 @@ static UIImage *YLArrowIcon(UIColor *fill) {
             if (data) [self emit:@"spokenGuide" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
             return;
         }
-        NSString *identifier = NSUUID.UUID.UUIDString;
+        NSString *identifier = [NSString stringWithFormat:@"%@:%.0f:%.0f", NSStringFromClass([object class]), (double)target.pos.x, (double)target.pos.y];
         if (!self.speechTargets) self.speechTargets = [NSMutableDictionary dictionary];
         if (self.speechTargets.count >= 16) [self.speechTargets removeAllObjects];
         self.speechTargets[identifier] = @{@"target":target, @"distance":@(distance)};
         message[@"targetID"] = identifier;
         KNGPSData *gps = self.locationGuide.gpsMatched;
         double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-        // Keep at least 3 s so a close maneuver survives the bridge and synthesis hop.
-        double lifetime = speed > 1 ? fmin(12, fmax(3, distance / speed - 1.5)) : 12;
+        // Never extend a near/passed point merely to survive the queue.
+        double lifetime = speed > 1 ? fmin(12, fmax(0, distance / speed - 0.8)) : 12;
         message[@"validUntil"] = @(NSDate.date.timeIntervalSince1970 + lifetime);
     }
     NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
@@ -678,6 +687,10 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     // Re-offer as the vehicle advances: Swift may have been busy or rate-limited.
     // Cached phrases incur no network request; the shared synthesis budget remains bounded.
     NSMutableArray *phrases = [NSMutableArray array];
+    self.forceImminent = YES;
+    NSString *imminent = [self spokenTextForCode:KNVoiceCode_Safety object:nearest];
+    self.forceImminent = NO;
+    if (imminent.length) [phrases addObject:imminent];
     // Must match YLNavigationDistancePrefix bands exactly so live cues are cache hits.
     for (NSNumber *distance in @[@2000, @1000, @900, @800, @700, @600, @500, @400, @300, @200, @100, @0]) {
         if (distance.intValue <= nearestDistance) [phrases addObject:[YLNavigationDistancePrefix(distance.intValue) stringByAppendingString:body]];
@@ -686,14 +699,12 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:phrases options:0 error:nil];
     if (data) [self emit:@"prepareSpeech" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
 }
-/// Distance the driver will be at when the sentence is actually heard (~3 s bridge + playback lead).
+/// Current matched-route distance; no fixed three-second subtraction for cached speech.
 - (SInt32)spokenMetres:(KNLocation *)target {
     SInt32 raw = [self.locationGuide.location distToLocation:target];
     if (raw <= 0) return raw;
     if (self.forceImminent) return 40;
-    KNGPSData *gps = self.locationGuide.gpsMatched;
-    double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-    return (SInt32)fmax(1, raw - speed * 3.0);
+    return raw;
 }
 /// "잠시 후" cue a few seconds before the maneuver; the SDK's own last call comes too early for it.
 /// Free-form cue (zones, tunnels) using the same timed message the SDK-driven cues use.
@@ -720,8 +731,23 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다. 속도를 줄이고 주의하세요.", YLNavigationDistancePrefix((NSInteger)fmax(1, d - speed * 3)), name] safety:YES];
     }
     for (KNSafety *point in self.safetyGuide.safetiesOnGuide ?: @[]) {
-        if (point.code != KNSafetyCode_Hump || !point.location) continue;
+        if (!point.location) continue;
         SInt32 d = [self.locationGuide.location distToLocation:point.location];
+        NSSet *cameras = [NSSet setWithArray:@[@81, @82, @86, @91, @100, @102, @103]];
+        if ([cameras containsObject:@(point.code)]) {
+            NSString *key = [NSString stringWithFormat:@"camera-imminent:%d:%d:%d", (int)point.safetyId, (int)point.location.pos.x, (int)point.location.pos.y];
+            self.forceImminent = YES;
+            NSString *phrase = [self spokenTextForCode:KNVoiceCode_Safety object:point];
+            self.forceImminent = NO;
+            if (speed > 1 && d > 0 && d <= YLNavigationLeadDistance(speed, YLNavigationSpeechSeconds(phrase)) && ![self.announcedPoints containsObject:key]) {
+                [self.announcedPoints addObject:key];
+                self.forceImminent = YES;
+                [self emitTimedSpeech:KNVoiceCode_Safety object:point safety:YES];
+                self.forceImminent = NO;
+            }
+            continue;
+        }
+        if (point.code != KNSafetyCode_Hump) continue;
         NSString *key = [NSString stringWithFormat:@"hump:%d", (int)point.safetyId];
         if (d <= 0 || d > fmax(60, fmin(150, speed * 5)) || [self.announcedPoints containsObject:key]) continue;
         [self emitTimedSpeech:KNVoiceCode_Safety object:point safety:YES];
@@ -749,7 +775,10 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     SInt32 raw = [self.locationGuide.location distToLocation:dir.location];
     KNGPSData *gps = self.locationGuide.gpsMatched;
     double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-    if (speed < 2 || raw <= 10 || raw > fmax(60, fmin(180, speed * 5))) return;
+    self.forceImminent = YES;
+    NSString *phrase = [self spokenTextForCode:KNVoiceCode_Turn object:dir];
+    self.forceImminent = NO;
+    if (speed < 2 || raw <= 0 || raw > YLNavigationLeadDistance(speed, YLNavigationSpeechSeconds(phrase))) return;
     self.imminentTarget = dir.location;
     self.forceImminent = YES;
     [self emitTimedSpeech:KNVoiceCode_Turn object:dir safety:NO];
@@ -826,6 +855,11 @@ static UIImage *YLArrowIcon(UIColor *fill) {
             NSString *kind = point.code == 81 ? @"이동식 과속 단속 카메라" : (point.code == 86 || point.code == 103) ? @"신호 과속 단속 카메라" : @"과속 단속 카메라";
             NSString *limit = ([point isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)point).speedLimit > 0)
                 ? [NSString stringWithFormat:@" 제한 속도는 시속 %d킬로미터입니다.", (int)((KNSafety_Camera *)point).speedLimit] : @"";
+            if (self.forceImminent) {
+                if ([point isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)point).speedLimit > 0)
+                    return [NSString stringWithFormat:@"잠시 후, 시속 %d킬로미터 과속 단속입니다.", (int)((KNSafety_Camera *)point).speedLimit];
+                return [NSString stringWithFormat:@"잠시 후, %@입니다.", kind];
+            }
             return [NSString stringWithFormat:@"%@%@가 있습니다.%@ 과속에 주의하세요.", prefix, kind, limit];
         }
         NSString *limitSentence = @"";

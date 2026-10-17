@@ -19,7 +19,10 @@ import Foundation
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 5))
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: true, priority: 3, activePriority: 4))
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 4))
-        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: true, navigationBusy: true, incidental: false, priority: 4, activePriority: 5))
+        precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: true, navigationBusy: true, incidental: false, priority: 4, activePriority: 5))
+        precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 5, cannotWait: true))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: true, priority: 5, activePriority: 5, cannotWait: true))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 4, activePriority: 5, cannotWait: true))
         precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: false, incidental: false, priority: 4, activePriority: 3))
         precondition(NavigationDistanceWording.normalize("35미터 앞, 좌회전하세요.") == "잠시 후, 좌회전하세요.")
         precondition(NavigationDistanceWording.normalize("약 240 m 앞, 우회전하세요.") == "200미터 앞, 우회전하세요.")
@@ -32,6 +35,7 @@ import Foundation
         precondition(NavigationSpeechCue.parse("{}", now: cueTime) == nil)
         precondition(NavigationSpeechCue.parse(#"{"text":"전방 안내","validUntil":112,"targetID":"ahead"}"#, now: cueTime) != nil)
         precondition(NavigationSpeechCue.parse(#"{"text":"새로운 경로로 안내합니다.","validUntil":102,"stateChange":true}"#, now: cueTime)?.stateChange == true)
+        precondition(NavigationSpeechCue.parse(#"{"text":"잠시 후 단속","validUntil":102,"imminent":true}"#, now: cueTime)?.imminent == true)
         for key in ["manual", "preview", "climate.temp"] {
             precondition(VoiceItem(key: key, text: "report", expires: expired, priority: 2, manual: true).canStartPlayback(at: afterSynthesis))
         }

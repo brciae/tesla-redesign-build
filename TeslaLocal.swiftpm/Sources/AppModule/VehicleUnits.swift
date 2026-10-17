@@ -141,6 +141,7 @@ struct NavigationSpeechCue: Decodable {
     let targetID: String?
     var stateChange: Bool? = nil
     var incidental: Bool? = nil
+    var imminent: Bool? = nil
     static func parse(_ message: String, now: Date) -> NavigationSpeechCue? {
         if message.hasPrefix("{") {
             // Lenient read: the bridge's booleans may arrive as true/false or 0/1.
@@ -152,6 +153,7 @@ struct NavigationSpeechCue: Decodable {
             var cue = Self(text: text, validUntil: until, targetID: raw["targetID"] as? String)
             cue.stateChange = (raw["stateChange"] as? NSNumber)?.boolValue
             cue.incidental = (raw["incidental"] as? NSNumber)?.boolValue
+            cue.imminent = (raw["imminent"] as? NSNumber)?.boolValue
             return cue
         }
         return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 12, targetID: nil)
@@ -184,9 +186,10 @@ struct NavigationSpeechPolicy {
         recent[key] = now
         return true
     }
-    static func shouldInterrupt(stateChange: Bool, navigationBusy: Bool, incidental: Bool, priority: Int, activePriority: Int) -> Bool {
-        // A sentence already playing always finishes; the newer cue waits in the queue (older queued ones are pruned).
-        !navigationBusy && (stateChange || !incidental)
+    static func shouldInterrupt(stateChange: Bool, navigationBusy: Bool, incidental: Bool, priority: Int, activePriority: Int, cannotWait: Bool = false) -> Bool {
+        // Normal cues finish. A route replacement or a point that cannot survive the
+        // remaining audio must not wait behind obsolete speech, even on a cache hit.
+        stateChange || (!incidental && (!navigationBusy || (cannotWait && priority >= activePriority)))
     }
 }
 

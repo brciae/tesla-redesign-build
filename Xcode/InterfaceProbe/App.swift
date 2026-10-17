@@ -569,8 +569,35 @@ struct VoicePlaybackProbe: View {
             d.set("typecast:은경", forKey: "voiceIdentifier"); TypecastClient.shared.isEnabled = true
             if ProcessInfo.processInfo.arguments.contains("voice-events-probe") { Task { await eventMatrix() } }
             if ProcessInfo.processInfo.arguments.contains("voice-overlap-probe") { Task { await overlapMatrix() } }
+            if ProcessInfo.processInfo.arguments.contains("voice-distance-probe") { Task { await distanceMatrix() } }
             if ProcessInfo.processInfo.arguments.contains("voice-lifecycle-probe") { Task { await lifecycleMatrix() } }
         }
+    }
+    @MainActor private func distanceMatrix() async {
+        let text = "잠시 후, 시속 60킬로미터 과속 단속입니다."
+        cache(SpeechText.prepare(text))
+        var distance = 100.0
+        var speed = 10.0
+        voice.navigationTargetIsAhead = { _ in distance > 0 }
+        voice.navigationTargetCanFinish = { _, duration in distance > speed * (duration + 0.8) }
+        func cue(_ id: String) -> String {
+            let value: [String: Any] = ["text": text, "validUntil": Date().timeIntervalSince1970 + 10, "targetID": id, "imminent": true]
+            return String(data: try! JSONSerialization.data(withJSONObject: value), encoding: .utf8)!
+        }
+        voice.navigationGuide(cue("cached-before"), safety: true)
+        guard voice.playbackStarts == 1 else { eventResult = "실패 · 캐시 재생"; return }
+        distance = -5
+        for _ in 0..<10 where voice.speaking { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard !voice.speaking else { eventResult = "실패 · 통과 음성 지속"; return }
+        voice.stop()
+        // Same cached file, but acceleration leaves insufficient distance for its duration.
+        distance = 10; speed = 30
+        let changed = text + " 과속에 주의하세요."
+        cache(SpeechText.prepare(changed))
+        let late: [String: Any] = ["text": changed, "validUntil": Date().timeIntervalSince1970 + 10, "targetID": "cached-late", "imminent": true]
+        voice.navigationGuide(String(data: try! JSONSerialization.data(withJSONObject: late), encoding: .utf8)!, safety: true)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        eventResult = voice.playbackStarts == 1 ? "캐시 안내 · 통과 취소 및 속도별 재생 차단 확인" : "실패 · 지난 캐시 재생"
     }
     @MainActor private func overlapMatrix() async {
         let camera = "300미터 앞 과속 단속입니다. 제한 속도는 시속 60킬로미터입니다."

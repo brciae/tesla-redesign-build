@@ -238,6 +238,7 @@ final class AppModel: ObservableObject {
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
         navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
         voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
+        voice.navigationTargetCanFinish = { [weak self] identifier, duration in self?.navigation.canFinishSpeech(identifier, duration: duration) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         navigation.onActivityChange = { [weak self] in self?.updateTripEnergy(); self?.updateLiveActivity() }
         voice.callStateChanged(phoneCalls.isActive)

@@ -44,6 +44,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var activePriority = 0
     private var activeText = ""
     var navigationTargetIsAhead: ((String) -> Bool)?
+    var navigationTargetCanFinish: ((String, TimeInterval) -> Bool)?
+    private var activeNavigationID: String?
     private var navigationPreparation: Task<Void, Never>?
     private var navigationPreparationTimes: [Date] = []
 
@@ -111,6 +113,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let tick = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.refreshOutput()
+            if let id = self.activeNavigationID, self.navigationTargetIsAhead?(id) == false {
+                self.cancelCurrent()
+                self.automaticTrace("안내 지점 통과 · 이전 음성 취소")
+            }
             self.drain()
         }
         timer = tick
@@ -184,7 +190,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         else { queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn") }
 
         // Safety guidance interrupts regular chatter immediately
-        if NavigationSpeechPolicy.shouldInterrupt(stateChange: cue.stateChange == true, navigationBusy: navigationSpeaking, incidental: incidental, priority: priority, activePriority: activePriority) {
+        let remaining = typecastPlayer.map { max(0, $0.duration - $0.currentTime) } ?? 0
+        let cannotWait = cue.targetID.map { navigationTargetCanFinish?($0, remaining + Double(prepared.count) / 5.0) == false } ?? false
+        if NavigationSpeechPolicy.shouldInterrupt(stateChange: cue.stateChange == true, navigationBusy: navigationSpeaking, incidental: incidental, priority: priority, activePriority: activePriority, cannotWait: cue.imminent == true && cannotWait) {
             cancelCurrent()
             quietUntil = .distantPast
         }
@@ -353,6 +361,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         activeTicket = ticket
         activeManual = item.manual
         activeText = item.text
+        activeNavigationID = item.navigationID
         lastText = item.text
         notice = ""
 
@@ -414,6 +423,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             // Trailing silence keeps car/Bluetooth latency from swallowing the last syllable.
             let audio = try VoiceGainPolicy.amplifiedWAV(Data(contentsOf: url), gain: gain)
             let p = try AVAudioPlayer(data: TypecastClient.paddedTail(audio))
+            // Use the actual cached audio duration and the latest route distance/speed,
+            // not just the deadline established when the SDK callback arrived.
+            if let id = item.navigationID, navigationTargetCanFinish?(id, p.duration) == false {
+                cancelCurrent()
+                playbackState = "지난 안내 건너뜀"
+                automaticTrace("남은 거리·현재 속도 대비 재생 시간 부족 · 안내 취소")
+                drain()
+                return
+            }
             p.delegate = self
             p.volume = Float(min(1, gain))
             p.prepareToPlay()
@@ -457,6 +475,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         activeTicket = nil
         activeManual = false
         activeText = ""
+        activeNavigationID = nil
         speaking = false
         navigationSpeaking = false
         activePriority = 0
@@ -497,6 +516,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     func cancelCurrent() {
+        activeNavigationID = nil
         synthesisTask?.cancel()
         synthesisTask = nil
         activeTicket = nil

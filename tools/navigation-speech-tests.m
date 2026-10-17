@@ -27,6 +27,15 @@ int main(void) { @autoreleasepool {
     check([YLNavigationSpeech(101,nil,nil,0) isEqual:@"목적지에 도착했습니다."], @"Destination arrival must not say ahead");
     check([YLNavigationSpeech(1000,nil,nil,0) isEqual:@"경유지에 도착했습니다."], @"Waypoint arrival is distinct from approach");
     check([YLNavigationDistancePrefix(112) isEqual:@"100미터 앞, "], @"Do not read raw meter precision");
+    check(YLNavigationLeadDistance(30, 5) > YLNavigationLeadDistance(10, 5), @"Faster driving requires an earlier cue");
+    check(YLNavigationLeadDistance(20, 8) > YLNavigationLeadDistance(20, 3), @"Longer audio requires more route distance");
+    check(YLNavigationCanFinish(100, 10, 0, 5), @"Cached clip fits before point at low speed");
+    check(!YLNavigationCanFinish(100, 30, 0, 5), @"Same cached clip is late at higher speed");
+    check(!YLNavigationCanFinish(50, 20, 2, 1), @"Distance advances while callback ages");
+    check(!YLNavigationCanFinish(0, 10, 0, 0), @"Passed point never plays");
+    check(!YLNavigationCanFinish(-10, 10, 0, 0), @"Negative route distance never plays");
+    check(!YLNavigationCanFinish(500, 10, 4, 1), @"Stale location cannot validate queued speech");
+    check(YLNavigationCanFinish(20, 0, 0, 10), @"Stopped vehicle does not consume route distance");
     check([YLNavigationDistancePrefix(1381) isEqual:@"1킬로미터 앞, "], @"Long distance uses approximate kilometers");
     check([YLNavigationDistancePrefix(40) isEqual:@"잠시 후, "], @"Nearby event is imminent");
     check([YLNavigationDistancePrefix(0) isEqual:@"잠시 후, "], @"Zero is not zero meters ahead");

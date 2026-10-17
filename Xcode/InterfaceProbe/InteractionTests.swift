@@ -217,6 +217,12 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["voice.probe.count"].label, "재생 시작 2 / 완료 2")
     }
 
+    func testCachedSafetySpeechTracksDistanceAndSpeed() {
+        let app = XCUIApplication(); app.launchArguments = ["voice-playback-probe", "voice-distance-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["캐시 안내 · 통과 취소 및 속도별 재생 차단 확인"].waitForExistence(timeout: 15))
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Cached safety guidance passed-point cancellation and speed gate"; shot.lifetime = .keepAlways; add(shot)
+    }
+
     func testSpeakerOutputForAllVoiceCategories() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["voice-playback-probe", "voice-output-probe"]; app.launch()

@@ -59,6 +59,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var onSpokenGuide: ((String, Bool) -> Void)?
     var onPrepareGuide: ((String) -> Void)?
     func isSpeechTargetAhead(_ identifier: String) -> Bool { controller?.isSpeechTargetAhead(identifier) == true }
+    func canFinishSpeech(_ identifier: String, duration: TimeInterval) -> Bool { controller?.canFinishSpeech(identifier, duration: duration) == true }
     var onAudioSession: ((Bool) -> Void)?
     var onActivityChange: (() -> Void)?
     @Published private(set) var networkAvailable = true
