@@ -181,9 +181,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let prepared = SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines)
         let incidental = cue.incidental == true || text == "주의하세요."
         // A generic warning must not replace a specific camera or maneuver sentence.
-        guard prepared != activeText,
+        guard prepared != activeText || cue.targetID != activeNavigationID,
               navigationPolicy.accepts(text: prepared, safety: safety, incidental: incidental,
-                  navigationBusy: navigationSpeaking || queue.items.contains { $0.key.hasPrefix("navigation.") }, now: now) else { return }
+                  navigationBusy: navigationSpeaking || queue.items.contains { $0.key.hasPrefix("navigation.") }, now: now, targetID: cue.targetID) else { return }
 
         let priority = incidental ? 3 : (safety ? 5 : 4)
         if cue.stateChange == true { queue.clearNavigation() }

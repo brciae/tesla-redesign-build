@@ -178,10 +178,10 @@ enum NavigationDistanceWording {
 /// Repeated safety callbacks must not restart a sentence already being spoken.
 struct NavigationSpeechPolicy {
     private var recent: [String: Date] = [:]
-    mutating func accepts(text: String, safety: Bool, incidental: Bool, navigationBusy: Bool, now: Date) -> Bool {
+    mutating func accepts(text: String, safety: Bool, incidental: Bool, navigationBusy: Bool, now: Date, targetID: String? = nil) -> Bool {
         if incidental && navigationBusy { return false }
         recent = recent.filter { now.timeIntervalSince($0.value) < 20 }
-        let key = "\(safety):\(text)"
+        let key = "\(safety):\(targetID ?? ""):\(text)"
         if let previous = recent[key], now.timeIntervalSince(previous) < (safety ? 20 : 2) { return false }
         recent[key] = now
         return true
