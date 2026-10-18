@@ -542,7 +542,7 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(button.waitForExistence(timeout: 8)); button.tap()
                 let forecast = app.staticTexts["energy.forecast.arrival"].firstMatch
                 XCTAssertTrue(forecast.waitForExistence(timeout: 5), "forecast absent: \(theme)")
-                XCTAssertTrue(forecast.label.contains("66%"))
+                XCTAssertTrue(forecast.label.contains("도착 예상 65.8%"))
                 XCTAssertTrue(forecast.isHittable, "forecast clipped: \(theme)")
                 XCTAssertTrue(app.staticTexts["energy.forecast.consumption"].firstMatch.label.contains("1.6 kWh"))
                 if theme == "파노라마", orientation == .portrait {
