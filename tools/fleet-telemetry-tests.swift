@@ -43,6 +43,20 @@ import Foundation
         let reacquired = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now.addingTimeInterval(1), number: nil, text: stableLocation.text, invalid: false)
         precondition((FleetTelemetryData.homeOverlay([recentLocation, noGPS, reacquired], vin: "DISPLAY", now: now.addingTimeInterval(1))["location"] as! [String: Any])["mode"] as? String == "recent")
         let stableState = FleetTelemetryReading(vin: "DISPLAY", field: "DetailedChargeState", at: now.addingTimeInterval(-3600), number: nil, text: "{\"stringValue\":\"DetailedChargeStateComplete\"}", invalid: false)
+        let ongoingState = FleetTelemetryReading(vin: "DISPLAY", field: "DetailedChargeState", at: now.addingTimeInterval(-3600), number: nil, text: "{\"stringValue\":\"DetailedChargeStateCharging\"}", invalid: false)
+        func chargeMetric(_ field: String, _ value: Double, _ ago: TimeInterval = 0, _ vin: String = "DISPLAY") -> FleetTelemetryReading {
+            .init(vin: vin, field: field, at: now.addingTimeInterval(-ago), number: value, text: "", invalid: false)
+        }
+        let freshPower = chargeMetric("ACChargingPower", 7.2)
+        precondition(FleetTelemetryData.liveActivityCharge([ongoingState, freshPower], vin: "DISPLAY", now: now)?["mode"] as? String == "recent", "Unchanged Charging state plus measured positive power remains current")
+        let gain = [chargeMetric("DCChargingEnergyIn", 10, 60), chargeMetric("DCChargingEnergyIn", 10.2)]
+        precondition(FleetTelemetryData.liveActivityCharge([ongoingState] + gain, vin: "DISPLAY", now: now)?["mode"] as? String == "recent", "Increasing battery energy confirms sustained charging even if power is unchanged")
+        for samples in [[chargeMetric("Soc", 60)], [chargeMetric("ACChargingPower", 0)], [chargeMetric("ACChargingPower", 7.2, 121)], [chargeMetric("ACChargingPower", 7.2, -6)], [chargeMetric("ACChargingPower", 7.2, 0, "OTHER")], [chargeMetric("DCChargingEnergyIn", 10, 60), chargeMetric("DCChargingEnergyIn", 9.9)]] {
+            precondition(FleetTelemetryData.liveActivityCharge([ongoingState] + samples, vin: "DISPLAY", now: now)?["mode"] as? String == "cached", "SOC changes, zero/stale/future/other-car power and counter resets cannot renew charging")
+        }
+        let completeWithPower = FleetTelemetryData.liveActivityCharge([stableState, freshPower], vin: "DISPLAY", now: now)
+        precondition(completeWithPower?["status"] as? String == "Complete" && completeWithPower?["mode"] as? String == "cached", "A reported Complete state is never turned into Charging by power")
+        precondition(FleetTelemetryData.liveActivityCharge([freshPower], vin: "DISPLAY", now: now) == nil, "Power alone without a known charging state cannot start a card")
         let frequentSOC = (0..<20).map { FleetTelemetryReading(vin: "DISPLAY", field: "Soc", at: now.addingTimeInterval(Double($0)), number: 80, text: "", invalid: false) }
         let retained = FleetTelemetryData.merge([stableLocation, stableState], frequentSOC, limit: 5)
         precondition(retained.count == 5 && retained.contains(where: { $0.id == stableLocation.id }) && retained.contains(where: { $0.id == stableState.id }))

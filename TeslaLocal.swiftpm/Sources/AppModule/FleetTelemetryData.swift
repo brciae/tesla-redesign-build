@@ -121,6 +121,47 @@ enum FleetTelemetryData {
         }
         return ChargeObservation(vin: vin, at: state.at, state: name, soc: number("Soc") ?? number("BatteryLevel"), limit: number("ChargeLimitSoc"))
     }
+    /// Telemetry is change-based: a stable Charging enum is not a polling heartbeat.
+    /// Only fresh positive power or a measured energy-counter increase renews an old Charging state.
+    static func liveActivityCharge(_ records: [FleetTelemetryReading], vin: String, now: Date = Date()) -> [String: Any]? {
+        let fields = latest(records, vin: vin)
+        guard let state = [fields["DetailedChargeState"], fields["ChargeState"]].compactMap({ $0 })
+            .filter({ !$0.invalid && $0.at <= now.addingTimeInterval(5) }).max(by: { $0.at < $1.at }),
+            let raw = firstStringValue(state) else { return nil }
+        let status = raw.replacingOccurrences(of: "DetailedChargeState", with: "")
+        guard ["Charging", "Stopped", "Complete", "Disconnected", "NoPower", "Starting", "Calibrating"].contains(status) else { return nil }
+        func fresh(_ reading: FleetTelemetryReading) -> Bool {
+            !reading.invalid && (-5...120).contains(now.timeIntervalSince(reading.at)) && reading.number?.isFinite == true
+        }
+        var at = state.at
+        var row: [String: Any] = ["status": status]
+        for (field, key, scale) in [("Soc", "soc", 1.0), ("BatteryLevel", "soc", 1.0),
+            ("ChargeLimitSoc", "limit", 1.0), ("TimeToFullCharge", "minutesToLimit", 60.0)] {
+            guard let reading = fields[field], !reading.invalid, let number = reading.number, number.isFinite,
+                  reading.at <= now.addingTimeInterval(5), key == "limit" || fresh(reading) else { continue }
+            if row[key] == nil { row[key] = number * scale }
+        }
+        if let power = [fields["ACChargingPower"], fields["DCChargingPower"], fields["ChargePower"]]
+            .compactMap({ $0 }).filter({ fresh($0) && (0...500).contains($0.number!) }).max(by: { $0.at < $1.at }) {
+            row["chargerKW"] = power.number!
+            if status == "Charging", power.number! > 0.1 { at = max(at, power.at) }
+        }
+        if status == "Charging" {
+            for field in ["ACChargingEnergyIn", "DCChargingEnergyIn"] {
+                let counters = records.filter { $0.vin == vin && $0.field == field && !$0.invalid &&
+                    $0.at >= state.at && $0.at <= now.addingTimeInterval(5) &&
+                    $0.number.map { $0.isFinite && $0 >= 0 } == true }.sorted { $0.at > $1.at }
+                guard let last = counters.first, fresh(last),
+                      let before = counters.dropFirst().first(where: { $0.at < last.at }),
+                      last.at.timeIntervalSince(before.at) <= 600,
+                      last.number! > before.number! + 0.001 else { continue }
+                at = max(at, last.at)
+            }
+        }
+        row["at"] = at.timeIntervalSince1970 * 1000
+        row["mode"] = (-5...120).contains(now.timeIntervalSince(at)) ? "recent" : "cached"
+        return row
+    }
     static func pairedDifference(_ first: FleetTelemetryReading?, _ second: FleetTelemetryReading?, maximumSkew: TimeInterval = 2) -> Double? {
         guard let first, let second, first.vin == second.vin, !first.invalid, !second.invalid,
               abs(first.at.timeIntervalSince(second.at)) <= maximumSkew,

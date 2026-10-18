@@ -16,22 +16,7 @@ extension AppModel {
             var row = snapshot.homeOverlay(now: now).object("charge")
             row["status"] = status; row["at"] = at; candidates.append(row)
         }
-        let latest = FleetTelemetryData.latest(archiveReadings, vin: energyVehicleVIN)
-        if let reading = [latest["DetailedChargeState"], latest["ChargeState"]].compactMap({ $0 })
-            .filter({ !$0.invalid }).max(by: { $0.at < $1.at }),
-           let detailed = FleetTelemetryData.firstStringValue(reading) {
-            let status = detailed.replacingOccurrences(of: "DetailedChargeState", with: "")
-            var row: Object = ["status": status, "at": reading.at.timeIntervalSince1970 * 1000]
-            for (field, key, scale) in [("Soc", "soc", 1.0), ("ChargeLimitSoc", "limit", 1.0),
-                ("TimeToFullCharge", "minutesToLimit", 60.0), ("ACChargingPower", "chargerKW", 1.0),
-                ("DCChargingPower", "chargerKW", 1.0), ("ChargePower", "chargerKW", 1.0)] {
-                guard let value = latest[field], !value.invalid, let number = value.number,
-                      now.timeIntervalSince(value.at) >= -5,
-                      key == "limit" || now.timeIntervalSince(value.at) <= 120 else { continue }
-                row[key] = number * scale
-            }
-            candidates.append(row)
-        }
+        if let archive = FleetTelemetryData.liveActivityCharge(archiveReadings, vin: energyVehicleVIN, now: now) { candidates.append(archive) }
         let states = ["Charging", "Stopped", "Complete", "Disconnected", "NoPower", "Starting", "Calibrating"]
         guard var row = candidates.filter({ states.contains($0.string("status")) &&
             ($0.number("at") ?? .infinity) <= now.timeIntervalSince1970 * 1000 + 5000 })
