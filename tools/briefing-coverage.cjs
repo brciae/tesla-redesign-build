@@ -41,19 +41,25 @@ for (const [file, marker] of [
 // in destinationView, listed at most once in the 메뉴 tab, and reachable at all.
 {
   const app = fs.readFileSync(root + 'App.swift', 'utf8');
-  const enumBody = app.slice(app.indexOf('enum Page: String, Hashable {'), app.indexOf('func valueText('));
+  const allSources = fs.readdirSync(root).filter(x => x.endsWith('.swift'))
+    .map(f => fs.readFileSync(root + f, 'utf8'));
+  const enums = allSources.flatMap(s => [...s.matchAll(/enum Page: String, Hashable \{([\s\S]*?)\n\}/g)]);
+  assert.equal(enums.length, 1, 'Exactly one production Page enum must exist');
+  const enumBody = enums[0][1];
   const cases = [...enumBody.matchAll(/case ([A-Za-z0-9]+) =/g)].map(m => m[1])
     .concat([...enumBody.matchAll(/, ([A-Za-z0-9]+) =/g)].map(m => m[1]));
   const pages = [...new Set(cases)];
   assert(pages.length > 0, 'Page enum not found');
   const router = app.slice(app.indexOf('private func destinationView(for page: Page)'), app.indexOf('struct PageBody<Content: View>'));
   assert(router.length > 0, 'destinationView not found');
-  const sources = fs.readdirSync(root).filter(x => x.endsWith('.swift'))
-    .map(f => fs.readFileSync(root + f, 'utf8')).join('\n');
+  const sources = allSources.join('\n');
+  const catalog = fs.readFileSync(root + 'SettingsMenuGroups.swift', 'utf8').split('private let groups:')[1];
+  assert(catalog, 'Production settings catalog not found');
   for (const page of pages) {
     const routed = [...router.matchAll(new RegExp(`case \\.${page}:`, 'g'))].length;
     assert.equal(routed, 1, `Page.${page} must be routed exactly once in destinationView`);
-    const menuRows = [...sources.matchAll(new RegExp(`glassMenuItem\\(\\.${page},`, 'g'))].length;
+    const menuRows = [...sources.matchAll(new RegExp(`glassMenuItem\\(\\.${page},`, 'g'))].length +
+      [...catalog.matchAll(new RegExp(`\\.init\\(\\.${page},`, 'g'))].length;
     assert(menuRows <= 1, `Page.${page} appears ${menuRows} times in the 메뉴 list`);
     // The home quick-action row and the 메뉴 index are different surfaces, so a
     // page may hold one of each — but never two rows on the same surface.
