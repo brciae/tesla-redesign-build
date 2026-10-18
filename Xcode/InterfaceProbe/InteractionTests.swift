@@ -1,6 +1,82 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testSupportingCopyCollapsedDetailScrollableAndFullAddress() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["copy-readability-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["최근 20회 주행 기준"].waitForExistence(timeout: 8))
+        let fullNote = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "상세 설명 끝.")).firstMatch
+        XCTAssertFalse(fullNote.exists, "Long explanation must be collapsed on the summary")
+        func capture(_ name: String) {
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        }
+        capture("Shared production copy collapsed supporting explanation")
+        app.buttons["설명"].tap()
+        XCTAssertTrue(fullNote.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["닫기"].exists)
+        app.scrollViews.firstMatch.swipeUp()
+        capture("Shared production copy full explanation scrollable")
+        app.buttons["닫기"].tap()
+        app.buttons["계산 근거 설명"].tap()
+        XCTAssertTrue(fullNote.waitForExistence(timeout: 5))
+        app.buttons["닫기"].tap()
+        app.buttons["긴 주소 보기"].tap()
+        let address = app.staticTexts["경기도 용인시 처인구 포곡읍 둔전리 힐스테이트 용인둔전역 아파트 단지 정문 주차장 입구"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(address.frame.height, 20, "Long address must wrap at readable size")
+        capture("Production recent destination full address wraps without ellipsis")
+    }
+    func testConciseGuidanceAcrossThemesAndRotation() {
+        let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "long-guidance-probe"]; app.launch()
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+                app.segmentedControls.buttons[title].tap()
+                let named = app.staticTexts["동작대교 오른쪽 진출"].firstMatch
+                let action = app.staticTexts["오른쪽 진출"].firstMatch
+                XCTAssertTrue(named.waitForExistence(timeout: 3) || action.exists)
+                XCTAssertFalse(app.staticTexts["동작대교 · 국립현충원 · 강남역 · 서울역 · 한강대로 오른쪽 진출"].exists)
+                let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                shot.name = "Concise guidance \(title) \(orientation == .portrait ? "portrait" : "landscape")"
+                shot.lifetime = .keepAlways; add(shot)
+            }
+        }
+    }
+
+    func testLockScreenNavigationCardWithoutVehicleUpdatesStaleAndEnd() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["lock-screen-navigation-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["live.navigation.distance"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["live.navigation.distance"].label, "2.4 km")
+        XCTAssertTrue(app.staticTexts["9시 방향 출구"].exists)
+        XCTAssertFalse(app.staticTexts["힐스테이트 용인둔전역 아파트 정문"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["live.navigation.arrival"].firstMatch.exists)
+        func capture(_ name: String) {
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        }
+        capture("Lock Screen shared card long destination and roundabout without vehicle")
+        app.buttons["차량 없이 카드 시작"].tap()
+        XCTAssertTrue(app.staticTexts["실시간 현황 요청됨 · 화면 표시 별도 확인"].waitForExistence(timeout: 8))
+        app.buttons["다음 안내 수신"].tap()
+        XCTAssertEqual(app.staticTexts["live.navigation.distance"].label, "300 m")
+        XCTAssertTrue(app.staticTexts["오크밸리1길 우회전"].exists)
+        capture("Lock Screen shared card updated turn and arrival")
+        XCUIDevice.shared.press(.home); app.activate()
+        XCTAssertTrue(app.staticTexts["live.navigation.distance"].waitForExistence(timeout: 5))
+        app.buttons["위치 수신 중단"].tap()
+        XCTAssertTrue(app.staticTexts["길안내 업데이트 대기"].exists)
+        XCTAssertFalse(app.staticTexts["live.navigation.distance"].exists)
+        XCTAssertFalse(app.staticTexts["오크밸리1길 우회전"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["live.navigation.arrival"].firstMatch.exists)
+        capture("Lock Screen shared card stale hides old turn distance and ETA")
+        app.buttons["안내 종료"].tap()
+        XCTAssertTrue(app.staticTexts["live.navigation.ended"].exists)
+        XCTAssertTrue(app.staticTexts["차량 연결 또는 길안내 시작 후 표시 가능"].waitForExistence(timeout: 5))
+        capture("Lock Screen guidance ended without vehicle")
+    }
+
     func testRecoveredChargeTimingAndRemovedScreenBriefing() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["record-recovery-probe"]; app.launch()

@@ -15,7 +15,9 @@ import MapKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }
+            if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("lock-screen-navigation-probe") { LockScreenNavigationProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("robot-probe") { RobotProbe() }
             else if ProcessInfo.processInfo.arguments.contains("traffic-refresh-probe") { TrafficRefreshProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charging-map-probe") { ChargingMapProbe() }
@@ -302,6 +304,9 @@ struct NavigationProbe: View {
         r.batterySOC = 68
         r.speedKmh = moving ? 34 : 0; r.routeBend = bend; r.motionValid = true; r.connected = true; r.outside = "25°C"
         r.turn = "동작대교 방면 오른쪽 진출"; r.turnDistance = "1.5 km"; r.turnSymbol = "arrow.up.right"; r.highway = "진출"
+        if ProcessInfo.processInfo.arguments.contains("long-guidance-probe") {
+            r.turn = "동작대교 · 국립현충원 · 강남역 · 서울역 · 한강대로 오른쪽 진출"
+        }
         if ProcessInfo.processInfo.arguments.contains("roundabout-probe") { r.exitClock = 9; r.turn = "회전교차로"; r.highway = "" }
         r.next = "1.3 km · 좌회전"; r.nextSymbol = "arrow.turn.up.left"; r.remaining = "22분 남음"; r.remainingDistance = "8.7 km"; r.arrival = "19:02"; r.speedFraction = 34 / 140
         r.destination = "반포대교 남단"; r.speedLimit = 80; r.speedLimitDistance = "2.1 km"; r.clock = "18:40"; r.routeProgress = 0.42; r.odometer = "12,450 km"; r.powerKW = 18; r.laneCount = 4; r.laneSuggested = [1, 2]; r.laneDistance = "416 m"
@@ -507,12 +512,6 @@ struct InfoCard<Content: View>: View {
             )
     }
 }
-struct Caption: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-    var body: some View { Text(text).font(.system(size: 14)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true) }
-}
-
 struct MotionButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduced
     func makeBody(configuration: Configuration) -> some View {

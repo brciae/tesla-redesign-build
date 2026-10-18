@@ -86,7 +86,7 @@ struct ChargeRateSettingsView: View {
                 TextField("집·완속 기준", text: $slow).keyboardType(.decimalPad)
                 TextField("급속 기준 · 미등록 시 350", text: $fast).keyboardType(.decimalPad)
                 TextField("슈퍼차저 기준 · 미등록 시 급속 기준", text: $supercharger).keyboardType(.decimalPad)
-                Text("350원은 사업자 확정 요금이 아닌 조정 가능한 임시 계산값입니다. 집 위치는 내비에 저장한 집 좌표로 대조합니다. 완속 기준을 다른 장소에 적용한 경우 현장 단가 미확인으로 표시합니다.").font(.caption)
+                Caption("350원은 사업자 확정 요금이 아닌 조정 가능한 임시 계산값입니다. 집 위치는 내비에 저장한 집 좌표로 대조합니다. 완속 기준을 다른 장소에 적용한 경우 현장 단가 미확인으로 표시합니다.").font(.caption)
                 Button("기본 단가 저장") { _ = save(rules) }
             }
             Section("장소·사업자 단가 추가") {
@@ -106,7 +106,7 @@ struct ChargeRateSettingsView: View {
                         if save(next) { match = ""; rate = "" }
                     } catch { message = error.localizedDescription }
                 }
-                Text("기록의 장소·사업자 이름과 일치하면 자동 적용합니다. 장소 단가 → 사업자 단가 → 같은 장소·사업자의 최근 확인 결제 단가 → 기본 단가 순입니다. 직접 입력한 결제액은 바꾸지 않습니다.").font(.caption)
+                Caption("기록의 장소·사업자 이름과 일치하면 자동 적용합니다. 장소 단가 → 사업자 단가 → 같은 장소·사업자의 최근 확인 결제 단가 → 기본 단가 순입니다. 직접 입력한 결제액은 바꾸지 않습니다.").font(.caption)
             }
             Section("등록 단가") {
                 ForEach(rules, id: \.selfID) { rule in
@@ -148,8 +148,8 @@ struct PublishedChargeRateSettings: View {
     var body: some View {
         Form {
             Section {
-                Text("기본은 비회원가. 체크한 사업자만 자체 회원가를 적용함. 로밍 카드·구독·단지 계약 요금은 별도이며, 직접 등록한 단가와 확인 결제액이 우선함.").font(.caption)
-                Text("검색으로 확인한 공식 표준 요금의 저장본임. 실시간 요금 조회가 아니며, 충전일에 유효한 근거가 없으면 예상액을 계산하지 않음.").font(.caption)
+                Caption("기본은 비회원가. 체크한 사업자만 자체 회원가를 적용함. 로밍 카드·구독·단지 계약 요금은 별도이며, 직접 등록한 단가와 확인 결제액이 우선함.").font(.caption)
+                Caption("검색으로 확인한 공식 표준 요금의 저장본임. 실시간 요금 조회가 아니며, 충전일에 유효한 근거가 없으면 예상액을 계산하지 않음.").font(.caption)
             }
             ForEach(operators, id: \.self) { name in
                 Section(name) {

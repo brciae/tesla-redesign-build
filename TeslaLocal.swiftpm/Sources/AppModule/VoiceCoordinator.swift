@@ -218,7 +218,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let d = UserDefaults.standard
         guard d.bool(forKey: "voiceEnabled") else { return }
         if !destination.isEmpty {
-            say("\(destination) 안내 시작.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
+            say("\(destination)까지 안내합니다.", key: "dashboard.start", category: "voiceControl", priority: 3, ttl: 8, manual: true)
         }
     }
 
@@ -624,7 +624,7 @@ struct VoiceOutputSettings: View {
             Text("iPhone 스피커").tag("speaker")
             Text("Bluetooth 통화").tag("handsfree")
         }.pickerStyle(.menu).accessibilityIdentifier("voice.output")
-        Text("차량 자체 음악을 사용 중이면 Bluetooth 통화 출력을 시험할 수 있습니다. 안내 중 음악이 잠시 멈추거나 통화 화면이 표시될 수 있으며 차량별 확인이 필요합니다. 시스템·Bluetooth는 차량의 휴대폰 미디어 입력을 사용합니다. iPhone 스피커도 선택할 수 있습니다.")
+        Caption("차량 자체 음악을 사용 중이면 Bluetooth 통화 출력을 시험할 수 있습니다. 안내 중 음악이 잠시 멈추거나 통화 화면이 표시될 수 있으며 차량별 확인이 필요합니다. 시스템·Bluetooth는 차량의 휴대폰 미디어 입력을 사용합니다. iPhone 스피커도 선택할 수 있습니다.")
             .font(.caption).foregroundStyle(.secondary)
     }
 }

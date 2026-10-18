@@ -17,6 +17,8 @@ import Foundation
         let stale = AutomationSpeechContext(trigger: "boarding", hour: 19, insideC: nil, scope: "")
         precondition(!AutomationSpeechPolicy.options(base: base, context: stale).contains { $0.contains("실내 온도") })
         precondition(AutomationSpeechPolicy.canOmitRoutine(base: "탑승을 환영합니다.", context: context))
+        precondition(AutomationSpeechPolicy.canOmitRoutine(base: "좋은 오후입니다.", context: context))
+        precondition(AutomationSpeechPolicy.canOmitRoutine(base: "좋은 아침입니다. 탑승을 환영합니다.", context: context))
         precondition(!AutomationSpeechPolicy.canOmitRoutine(base: base, context: context))
         precondition(!AutomationSpeechPolicy.canOmitRoutine(base: "차량 잠금이 확인되지 않았습니다.", context: context))
         let routineOptions = AutomationSpeechPolicy.options(base: "탑승을 환영합니다.", context: context, allowRoutineOmission: true)

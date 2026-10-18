@@ -37,11 +37,12 @@ struct PreferencesView: View {
             Section("Dynamic Island·잠금화면") {
                 Toggle("차량 연결·길안내 실시간 현황", isOn: $liveActivity)
                     .onChange(of: liveActivity) { _, _ in model.updateLiveActivity() }
-                Text(activityManager.status).font(.caption).foregroundStyle(.secondary)
-                Button("실시간 현황 다시 시작") { activityManager.restart() }
-                Text(activityManager.installationSummary).font(.caption2).foregroundStyle(.secondary)
-                Text("단독 표시: 앱 아이콘·방향·거리. 음악과 동시 표시: 작은 방향 아이콘. 길게 누르면 상세 정보 표시. 표시 활동과 순서는 iOS에서 결정함.").font(.caption).foregroundStyle(.secondary)
-                Caption("차량 연결 또는 길안내 중 앱 아이콘·연결 상태·남은 시간을 표시함. 수신이 오래되면 업데이트 대기로 표시함.")
+                InfoRow("표시 방식", "잠금화면에는 방향·거리·도착 예정 시간을 표시함. 누르면 길안내로 이동함. 아일랜드는 길게 눌러 상세 보기 가능함. 음악과 함께 사용할 때 표시 순서는 iOS에서 결정함.")
+                DisclosureGroup("표시 문제 해결") {
+                    Text(activityManager.status).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Button("실시간 현황 다시 시작") { activityManager.restart() }
+                    Caption(activityManager.installationSummary)
+                }
             }
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
@@ -107,7 +108,7 @@ struct PreferencesView: View {
                             slider("속도", value: $rate, range: 0.3...0.6)
                             VoiceVolumeControl(title: "일반 안내 음량", value: $volume)
                             VoiceVolumeControl(title: "길안내 음량", value: $navigationVolume)
-                            Text("100%는 기존 최대 음량, 200%는 음성 신호를 최대 2배 증폭함. 기기·차량 음량은 별도로 적용되며 큰 소리에서는 음질이 달라질 수 있음.").font(.caption).foregroundStyle(.secondary)
+                            Caption("100%는 기존 최대 음량, 200%는 음성 신호를 최대 2배 증폭함. 기기·차량 음량은 별도로 적용되며 큰 소리에서는 음질이 달라질 수 있음.").font(.caption).foregroundStyle(.secondary)
                             Toggle("안내 중 음악 소리 줄이기", isOn: $duck)
                             VoiceAdvancedControls(identifier: $identifier, style: $deliveryStyle)
                         }
@@ -176,7 +177,7 @@ struct PreferencesView: View {
                 Text(desc)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1).minimumScaleFactor(0.5)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()

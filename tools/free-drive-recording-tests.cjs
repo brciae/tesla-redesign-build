@@ -5,6 +5,14 @@ const fix=(at,n=0)=>({at,receivedAt:at,gpsAt:at,latitude:37.5+n*0.000001,longitu
 const drive=(at,n=0,gear='D')=>({at,receivedAt:at,gear,speedKmh:gear==='P'?0:40,odometerKm:100+n*0.01});
 {
  const e=new C.Engine();e.state.settings.vin=vin;
+ e.ingest({groups:{location:fix(t),drive:drive(t),charge:{at:t,receivedAt:t,soc:80}}},t);
+ const at=t+30000;
+ e.ingest({groups:{location:fix(at,30),drive:drive(at,30,'P'),charge:{at,receivedAt:at,soc:79}}},at);
+ assert.ok(e.state.lastBrief.includes('300 m, 1분 미만입니다.'),'Short trip speech must not round elapsed time to zero minutes');
+ assert.ok(e.state.lastBrief.includes('1 퍼센트포인트 줄었습니다.'),'SOC use keeps the percentage-point meaning');
+}
+{
+ const e=new C.Engine();e.state.settings.vin=vin;
  for(let i=0;i<=2400;i++){
   const at=t+i*1000;
   e.ingest({groups:{location:fix(at,i),charge:{at,receivedAt:at,soc:i===0?80:75},drive:drive(at,i)}},at);

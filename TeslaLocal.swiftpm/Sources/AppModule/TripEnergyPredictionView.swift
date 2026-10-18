@@ -10,12 +10,13 @@ struct TripEnergyPredictionRow: View {
                 Text(estimate.insufficient ? "도착 전 배터리 부족 예상" : String(format: "도착 예상 %.1f%% · %.0f–%.0f%%", estimate.arrivalSOC, estimate.lowSOC, estimate.highSOC))
                     .fontWeight(.semibold).accessibilityIdentifier("energy.forecast.arrival")
             }.foregroundStyle(estimate.belowReserve ? Color.orange : Color.primary)
-            Text(String(format: "남은 소비 약 %.1f kWh · %@", estimate.remainingKWh, estimate.basis))
-                .accessibilityIdentifier("energy.forecast.consumption")
-            if estimate.belowReserve { Text("충전 검토 필요 · 예상 하한이 설정한 예비 잔량보다 낮음").font(.system(size: 10)).foregroundStyle(.orange) }
-            Text(estimate.capacityAssumed ? "kWh는 가정 용량 환산 · 범위는 참고 추정" : "관측 용량 환산 · 범위는 참고 추정")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
-        }.font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.8)
+            HStack(spacing: 6) {
+                Text(String(format: "남은 소비 약 %.1f kWh", estimate.remainingKWh))
+                    .accessibilityIdentifier("energy.forecast.consumption")
+                InfoNote("예측 근거", estimate.basis + " · " + (estimate.capacityAssumed ? "가정 용량으로 kWh 환산. 범위는 참고 추정값." : "관측 용량으로 kWh 환산. 범위는 참고 추정값."))
+            }
+            if estimate.belowReserve { Text("예비 잔량 미달 예상 · 충전 검토").font(.system(size: 11)).foregroundStyle(.orange) }
+        }.font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).padding(.vertical, 6)
             .foregroundStyle(.black).background(.white.opacity(0.90), in: RoundedRectangle(cornerRadius: 10))
             .environment(\.colorScheme, .light).accessibilityElement(children: .contain)
@@ -34,7 +35,7 @@ struct TripEnergyHistoryView: View {
                 ForEach(Array(rows.prefix(5))) { row in TripEnergyRecordView(record: row) }
                 if rows.count > 5 { DisclosureGroup("이전 \(rows.count - 5)회 보기") { ForEach(Array(rows.dropFirst(5))) { row in TripEnergyRecordView(record: row) } } }
             }
-            Text("기온·바람·고도·정체를 각각 모델링한 값은 아님. 중간 충전은 관측 충전량으로 보정하며, 충전량 미확인·안내 취소·도착 잔량 미수신은 오차 비교에서 제외함.")
+            Caption("기온·바람·고도·정체를 각각 모델링한 값은 아님. 중간 충전은 관측 충전량으로 보정하며, 충전량 미확인·안내 취소·도착 잔량 미수신은 오차 비교에서 제외함.")
                 .font(.caption2).foregroundStyle(.secondary)
         }.padding(14).background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
     }

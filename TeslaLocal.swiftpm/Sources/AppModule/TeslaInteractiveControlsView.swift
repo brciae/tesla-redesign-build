@@ -98,7 +98,7 @@ struct TeslaInteractiveControlsView: View {
             }
             Button("취소", role: .cancel) {}
         } message: {
-            Text("테슬라 공식 Fleet API(LTE)를 통해 차량 컴퓨터로 원격 시동 명령을 전송합니다. 승인 후 2분 이내에 브레이크를 밟고 기어를 변속하면 키 없이 주행할 수 있습니다.")
+            Text("원격 시동 승인 후 2분 안에 브레이크를 밟고 기어를 바꾸면 키 없이 주행할 수 있습니다.")
         }
         .sheet(isPresented: $tokenSheet) {
             NavigationStack { ConnectionView(link: link) }.environmentObject(model)
@@ -237,7 +237,7 @@ struct TeslaInteractiveControlsView: View {
     private func gridLabel(_ title: String, _ icon: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 20, weight: .medium))
-            Text(title).font(.system(size: 12)).lineLimit(1).minimumScaleFactor(0.5)
+            Text(title).font(.system(size: 12)).lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(Color.primary)
         .frame(maxWidth: .infinity, minHeight: 76)
@@ -637,7 +637,8 @@ struct TeslaFleetTokenSheet: View {
                 Section("원격 제어 준비") {
                     Text(fleet.commandStatus)
                     TextField("HTTPS 명령 서명 서버 주소", text: $proxyText).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Text("저장한 서버로 차량 명령 실행 시 Tesla 액세스 토큰과 VIN을 전송합니다. 직접 운영하거나 신뢰하는 서버만 입력하세요. 서버 개인키에 대응하는 가상키를 차량에 등록해야 합니다.").font(.caption)
+                    Text("차량 명령을 보낼 때 토큰·VIN을 이 서버로 전송합니다. 직접 운영하거나 신뢰하는 서버만 사용하세요.").font(.caption)
+                    Caption("서버 개인키에 대응하는 가상키를 차량에 등록해야 합니다.")
                     Button("이 서버를 신뢰하고 주소 저장") {
                         do { try fleet.saveCommandProxy(proxyText); message = "서명 서버 주소 저장됨. 차량 가상키 등록 후 제어를 확인하세요." }
                         catch { message = error.localizedDescription }
@@ -732,7 +733,7 @@ struct TeslaFleetTokenSheet: View {
                                 Spacer()
                                 Text(clientIdText)
                                     .font(.system(size: 11, design: .monospaced))
-                                    .lineLimit(1).minimumScaleFactor(0.4)
+                                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                                     .foregroundStyle(.primary)
                             }
                             HStack {
@@ -862,7 +863,7 @@ struct TeslaFleetTokenSheet: View {
                 }
 
                 Section("차량 조회 HTTP 412 · 개발자 앱 등록") {
-                    Text("계정 로그인과 개발자 앱 등록은 별도입니다. 위에 입력한 개발자 정보와 리다이렉트 도메인을 사용해 현재 Fleet 리전에 앱을 등록합니다. 도메인의 공개 키가 먼저 게시되어 있어야 합니다.")
+                    Text("로그인과 별도로 개발자 앱 등록이 필요합니다. 입력한 도메인에 공개 키를 먼저 게시하세요.")
                         .font(.caption)
                         .fixedSize(horizontal: false, vertical: true)
                     Button(isRegisteringPartner ? "등록 처리 중…" : "현재 리전에 개발자 앱 등록") {
@@ -1152,7 +1153,7 @@ struct TeslaFleetTokenSheet: View {
                         Label("안전성 및 개인정보 보호", systemImage: "lock.shield.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.green)
-                        Text("사용자 계정 비밀번호는 본 앱에 절대 저장되지 않으며, 등록된 토큰은 애플 기기 보안 영역(iOS Keychain)에만 암호화되어 안전하게 보관됩니다.")
+                        Text("계정 비밀번호는 저장하지 않으며, 인증 토큰은 iOS Keychain에 보관합니다.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

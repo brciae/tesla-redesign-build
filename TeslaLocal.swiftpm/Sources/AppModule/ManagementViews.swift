@@ -406,7 +406,7 @@ struct ConnectionView: View {
                 HStack(spacing: 10) {
                     Image(systemName: link.authentic ? "checkmark.shield.fill" : "antenna.radiowaves.left.and.right")
                         .foregroundStyle(link.authentic ? Theme.green : Theme.muted)
-                    Text(link.status).lineLimit(2).minimumScaleFactor(0.6)
+                    Text(link.status).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
                     if link.busy { ProgressView() }
                 }

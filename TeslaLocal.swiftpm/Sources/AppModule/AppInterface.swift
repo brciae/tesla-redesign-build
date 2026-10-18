@@ -247,6 +247,26 @@ struct InfoRow: View {
     }
 }
 
+struct SupportingDetail: View {
+    var title = "설명"
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+                Button("닫기") { dismiss() }
+            }
+            ScrollView {
+                Text(text).font(.callout).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }.padding(16).frame(width: 300, height: 280)
+            .presentationCompactAdaptation(.popover)
+    }
+}
+
 struct VoiceCacheRow: View {
     let entry: TypecastClient.VoiceCacheEntry
     var delete: () -> Void
@@ -436,6 +456,27 @@ struct VoicePreviewControls: View {
             Spacer()
             Button(action: stop) { Label("중지", systemImage: "stop.fill").frame(minHeight: 44) }
                 .buttonStyle(.borderless).accessibilityIdentifier("voice.stop")
+        }
+    }
+}
+
+/// Short captions stay inline; long explanations fold into an ⓘ button so screens read at a glance.
+struct Caption: View {
+    let text: String
+    @State private var open = false
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        if text.count <= 40 {
+            Text(text).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        } else {
+            Button { open = true } label: {
+                // v1.55: long notes are hidden behind an ⓘ button — no cut-off sentence with "…"
+                Label("설명", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $open) {
+                SupportingDetail(text: text)
+            }
         }
     }
 }

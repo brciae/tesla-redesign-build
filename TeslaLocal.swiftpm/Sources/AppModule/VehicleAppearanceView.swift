@@ -168,7 +168,7 @@ struct VehicleAppearanceView: View {
             if draft.wrap == .stripes || draft.wrap == .twoTone { ColorPicker("보조 색상", selection: color(\.accent), supportsOpacity: false) }
             if draft.wrap == .image {
                 PhotosPicker(selection: $photo, matching: .images) { Label(draft.imageID == nil ? "랩핑 이미지 선택" : "다른 이미지 선택", systemImage: "photo") }.buttonStyle(.bordered)
-                Text("앱 모델에 이미지를 투영함. Tesla 공식 전개도와 이 모델의 좌표가 달라 순정 랩핑 파일을 그대로 재현하지는 못함.").font(.caption).foregroundStyle(Theme.muted)
+                Caption("앱 모델에 이미지를 투영함. Tesla 공식 전개도와 이 모델의 좌표가 달라 순정 랩핑 파일을 그대로 재현하지는 못함.").font(.caption).foregroundStyle(Theme.muted)
             }
         }
     }

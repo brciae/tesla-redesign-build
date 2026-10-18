@@ -226,7 +226,7 @@ struct TypecastCharacterPickerSheet: View {
                 Text(char.desc)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1).minimumScaleFactor(0.5)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer()

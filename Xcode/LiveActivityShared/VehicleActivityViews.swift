@@ -37,6 +37,49 @@ struct VehicleActivitySummary: View {
     }
 }
 
+/// Dedicated Lock Screen presentation. Vehicle connectivity is independent of phone guidance.
+struct VehicleNavigationCard: View {
+    let state: VehicleActivityAttributes.ContentState
+    var stale = false
+    private func distance(_ metres: Int) -> String {
+        metres >= 1000 ? String(format: "%.1f km", Double(metres) / 1000) : "\(metres) m"
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                VehicleActivityIcon()
+                Text("길안내").font(.caption.weight(.semibold))
+                Spacer(minLength: 0)
+                if !stale, let arrival = state.arrivalAt {
+                    HStack(spacing: 3) {
+                        Text(arrival, style: .time).monospacedDigit()
+                        Text("도착")
+                    }.font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("live.navigation.arrival")
+                }
+            }
+            HStack(spacing: 14) {
+                Image(systemName: stale ? "location.slash" : state.turnSymbol ?? "location.fill")
+                    .font(.system(size: 34, weight: .bold)).frame(width: 46)
+                    .accessibilityLabel(stale ? "위치 갱신 대기" : "다음 진행 방향")
+                VStack(alignment: .leading, spacing: 2) {
+                    if !stale, let metres = state.turnMetres {
+                        Text(distance(metres)).font(.system(size: 28, weight: .bold)).monospacedDigit()
+                            .accessibilityIdentifier("live.navigation.distance")
+                    }
+                    GuidanceCardLabel(text: stale ? "길안내 업데이트 대기" : state.instruction,
+                                      symbol: state.turnSymbol ?? "", exitClock: state.exitClock ?? 0)
+                        .font(.subheadline.weight(.medium))
+                        .accessibilityIdentifier("live.navigation.instruction")
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(14).foregroundStyle(.black)
+        .accessibilityIdentifier("live.navigation.card")
+    }
+}
+
 struct VehicleActivityCompact: View {
     let state: VehicleActivityAttributes.ContentState
     var stale = false

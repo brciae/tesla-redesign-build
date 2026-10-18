@@ -46,8 +46,9 @@ final class VehicleLiveActivityManager: ObservableObject {
             guard UIApplication.shared.applicationState == .active else { return }
         }
         let hasSession = state.connected || state.guiding
-        guard hasSession || activity != nil else { status = "차량 연결 또는 길안내 시작 후 표시 가능"; return }
-        if !hasSession, Date().timeIntervalSince(state.observedAt) > 90 { end(); return }
+        guard hasSession else {
+            end(); status = "차량 연결 또는 길안내 시작 후 표시 가능"; return
+        }
         let content = ActivityContent(state: state, staleDate: state.observedAt.addingTimeInterval(30),
                                       relevanceScore: state.guiding ? 100 : state.connected ? 50 : 0)
         if activity == nil {
@@ -65,7 +66,8 @@ final class VehicleLiveActivityManager: ObservableObject {
         let changed = lastState?.connected != state.connected || lastState?.guiding != state.guiding ||
             lastState?.instruction != state.instruction || lastState?.remainingMinutes != state.remainingMinutes ||
             lastState?.destination != state.destination || lastState?.batteryPercent != state.batteryPercent ||
-            lastState?.turnSymbol != state.turnSymbol || lastState?.turnMetres != state.turnMetres
+            lastState?.turnSymbol != state.turnSymbol || lastState?.turnMetres != state.turnMetres ||
+            lastState?.exitClock != state.exitClock || lastState?.arrivalAt != state.arrivalAt
         guard changed || Date().timeIntervalSince(lastUpdate) >= 20 else { return }
         lastUpdate = Date(); lastState = state
         status = "실시간 현황 요청됨 · 화면 표시 별도 확인"

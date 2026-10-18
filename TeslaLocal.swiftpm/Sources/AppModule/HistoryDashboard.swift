@@ -328,7 +328,7 @@ struct VisitedPlacesView: View {
             Section("방문 순위") {
                 ForEach(list) { p in
                     HStack {
-                        Text(names[p.id] ?? p.id).font(.subheadline).lineLimit(1).minimumScaleFactor(0.5)
+                        Text(names[p.id] ?? p.id).font(.subheadline).fixedSize(horizontal: false, vertical: true)
                         Spacer()
                         Text("도착 \(p.visits) · 충전 \(p.charges)").font(.caption).foregroundStyle(.secondary)
                     }.task {
@@ -350,7 +350,7 @@ struct TeslaExportImportView: View {
     var body: some View {
         List {
             Section {
-                Text("1. Tesla 계정 → 설정 → 개인정보 → 데이터 요청에서 충전 데이터(Charging Data)를 요청합니다. 슈퍼차저와 집·완속 충전이 모두 들어 있습니다.")
+                Text("1. Tesla 계정의 설정 → 개인정보 → 데이터 요청에서 충전 데이터를 요청하세요.")
                 Text("2. 받은 파일을 선택하면 충전 기록에 합칩니다. 앱이 이미 기록한 같은 충전은 건너뛰고, 예전에 가져온 자료는 새로 바꿉니다.")
             }.font(.subheadline)
             Button { picking = true } label: { Label("파일 선택", systemImage: "doc.badge.plus") }
@@ -527,10 +527,10 @@ struct TeslaMateView: View {
         }
     }
     private func links(_ items: [(String, String, AnyView)]) -> some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
             ForEach(items.indices, id: \.self) { i in
                 NavigationLink { items[i].2 } label: {
-                    Label(items[i].0, systemImage: items[i].1).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.5)
+                    Label(items[i].0, systemImage: items[i].1).font(.caption.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 10).padding(.vertical, 7).frame(maxWidth: .infinity)
                         .background(Color.secondary.opacity(0.14), in: Capsule())
                 }.buttonStyle(.plain)

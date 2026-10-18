@@ -19,7 +19,7 @@ enum BriefingStyle: String, CaseIterable, Identifiable {
 }
 
 /// Screen-style fragments ("충전 중 · 80%", "문 열림", "확인 필요") read aloud as full polite sentences.
-/// Navigation cues do not pass through here; they keep Kakao's own wording.
+/// Navigation cues keep the separately constructed maneuver sentence.
 enum SpeechEnding {
     static func natural(_ text: String) -> String {
         let normalized = text.replacingOccurrences(of: " · ", with: ", ").replacingOccurrences(of: "·", with: ", ")
@@ -36,19 +36,41 @@ enum SpeechEnding {
         ("완료됨", "완료되었습니다"), ("완료", "완료되었습니다"), ("종료됨", "종료되었습니다"), ("종료", "종료되었습니다"),
         ("시작됨", "시작되었습니다"), ("시작", "시작했습니다"), ("연결됨", "연결되었습니다"), ("해제됨", "해제되었습니다"),
         ("잠김", "잠겨 있습니다"), ("열림", "열려 있습니다"), ("닫힘", "닫혀 있습니다"), ("꺼짐", "꺼져 있습니다"), ("켜짐", "켜져 있습니다"),
-        ("미수신", "아직 받지 못했습니다"), ("확인 중", "확인하고 있습니다"), ("중", "중입니다"),
-        ("됨", "됩니다"), ("함", "합니다"), ("임", "입니다"), ("음", "습니다")
+        ("미수신", "아직 받지 못했습니다"), ("확인 중", "확인하고 있습니다"), ("중", "중입니다")
     ]
     static func sentence(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: CharacterSet(charactersIn: " ,"))
         guard let last = s.last else { return raw }
-        if done.contains(String(last)) || s.hasSuffix("니다") || s.hasSuffix("세요") { return s.hasSuffix("!") || s.hasSuffix("?") ? s : s + "." }
+        if done.contains(String(last)) || s.hasSuffix("니다") || s.hasSuffix("세요") { return s.hasSuffix("!") || s.hasSuffix("?") || s.hasSuffix("…") ? s : s + "." }
+        // A noun/status fragment needs a subject or object particle, not a suffix pasted onto it.
+        let clauses = [("완료됨", "완료되었습니다"), ("완료", "완료되었습니다"),
+                       ("종료됨", "끝났습니다"), ("종료", "끝났습니다"),
+                       ("필요함", "필요합니다"), ("필요", "필요합니다"),
+                       ("연결됨", "연결되었습니다"), ("해제됨", "해제되었습니다"),
+                       ("잠김", "잠겨 있습니다"), ("열림", "열려 있습니다"), ("닫힘", "닫혀 있습니다"),
+                       ("꺼짐", "꺼져 있습니다"), ("켜짐", "켜져 있습니다"),
+                       ("미확인", "확인되지 않았습니다"), ("미설정", "설정되지 않았습니다"),
+                       (" 없음", "없습니다"), (" 있음", "있습니다")]
+        for (tail, predicate) in clauses where s.hasSuffix(tail) {
+            let noun = String(s.dropLast(tail.count)).trimmingCharacters(in: .whitespaces)
+            if !noun.isEmpty { return noun + particle(noun, object: false) + " " + predicate + "." }
+        }
+        if s.hasSuffix("미수신") {
+            let noun = String(s.dropLast("미수신".count)).trimmingCharacters(in: .whitespaces)
+            if !noun.isEmpty { return noun + particle(noun, object: true) + " 아직 받지 못했습니다." }
+        }
         for (tail, replacement) in rules where s.hasSuffix(tail) {
-            // "음" only after a verb stem (있음/없음 handled above); never rewrite nouns like "소음".
-            if tail == "음" { break }
             s = String(s.dropLast(tail.count)) + replacement
             return s + "."
         }
         return s + "입니다."
+    }
+    private static func particle(_ noun: String, object: Bool) -> String {
+        let value = noun.unicodeScalars.last?.value ?? 0
+        let hasFinal: Bool
+        if (0xAC00...0xD7A3).contains(value) { hasFinal = (value - 0xAC00) % 28 != 0 }
+        else if let digit = noun.last?.wholeNumberValue { hasFinal = [0, 1, 3, 6, 7, 8].contains(digit) }
+        else { hasFinal = false }
+        return object ? (hasFinal ? "을" : "를") : (hasFinal ? "이" : "가")
     }
 }

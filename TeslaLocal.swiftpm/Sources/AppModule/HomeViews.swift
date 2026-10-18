@@ -205,7 +205,7 @@ struct HomeView: View {
                 Image(systemName: icon).font(.system(size: 22, weight: .semibold)).foregroundStyle(tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.headline).foregroundStyle(Color.primary)
-                    Text(subtitle).font(.footnote).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.5)
+                    Text(subtitle).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -450,7 +450,7 @@ func glassMenuItem(_ page: Page, _ icon: String, title: String, subtitle: String
                         Text(subtitle)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.primary.opacity(0.55))
-                            .lineLimit(1).minimumScaleFactor(0.5)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -711,13 +711,12 @@ struct VehicleLocationCard: View {
             Text(title)
                 .font(.system(size: 21, weight: .bold))
                 .foregroundStyle(Color.primary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
             if fix.source == .remembered, let saved, !saved.displaySubtitle.isEmpty, saved.displaySubtitle != title {
                 Text(saved.displaySubtitle)
                     .font(.system(size: 13))
                     .foregroundStyle(Color.primary.opacity(0.55))
-                    .lineLimit(1).minimumScaleFactor(0.5)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .task(id: "\(fix.latitude),\(fix.longitude)") { await resolveAddress(fix) }

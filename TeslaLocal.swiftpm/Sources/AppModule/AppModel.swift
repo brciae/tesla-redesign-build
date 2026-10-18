@@ -93,7 +93,8 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             let nav = self.navigation.telemetry
             let navAt = Date(timeIntervalSince1970: nav.number("at") ?? 0)
-            let navFresh = self.navigation.guiding && Date().timeIntervalSince(navAt) < 30 &&
+            let navAge = Date().timeIntervalSince(navAt)
+            let navFresh = self.navigation.guiding && (-2..<30).contains(navAge) &&
                 (nav.flag("gps") || nav.flag("positionEstimated"))
             let seconds = navFresh ? nav.number("remainSeconds") : nil
             let minutes = seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? Int(ceil($0 / 60)) : nil }
@@ -104,12 +105,16 @@ final class AppModel: ObservableObject {
                 connected: self.link.connected && self.link.authentic,
                 guiding: self.navigation.guiding,
                 destination: String(destination.prefix(60)),
-                instruction: navFresh ? String(nav.string("turn", "길안내 중").prefix(80)) : "길안내 업데이트 대기",
+                instruction: navFresh ? GuidanceCardText.label(nav.string("turn", "길안내 중"),
+                    symbol: nav.string("symbol"), exitClock: nav.number("exitClock").flatMap { $0.isFinite && (1...12).contains($0) ? Int($0) : nil } ?? 0) : "길안내 업데이트 대기",
                 remainingMinutes: minutes,
                 batteryPercent: battery,
-                observedAt: max(self.activityObservedAt, navFresh ? navAt : .distantPast),
+                // A fresh vehicle sample must never make an old turn appear current.
+                observedAt: self.navigation.guiding ? navAt : self.activityObservedAt,
                 turnSymbol: navFresh ? nav.string("symbol", "arrow.up") : nil,
-                turnMetres: navFresh ? nav.number("turnMetres").flatMap { $0.isFinite && (0...1_000_000).contains($0) ? Int($0.rounded()) : nil } : nil)
+                turnMetres: navFresh ? nav.number("turnMetres").flatMap { $0.isFinite && (0...1_000_000).contains($0) ? Int($0.rounded()) : nil } : nil,
+                arrivalAt: seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? navAt.addingTimeInterval($0) : nil },
+                exitClock: navFresh ? nav.number("exitClock").flatMap { $0.isFinite && (1...12).contains($0) ? Int($0) : nil } : nil)
             VehicleLiveActivityManager.shared.update(state, enabled: !self.demo && !self.recoveryLock &&
                 ((UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool) ?? true))
         }

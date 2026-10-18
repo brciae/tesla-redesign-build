@@ -10,10 +10,17 @@ struct VehicleLiveActivityBundle: WidgetBundle {
 struct VehicleLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: VehicleActivityAttributes.self) { context in
-            VehicleActivitySummary(state: context.state, stale: context.isStale)
-                .environment(\.colorScheme, .dark)
-                .activityBackgroundTint(.black)
-                .activitySystemActionForegroundColor(.white)
+            Group {
+                if context.state.guiding {
+                    VehicleNavigationCard(state: context.state, stale: context.isStale)
+                } else {
+                    VehicleActivitySummary(state: context.state, stale: context.isStale)
+                        .foregroundStyle(.black)
+                }
+            }
+                .environment(\.colorScheme, .light)
+                .activityBackgroundTint(.white.opacity(0.92))
+                .activitySystemActionForegroundColor(.black)
                 .widgetURL(URL(string: "ylcompanion://activity"))
         } dynamicIsland: { context in
             DynamicIsland {

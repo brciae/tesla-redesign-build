@@ -202,13 +202,13 @@ struct AutomationPolicy {
         case .arrival: text = sample.tripSummary
         case .chargingLocked: text = "충전 중 차량 잠금을 확인했습니다."
         case .chargeStart: text = "충전이 시작되었습니다."
-        case .chargeEnd: text = "충전 종료."
-        case .batteryLow: text = "배터리 \(Int(sample.soc ?? 0))퍼센트. 충전이 필요합니다."
-        case .tireLow: text = "타이어 저압 경고. 안전한 곳에서 확인하세요."
-        case .rest: text = "관측 운전 시간 \(Int(rule.threshold))분 초과. 휴식이 필요합니다."
+        case .chargeEnd: text = "충전이 끝났습니다."
+        case .batteryLow: text = "배터리가 \(Int(sample.soc ?? 0))퍼센트 남았습니다. 충전이 필요합니다."
+        case .tireLow: text = "타이어 공기압이 낮습니다. 안전한 곳에서 확인하세요."
+        case .rest: text = "운전 시간이 \(Int(rule.threshold))분을 넘었습니다. 잠시 쉬어 가세요."
         case .remaining: text = "목적지까지 약 \(Int(sample.remainingMinutes ?? 0))분 남았습니다."
         case .delay: text = "최초 예상보다 약 \(Int(max(0, delayMinutes)))분 늦어졌습니다."
-        case .destination: text = "목적지가 \(sample.destination)으로 변경되었습니다."
+        case .destination: text = "목적지를 변경했습니다. \(sample.destination)까지 안내합니다."
         }
             if !rule.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { text = rule.message }
             text = text.replacingOccurrences(of: "{인사}", with: Self.greeting(hour: sample.hour))

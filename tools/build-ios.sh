@@ -19,10 +19,13 @@ xcodebuild -version
 xcodegen --version
 node tools/embed-js.cjs
 node tools/project-source-tests.cjs
+node tools/ui-copy-audit.cjs
 node tools/typecast-only-audit.cjs
 node tools/briefing-coverage.cjs
 node tools/control-path-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
+swiftc Xcode/LiveActivityShared/GuidanceCardLabel.swift tools/guidance-card-tests.swift -o Xcode/GuidanceCardTests
+Xcode/GuidanceCardTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/MediaPlaybackSource.swift tools/media-source-tests.swift -o Xcode/MediaSourceTests
 Xcode/MediaSourceTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AttachmentSafety.swift tools/attachment-safety-tests.swift -o Xcode/AttachmentSafetyTests
@@ -75,6 +78,8 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift tools/native-poli
 Xcode/NativePolicyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationTransfer.swift tools/automation-policy-tests.swift -o Xcode/AutomationPolicyTests
 Xcode/AutomationPolicyTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/AutomationTransfer.swift tools/speech-wording-tests.swift -o Xcode/SpeechWordingTests
+Xcode/SpeechWordingTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AutomationAPI.swift tools/automation-api-tests.swift -o Xcode/AutomationAPITests
 Xcode/AutomationAPITests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefingText.swift tools/screen-briefing-tests.swift -o Xcode/ScreenBriefingTests

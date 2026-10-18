@@ -50,7 +50,7 @@ private struct AutomationDashboard: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("실행 내역").font(.subheadline.weight(.semibold))
-                        Text(store.logs.first?.status ?? "아직 실행된 규칙 없음").font(.caption).foregroundStyle(Theme.muted).lineLimit(1).minimumScaleFactor(0.5)
+                        Text(store.logs.first?.status ?? "실행 내역 없음").font(.caption).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 6)
                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.muted)

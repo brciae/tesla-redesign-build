@@ -17,7 +17,10 @@ struct CharacterRunnerView: View {
             atlasBody.overlay(alignment: .bottom) {
                 // v1.30: say why the 3D character is not shown instead of silently falling back.
                 if let e = CharacterRig.shared.loadError {
-                    Text("3D 캐릭터 로드 실패: " + e).font(.caption2).foregroundStyle(.secondary).lineLimit(2).minimumScaleFactor(0.6).padding(6)
+                    HStack {
+                        Text("캐릭터 로드 실패").font(.caption2).foregroundStyle(.secondary)
+                        InfoNote("오류 상세", e)
+                    }.padding(6)
                 }
             }
         }

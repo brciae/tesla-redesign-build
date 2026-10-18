@@ -5,6 +5,10 @@ static void check(BOOL value, NSString *message) {
     if (!value) { NSLog(@"FAIL: %@", message); exit(1); }
 }
 int main(void) { @autoreleasepool {
+    check([YLNavigationSpeech(2, @"교차로", @[@"서울 방면", @"서울", @"수원 방향", @"용인"], 300) isEqual:@"300미터 앞, 서울, 수원 방면, 우회전하세요."], @"Normalize direction suffixes, dedupe and keep at most two sign names");
+    check([YLNavigationSpeech(78, @"회전교차로", @[], 100) isEqual:@"100미터 앞, 회전교차로에서 9시 방향 출구로 나가세요."], @"Do not repeat a generic roundabout node before the maneuver");
+    check([YLNavigationCameraSpeech(@"300미터 앞, ", @"신호 과속 단속 카메라", 60) isEqual:@"300미터 앞, 신호 과속 단속 지점입니다. 제한 속도는 시속 60킬로미터입니다."], @"Camera wording keeps enforcement type and limit without a filler warning");
+    check([YLNavigationCameraSpeech(@"잠시 후, ", @"이동식 과속 단속 카메라", 0) isEqual:@"잠시 후, 이동식 과속 단속 지점입니다."], @"Unknown speed limit must not be invented");
     check(YLNavigationPositionUsable(YES, 1, 1, YES), @"Fresh matched GPS usable");
     check(YLNavigationPositionUsable(YES, 90, 1, YES), @"Current valid SDK route estimate survives raw GPS loss");
     check(!YLNavigationPositionUsable(YES, 90, 9, YES), @"Stale callback is not dead reckoning");

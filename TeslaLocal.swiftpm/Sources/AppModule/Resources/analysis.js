@@ -487,7 +487,9 @@
       append(s.trips,trip);s.activeTrip=null;
       s.lastPark=t.parkAt!=null?{at:end,soc:t.lastSOC,odometerKm:t.lastOdo,gear:'P'}:null;
       const delta=trip.startSOC!=null&&trip.endSOC!=null?round(trip.startSOC-trip.endSOC):null;
-      s.lastBrief=`이번 운행 거리는 ${trip.distanceKm} km, 소요 시간은 ${Math.round((trip.end-trip.start)/60000)}분입니다. `+(delta==null?'배터리 사용량은 확인되지 않았습니다.':`배터리 잔량은 ${Math.abs(delta)} 퍼센트포인트 ${delta>=0?'감소':'증가'}했습니다.`)+(trip.missing?' 일부 구간은 확인되지 않아 추정값으로 안내합니다.':'');
+      const spokenDistance=trip.distanceKm>=1?`${round(trip.distanceKm,1)} km`:`${Math.round(trip.distanceKm*1000)} m`,seconds=(trip.end-trip.start)/1000;
+      const spokenDuration=seconds<60?'1분 미만':`${Math.round(seconds/60)}분`;
+      s.lastBrief=`이번 주행은 ${spokenDistance}, ${spokenDuration}입니다. `+(delta==null?'배터리 사용량은 확인되지 않았습니다.':`배터리 잔량이 ${Math.abs(delta)} 퍼센트포인트 ${delta>=0?'줄었습니다':'늘었습니다'}.`)+(trip.missing?' 수신하지 못한 구간의 추정값이 포함되어 있습니다.':'');
       return trip;
     }
     ingestFleetDrive(input,now=Date.now()){

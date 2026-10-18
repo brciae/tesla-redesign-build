@@ -307,7 +307,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                 ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 36)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(data.turnDistance).font(.system(size: 28, weight: .bold)).monospacedDigit()
-                    Text(data.turn).font(.subheadline.bold()).lineLimit(2).minimumScaleFactor(0.8)
+                    GuidanceCardLabel(text: data.turn, symbol: data.turnSymbol, exitClock: data.exitClock).font(.subheadline.bold()).lineLimit(2).minimumScaleFactor(0.8)
                 }
                 if !wide { Spacer(minLength: 0); Text(data.speed).overspeed(data.overspeedLevel).font(.title.bold()).monospacedDigit(); Text(data.speedUnit).font(.caption2) }
             }
@@ -319,9 +319,9 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     if let limit = data.speedLimit { LimitSign(limit: limit, distance: data.speedLimitDistance, size: 40) }
                 }
             }
-            if !data.next.isEmpty { Text("이후 " + data.next).font(.caption).lineLimit(1).minimumScaleFactor(0.5) }
+            if !data.next.isEmpty { GuidanceCardLabel(text: data.next, symbol: data.nextSymbol, exitClock: data.nextExitClock).font(.caption).lineLimit(1).minimumScaleFactor(0.5) }
             if data.laneCount > 0 { LaneStrip(data: data, u: min(1, m.u)).frame(maxHeight: 40) }
-            if wide { Text(data.road).font(.caption).foregroundStyle(.black.opacity(0.65)).lineLimit(2).minimumScaleFactor(0.6); Spacer(minLength: 0) }
+            if wide { Spacer(minLength: 0) }
         }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .modifier(TeslaGuidanceSurface(radius: 16))
     }
@@ -644,10 +644,10 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 36 * m.u)
                     Text(data.turnDistance).font(.system(size: 34 * m.u, weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
                 }
-                Text(data.turn).font(.system(size: 16 * m.u, weight: .semibold))
+                GuidanceCardLabel(text: data.turn, symbol: data.turnSymbol, exitClock: data.exitClock).font(.system(size: 16 * m.u, weight: .semibold))
                     .lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
                 if !data.next.isEmpty {
-                    Text("다음 · " + data.next).font(.system(size: 13 * m.u)).foregroundStyle(.black.opacity(0.65)).lineLimit(1).minimumScaleFactor(0.5)
+                    GuidanceCardLabel(text: data.next, symbol: data.nextSymbol, exitClock: data.nextExitClock).font(.system(size: 13 * m.u)).foregroundStyle(.black.opacity(0.65)).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
             .padding(12 * m.u)
@@ -926,7 +926,7 @@ private struct ManeuverStack: View {
                     Text(data.turnDistance)
                         .font(.system(size: 34 * u, weight: .bold)).monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.5)
-                    Text(data.turn)
+                    GuidanceCardLabel(text: data.turn, symbol: data.turnSymbol, exitClock: data.exitClock)
                         .font(.system(size: 15 * u, weight: .semibold))
                         .lineLimit(2).minimumScaleFactor(0.6).fixedSize(horizontal: false, vertical: true)
                 }
@@ -936,7 +936,7 @@ private struct ManeuverStack: View {
             .background(Color.clear)
             if !data.next.isEmpty {
                 HStack(spacing: 10 * u) {
-                    Text(data.next)
+                    GuidanceCardLabel(text: data.next, symbol: data.nextSymbol, exitClock: data.nextExitClock)
                         .font(.system(size: 14 * u, weight: .semibold))
                         .lineLimit(1).minimumScaleFactor(0.5)
                     Spacer(minLength: 4 * u)
@@ -947,13 +947,6 @@ private struct ManeuverStack: View {
                 .padding(.horizontal, 14 * u)
                 .frame(height: 38 * u)
                 .background(Color.black.opacity(0.04))
-            }
-            if !data.highway.isEmpty && !data.turn.contains(data.highway) {
-                Text(data.highway)
-                    .font(.system(size: 15 * u, weight: .semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14 * u).frame(height: 28 * u)
-                    .background(Color.black.opacity(0.04))
             }
         }
         .modifier(TeslaGuidanceSurface(radius: 12 * u))
@@ -979,11 +972,11 @@ private struct TurnBanner: View {
                         .animation(.smooth(duration: 0.25), value: data.turnDistance)
                 }
             }
-            Text(data.turn)
+            GuidanceCardLabel(text: data.turn, symbol: data.turnSymbol, exitClock: data.exitClock)
                 .font(.system(size: 15 * u, weight: .semibold))
                 .lineLimit(2).minimumScaleFactor(0.8)
             if !data.next.isEmpty {
-                Text("다음 " + data.next)
+                GuidanceCardLabel(text: data.next, symbol: data.nextSymbol, exitClock: data.nextExitClock)
                     .font(.system(size: 13 * u, weight: .medium))
                     .foregroundStyle(.black.opacity(0.65)).lineLimit(1).minimumScaleFactor(0.5)
             }
@@ -1006,12 +999,12 @@ private struct TurnColumn: View {
                     .font(.system(size: 34 * u, weight: .semibold)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.5)
             }
-            Text(data.turn)
+            GuidanceCardLabel(text: data.turn, symbol: data.turnSymbol, exitClock: data.exitClock)
                 .font(.system(size: 18 * u, weight: .medium))
                 .foregroundStyle(.black)
                 .lineLimit(2).minimumScaleFactor(0.8).fixedSize(horizontal: false, vertical: true)
             if !data.next.isEmpty {
-                Text(data.next)
+                GuidanceCardLabel(text: data.next, symbol: data.nextSymbol, exitClock: data.nextExitClock)
                     .font(.system(size: 16 * u)).foregroundStyle(.black.opacity(0.65))
                     .lineLimit(2).minimumScaleFactor(0.8).fixedSize(horizontal: false, vertical: true)
             }
@@ -1416,7 +1409,7 @@ private struct FocusTurnPill: View {
             ManeuverGlyph(symbol: data.turnSymbol, exitClock: data.exitClock, size: 26 * u)
             Text(data.turnDistance).font(.system(size: 22 * u, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
             Rectangle().fill(.black.opacity(0.15)).frame(width: 1, height: 18 * u)
-            Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
+            GuidanceCardLabel(text: data.turn, symbol: data.turnSymbol, exitClock: data.exitClock).font(.system(size: 15 * u, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.5).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16 * u).padding(.vertical, 8 * u).frame(minHeight: 50 * u)
         .modifier(TeslaGuidanceSurface(radius: 25 * u))
@@ -1487,7 +1480,7 @@ private struct FocusArrival: View {
             if !data.next.isEmpty {
                 HStack(spacing: 6 * u) {
                     ManeuverGlyph(symbol: data.nextSymbol, exitClock: data.nextExitClock, size: 16 * u)
-                    Text("다음 · " + data.next).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
+                    GuidanceCardLabel(text: data.next, symbol: data.nextSymbol, exitClock: data.nextExitClock).font(.system(size: 13 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
         }
@@ -2165,7 +2158,7 @@ private struct RunningTurnCard: View {
                 .frame(width: 44 * u)
             VStack(alignment: .leading, spacing: 2 * u) {
                 Text(data.turnDistance).font(.system(size: 24 * u, weight: .bold)).monospacedDigit()
-                Text(data.turn).font(.system(size: 15 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
+                GuidanceCardLabel(text: data.turn, symbol: data.turnSymbol, exitClock: data.exitClock).font(.system(size: 15 * u, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
             }
             Spacer(minLength: 0)
             if let limit = data.speedLimit {

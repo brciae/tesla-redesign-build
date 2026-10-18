@@ -252,26 +252,6 @@ struct InfoCard<Content: View>: View {
             .cardScrollEffect()
     }
 }
-/// Short captions stay inline; long explanations fold into an ⓘ button so screens read at a glance.
-struct Caption: View {
-    let text: String
-    @State private var open = false
-    init(_ text: String) { self.text = text }
-    var body: some View {
-        if text.count <= 40 {
-            Text(text).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        } else {
-            Button { open = true } label: {
-                // v1.55: long notes are hidden behind an ⓘ button — no cut-off sentence with "…"
-                Label("설명", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $open) {
-                Text(text).font(.callout).fixedSize(horizontal: false, vertical: true).padding(16).frame(maxWidth: 320).presentationCompactAdaptation(.popover)
-            }
-        }
-    }
-}
 struct Metric: View {
     let title: String
     let value: Double?

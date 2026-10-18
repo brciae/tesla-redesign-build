@@ -129,11 +129,27 @@ static inline BOOL YLNavigationIsPlaceName(NSString *name) {
     NSString *flat = [[name stringByReplacingOccurrencesOfString:@" " withString:@""] stringByReplacingOccurrencesOfString:@"·" withString:@""];
     if (flat.length < 2) return NO;
     NSArray<NSString *> *generic = @[@"분기", @"합류", @"분기점", @"진입", @"진출", @"출구", @"입구", @"방향", @"방면", @"직진", @"좌회전", @"우회전",
-                                     @"유턴", @"후", @"고속도로", @"도시고속도로", @"고가도로", @"지하차도", @"터널", @"요금소", @"옆길", @"왼쪽", @"오른쪽"];
+                                     @"유턴", @"후", @"고속도로", @"도시고속도로", @"고가도로", @"지하차도", @"터널", @"요금소", @"옆길", @"왼쪽", @"오른쪽", @"회전교차로", @"로터리", @"교차로", @"사거리", @"삼거리"];
     NSString *rest = flat;
     for (NSString *w in [generic sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) { return a.length > b.length ? NSOrderedAscending : NSOrderedDescending; }])
         rest = [rest stringByReplacingOccurrencesOfString:w withString:@""];
     return rest.length >= 2; // something besides maneuver vocabulary remains → a real road/place name
+}
+
+static inline NSString *YLNavigationSignName(NSString *raw) {
+    if (![raw isKindOfClass:NSString.class]) return @"";
+    NSString *name = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    // Sign metadata may already contain this suffix; say it exactly once.
+    for (NSString *suffix in @[@"방면", @"방향"]) {
+        if ([name hasSuffix:suffix]) name = [[name substringToIndex:name.length-suffix.length] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    }
+    return YLNavigationIsPlaceName(name) ? name : @"";
+}
+
+static inline NSString *YLNavigationCameraSpeech(NSString *prefix, NSString *kind, NSInteger limit) {
+    NSString *type = [[kind stringByReplacingOccurrencesOfString:@" 카메라" withString:@""] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    NSString *speed = limit > 0 ? [NSString stringWithFormat:@" 제한 속도는 시속 %ld킬로미터입니다.", (long)limit] : @"";
+    return [NSString stringWithFormat:@"%@%@ 지점입니다.%@", prefix, type, speed];
 }
 
 static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArray<NSString *> *towards, NSInteger metres) {
@@ -144,8 +160,9 @@ static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArr
     NSMutableArray<NSString *> *names = [NSMutableArray array];
     for (NSString *raw in towards) {
         if (![raw isKindOfClass:NSString.class]) continue;
-        NSString *name = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (name.length && YLNavigationIsPlaceName(name) && ![names containsObject:name]) [names addObject:name];
+        NSString *name = YLNavigationSignName(raw);
+        if (name.length && ![names containsObject:name]) [names addObject:name];
+        if (names.count == 2) break; // One road sign pair is enough; do not read a destination list.
     }
     NSString *context = @"";
     // Destinations/facilities already identify the point. Road signs help at forks.

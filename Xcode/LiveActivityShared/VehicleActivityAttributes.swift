@@ -12,6 +12,8 @@ struct VehicleActivityAttributes: ActivityAttributes {
         var observedAt: Date
         var turnSymbol: String? = nil
         var turnMetres: Int? = nil
+        var arrivalAt: Date? = nil
+        var exitClock: Int? = nil
     }
     var name: String = "YL Companion"
 }

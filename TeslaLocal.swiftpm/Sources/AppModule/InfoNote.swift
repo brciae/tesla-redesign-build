@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// InfoNote renders EmptyView to keep all cards clean and free from developer disclaimers.
+/// Supporting detail stays available without filling the main card.
 struct InfoNote: View {
     let title: String
     let text: String
@@ -17,10 +17,7 @@ struct InfoNote: View {
             .buttonStyle(.plain)
             .accessibilityLabel(title + " 설명")
             .popover(isPresented: $open) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title).font(.headline)
-                    Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
-                }.padding(16).frame(maxWidth: 320).presentationCompactAdaptation(.popover)
+                SupportingDetail(title: title, text: text)
             }
     }
 }

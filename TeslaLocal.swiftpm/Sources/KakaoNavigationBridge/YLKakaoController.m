@@ -869,14 +869,8 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         NSSet *speedCameras = [NSSet setWithArray:@[@81, @82, @86, @91, @100, @102, @103]];
         if ([speedCameras containsObject:@(point.code)]) {
             NSString *kind = point.code == 81 ? @"이동식 과속 단속 카메라" : (point.code == 86 || point.code == 103) ? @"신호 과속 단속 카메라" : @"과속 단속 카메라";
-            NSString *limit = ([point isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)point).speedLimit > 0)
-                ? [NSString stringWithFormat:@" 제한 속도는 시속 %d킬로미터입니다.", (int)((KNSafety_Camera *)point).speedLimit] : @"";
-            if (self.forceImminent) {
-                if ([point isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)point).speedLimit > 0)
-                    return [NSString stringWithFormat:@"잠시 후, 시속 %d킬로미터 과속 단속입니다.", (int)((KNSafety_Camera *)point).speedLimit];
-                return [NSString stringWithFormat:@"잠시 후, %@입니다.", kind];
-            }
-            return [NSString stringWithFormat:@"%@%@가 있습니다.%@ 과속에 주의하세요.", prefix, kind, limit];
+            NSInteger limit = [point isKindOfClass:KNSafety_Camera.class] ? ((KNSafety_Camera *)point).speedLimit : 0;
+            return YLNavigationCameraSpeech(self.forceImminent ? @"잠시 후, " : prefix, kind, limit);
         }
         NSString *limitSentence = @"";
         if ([point isKindOfClass:KNSafety_Camera.class] && ((KNSafety_Camera *)point).speedLimit > 0)
@@ -899,7 +893,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     }
     switch (code) {
         case KNVoiceCode_StartGuide: return @"안내를 시작합니다.";
-        case KNVoiceCode_EndGuide: return @"목적지에 도착했습니다. 안내를 종료합니다.";
+        case KNVoiceCode_EndGuide: return @"길안내를 종료합니다.";
         case KNVoiceCode_DetalDir:
         case KNVoiceCode_MultiRoute:
             return @""; // SDK does not expose the source sentence for these audio-only events.
@@ -907,11 +901,11 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         case KNVoiceCode_Alert: return @""; // A bare "주의하세요" is not a complete instruction; hazards speak via their own sentence.
         case KNVoiceCode_Hipass: return @"하이패스 차로를 확인하세요.";
         case KNVoiceCode_StrateToNext: return @"계속 직진하세요.";
-        case KNVoiceCode_CheckingRouteChange: return @"교통 상황을 확인합니다.";
+        case KNVoiceCode_CheckingRouteChange: return @""; // Background checks add no new guidance.
         case KNVoiceCode_RouteChanged: return @"새로운 경로로 안내합니다.";
-        case KNVoiceCode_RouteUnchanged: return @"현재 경로를 유지합니다.";
-        case KNVoiceCode_OutOfRoute: return @"경로를 이탈했습니다. 경로를 다시 탐색합니다.";
-        case KNVoiceCode_GPSConnected: return @"위치 신호가 연결되었습니다.";
+        case KNVoiceCode_RouteUnchanged: return @"";
+        case KNVoiceCode_OutOfRoute: return @"경로를 벗어나 다시 탐색합니다.";
+        case KNVoiceCode_GPSConnected: return @"위치 신호를 수신했습니다.";
         case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로입니다. 진입하지 않도록 차로를 확인하세요.";
         case KNVoiceCode_Alram: return @"";
         case KNVoiceCode_LinkSound: return @"";

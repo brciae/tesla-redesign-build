@@ -120,7 +120,7 @@ struct BatteryHealthReferenceSettingsView: View {
                     Text("충전 기반 참고 용량").tag("chargeUsable")
                 }
                 TextField("확인한 기준 용량 kWh · 미등록 가능", text: $capacity).keyboardType(.decimalPad)
-                Text("팩 총용량·사용 가능 용량·충전기 공급량은 서로 다름. 현재 계산 종류와 같은 기준을 확인한 경우에만 등록. 일반 소비량 계산의 기본 75kWh는 열화율 기준으로 사용하지 않음.").font(.caption).foregroundStyle(.secondary)
+                Caption("팩 총용량·사용 가능 용량·충전기 공급량은 서로 다름. 현재 계산 종류와 같은 기준을 확인한 경우에만 등록. 일반 소비량 계산의 기본 75kWh는 열화율 기준으로 사용하지 않음.")
             }
             Section("배터리 교체 이력") {
                 Toggle("배터리 교체일 이후 자료만 사용", isOn: $replaced)

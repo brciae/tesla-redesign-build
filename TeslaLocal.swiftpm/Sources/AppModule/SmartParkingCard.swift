@@ -83,13 +83,13 @@ struct SmartParkingCard: View {
                         Text(record.displayTitle)
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(Color.primary)
-                            .lineLimit(2).minimumScaleFactor(0.6)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         // Subtitle (Address & Landmark)
                         Text(record.displaySubtitle)
                             .font(.system(size: 13))
                             .foregroundStyle(Color.primary.opacity(0.65))
-                            .lineLimit(1).minimumScaleFactor(0.5)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer()
@@ -399,12 +399,12 @@ struct SmartParkingCard: View {
             Text(value)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Color.primary)
-                .lineLimit(1).minimumScaleFactor(0.5)
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(caption)
                 .font(.system(size: 10))
                 .foregroundStyle(Color.primary.opacity(0.45))
-                .lineLimit(1).minimumScaleFactor(0.5)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
