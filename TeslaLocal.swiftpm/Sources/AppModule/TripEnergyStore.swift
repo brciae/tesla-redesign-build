@@ -18,7 +18,7 @@ final class TripEnergyStore: ObservableObject {
     private let storageKey = "energy.tripForecast.v1"
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        if let data = defaults.data(forKey: storageKey + ".records"), data.count <= 8388608,
+        if let data = defaults.data(forKey: storageKey + ".records"), data.count <= 16777216,
            let rows = try? JSONDecoder().decode([TripEnergyRecord].self, from: data) {
             records = Array(rows.suffix(50))
         }
@@ -180,7 +180,7 @@ final class TripEnergyStore: ObservableObject {
             defaults.set(data, forKey: storageKey + ".session")
         } else if session == nil { defaults.removeObject(forKey: storageKey + ".session") }
         // History is written only at route completion; periodic checkpoints contain the current trip only.
-        if writeRecords, let data = try? JSONEncoder().encode(records), data.count <= 8388608 {
+        if writeRecords, let data = try? JSONEncoder().encode(records), data.count <= 16777216 {
             defaults.set(data, forKey: storageKey + ".records")
         }
     }
