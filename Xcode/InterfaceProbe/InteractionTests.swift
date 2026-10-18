@@ -16,11 +16,16 @@ final class InteractionTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["system-navigation-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["실시간 현황 요청됨 · 화면 표시 별도 확인"].waitForExistence(timeout: 8))
-        let board = showSystemLockScreenPresentation(app)
-        let card = board.staticTexts["오크밸리1길 우회전"]
+        var board = showSystemLockScreenPresentation(app)
+        let card = board.staticTexts["길안내 준비 중"]
         let rendered = card.waitForExistence(timeout: 12)
         captureSystemCard("System Lock Screen navigation card without vehicle")
         XCTAssertTrue(rendered, "Real installed widget must render in the system Lock Screen presentation")
+        app.activate()
+        app.buttons["상태 갱신"].tap()
+        board = showSystemLockScreenPresentation(app)
+        XCTAssertTrue(board.staticTexts["오크밸리1길 우회전"].waitForExistence(timeout: 12))
+        captureSystemCard("System Lock Screen navigation card updated guidance")
         app.activate()
         app.buttons["세션 종료"].tap()
         XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 8))

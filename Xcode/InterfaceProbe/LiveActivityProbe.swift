@@ -10,10 +10,11 @@ struct SystemActivityProbe: View {
     @ObservedObject private var manager = VehicleLiveActivityManager.shared
     private var state: VehicleActivityAttributes.ContentState {
         let at = Date().addingTimeInterval(stale ? -180 : 0)
+        let preparing = !charge && !progress
         return .init(connected: false, guiding: !charge && !ended, destination: "고등기술연구원",
-            instruction: "오크밸리1길 우회전", remainingMinutes: 15, batteryPercent: progress ? 62 : 60,
-            observedAt: at, turnSymbol: "arrow.turn.up.right", turnMetres: progress ? 200 : 300,
-            arrivalAt: at.addingTimeInterval(900), chargeStatus: charge && !ended ? "Charging" : "Stopped",
+            instruction: preparing ? "길안내 준비 중" : "오크밸리1길 우회전", remainingMinutes: preparing ? nil : 15, batteryPercent: progress ? 62 : 60,
+            observedAt: at, turnSymbol: preparing ? nil : "arrow.turn.up.right", turnMetres: preparing ? nil : progress ? 200 : 300,
+            arrivalAt: preparing ? nil : at.addingTimeInterval(900), chargeStatus: charge && !ended ? "Charging" : "Stopped",
             chargeObservedAt: at, chargeLimit: 80, chargerKW: 7.2, chargeRemainingMinutes: progress ? 100 : 120)
     }
     var body: some View {

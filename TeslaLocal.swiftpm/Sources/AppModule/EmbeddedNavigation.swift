@@ -465,10 +465,10 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         deadline?.invalidate(); deadline = nil; locator.stopUpdatingLocation()
         controller?.eventHandler = nil; controller?.telemetryHandler = nil; controller?.stopNavigation(); controller = nil
         telemetry = [:]; lastTelemetry = [:]; following = true; speedSample = nil; brakeUntil = 0
-        onActivityChange?()
         holdBackgroundLocation(false)
         onVoiceActivity?(false); onAudioSession?(false)
         busy = false; guiding = false; trafficRefreshing = false; trafficRecoveryPending = false; candidate = nil; ticket = nil
+        onActivityChange?()
         if !keepDisplay { presented = false }
     }
     func stop() { clearRecoveryCheckpoint(); routeAuthority.endManual(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }

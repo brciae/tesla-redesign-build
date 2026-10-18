@@ -100,6 +100,7 @@ final class AppModel: ObservableObject {
             let navAge = Date().timeIntervalSince(navAt)
             let navFresh = self.navigation.guiding && (-2..<30).contains(navAge) &&
                 (nav.flag("gps") || nav.flag("positionEstimated"))
+            let preparing = self.navigation.busy && !self.navigation.guiding
             let seconds = navFresh ? nav.number("remainSeconds") : nil
             let minutes = seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? Int(ceil($0 / 60)) : nil }
             let charge = activityChargePresentation()
@@ -113,14 +114,14 @@ final class AppModel: ObservableObject {
             let destination = self.navigation.guiding ? self.navigation.energyDestination : ""
             let state = VehicleActivityAttributes.ContentState(
                 connected: self.link.connected && self.link.authentic,
-                guiding: self.navigation.guiding,
+                guiding: self.navigation.guiding || preparing,
                 destination: String(destination.prefix(60)),
-                instruction: navFresh ? GuidanceCardText.label(nav.string("turn", "길안내 중"),
+                instruction: preparing ? "길안내 준비 중" : navFresh ? GuidanceCardText.label(nav.string("turn", "길안내 중"),
                     symbol: nav.string("symbol"), exitClock: nav.number("exitClock").flatMap { $0.isFinite && (1...12).contains($0) ? Int($0) : nil } ?? 0) : "길안내 업데이트 대기",
                 remainingMinutes: minutes,
                 batteryPercent: charge.string("mode") == "recent" ? battery : nil,
                 // A fresh vehicle sample must never make an old turn appear current.
-                observedAt: self.navigation.guiding ? navAt : self.activityObservedAt,
+                observedAt: preparing ? Date() : self.navigation.guiding ? navAt : self.activityObservedAt,
                 turnSymbol: navFresh ? nav.string("symbol", "arrow.up") : nil,
                 turnMetres: navFresh ? nav.number("turnMetres").flatMap { $0.isFinite && (0...1_000_000).contains($0) ? Int($0.rounded()) : nil } : nil,
                 arrivalAt: seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? navAt.addingTimeInterval($0) : nil },
@@ -256,7 +257,7 @@ final class AppModel: ObservableObject {
             // v29: informational alerts (errorMessage) no longer block navigation start.
             return !self.demo && !self.aiRules.presented && UIApplication.shared.applicationState == .active && !self.link.controlBusy && !self.link.preparingControl && self.sharedFile == nil
         }
-        navigation.willStart = { [weak self] in self?.stopSpeech() }
+        navigation.willStart = { [weak self] in self?.stopSpeech(); self?.updateLiveActivity() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
         navigation.onGuidanceEnd = { [weak self] arrived in
             if let self {

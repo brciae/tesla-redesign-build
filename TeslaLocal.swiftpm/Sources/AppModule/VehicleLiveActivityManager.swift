@@ -14,6 +14,7 @@ final class VehicleLiveActivityManager: ObservableObject {
     private var latestInput: VehicleActivityAttributes.ContentState?
     private var latestEnabled = false
     private var foregroundObserver: AnyCancellable?
+    private var endingIDs: Set<String> = []
     @Published private(set) var status = "실시간 현황 대기"
     private init() {
         foregroundObserver = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
@@ -38,7 +39,7 @@ final class VehicleLiveActivityManager: ObservableObject {
         guard !restarting else { return }
         if activity == nil {
             activity = Activity<VehicleActivityAttributes>.activities.first {
-                $0.activityState == .active || $0.activityState == .stale
+                !endingIDs.contains($0.id) && ($0.activityState == .active || $0.activityState == .stale)
             }
         }
         guard enabled else { end(); status = "실시간 현황 꺼짐"; return }
@@ -123,6 +124,11 @@ final class VehicleLiveActivityManager: ObservableObject {
         updateTask?.cancel(); updateTask = nil
         let current = activity
         activity = nil; lastState = nil
-        Task { await current?.end(nil, dismissalPolicy: .immediate) }
+        guard let current else { return }
+        endingIDs.insert(current.id)
+        Task {
+            await current.end(nil, dismissalPolicy: .immediate)
+            endingIDs.remove(current.id)
+        }
     }
 }
