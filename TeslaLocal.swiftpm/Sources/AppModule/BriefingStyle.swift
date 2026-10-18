@@ -41,7 +41,6 @@ enum SpeechEnding {
     static func sentence(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: CharacterSet(charactersIn: " ,"))
         guard let last = s.last else { return raw }
-        if done.contains(String(last)) || s.hasSuffix("니다") || s.hasSuffix("세요") { return s.hasSuffix("!") || s.hasSuffix("?") || s.hasSuffix("…") ? s : s + "." }
         // A noun/status fragment needs a subject or object particle, not a suffix pasted onto it.
         let clauses = [("완료됨", "완료되었습니다"), ("완료", "완료되었습니다"),
                        ("종료됨", "끝났습니다"), ("종료", "끝났습니다"),
@@ -58,6 +57,10 @@ enum SpeechEnding {
         if s.hasSuffix("미수신") {
             let noun = String(s.dropLast("미수신".count)).trimmingCharacters(in: .whitespaces)
             if !noun.isEmpty { return noun + particle(noun, object: true) + " 아직 받지 못했습니다." }
+        }
+        // "필요" ends in 요 but is a noun/status, not a polite sentence ending.
+        if !s.hasSuffix("필요"), done.contains(String(last)) || s.hasSuffix("니다") || s.hasSuffix("세요") {
+            return s.hasSuffix("!") || s.hasSuffix("?") || s.hasSuffix("…") ? s : s + "."
         }
         for (tail, replacement) in rules where s.hasSuffix(tail) {
             s = String(s.dropLast(tail.count)) + replacement
