@@ -46,9 +46,12 @@ final class VehicleLiveActivityManager: ObservableObject {
             guard UIApplication.shared.applicationState == .active else { return }
         }
         let hasSession = state.connected || state.guiding
-        guard hasSession else {
+        let previouslyGuiding = lastState?.guiding ?? activity?.content.state.guiding ?? false
+        if VehicleActivitySessionPolicy.shouldEnd(connected: state.connected, guiding: state.guiding,
+            previouslyGuiding: previouslyGuiding, observationAge: Date().timeIntervalSince(state.observedAt)) {
             end(); status = "차량 연결 또는 길안내 시작 후 표시 가능"; return
         }
+        guard hasSession || activity != nil else { status = "차량 연결 또는 길안내 시작 후 표시 가능"; return }
         let content = ActivityContent(state: state, staleDate: state.observedAt.addingTimeInterval(30),
                                       relevanceScore: state.guiding ? 100 : state.connected ? 50 : 0)
         if activity == nil {

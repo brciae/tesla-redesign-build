@@ -24,7 +24,7 @@ node tools/typecast-only-audit.cjs
 node tools/briefing-coverage.cjs
 node tools/control-path-audit.cjs
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
-swiftc Xcode/LiveActivityShared/GuidanceCardLabel.swift tools/guidance-card-tests.swift -o Xcode/GuidanceCardTests
+swiftc Xcode/LiveActivityShared/GuidanceCardLabel.swift Xcode/LiveActivityShared/VehicleActivitySessionPolicy.swift tools/guidance-card-tests.swift -o Xcode/GuidanceCardTests
 Xcode/GuidanceCardTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/MediaPlaybackSource.swift tools/media-source-tests.swift -o Xcode/MediaSourceTests
 Xcode/MediaSourceTests

@@ -10,6 +10,13 @@ import Foundation
         check(GuidanceCardText.label("1.3 km · 좌회전", symbol: "", exitClock: 0) == "1.3 km · 좌회전", "Keep next-turn distance when short")
         check(GuidanceCardText.label("길안내 업데이트 대기", symbol: "", exitClock: 0) == "길안내 업데이트 대기", "Keep stale status")
         check(GuidanceCardText.action("어떤 미확인 상태인지 아주 길게 이어지는 문구와 설명이 있음", symbol: "", exitClock: 0) == "진행 방향 확인", "Do not invent a turn from an unknown instruction")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: true, guiding: false, previouslyGuiding: false, observationAge: 0), "Vehicle session starts")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: false, observationAge: 10), "Short connection loss retains reconnect activity")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: true, guiding: false, previouslyGuiding: false, observationAge: 0), "Reconnection keeps existing activity usable")
+        check(VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: false, observationAge: 91), "Expired disconnected session ends")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: true, previouslyGuiding: false, observationAge: 0), "Guidance does not require a vehicle")
+        check(VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: true, observationAge: 0), "Explicit phone guidance end does not linger")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: true, guiding: false, previouslyGuiding: true, observationAge: 0), "Guidance end may retain the connected-vehicle activity")
         print("PASS: concise navigation labels, complete sign names, restrictions and roundabout direction")
     }
 }
