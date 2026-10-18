@@ -383,7 +383,12 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                         // v29: a start that completes under the lock screen keeps running; UI appears on return.
                         if UIApplication.shared.applicationState == .active, !self.userDismissed { self.presented = true }
                     }
-                    if event == "started" { self.busy = false; self.guiding = true; self.startFailures = 0; self.deadline?.invalidate(); self.holdBackgroundLocation(true); self.lastRecoverySave = .distantPast; self.saveRecoveryCheckpoint() }
+                    if event == "started" {
+                        self.busy = false; self.guiding = true; self.startFailures = 0; self.deadline?.invalidate()
+                        self.holdBackgroundLocation(true); self.lastRecoverySave = .distantPast; self.saveRecoveryCheckpoint()
+                        // Request the Live Activity while still foreground, before the first GPS tick.
+                        self.onActivityChange?()
+                    }
                     if !self.guiding || event != "ready" { self.status = message }
                 }
                 if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }

@@ -13,7 +13,18 @@ final class VehicleLiveActivityManager: ObservableObject {
     private var restarting = false
     private var latestInput: VehicleActivityAttributes.ContentState?
     private var latestEnabled = false
+    private var foregroundObserver: AnyCancellable?
     @Published private(set) var status = "실시간 현황 대기"
+    private init() {
+        foregroundObserver = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, let state = self.latestInput else { return }
+                    self.failedUntil = .distantPast
+                    self.update(state, enabled: self.latestEnabled)
+                }
+            }
+    }
     var installationSummary: String {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         let path = Bundle.main.builtInPlugInsURL?.appendingPathComponent("VehicleLiveActivity.appex")
@@ -25,12 +36,6 @@ final class VehicleLiveActivityManager: ObservableObject {
     func update(_ state: VehicleActivityAttributes.ContentState, enabled: Bool) {
         latestInput = state; latestEnabled = enabled
         guard !restarting else { return }
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-        if enabled, UIApplication.shared.applicationState == .active,
-           UserDefaults.standard.string(forKey: "liveActivity.rendererBuild") != build {
-            UserDefaults.standard.set(build, forKey: "liveActivity.rendererBuild")
-            restart(); return
-        }
         if activity == nil {
             activity = Activity<VehicleActivityAttributes>.activities.first {
                 $0.activityState == .active || $0.activityState == .stale
@@ -45,20 +50,34 @@ final class VehicleLiveActivityManager: ObservableObject {
             // Respect the user's dismissal until the next foreground visit.
             guard UIApplication.shared.applicationState == .active else { return }
         }
-        let hasSession = state.connected || state.guiding
+        let hasSession = state.connected || state.guiding || (state.charging && !state.chargingStale)
         let previouslyGuiding = lastState?.guiding ?? activity?.content.state.guiding ?? false
+        let previouslyCharging = lastState?.charging ?? activity?.content.state.charging ?? false
         if VehicleActivitySessionPolicy.shouldEnd(connected: state.connected, guiding: state.guiding,
-            previouslyGuiding: previouslyGuiding, observationAge: Date().timeIntervalSince(state.observedAt)) {
-            end(); status = "차량 연결 또는 길안내 시작 후 표시 가능"; return
+            previouslyGuiding: previouslyGuiding, observationAge: Date().timeIntervalSince(state.observedAt),
+            charging: state.charging, previouslyCharging: previouslyCharging) {
+            end(); status = "차량 연결·길안내·충전 시작 후 표시 가능"; return
         }
-        guard hasSession || activity != nil else { status = "차량 연결 또는 길안내 시작 후 표시 가능"; return }
-        let content = ActivityContent(state: state, staleDate: state.observedAt.addingTimeInterval(30),
-                                      relevanceScore: state.guiding ? 100 : state.connected ? 50 : 0)
+        guard hasSession || activity != nil else { status = "차량 연결·길안내·충전 시작 후 표시 가능"; return }
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        // A first request must not wait for an asynchronous restart of an empty activity list.
+        if activity != nil, UIApplication.shared.applicationState == .active,
+           UserDefaults.standard.string(forKey: "liveActivity.rendererBuild") != build {
+            UserDefaults.standard.set(build, forKey: "liveActivity.rendererBuild")
+            restart(); return
+        }
+        let staleAt = !state.guiding && state.charging ? (state.chargeObservedAt ?? .distantPast).addingTimeInterval(120) : state.observedAt.addingTimeInterval(30)
+        let content = ActivityContent(state: state, staleDate: staleAt,
+                                      relevanceScore: state.guiding ? 100 : state.charging ? 80 : state.connected ? 50 : 0)
         if activity == nil {
-            guard UIApplication.shared.applicationState == .active, hasSession, Date() >= failedUntil else { return }
+            guard UIApplication.shared.applicationState == .active else {
+                status = "앱을 열면 실시간 현황 시작"; return
+            }
+            guard hasSession, Date() >= failedUntil else { return }
             do {
                 activity = try Activity.request(attributes: VehicleActivityAttributes(), content: content, pushType: nil)
                 lastUpdate = Date(); lastState = state
+                UserDefaults.standard.set(build, forKey: "liveActivity.rendererBuild")
                 status = "실시간 현황 요청됨 · 화면 표시 별도 확인"
             } catch {
                 failedUntil = Date().addingTimeInterval(60)
@@ -70,7 +89,9 @@ final class VehicleLiveActivityManager: ObservableObject {
             lastState?.instruction != state.instruction || lastState?.remainingMinutes != state.remainingMinutes ||
             lastState?.destination != state.destination || lastState?.batteryPercent != state.batteryPercent ||
             lastState?.turnSymbol != state.turnSymbol || lastState?.turnMetres != state.turnMetres ||
-            lastState?.exitClock != state.exitClock || lastState?.arrivalAt != state.arrivalAt
+            lastState?.exitClock != state.exitClock || lastState?.arrivalAt != state.arrivalAt ||
+            lastState?.chargeStatus != state.chargeStatus || lastState?.chargeLimit != state.chargeLimit ||
+            lastState?.chargerKW != state.chargerKW || lastState?.chargeRemainingMinutes != state.chargeRemainingMinutes
         guard changed || Date().timeIntervalSince(lastUpdate) >= 20 else { return }
         lastUpdate = Date(); lastState = state
         status = "실시간 현황 요청됨 · 화면 표시 별도 확인"
@@ -85,10 +106,16 @@ final class VehicleLiveActivityManager: ObservableObject {
         let existing = Activity<VehicleActivityAttributes>.activities
         activity = nil; lastState = nil; lastUpdate = .distantPast; failedUntil = .distantPast
         status = "실시간 현황 다시 시작 중"
+        if existing.isEmpty {
+            restarting = false
+            if let state = latestInput { update(state, enabled: latestEnabled) }
+            else { status = "차량 연결·길안내·충전 시작 후 표시 가능" }
+            return
+        }
         Task {
             for current in existing { await current.end(nil, dismissalPolicy: .immediate) }
             restarting = false
-            guard let state = latestInput else { status = "차량 연결 또는 길안내 시작 후 표시 가능"; return }
+            guard let state = latestInput else { status = "차량 연결·길안내·충전 시작 후 표시 가능"; return }
             update(state, enabled: latestEnabled)
         }
     }

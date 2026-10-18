@@ -17,6 +17,10 @@ import Foundation
         check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: true, previouslyGuiding: false, observationAge: 0), "Guidance does not require a vehicle")
         check(VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: true, observationAge: 0), "Explicit phone guidance end does not linger")
         check(!VehicleActivitySessionPolicy.shouldEnd(connected: true, guiding: false, previouslyGuiding: true, observationAge: 0), "Guidance end may retain the connected-vehicle activity")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: false, observationAge: 1000, charging: true), "Fleet-only charging survives BLE disconnect")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: true, observationAge: 0, charging: true), "Guidance ending switches to active charging")
+        check(VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: false, observationAge: 0, previouslyCharging: true), "Explicit charging end removes a phone-only card immediately")
+        check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: true, previouslyGuiding: false, observationAge: 0, previouslyCharging: true), "Charging end must not remove active navigation")
         print("PASS: concise navigation labels, complete sign names, restrictions and roundabout direction")
     }
 }

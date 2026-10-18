@@ -116,7 +116,10 @@ struct MainView: View {
             .tint(Color.primary)
             .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
             .onOpenURL { url in
-                if url.scheme == "ylcompanion", url.host == "activity" {
+                if url.scheme == "ylcompanion", url.host == "charging" {
+                    selectedTab = .energy
+                    model.chargingPresented = true
+                } else if url.scheme == "ylcompanion", url.host == "activity" {
                     selectedTab = .home
                     if navigation.guiding { navigation.presented = true }
                 } else { model.aiRules.receive(url, vehicle: model.settings.string("vin")) }

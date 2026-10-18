@@ -89,8 +89,12 @@ final class AppModel: ObservableObject {
     private var activityObservedAt = Date.distantPast
     private let phoneCalls = PhoneCallLifecycle()
     func updateLiveActivity() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
+        // Guidance-start and foreground callbacks must request synchronously. A queued Task
+        // could run after the user locks the phone, when Activity.request is no longer allowed.
+        if Thread.isMainThread { MainActor.assumeIsolated { publishLiveActivity() } }
+        else { DispatchQueue.main.async { [weak self] in self?.publishLiveActivity() } }
+    }
+    @MainActor private func publishLiveActivity() {
             let nav = self.navigation.telemetry
             let navAt = Date(timeIntervalSince1970: nav.number("at") ?? 0)
             let navAge = Date().timeIntervalSince(navAt)
@@ -98,8 +102,14 @@ final class AppModel: ObservableObject {
                 (nav.flag("gps") || nav.flag("positionEstimated"))
             let seconds = navFresh ? nav.number("remainSeconds") : nil
             let minutes = seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? Int(ceil($0 / 60)) : nil }
-            let soc = self.output.object("fresh").flag("charge") ? self.groups.object("charge").number("soc") : nil
+            let charge = activityChargePresentation()
+            let soc = charge.number("soc")
             let battery = soc.flatMap { $0.isFinite && (0...100).contains($0) ? Int($0.rounded()) : nil }
+            let chargeAt = charge.number("at").map { Date(timeIntervalSince1970: $0 / 1000) }
+            let rawCharge = charge.number("charging").flatMap { (0...100).contains($0) ? Int($0) : nil }
+            let chargeStatus = !charge.string("status").isEmpty ? charge.string("status") :
+                rawCharge.flatMap { ChargeEventPolicy.bleState($0) } ??
+                (charge["isCharging"] as? Bool).map { $0 ? "Charging" : "Stopped" }
             let destination = self.navigation.guiding ? self.navigation.energyDestination : ""
             let state = VehicleActivityAttributes.ContentState(
                 connected: self.link.connected && self.link.authentic,
@@ -108,16 +118,19 @@ final class AppModel: ObservableObject {
                 instruction: navFresh ? GuidanceCardText.label(nav.string("turn", "길안내 중"),
                     symbol: nav.string("symbol"), exitClock: nav.number("exitClock").flatMap { $0.isFinite && (1...12).contains($0) ? Int($0) : nil } ?? 0) : "길안내 업데이트 대기",
                 remainingMinutes: minutes,
-                batteryPercent: battery,
+                batteryPercent: charge.string("mode") == "recent" ? battery : nil,
                 // A fresh vehicle sample must never make an old turn appear current.
                 observedAt: self.navigation.guiding ? navAt : self.activityObservedAt,
                 turnSymbol: navFresh ? nav.string("symbol", "arrow.up") : nil,
                 turnMetres: navFresh ? nav.number("turnMetres").flatMap { $0.isFinite && (0...1_000_000).contains($0) ? Int($0.rounded()) : nil } : nil,
                 arrivalAt: seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? navAt.addingTimeInterval($0) : nil },
-                exitClock: navFresh ? nav.number("exitClock").flatMap { $0.isFinite && (1...12).contains($0) ? Int($0) : nil } : nil)
+                exitClock: navFresh ? nav.number("exitClock").flatMap { $0.isFinite && (1...12).contains($0) ? Int($0) : nil } : nil,
+                chargeStatus: chargeStatus, chargeObservedAt: chargeAt,
+                chargeLimit: charge.number("limit").flatMap { (1...100).contains($0) ? Int($0.rounded()) : nil },
+                chargerKW: charge.number("chargerKW").flatMap { (0...500).contains($0) ? $0 : nil },
+                chargeRemainingMinutes: charge.number("minutesToLimit").flatMap { (0...10080).contains($0) ? Int(ceil($0)) : nil })
             VehicleLiveActivityManager.shared.update(state, enabled: !self.demo && !self.recoveryLock &&
                 ((UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool) ?? true))
-        }
     }
     private var fleetObservation: AnyCancellable?
     private var archiveObservation: AnyCancellable?
@@ -215,7 +228,10 @@ final class AppModel: ObservableObject {
             catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
         }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.objectWillChange.send(); self?.considerNavigation(); self?.observeParkingTelemetry() }
+            DispatchQueue.main.async {
+                self?.objectWillChange.send(); self?.considerNavigation(); self?.observeParkingTelemetry()
+                self?.updateLiveActivity()
+            }
         }
         Task { @MainActor [weak self] in
         FleetArchiveClient.shared.onHistoryReady = { [weak self] vin in
@@ -225,7 +241,7 @@ final class AppModel: ObservableObject {
             FleetTelemetryStore.shared.historySaved(vin: vin)
         }
         }
-        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = FleetTelemetryStore.shared.records; self.observeParkingTelemetry() } }
+        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = FleetTelemetryStore.shared.records; self.observeParkingTelemetry(); self.updateLiveActivity() } }
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.archiveReadings = FleetTelemetryStore.shared.records
@@ -588,8 +604,8 @@ final class AppModel: ObservableObject {
         guard !demo else { errorMessage = "예시 모드를 종료한 뒤 실차에 연결해야 함"; return }
         link.connect(vin: settings.string("vin"))
     }
-    func pause() { link.pauseForBackground(); saveRecordsWhenAvailable(force: true) }
-    func resignActive() { link.resignActive(); navigation.suspendPending() }
+    func pause() { updateLiveActivity(); link.pauseForBackground(); saveRecordsWhenAvailable(force: true) }
+    func resignActive() { updateLiveActivity(); link.resignActive(); navigation.suspendPending() }
     func resume() {
         guard !recoveryLock, !demo, UIApplication.shared.applicationState == .active else { return }
         nextSaveAttempt = .distantPast

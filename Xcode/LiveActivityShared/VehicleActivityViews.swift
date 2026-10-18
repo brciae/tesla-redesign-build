@@ -14,6 +14,9 @@ struct VehicleActivitySummary: View {
     var stale = false
     private var connection: String { stale ? "업데이트 대기" : state.connected ? "차량 연결됨" : "재연결 대기" }
     var body: some View {
+        if state.charging && !state.guiding {
+            VehicleChargingCard(state: state, stale: stale || state.chargingStale)
+        } else {
         HStack(spacing: 12) {
             VehicleActivityIcon()
             VStack(alignment: .leading, spacing: 5) {
@@ -34,6 +37,41 @@ struct VehicleActivitySummary: View {
                 }
             }
         }.padding(14)
+        }
+    }
+}
+
+struct VehicleChargingCard: View {
+    let state: VehicleActivityAttributes.ContentState
+    var stale = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: stale ? "clock" : "bolt.fill").foregroundStyle(stale ? Color.gray : Color.green)
+                Text(stale ? "충전 업데이트 대기" : "충전 중").font(.headline)
+                    .accessibilityIdentifier("live.charging.status")
+                Spacer(minLength: 0)
+                if !stale, let minutes = state.chargeRemainingMinutes {
+                    Text(minutes == 0 ? "곧 완료" : "약 \(minutes)분 남음").font(.caption).monospacedDigit()
+                }
+            }
+            if stale {
+                Text("앱을 열어 최신 상태 확인").font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    if let battery = state.batteryPercent {
+                        Text("\(battery)%").font(.system(size: 28, weight: .bold)).monospacedDigit()
+                            .accessibilityIdentifier("live.charging.battery")
+                    }
+                    if let limit = state.chargeLimit { Text("목표 \(limit)%").font(.caption).foregroundStyle(.secondary) }
+                    Spacer(minLength: 0)
+                    if let kw = state.chargerKW {
+                        Text(String(format: "%.1f kW", kw)).font(.subheadline.bold()).monospacedDigit()
+                    }
+                }
+                if let battery = state.batteryPercent { ProgressView(value: Double(battery), total: 100).tint(.green) }
+            }
+        }.padding(14).accessibilityElement(children: .contain)
     }
 }
 
@@ -94,6 +132,11 @@ struct VehicleActivityCompact: View {
                 } else if let minutes = state.remainingMinutes { Text("\(minutes)분") }
             }.font(.caption.bold()).monospacedDigit()
                 .accessibilityIdentifier("live.activity.compact")
+        } else if state.charging {
+            HStack(spacing: 3) {
+                Image(systemName: "bolt.fill").foregroundStyle(.green)
+                if let battery = state.batteryPercent { Text("\(battery)%").monospacedDigit() }
+            }.font(.caption.bold())
         } else { Image(systemName: state.connected ? "link" : "link.badge.plus") }
     }
 }
@@ -108,7 +151,8 @@ struct VehicleActivityMinimal: View {
             else if state.guiding {
                 Image(systemName: state.turnSymbol ?? "location.fill").foregroundStyle(.cyan)
                     .font(.system(size: 17, weight: .bold))
-            } else { VehicleActivityIcon() }
+            } else if state.charging { Image(systemName: "bolt.fill").foregroundStyle(.green) }
+            else { VehicleActivityIcon() }
         }.frame(width: 20, height: 20)
             .accessibilityLabel(stale ? "YL Companion 업데이트 대기" : state.guiding ? "YL Companion \(state.instruction)" : "YL Companion")
             .accessibilityIdentifier("live.activity.minimal")

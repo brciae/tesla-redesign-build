@@ -16,6 +16,7 @@ import MapKit
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("system-navigation-probe") || ProcessInfo.processInfo.arguments.contains("system-charging-probe") { SystemActivityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("lock-screen-navigation-probe") { LockScreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("robot-probe") { RobotProbe() }

@@ -21,7 +21,7 @@ struct VehicleLiveActivity: Widget {
                 .environment(\.colorScheme, .light)
                 .activityBackgroundTint(.white.opacity(0.92))
                 .activitySystemActionForegroundColor(.black)
-                .widgetURL(URL(string: "ylcompanion://activity"))
+                .widgetURL(URL(string: context.state.guiding ? "ylcompanion://activity" : context.state.charging ? "ylcompanion://charging" : "ylcompanion://activity"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -41,7 +41,7 @@ struct VehicleLiveActivity: Widget {
             } minimal: {
                 VehicleActivityMinimal(state: context.state, stale: context.isStale)
             }
-            .widgetURL(URL(string: "ylcompanion://activity"))
+            .widgetURL(URL(string: context.state.guiding ? "ylcompanion://activity" : context.state.charging ? "ylcompanion://charging" : "ylcompanion://activity"))
             .keylineTint(.cyan)
         }
     }

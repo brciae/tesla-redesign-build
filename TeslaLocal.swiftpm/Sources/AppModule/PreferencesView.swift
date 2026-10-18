@@ -35,13 +35,14 @@ struct PreferencesView: View {
     var body: some View {
         Form {
             Section("Dynamic Island·잠금화면") {
-                Toggle("차량 연결·길안내 실시간 현황", isOn: $liveActivity)
+                Toggle("길안내·충전 실시간 현황", isOn: $liveActivity)
                     .onChange(of: liveActivity) { _, _ in model.updateLiveActivity() }
-                InfoRow("표시 방식", "잠금화면에는 방향·거리·도착 예정 시간을 표시함. 누르면 길안내로 이동함. 아일랜드는 길게 눌러 상세 보기 가능함. 음악과 함께 사용할 때 표시 순서는 iOS에서 결정함.")
+                InfoRow("표시 방식", "잠금화면에 길안내 또는 충전 상태 표시. 카드를 누르면 해당 화면으로 이동함.")
                 DisclosureGroup("표시 문제 해결") {
                     Text(activityManager.status).font(.caption).fixedSize(horizontal: false, vertical: true)
                     Button("실시간 현황 다시 시작") { activityManager.restart() }
                     Caption(activityManager.installationSummary)
+                    Caption("처음에는 앱을 연 상태에서 시작해야 함. iPhone 설정에서 이 앱의 실시간 현황 허용 필요함. 백그라운드 수신이 중단되면 마지막 값 대신 갱신 대기를 표시함.")
                 }
             }
             Section("음성 안내") {

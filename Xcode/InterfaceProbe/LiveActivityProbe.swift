@@ -1,6 +1,33 @@
 import SwiftUI
 import ActivityKit
 
+/// Uses the production ActivityKit manager and installed widget, not an in-app card preview.
+struct SystemActivityProbe: View {
+    @State private var charge = ProcessInfo.processInfo.arguments.contains("system-charging-probe")
+    @State private var ended = false
+    @State private var stale = false
+    @State private var progress = false
+    @ObservedObject private var manager = VehicleLiveActivityManager.shared
+    private var state: VehicleActivityAttributes.ContentState {
+        let at = Date().addingTimeInterval(stale ? -180 : 0)
+        return .init(connected: false, guiding: !charge && !ended, destination: "고등기술연구원",
+            instruction: "오크밸리1길 우회전", remainingMinutes: 15, batteryPercent: progress ? 62 : 60,
+            observedAt: at, turnSymbol: "arrow.turn.up.right", turnMetres: progress ? 200 : 300,
+            arrivalAt: at.addingTimeInterval(900), chargeStatus: charge && !ended ? "Charging" : "Stopped",
+            chargeObservedAt: at, chargeLimit: 80, chargerKW: 7.2, chargeRemainingMinutes: progress ? 100 : 120)
+    }
+    var body: some View {
+        VStack(spacing: 22) {
+            Text(charge ? "충전 시스템 카드 시험" : "길안내 시스템 카드 시험")
+            Text(manager.status).accessibilityIdentifier("system.activity.status")
+            Button("상태 갱신") { progress = true; publish() }
+            Button("수신 지연") { stale = true; publish() }
+            Button("세션 종료") { ended = true; publish() }
+        }.padding().onAppear { publish() }
+    }
+    private func publish() { manager.update(state, enabled: true) }
+}
+
 struct CopyReadabilityProbe: View {
     @State private var addresses = false
     private let note = "주행·충전 기록을 바탕으로 계산한 참고값임. " + String(repeating: "계산 근거와 누락 항목은 상세 기록에서 확인할 수 있음. ", count: 12) + "상세 설명 끝."

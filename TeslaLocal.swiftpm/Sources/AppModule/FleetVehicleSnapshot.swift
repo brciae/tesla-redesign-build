@@ -44,7 +44,9 @@ struct FleetVehicleSnapshot {
         climate["at"] = number("climate_state", "timestamp")
         charge["soc"] = soc; charge["rangeKm"] = rangeKm
         if let status = (payload["charge_state"] as? [String: Any])?["charging_state"] as? String,
-           ["Charging", "Stopped", "Complete", "Disconnected", "NoPower", "Starting"].contains(status) { charge["charging"] = charging; charge["isCharging"] = charging }
+           ["Charging", "Stopped", "Complete", "Disconnected", "NoPower", "Starting"].contains(status) {
+            charge["charging"] = charging; charge["isCharging"] = charging; charge["status"] = status
+        }
         charge["chargerKW"] = number("charge_state", "charger_power")
         charge["limit"] = number("charge_state", "charge_limit_soc")
         charge["addedKWh"] = number("charge_state", "charge_energy_added")

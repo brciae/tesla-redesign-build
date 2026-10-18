@@ -1,6 +1,58 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    private func showSystemLockScreenPresentation(_ app: XCUIApplication) -> XCUIApplication {
+        XCUIDevice.shared.press(.home)
+        let board = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let top = board.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.005))
+        top.press(forDuration: 0.1, thenDragTo: board.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.85)))
+        return board
+    }
+    private func captureSystemCard(_ name: String) {
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = name; shot.lifetime = .keepAlways; add(shot)
+    }
+    func testSystemLockScreenNavigationCardStartsWithoutFirstLocationTick() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["system-navigation-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["실시간 현황 요청됨 · 화면 표시 별도 확인"].waitForExistence(timeout: 8))
+        let board = showSystemLockScreenPresentation(app)
+        let card = board.staticTexts["오크밸리1길 우회전"]
+        let rendered = card.waitForExistence(timeout: 12)
+        captureSystemCard("System Lock Screen navigation card without vehicle")
+        XCTAssertTrue(rendered, "Real installed widget must render in the system Lock Screen presentation")
+        app.activate()
+        app.buttons["세션 종료"].tap()
+        XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 8))
+    }
+    func testSystemLockScreenChargingCardProgressStaleAndEnd() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["system-charging-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["실시간 현황 요청됨 · 화면 표시 별도 확인"].waitForExistence(timeout: 8))
+        var board = showSystemLockScreenPresentation(app)
+        let rendered = board.staticTexts["충전 중"].waitForExistence(timeout: 12)
+        captureSystemCard("System Lock Screen charging card initial")
+        XCTAssertTrue(rendered)
+        XCTAssertTrue(board.staticTexts["60%"].exists)
+        XCTAssertTrue(board.staticTexts["목표 80%"].exists)
+        XCTAssertTrue(board.staticTexts["7.2 kW"].exists)
+        app.activate(); app.buttons["상태 갱신"].tap()
+        board = showSystemLockScreenPresentation(app)
+        XCTAssertTrue(board.staticTexts["62%"].waitForExistence(timeout: 12))
+        captureSystemCard("System Lock Screen charging card updated progress")
+        app.activate(); app.buttons["수신 지연"].tap()
+        board = showSystemLockScreenPresentation(app)
+        XCTAssertTrue(board.staticTexts["충전 업데이트 대기"].waitForExistence(timeout: 12))
+        XCTAssertFalse(board.staticTexts["62%"].exists)
+        captureSystemCard("System Lock Screen charging card stale hides old values")
+        app.activate(); app.buttons["세션 종료"].tap()
+        XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 8))
+        board = showSystemLockScreenPresentation(app)
+        let removed = NSPredicate { _, _ in !board.staticTexts["충전 업데이트 대기"].exists && !board.staticTexts["충전 중"].exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: removed, object: nil)], timeout: 12), .completed)
+        captureSystemCard("System Lock Screen charging card removed after end")
+        app.activate()
+    }
     func testSupportingCopyCollapsedDetailScrollableAndFullAddress() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["copy-readability-probe"]; app.launch()
@@ -73,7 +125,7 @@ final class InteractionTests: XCTestCase {
         capture("Lock Screen shared card stale hides old turn distance and ETA")
         app.buttons["안내 종료"].tap()
         XCTAssertTrue(app.staticTexts["live.navigation.ended"].exists)
-        XCTAssertTrue(app.staticTexts["차량 연결 또는 길안내 시작 후 표시 가능"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 5))
         capture("Lock Screen guidance ended without vehicle")
     }
 

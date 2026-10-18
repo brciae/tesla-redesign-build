@@ -14,6 +14,17 @@ struct VehicleActivityAttributes: ActivityAttributes {
         var turnMetres: Int? = nil
         var arrivalAt: Date? = nil
         var exitClock: Int? = nil
+        var chargeStatus: String? = nil
+        var chargeObservedAt: Date? = nil
+        var chargeLimit: Int? = nil
+        var chargerKW: Double? = nil
+        var chargeRemainingMinutes: Int? = nil
+
+        var charging: Bool { chargeStatus == "Charging" }
+        var chargingStale: Bool {
+            guard let at = chargeObservedAt else { return true }
+            return !(-5...120).contains(Date().timeIntervalSince(at))
+        }
     }
     var name: String = "YL Companion"
 }
