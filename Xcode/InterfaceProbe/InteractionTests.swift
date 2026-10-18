@@ -1,6 +1,22 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testProductionSettingsMenuGroupsAndDirectCardSettings() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["settings-menu-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["안내·알림"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts.matching(identifier: "잠금화면·아일랜드").count, 1)
+        captureSystemCard("Production settings menu guidance and alerts first")
+        app.staticTexts["잠금화면·아일랜드"].tap()
+        XCTAssertTrue(app.switches["실시간 현황 표시"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        for section in ["주행·충전", "차량 관리", "연결·기록", "화면·꾸미기", "자동화", "앱 정보"] {
+            let title = app.staticTexts[section]
+            for _ in 0..<7 where !title.isHittable { app.swipeUp() }
+            XCTAssertTrue(title.isHittable, "Missing menu group: \(section)")
+            captureSystemCard("Production settings menu \(section)")
+        }
+    }
     func testLiveActivitySettingsAreVisibleWithoutHiddenDiagnostics() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["live-activity-settings-probe"]; app.launch()

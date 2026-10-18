@@ -106,7 +106,8 @@
     "InterfaceProbe/RobotProbe.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/VoiceGainPolicy.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/VehicleLiveActivityManager.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/LiveActivitySettingsPanel.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/LiveActivitySettingsPanel.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/SettingsMenuGroups.swift"
    ],
    "settings": {
     "base": {

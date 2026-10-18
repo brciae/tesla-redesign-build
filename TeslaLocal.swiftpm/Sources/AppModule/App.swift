@@ -31,22 +31,6 @@ enum Theme {
 /// v90: one route per screen. Cases the 5-tab layout reaches through its own
 /// segments (위치, 운행 기록, 주행 정보, 일정 예약, 차량 3D) are no longer Pages,
 /// so a screen cannot be entered from two places at once.
-enum Page: String, Hashable {
-    case controls = "컨트롤", climate = "실내 온도", charging = "충전"
-    case security = "보안 및 운전자"
-    case care = "차량 관리"
-    case automation = "자동화", connection = "연결 상태", briefing = "오늘의 브리핑"
-    case navigation = "카카오 내장 내비", preferences = "표시·음성 설정"
-    case appearance = "차꾸미기"
-    case fleetInsights = "차량 상세 데이터"
-    case notifications = "알림 설정"
-    case liveActivity = "잠금화면·아일랜드"
-    case chargingSettings = "충전 계획·요금", recordSettings = "기록·백업"
-    case parking = "주차 기록"
-    case displaySettings = "화면·표시 단위"
-    case releaseNotes = "릴리즈 노트"
-    case character = "캐릭터"
-}
 func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { guard let value, value.isFinite else { return "—" }; return String(format: "%.*f", digits, value) + suffix }
 func dateText(_ ms: Double?, time: Bool = true) -> String { guard let ms else { return "미수신" }; let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = time ? "M월 d일 HH:mm" : "yyyy.MM.dd"; return f.string(from: Date(timeIntervalSince1970: ms/1000)) }
 func jsonNumber(_ s: String) throws -> Any {

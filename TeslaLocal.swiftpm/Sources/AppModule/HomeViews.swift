@@ -411,69 +411,6 @@ struct HomeView: View {
     }
 }
 
-struct GlassMenuCard<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-    var body: some View {
-        VStack(spacing: 0, content: content)
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Theme.fill(0.12).opacity(0.75))
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.primary.opacity(0.18), Color.primary.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-            )
-            .padding(.bottom, 6)
-    }
-}
-
-func glassMenuItem(_ page: Page, _ icon: String, title: String, subtitle: String?, colors: [Color], isLast: Bool = false) -> some View {
-    VStack(spacing: 0) {
-        NavigationLink(value: page) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 36, height: 36)
-                        .shadow(color: colors.first?.opacity(0.3) ?? .clear, radius: 4, x: 0, y: 2)
-                    Image(systemName: icon)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.primary.opacity(0.55))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.35))
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(MotionButtonStyle())
-
-        if !isLast {
-            Divider()
-                .background(Color.primary.opacity(0.08))
-                .padding(.leading, 64)
-        }
-    }
-}
-
 struct StatusTimestamp: View {
     let section: Object
     var body: some View { Caption("\(section.string("label", "미수신")) · 자료 시각 \(dateText(section.number("at")))") }
@@ -1403,42 +1340,7 @@ struct MenuTabRootView: View {
                 // Vehicle Identity & Connection Status Card
                 vehicleStatusHeader
 
-                // Group 1: 차량 커스텀 & 점검
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("차량 관리")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color.primary.opacity(0.6))
-                        .padding(.leading, 6)
-
-                    GlassMenuCard {
-                        glassMenuItem(.fleetInsights, "checkmark.shield", title: "차량 상태·보증", subtitle: "사양 · 보증 · 경고", colors: [Color.cyan, Color.blue])
-                        glassMenuItem(.care, "wrench.and.screwdriver.fill", title: "타이어·정비", subtitle: "공기압 · 소모품 주기", colors: [Color.orange, Color.yellow])
-                        glassMenuItem(.security, "shield.fill", title: "보안 및 운전자", subtitle: "감시 모드 · 운전자", colors: [Color.blue, Color.cyan], isLast: true)
-                    }
-                }
-
-                // Group 2: 스마트 기능 & 설정
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("설정")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color.primary.opacity(0.6))
-                        .padding(.leading, 6)
-
-                    GlassMenuCard {
-                        glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "차량·NAS 연결", subtitle: "계정 · 블루투스 · 서버", colors: [Color.cyan, Color.blue])
-                        glassMenuItem(.liveActivity, "rectangle.topthird.inset.filled", title: "잠금화면·아일랜드", subtitle: "길안내 · 충전 카드 · 표시 상태", colors: [Color.blue, Color.cyan])
-                        glassMenuItem(.navigation, "map", title: "내비게이션", subtitle: "지도 · 위치 권한 · 하이패스", colors: [Color.blue, Color.cyan])
-                        glassMenuItem(.chargingSettings, "bolt.fill", title: "충전 계획·요금", subtitle: "충전 기준 · 전기 단가", colors: [Color.green, Color.mint])
-                        glassMenuItem(.recordSettings, "externaldrive", title: "기록·백업", subtitle: "내보내기 · 복원", colors: [Color.blue, Color.cyan])
-                        glassMenuItem(.appearance, "paintbrush.fill", title: "3D 차꾸미기", subtitle: "외장 · 휠 · 실내", colors: [Color.purple, Color.pink])
-                        glassMenuItem(.automation, "bolt.circle.fill", title: "스마트 자동화", subtitle: "상황별 음성 안내 · 자동 제어", colors: [Color.green, Color.mint])
-                        glassMenuItem(.notifications, "bell.badge.fill", title: "알림 설정", subtitle: "충전 알림 · 권한", colors: [Color.purple, Color.blue])
-                        glassMenuItem(.displaySettings, "textformat.size", title: "화면·표시 단위", subtitle: "배경 · 거리 · 온도 단위", colors: [Color.gray, Color(uiColor: .systemGray2)])
-                        glassMenuItem(.preferences, "gearshape.fill", title: "음성·내비 안내", subtitle: "목소리 · 빈도 · 음량", colors: [Color.gray, Color(uiColor: .systemGray2)])
-                        glassMenuItem(.character, "figure.wave", title: "캐릭터", subtitle: "3D 캐릭터 선택 · 미리보기", colors: [Color.pink, Color.purple])
-                        glassMenuItem(.releaseNotes, "doc.text.fill", title: "릴리즈 노트", subtitle: "버전별 변경 내역", colors: [Color.orange, Color.pink], isLast: true)
-                    }
-                }
+                SettingsMenuGroups()
             }
         }
     }

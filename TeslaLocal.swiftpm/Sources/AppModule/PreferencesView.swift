@@ -40,7 +40,6 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
-            LiveActivitySettingsPanel(refresh: model.updateLiveActivity)
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceOutputSettings()

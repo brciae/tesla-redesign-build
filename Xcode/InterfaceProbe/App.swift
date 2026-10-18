@@ -16,6 +16,16 @@ import MapKit
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("settings-menu-probe") {
+                NavigationStack {
+                    ScrollView { SettingsMenuGroups().padding(16) }.navigationTitle("메뉴 및 설정")
+                        .navigationDestination(for: Page.self) { page in
+                            if page == .liveActivity {
+                                Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle(page.rawValue)
+                            } else { Text(page.rawValue) }
+                        }
+                }
+            }
             else if ProcessInfo.processInfo.arguments.contains("live-activity-settings-probe") {
                 NavigationStack { Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle("잠금화면·아일랜드") }
             }
@@ -947,7 +957,6 @@ private struct ProbeUnitsKey: EnvironmentKey { static let defaultValue = Vehicle
 extension EnvironmentValues { var vehicleUnits: VehicleUnits { get { self[ProbeUnitsKey.self] } set { self[ProbeUnitsKey.self] = newValue } } }
 struct CareView: View { var body: some View { ScrollView { TirePressureDiagram().padding() }.navigationTitle("타이어·정비") } }
 
-enum Page: Hashable { case chargingSettings }
 
 // This uses the real JS estimate policy and the production cost details view.
 struct PublishedTariffProbe: View {
