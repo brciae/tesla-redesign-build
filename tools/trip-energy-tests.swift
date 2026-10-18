@@ -87,7 +87,11 @@ extension Dictionary where Key == String, Value == Any {
         let end = now.addingTimeInterval(250 * 60)
         graphStore.finish(arrived: true, vin: "A", now: end)
         let graph = graphStore.history(vin: "A").first!, points = graph.points!
-        precondition(points.count <= 1200 && points.count > 120 && points.first!.elapsedSeconds == 0 && points.last!.elapsedSeconds == 15000)
+        print("Dense energy samples: count=\(points.count), first=\(points.first!.elapsedSeconds)s, last=\(points.last!.elapsedSeconds)s")
+        // Odometer timestamps round-trip through vehicle milliseconds and Date's
+        // epoch conversion. Sub-microsecond rounding is below the source precision.
+        precondition(points.count <= 1200 && points.count > 120 && abs(points.first!.elapsedSeconds) < 0.001 && abs(points.last!.elapsedSeconds - 15000) < 0.001,
+            "Full-span sample mismatch: count=\(points.count), first=\(points.first!.elapsedSeconds), last=\(points.last!.elapsedSeconds)")
         precondition(points.last!.actualSOC == 40 && points.last!.predictedSOC == 27.5)
         precondition(graph.actualUsedKWh == 36, "Observed 50%p is converted with the recorded capacity")
         let restoredGraph = TripEnergyStore(defaults: defaults).history(vin: "A").first!
@@ -108,7 +112,7 @@ extension Dictionary where Key == String, Value == Any {
         cadenceUpdate(time: next.addingTimeInterval(2), measured: next, soc: 79, odo: 100.1)
         cadence.finish(arrived: true, vin: "A", now: next.addingTimeInterval(2))
         let measured = cadence.history(vin: "A").first!
-        precondition(measured.points!.count == 2 && measured.points!.last!.elapsedSeconds == 2,
+        precondition(measured.points!.count == 2 && abs(measured.points!.last!.elapsedSeconds - 2) < 0.001,
             "Sub-minute observations retained; cached duplicates and delayed readings must not add fake samples")
         precondition(measured.actualArrivalSOC == 79 && measured.points!.last!.socObservedAt == next,
             "Delayed older SOC cannot roll back current measured consumption")

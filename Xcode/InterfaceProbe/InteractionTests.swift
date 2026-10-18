@@ -605,16 +605,22 @@ final class InteractionTests: XCTestCase {
         app.launch()
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
+            for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
             let stop = app.buttons["navigation.parked.stop"]
             XCTAssertTrue(stop.waitForExistence(timeout: 8)); XCTAssertTrue(stop.isHittable)
             XCTAssertGreaterThanOrEqual(stop.frame.height, 44)
             XCTAssertTrue(app.buttons["navigation.chrome.open"].exists)
             app.buttons["navigation.chrome.open"].tap()
             XCTAssertTrue(app.buttons["navigation.chrome.close"].waitForExistence(timeout: 4))
+            app.buttons[title].tap()
             XCTAssertTrue(stop.isHittable)
             app.buttons["navigation.chrome.close"].tap()
             XCTAssertTrue(app.buttons["navigation.chrome.open"].waitForExistence(timeout: 4))
-            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "No vehicle persistent route stop \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
+            let pause = app.buttons["일시정지"].firstMatch
+            XCTAssertTrue(pause.exists)
+            XCTAssertFalse(stop.frame.intersects(pause.frame), "Route stop overlaps music control: \(title)")
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "No vehicle persistent route stop \(title) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
+            }
         }
         app.buttons["navigation.parked.stop"].tap()
         XCTAssertTrue(app.staticTexts["fullscreen.stopped"].waitForExistence(timeout: 4))

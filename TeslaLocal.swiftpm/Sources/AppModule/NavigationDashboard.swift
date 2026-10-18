@@ -197,6 +197,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     var onMedia: (String) -> Void = { _ in }
 
     @Environment(\.dashboardSafeArea) private var safeArea
+    @Environment(\.dashboardChromeClearance) private var chromeClearance
     var body: some View {
         GeometryReader { geo in
             layout(NavMetrics(size: geo.size))
@@ -253,10 +254,10 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     private func overlayInset(_ m: NavMetrics) -> EdgeInsets {
         if m.w > m.h {
             // Sides keep the full cutout inset (UI tests require clearance on both camera orientations);
-            // top/bottom stay full-bleed so nothing is cut under the home indicator.
-            return EdgeInsets(top: 0, leading: safeArea.leading, bottom: 0, trailing: safeArea.trailing)
+            // The map stays full-bleed; foreground clearance keeps the route stop off media controls.
+            return EdgeInsets(top: chromeClearance, leading: safeArea.leading, bottom: 0, trailing: safeArea.trailing)
         }
-        return EdgeInsets(top: safeArea.top, leading: 0, bottom: 0, trailing: 0)
+        return EdgeInsets(top: max(safeArea.top, chromeClearance), leading: 0, bottom: 0, trailing: 0)
     }
 
     private func navigationLayout(_ m: NavMetrics) -> some View {
@@ -1976,13 +1977,18 @@ private struct IslandBars: View {
 }
 
 private struct DashboardSafeAreaKey: EnvironmentKey { static let defaultValue = EdgeInsets() }
+private struct DashboardChromeClearanceKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
 extension EnvironmentValues {
+    var dashboardChromeClearance: CGFloat {
+        get { self[DashboardChromeClearanceKey.self] }
+        set { self[DashboardChromeClearanceKey.self] = newValue }
+    }
     var dashboardSafeArea: EdgeInsets {
         get { self[DashboardSafeAreaKey.self] }
         set { self[DashboardSafeAreaKey.self] = newValue }
     }
 }
-// Shared by every dashboard theme. Controls overlay the canvas without reserving a row.
+// Shared by every theme. Keep the map full-bleed and route controls clear of the foreground.
 struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -1995,6 +2001,7 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
         GeometryReader { geometry in
         content()
             .environment(\.dashboardSafeArea, geometry.safeAreaInsets)
+            .environment(\.dashboardChromeClearance, endGuidance == nil ? 0 : (geometry.size.width > geometry.size.height ? 58 : 100))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea(.container)
             .overlay(alignment: .top) {
