@@ -78,7 +78,8 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     private let networkMonitor = NWPathMonitor()
     private var pendingNetworkRoute: (event: Object, vin: String)?
     private var trafficRecoveryPending = false
-    private let recoveryKey = "navigation.activeRecovery.v1"
+    private let recoveryStore = NavigationRecoveryStore()
+    private var routeAuthority = VehicleRouteAuthority()
     private var lastRecoverySave = Date.distantPast
     private func saveRecoveryCheckpoint() {
         guard guiding, Date().timeIntervalSince(lastRecoverySave) >= 30, let candidate,
@@ -86,22 +87,22 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         let checkpoint = NavigationRecoveryCheckpoint(vin: vehicleIdentity,
             name: candidate.string("name", manualDestination), latitude: lat, longitude: lng,
             manual: manualRouteToken != nil, savedAt: Date())
-        guard checkpoint.usable(vin: vehicleIdentity), let data = try? JSONEncoder().encode(checkpoint) else { return }
-        UserDefaults.standard.set(data, forKey: recoveryKey); lastRecoverySave = Date()
+        guard checkpoint.usable(vin: vehicleIdentity), recoveryStore.save(checkpoint) else { return }
+        lastRecoverySave = Date()
     }
     private func clearRecoveryCheckpoint() {
-        UserDefaults.standard.removeObject(forKey: recoveryKey); lastRecoverySave = .distantPast
+        recoveryStore.clear(); lastRecoverySave = .distantPast
     }
     private func restoreRecoveryCheckpoint(vin: String) {
         guard !guiding, !busy, startFailures < 3, controller == nil, enabled, consent, hasKey, canPresent(),
               [.authorizedAlways, .authorizedWhenInUse].contains(locator.authorizationStatus),
-              let data = UserDefaults.standard.data(forKey: recoveryKey),
-              let checkpoint = try? JSONDecoder().decode(NavigationRecoveryCheckpoint.self, from: data) else { return }
+              let checkpoint = recoveryStore.load() else { return }
         guard checkpoint.usable(vin: vin) else { clearRecoveryCheckpoint(); return }
         let coordinate = CLLocationCoordinate2D(latitude: checkpoint.latitude, longitude: checkpoint.longitude)
         if checkpoint.manual {
             do { try startManualDestination(name: checkpoint.name, coordinate: coordinate, vin: vin) }
             catch { status = error.localizedDescription; return }
+            routeAuthority.beginManual(at: checkpoint.savedAt.timeIntervalSince1970 * 1000)
         } else {
             _ = gate("reset"); stopNative(keepDisplay: true)
             vehicleIdentity = vin; userDismissed = false; presented = true
@@ -223,7 +224,24 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     }
     func observe(_ event: Object, vin: String) {
         if vehicleIdentity != vin { reset(); vehicleIdentity = vin }
-        if let manualRouteToken, event.string("token") != manualRouteToken { return }
+        let token = event.string("token")
+        let local = token.hasPrefix("manual:") || token.hasPrefix("recovery:")
+        if token.hasPrefix("manual:"), token != manualRouteToken { return }
+        var replacingManual = false
+        if !local, event.string("type") == "route" {
+            guard let lat = event.number("latitude"), let lng = event.number("longitude"),
+                  let at = event.number("at"), let received = event.number("receivedAt") else { return }
+            let authority = routeAuthority.observe(latitude: lat, longitude: lng, at: at, receivedAt: received,
+                                                   now: Date().timeIntervalSince1970 * 1000)
+            if authority == .ignore { return }
+            if authority == .replaceManual {
+                replacingManual = true
+                manualRouteToken = nil; manualDestination = ""; manualCoordinate = nil
+                pendingNetworkRoute = nil
+                clearRecoveryCheckpoint()
+                _ = gate("reset") // Manual selection's later timestamp must not block the vehicle route.
+            }
+        } else if !local, manualRouteToken != nil { return }
         if event.string("type") == "clear" || (event.string("type") == "absent" && event.flag("parked")) {
             pendingNetworkRoute = nil
         }
@@ -233,7 +251,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             return
         }
         let auth = locator.authorizationStatus
-        let ready = (enabled || manualRouteToken != nil) && consent && hasKey && (auth == .authorizedAlways || auth == .authorizedWhenInUse) && canPresent()
+        let ready = (enabled || manualRouteToken != nil || replacingManual || guiding || busy) && consent && hasKey && (auth == .authorizedAlways || auth == .authorizedWhenInUse) && (canPresent() || guiding || busy)
         guard let decision = gate("observe", ["event": event, "ready": ready, "guiding": guiding || busy]) as? Object else { return }
         let stamp = Date().formatted(date: .omitted, time: .standard)
         lifecycleDiagnostics.append("\(stamp) · 수신 \(event.string("type")) → \(decision.string("type")) · 안내 \(guiding ? "중" : "꺼짐")")
@@ -265,9 +283,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         }
         guard canPresent() else { throw LocalError.message("현재 작업을 마친 뒤 경로를 시작해 주세요.") }
         _ = gate("reset"); stopNative(keepDisplay: true)
+        if vehicleIdentity != vin { routeAuthority = VehicleRouteAuthority() }
         vehicleIdentity = vin; userDismissed = false; presented = true
         let token = "manual:" + UUID().uuidString
         manualRouteToken = token; manualDestination = name
+        routeAuthority.beginManual(at: Date().timeIntervalSince1970 * 1000)
         manualCoordinate = coordinate
         let now = Date().timeIntervalSince1970 * 1000
         observe(["type": "route", "name": name, "latitude": coordinate.latitude, "longitude": coordinate.longitude, "at": now, "receivedAt": now, "token": token], vin: vin)
@@ -446,9 +466,10 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         busy = false; guiding = false; trafficRefreshing = false; trafficRecoveryPending = false; candidate = nil; ticket = nil
         if !keepDisplay { presented = false }
     }
-    func stop() { clearRecoveryCheckpoint(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
+    func stop() { clearRecoveryCheckpoint(); routeAuthority.endManual(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
     func endGuidance(arrived: Bool = false) {
         clearRecoveryCheckpoint()
+        routeAuthority.endManual()
         pendingNetworkRoute = nil
         manualRouteToken = nil; manualDestination = ""
         _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
@@ -471,7 +492,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             catch { status = error.localizedDescription }
         } else { _ = gate("retry"); status = "최신 차량 목적지 다시 수신 중" }
     }
-    func reset() { clearRecoveryCheckpoint(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
+    func reset() { clearRecoveryCheckpoint(); routeAuthority = VehicleRouteAuthority(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
     func foregrounded(vin: String) {
         renderEpoch += 1

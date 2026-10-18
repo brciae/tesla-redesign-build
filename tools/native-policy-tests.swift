@@ -67,7 +67,7 @@ import Foundation
         precondition(ControlVoice.message(action: "frunkOpen", result: .unknown) == "차량 응답을 확인하지 못했습니다.")
         precondition(ControlVoice.message(action: "chargeStop", result: .failed) == "선택한 기능을 실행하지 못했습니다.")
         precondition(Array(VehicleReadPlan.initial.prefix(2)) == ["drive", "location"])
-        precondition(VehicleReadPlan.regular.count == 21 && VehicleReadPlan.regular.filter { $0 == "location" }.count == 7 && VehicleReadPlan.regular.filter { $0 == "charge" }.count == 2 && VehicleReadPlan.regular.filter { $0 == "media" }.count == 1)
+        precondition(VehicleReadPlan.regular.count == 24 && VehicleReadPlan.regular.filter { $0 == "location" }.count == 6 && VehicleReadPlan.regular.filter { $0 == "charge" }.count == 6 && VehicleReadPlan.regular.filter { $0 == "media" }.count == 1)
         precondition(Set(VehicleReadPlan.initial) == Set(VehicleReadPlan.regular))
         precondition(VehicleReadPlan.enteredPark(previous: "D", gear: "P", at: 100000, now: 100000))
         precondition(!VehicleReadPlan.enteredPark(previous: "P", gear: "P", at: 100000, now: 100000))

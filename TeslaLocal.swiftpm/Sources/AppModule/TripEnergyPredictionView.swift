@@ -7,7 +7,7 @@ struct TripEnergyPredictionRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 Image(systemName: "battery.75percent")
-                Text(estimate.insufficient ? "도착 전 배터리 부족 예상" : String(format: "도착 예상 %.0f%% · %.0f–%.0f%%", estimate.arrivalSOC, estimate.lowSOC, estimate.highSOC))
+                Text(estimate.insufficient ? "도착 전 배터리 부족 예상" : String(format: "도착 예상 %.1f%% · %.0f–%.0f%%", estimate.arrivalSOC, estimate.lowSOC, estimate.highSOC))
                     .fontWeight(.semibold).accessibilityIdentifier("energy.forecast.arrival")
             }.foregroundStyle(estimate.belowReserve ? Color.orange : Color.primary)
             Text(String(format: "남은 소비 약 %.1f kWh · %@", estimate.remainingKWh, estimate.basis))

@@ -31,6 +31,8 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceGainPolicy.swift tools/voice-ga
 Xcode/VoiceGainTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift tools/navigation-recovery-tests.swift -o Xcode/NavigationRecoveryTests
 Xcode/NavigationRecoveryTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift tools/vehicle-route-sync-tests.swift -o Xcode/VehicleRouteSyncTests
+Xcode/VehicleRouteSyncTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TripEnergyPrediction.swift TeslaLocal.swiftpm/Sources/AppModule/TripEnergyStore.swift tools/trip-energy-tests.swift -o Xcode/TripEnergyTests
 Xcode/TripEnergyTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/TripComparisonPolicy.swift tools/trip-comparison-tests.swift -o Xcode/TripComparisonTests
@@ -57,6 +59,7 @@ node tools/charge-cost-tests.cjs
 node tools/published-tariff-tests.cjs
 node tools/charge-enrichment-tests.cjs
 node tools/history-endpoint-tests.cjs
+node tools/free-drive-recording-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendarAnalysis.swift tools/energy-calendar-tests.swift -o Xcode/EnergyCalendarTests
 Xcode/EnergyCalendarTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetAuthPolicy.swift tools/fleet-auth-tests.swift -o Xcode/FleetAuthTests

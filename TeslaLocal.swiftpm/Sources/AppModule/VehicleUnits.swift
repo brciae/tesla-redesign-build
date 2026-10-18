@@ -125,10 +125,9 @@ enum VehicleReadPlan {
     static let initial = ["drive", "location", "closures", "charge", "climate", "tire", "media"]
     /// Response groups counted in the status line (media returns media + mediaDetail).
     static let groupCount = 8
-    // Same total read rate; location is no longer starved behind every other group.
-    // v29: drive/location every 2nd slot (navigation + trip continuity), charge 2×/cycle; slow groups once.
-    // Must stay inside the per-group TTLs in analysis.js (drive 30 s … tire 15 min) at ~2.5 s per reply.
-    static let regular = ["drive", "location", "charge", "drive", "location", "closures", "drive", "location", "charge", "drive", "location", "climate", "drive", "location", "closures", "drive", "location", "tire", "drive", "location", "media"]
+    // Keep serial requests and the existing transport rate. SOC, distance and position
+    // each get one of four slots; slower groups keep bounded opportunities too.
+    static let regular = ["drive", "charge", "location", "closures", "drive", "charge", "location", "climate", "drive", "charge", "location", "closures", "drive", "charge", "location", "tire", "drive", "charge", "location", "closures", "drive", "charge", "location", "media"]
     static func enteredPark(previous: String?, gear: String, at: Double?, now: Double) -> Bool {
         guard let at, at.isFinite, at <= now + 5000, now - at <= 30000 else { return false }
         return gear == "P" && previous != "P"

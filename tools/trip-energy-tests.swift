@@ -47,6 +47,8 @@ extension Dictionary where Key == String, Value == Any {
         }
         update(); precondition(store.estimate?.sampleCount == 1)
         let initial = store.estimate!.arrivalSOC
+        now.addTimeInterval(1); update("one", 68, 8000)
+        precondition(store.estimate!.arrivalSOC > initial, "Fresh route distance must update inside the former five-second gate")
         now.addTimeInterval(6); update("one", 67, 4000)
         precondition(store.estimate!.arrivalSOC > initial, "Remaining route must recalculate, not keep original distance")
         now.addTimeInterval(6); update(age: 11); precondition(store.estimate == nil)
@@ -74,22 +76,42 @@ extension Dictionary where Key == String, Value == Any {
         precondition(TripEnergyStore(defaults: defaults).history(vin: "A").count == 4)
         // A sampled trip keeps its first prediction, actual observations, and the full time span after compaction.
         let graphStore = TripEnergyStore(defaults: defaults)
-        for i in 0...250 {
-            let time = now.addingTimeInterval(Double(i) * 60)
+        for i in 0...2500 {
+            let time = now.addingTimeInterval(Double(i) * 6)
             var context = state
-            context["groups"] = ["drive": ["at": time.timeIntervalSince1970 * 1000, "odometerKm": 100.0 + Double(i)]]
+            context["groups"] = ["drive": ["at": time.timeIntervalSince1970 * 1000, "odometerKm": 100.0 + Double(i) / 10]]
             graphStore.update(vin: "A", state: context, health: ["capacity": 72.0],
-                nav: ["at": time.timeIntervalSince1970, "valid": true, "remainMetres": max(0, 250000.0 - Double(i) * 1000)],
-                guiding: true, routeKey: "graph", destination: "그래프", soc: 90 - Double(i) * 0.2, socAt: time, now: time)
+                nav: ["at": time.timeIntervalSince1970, "valid": true, "remainMetres": max(0, 250000.0 - Double(i) * 100)],
+                guiding: true, routeKey: "graph", destination: "그래프", soc: 90 - Double(i) * 0.02, socAt: time, now: time)
         }
         let end = now.addingTimeInterval(250 * 60)
         graphStore.finish(arrived: true, vin: "A", now: end)
         let graph = graphStore.history(vin: "A").first!, points = graph.points!
-        precondition(points.count <= 120 && points.first!.elapsedSeconds == 0 && points.last!.elapsedSeconds == 15000)
+        precondition(points.count <= 1200 && points.count > 120 && points.first!.elapsedSeconds == 0 && points.last!.elapsedSeconds == 15000)
         precondition(points.last!.actualSOC == 40 && points.last!.predictedSOC == 27.5)
         precondition(graph.actualUsedKWh == 36, "Observed 50%p is converted with the recorded capacity")
         let restoredGraph = TripEnergyStore(defaults: defaults).history(vin: "A").first!
         precondition(restoredGraph.points == points && restoredGraph.initial == graph.initial)
+        let cadence = TripEnergyStore(defaults: defaults)
+        let cadenceStart = end.addingTimeInterval(1)
+        func cadenceUpdate(time: Date, measured: Date, soc: Double, odo: Double) {
+            var context = state
+            context["groups"] = ["drive": ["at": measured.timeIntervalSince1970 * 1000, "odometerKm": odo]]
+            cadence.update(vin: "A", state: context, health: ["capacity": 72],
+                nav: ["at": time.timeIntervalSince1970, "valid": true, "remainMetres": 10000],
+                guiding: true, routeKey: "cadence", destination: "빈도", soc: soc, socAt: measured, now: time)
+        }
+        cadenceUpdate(time: cadenceStart, measured: cadenceStart, soc: 80, odo: 100)
+        let next = cadenceStart.addingTimeInterval(2)
+        cadenceUpdate(time: next, measured: next, soc: 79, odo: 100.1)
+        cadenceUpdate(time: next.addingTimeInterval(1), measured: cadenceStart, soc: 80, odo: 100)
+        cadenceUpdate(time: next.addingTimeInterval(2), measured: next, soc: 79, odo: 100.1)
+        cadence.finish(arrived: true, vin: "A", now: next.addingTimeInterval(2))
+        let measured = cadence.history(vin: "A").first!
+        precondition(measured.points!.count == 2 && measured.points!.last!.elapsedSeconds == 2,
+            "Sub-minute observations retained; cached duplicates and delayed readings must not add fake samples")
+        precondition(measured.actualArrivalSOC == 79 && measured.points!.last!.socObservedAt == next,
+            "Delayed older SOC cannot roll back current measured consumption")
         let chargedStore = TripEnergyStore(defaults: defaults), departure = end.addingTimeInterval(60)
         let chargeStart = departure.addingTimeInterval(600), chargeEnd = departure.addingTimeInterval(1200)
         var activeCharge: Object = ["id": "road-charge", "at": chargeStart.timeIntervalSince1970 * 1000, "startSOC": 70.0, "startSOCObserved": true]

@@ -5,6 +5,7 @@ import AVFoundation
 import UserNotifications
 import Vision
 import ImageIO
+import CoreLocation
 
 final class AppModel: ObservableObject {
     static var shared: AppModel! = nil
@@ -79,6 +80,8 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var analyticsVisible = false
     private var lastAnalytics = Date.distantPast
+    private var tripAddressBusy = false
+    private var tripAddressAttempt = Date.distantPast
     private let recordWriteQueue = DispatchQueue(label: "YLCompanion.recordWriter", qos: .utility)
     private var recordWriteInFlight = false
     private var recordRevision: UInt64 = 0
@@ -96,7 +99,7 @@ final class AppModel: ObservableObject {
             let minutes = seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? Int(ceil($0 / 60)) : nil }
             let soc = self.output.object("fresh").flag("charge") ? self.groups.object("charge").number("soc") : nil
             let battery = soc.flatMap { $0.isFinite && (0...100).contains($0) ? Int($0.rounded()) : nil }
-            let destination = self.navigation.manualDestination.isEmpty ? self.groups.object("drive").string("destination") : self.navigation.manualDestination
+            let destination = self.navigation.guiding ? self.navigation.energyDestination : ""
             let state = VehicleActivityAttributes.ContentState(
                 connected: self.link.connected && self.link.authentic,
                 guiding: self.navigation.guiding,
@@ -153,6 +156,13 @@ final class AppModel: ObservableObject {
         }
         automations.onNotification = { id, title, body in
             Task { @MainActor in ChargeNotificationManager.shared.notifyAutomation(id: id, title: title, body: body) }
+        }
+        automations.navigationContext = { [weak self] in
+            guard let self else { return NavigationAnnouncementContext(guiding: false, destination: "", routeKey: "", at: nil, seconds: nil, arrivalSOC: nil, now: Date().timeIntervalSince1970) }
+            return NavigationAnnouncementContext(guiding: self.navigation.guiding, destination: self.navigation.energyDestination,
+                routeKey: self.navigation.energyRouteKey, at: self.navigation.telemetry.number("at"),
+                seconds: self.navigation.telemetry.number("remainSeconds"), arrivalSOC: self.tripEnergy.estimate?.arrivalSOC,
+                now: Date().timeIntervalSince1970)
         }
         refresh(detailed: true)
         fleet.commandAllowed = { [weak self] in
@@ -257,7 +267,7 @@ final class AppModel: ObservableObject {
         link.onSnapshot = { [weak self] snapshot in
             guard let self, !self.demo else { return }
             self.activityObservedAt = Date()
-            defer { self.updateLiveActivity() }
+            defer { self.updateTripEnergy(); self.updateLiveActivity() }
             do {
                 let previousCount = self.state.rows("trips").count
                 let previousCharges = self.state.rows("charges").count
@@ -353,7 +363,7 @@ final class AppModel: ObservableObject {
     }
     @MainActor private func repairSavedHistoryIfNeeded() {
         guard UIApplication.shared.applicationState == .active, !demo, !recoveryLock else { return }
-        let vin = settings.string("vin"), key = "history.endpointRepair.v161." + settings.string("vin")
+        let vin = settings.string("vin"), key = "history.endpointRepair.v163." + settings.string("vin")
         guard !vin.isEmpty, !UserDefaults.standard.bool(forKey: key),
               FleetTelemetryStore.shared.records.contains(where: { $0.vin == vin }) else { return }
         do {
@@ -390,6 +400,7 @@ final class AppModel: ObservableObject {
             if detailed { tripEnergy.invalidateProfile() }
             updateTripEnergy(); updateLiveActivity()
             scheduleChargeSiteMetadata()
+            scheduleTripAddressMetadata()
         }
         do {
             // Read loaded settings before migrating the older standalone preference.
@@ -419,6 +430,36 @@ final class AppModel: ObservableObject {
     private var chargeSiteLookupKey = ""
     private var chargeSiteLookupAt = Date.distantPast
     private var chargeSiteLookupBusy = false
+    private func scheduleTripAddressMetadata() {
+        guard !demo, !recoveryLock, !tripAddressBusy, state.object("activeTrip").isEmpty,
+              UIApplication.shared.applicationState == .active, Date().timeIntervalSince(tripAddressAttempt) >= 30 else { return }
+        let vin = settings.string("vin")
+        guard !vin.isEmpty, let trip = state.rows("trips").suffix(20).reversed().first(where: {
+            !$0.rows("points").isEmpty && ($0.string("startAddress").isEmpty || $0.string("endAddress").isEmpty)
+        }) else { return }
+        let points = trip.rows("points")
+        guard let first = points.first, let last = points.last,
+              let a = first.number("lat"), let b = first.number("lng"), let c = last.number("lat"), let d = last.number("lng") else { return }
+        tripAddressBusy = true; tripAddressAttempt = Date()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.tripAddressBusy = false }
+            func address(_ lat: Double, _ lng: Double) async -> String? {
+                guard let mark = try? await CLGeocoder().reverseGeocodeLocation(CLLocation(latitude: lat, longitude: lng), preferredLocale: Locale(identifier: "ko_KR")).first else { return nil }
+                var seen = Set<String>()
+                let parts = [mark.locality, mark.subLocality, mark.thoroughfare, mark.subThoroughfare].compactMap { $0 }.filter { !$0.isEmpty && seen.insert($0).inserted }
+                return parts.isEmpty ? mark.name : parts.joined(separator: " ")
+            }
+            var args: Object = ["vin": vin, "id": trip.string("id"), "endpoints": [a, b, c, d]]
+            if trip.string("startAddress").isEmpty, let name = await address(a, b) { args["startAddress"] = name }
+            if trip.string("endAddress").isEmpty, let name = await address(c, d) { args["endAddress"] = name }
+            guard !self.demo, !self.recoveryLock, self.settings.string("vin") == vin, args.count > 3 else { return }
+            do {
+                let result = try self.runtime.call("updateTripPlaces", args) as? Object ?? [:]
+                if result.flag("changed") { self.refresh(detailed: true); self.saveRecordsWhenAvailable(force: true) }
+            } catch { /* A later replay/vehicle switch invalidates this lookup; retry from current endpoints. */ }
+        }
+    }
     private func scheduleChargeSiteMetadata() {
         guard !demo, !recoveryLock, !chargeSiteLookupBusy else { return }
         let vin = settings.string("vin")

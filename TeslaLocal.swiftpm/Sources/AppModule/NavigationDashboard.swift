@@ -1769,20 +1769,27 @@ struct ParkedNavigationActions: View {
     let stop: () -> Void
     var body: some View {
         HStack(spacing: 12) {
-            Label("주차 중", systemImage: "parkingsign.circle.fill")
+            Label("길안내 중", systemImage: "location.fill")
                 .font(.system(size: 14, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
             Spacer(minLength: 8)
-            Button(action: stop) {
-                Label("안내 종료", systemImage: "xmark.circle.fill")
-                    .font(.system(size: 15, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5)
-                    .padding(.horizontal, 12).frame(minHeight: 44)
-            }
-            .buttonStyle(.plain).foregroundStyle(.white)
-            .background(Color.red.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
-            .accessibilityIdentifier("navigation.parked.stop")
+            NavigationEndButton(stop: stop)
         }
         .padding(.horizontal, 12).padding(.vertical, 4)
         .foregroundStyle(.white).background(Color.black)
+    }
+}
+
+struct NavigationEndButton: View {
+    let stop: () -> Void
+    var body: some View {
+        Button(action: stop) {
+            Label("안내 종료", systemImage: "xmark.circle.fill")
+                .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                .padding(.horizontal, 12).frame(minHeight: 44)
+        }
+        .buttonStyle(.plain).foregroundStyle(.white)
+        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityIdentifier("navigation.parked.stop")
     }
 }
 
@@ -1981,6 +1988,7 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var expanded = false
     @State private var activity = 0
+    var endGuidance: (() -> Void)? = nil
     @ViewBuilder var content: () -> Content
     @ViewBuilder var controls: () -> Controls
     var body: some View {
@@ -1993,7 +2001,10 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                 VStack(spacing: 0) {
                     if expanded {
                         HStack(spacing: 4) {
-                            VStack(spacing: 4) { controls() }.frame(maxWidth: .infinity)
+                            VStack(spacing: 4) {
+                                controls()
+                                if let endGuidance { ParkedNavigationActions(stop: endGuidance) }
+                            }.frame(maxWidth: .infinity)
                             Button { setExpanded(false) } label: {
                                 Image(systemName: "chevron.up").frame(width: 44, height: 44)
                             }.accessibilityLabel("상단 조작 닫기")
@@ -2004,6 +2015,7 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                         .simultaneousGesture(TapGesture().onEnded { activity += 1 })
                         .transition(.move(edge: .top).combined(with: .opacity))
                     } else {
+                        ZStack(alignment: .top) {
                         Button { setExpanded(true) } label: {
                             Capsule().fill(.white.opacity(0.85)).frame(width: 36, height: 4)
                                 .padding(8).background(.black.opacity(0.45), in: Capsule())
@@ -2011,6 +2023,10 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                                 .contentShape(Rectangle())
                         }.accessibilityLabel("상단 조작 열기")
                             .accessibilityIdentifier("navigation.chrome.open")
+                        if let endGuidance {
+                            HStack { Spacer(); NavigationEndButton(stop: endGuidance) }
+                        }
+                        }
                     }
                 }.foregroundStyle(.white).padding(.horizontal, 8)
                     .padding(.leading, geometry.safeAreaInsets.leading)

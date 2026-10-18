@@ -15,6 +15,13 @@ final class AutomationCoordinator: ObservableObject {
     private var blocked = false
     var settingsDidChange: (() -> Void)?
     var onNotification: ((String, String, String) -> Void)?
+    var navigationContext: (() -> NavigationAnnouncementContext)?
+    private func applyNavigation(to sample: inout AutomationSample) {
+        guard let context = navigationContext?() else { return }
+        sample.destination = context.destination
+        sample.route = context.routeKey
+        sample.remainingMinutes = context.remainingMinutes
+    }
     init(folder: URL, observationNow: @escaping () -> Date = Date.init) throws {
         self.observationNow = observationNow
         file = folder.appendingPathComponent("automations.json")
@@ -70,17 +77,17 @@ final class AutomationCoordinator: ObservableObject {
         catch { policy.document = old; throw error }
     }
     func resetObservation() { sample = nil; physicalExpiresAt = 0; policy.reset(); presence = "탑승 신호 미수신" }
-    /// The car's own route estimate says arrival below 15 %: warn once per destination so charging can be planned.
+    /// Only the app's current route forecast may produce an arrival-energy warning.
     @MainActor private func checkArrivalEnergy(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator) {
-        guard snapshot.sectionIsRecent("drive_state") else { return }
         let key = "automation.arrivalLow." + snapshot.vin
         let defaults = UserDefaults.standard
-        let destination = (snapshot.payload["drive_state"] as? Object)?["active_route_destination"] as? String ?? ""
-        guard let arrival = snapshot.number("drive_state", "active_route_energy_at_arrival"), arrival.isFinite, !destination.isEmpty else {
+        guard let context = navigationContext?(), context.active else {
             defaults.removeObject(forKey: key); return
         }
-        guard (0...100).contains(arrival), arrival < 15, defaults.string(forKey: key) != destination else { return }
-        defaults.set(destination, forKey: key)
+        guard !context.routeKey.isEmpty, let arrival = context.arrivalSOC, !context.destination.isEmpty else { return }
+        let destination = context.destination
+        guard arrival < 15, defaults.string(forKey: key) != context.routeKey else { return }
+        defaults.set(context.routeKey, forKey: key)
         let text = String(format: "%@ 도착 예상 배터리가 %.0f퍼센트로 낮습니다. 경로 중 충전을 계획하세요.", destination, arrival)
         onNotification?(UUID().uuidString, "도착 배터리 부족 예상", text)
         voice.say(text, key: "arrivalLow:" + snapshot.vin, category: "voiceAutomations", priority: 3, ttl: 60, manual: false)
@@ -202,6 +209,7 @@ final class AutomationCoordinator: ObservableObject {
                         var sample = AutomationSample(now: now, vehicle: snapshot.vin)
                         sample.hour = Calendar.current.component(.hour, from: Date()); sample.chargeFresh = true; sample.soc = snapshot.soc
                         sample.driveFresh = snapshot.sectionIsRecent("drive_state"); sample.destination = snapshot.driveDisplay().string("destination")
+                        applyNavigation(to: &sample)
                         let message = rule.message.isEmpty ? event.title + ". " + event.body : AutomationPolicy.renderedText(for: rule, sample: sample)
                         policy.document.lastFired[key] = now
                         let id = UUID().uuidString
@@ -300,6 +308,7 @@ final class AutomationCoordinator: ObservableObject {
         // Named destination is the stable identity; optional/jittering coordinates are not a new route.
         s.route = s.driveFresh ? s.destination.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         s.remainingMinutes = s.driveFresh ? d.number("arrivalMinutes") : nil
+        applyNavigation(to: &s)
         s.hour = Calendar.current.component(.hour, from: Date())
         if state.rows("trips").count > previousTrips, let trip = state.rows("trips").last {
             s.endedTrip = trip.string("id")

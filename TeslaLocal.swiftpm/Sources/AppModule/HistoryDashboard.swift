@@ -143,6 +143,10 @@ struct TripDetailView: View {
                         if let f = route.first { Marker("출발", coordinate: f).tint(.green) }
                         if let l = route.last { Marker("도착", coordinate: l).tint(.red) } }
                         .frame(height: 240).clipShape(RoundedRectangle(cornerRadius: 12))
+                if trip.flag("routeSampled") || trip.flag("routeIncomplete") {
+                    Text(trip.flag("routeIncomplete") ? "위치 수신 공백 있음 · 출발·도착 표시는 처음·마지막 관측 위치 기준" : "긴 주행 경로는 처음·마지막 위치를 보존해 간추려 표시함")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             } else { Text("관측 경로 없음 · 추정 경로를 만들어 표시하지 않음").font(.caption).foregroundStyle(.secondary) }
             if speed.count > 2 {
                     Text("수신 속도 · km/h").font(.headline)
@@ -153,8 +157,17 @@ struct TripDetailView: View {
         }.navigationTitle("주행 기록")
             .task(id: trip.string("id")) {
                 if let from = metrics.start, let to = metrics.end { speed = HistoryData.readings(["VehicleSpeed"], from: from, to: to) }
-                if let first = route.first { startName = await placeName(first, fallback: "출발 위치") }
-                if let last = route.last { endName = await placeName(last, fallback: "도착 위치") }
+                startName = trip.string("startAddress", "출발 위치"); endName = trip.string("endAddress", "도착 위치")
+                if trip.string("startAddress").isEmpty, let first = route.first { startName = await placeName(first, fallback: "출발 위치") }
+                if trip.string("endAddress").isEmpty, let last = route.last { endName = await placeName(last, fallback: "도착 위치") }
+                if !model.demo, !Task.isCancelled, let first = route.first, let last = route.last,
+                   startName != "출발 위치" || endName != "도착 위치" {
+                    var args: Object = ["id": trip.string("id"), "vin": model.energyVehicleVIN,
+                                        "endpoints": [first.latitude, first.longitude, last.latitude, last.longitude]]
+                    if startName != "출발 위치" { args["startAddress"] = startName }
+                    if endName != "도착 위치" { args["endAddress"] = endName }
+                    model.mutate("updateTripPlaces", args)
+                }
             }
     }
     private func placeName(_ p: CLLocationCoordinate2D, fallback: String) async -> String {
@@ -464,7 +477,7 @@ struct TeslaMateView: View {
     private var trips: [Object] {
         let raw = Dictionary(model.state.rows("trips").map { ($0.string("id"), $0) }, uniquingKeysWith: { _, last in last })
         return model.output.object("energyPeriods").object("36500").rows("trips").map { trip in
-            var row = trip; row["points"] = raw[trip.string("id")]?["points"]; return row
+            var row = raw[trip.string("id")] ?? [:]; for (key, value) in trip { row[key] = value }; return row
         }.sorted { ($0.number("start") ?? 0) > ($1.number("start") ?? 0) }
     }
     private var capacity: Double { model.output.object("energy").number("capacityKWh") ?? 75 }

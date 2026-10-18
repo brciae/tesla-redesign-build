@@ -11,8 +11,8 @@
    "CODE_SIGNING_ALLOWED": "NO",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "GENERATE_INFOPLIST_FILE": "YES",
-   "MARKETING_VERSION": "1.62",
-   "CURRENT_PROJECT_VERSION": "162"
+   "MARKETING_VERSION": "1.63",
+   "CURRENT_PROJECT_VERSION": "163"
   }
  },
  "targets": {
@@ -25,6 +25,7 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/AppInterface.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/LocalBriefingControls.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationDashboard.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/AutomationSpeechPolicy.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/ContextSpeechSettings.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/AutomationContextSpeech.swift",

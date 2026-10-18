@@ -9,7 +9,6 @@ final class TripEnergyStore: ObservableObject {
     private var session: TripEnergyRecord?
     private var profile = TripEnergyProfile.make(samples: [], usableKWh: nil)
     private var profileKey = ""
-    private var updatedAt = Date.distantPast
     private var observedSOC: (value: Double, at: Date)?
     private var observedOdometer: (value: Double, at: Date)?
     private var lastCheckpoint = Date.distantPast
@@ -19,11 +18,11 @@ final class TripEnergyStore: ObservableObject {
     private let storageKey = "energy.tripForecast.v1"
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        if let data = defaults.data(forKey: storageKey + ".records"), data.count <= 2097152,
+        if let data = defaults.data(forKey: storageKey + ".records"), data.count <= 8388608,
            let rows = try? JSONDecoder().decode([TripEnergyRecord].self, from: data) {
             records = Array(rows.suffix(50))
         }
-        if let data = defaults.data(forKey: storageKey + ".session"), data.count <= 131072 {
+        if let data = defaults.data(forKey: storageKey + ".session"), data.count <= 262144 {
             session = try? JSONDecoder().decode(TripEnergyRecord.self, from: data)
         }
     }
@@ -32,12 +31,13 @@ final class TripEnergyStore: ObservableObject {
         guard !vin.isEmpty else { estimate = nil; return }
         if selectedVIN != vin { selectedVIN = vin; profileKey = ""; estimate = nil; observedSOC = nil; observedOdometer = nil }
         if let soc, soc.isFinite, (0...100).contains(soc), let socAt, (-5...120).contains(now.timeIntervalSince(socAt)) {
-            observedSOC = (soc, socAt)
+            if observedSOC == nil || socAt >= observedSOC!.at { observedSOC = (soc, socAt) }
         }
         let drive = state.object("groups").object("drive")
         if state.object("settings").string("vin") == vin, let at = drive.number("at"),
            (-5000...120000).contains(now.timeIntervalSince1970 * 1000 - at), let odo = drive.number("odometerKm"), (0...1e7).contains(odo) {
-            observedOdometer = (odo, Date(timeIntervalSince1970: at / 1000))
+            let measuredAt = Date(timeIntervalSince1970: at / 1000)
+            if observedOdometer == nil || measuredAt >= observedOdometer!.at { observedOdometer = (odo, measuredAt) }
         }
         if force || now.timeIntervalSince(chargingScannedAt) >= 5 {
             updateChargingStops(state: state, vin: vin, now: now); chargingScannedAt = now
@@ -48,8 +48,8 @@ final class TripEnergyStore: ObservableObject {
               let observedSOC, (-5...120).contains(now.timeIntervalSince(observedSOC.at)), !routeKey.isEmpty else {
             estimate = nil; return
         }
-        guard force || now.timeIntervalSince(updatedAt) >= 5 || estimate == nil || session?.routeKey != routeKey else { return }
-        updatedAt = now
+        // Navigation and telemetry callbacks already bound delivery. Recalculate on each fresh
+        // observation; an additional five-second gate made the live forecast visibly jump.
         let trips = state.rows("trips"), settings = state.object("settings")
         // Never train on another vehicle's records while Fleet selection is changing.
         let sameVehicle = settings.string("vin") == vin
@@ -150,9 +150,13 @@ final class TripEnergyStore: ObservableObject {
         guard var row = session, row.vin == selectedVIN, let observedSOC,
               (-5...120).contains(now.timeIntervalSince(observedSOC.at)) else { return }
         var points = row.points ?? []
-        let elapsed = max(0, observedSOC.at.timeIntervalSince(row.startedAt))
+        let distanceAt = observedOdometer.flatMap { (-5...120).contains(now.timeIntervalSince($0.at)) && abs($0.at.timeIntervalSince(observedSOC.at)) <= 30 ? $0.at : nil }
+        let measuredAt = max(observedSOC.at, distanceAt ?? observedSOC.at)
+        let elapsed = max(0, measuredAt.timeIntervalSince(row.startedAt))
         guard elapsed >= (points.last?.elapsedSeconds ?? 0) else { return }
-        guard force || elapsed - (points.last?.elapsedSeconds ?? -60) >= 60 else { return }
+        // Keep real SOC measurement times, including identical percent readings. Never
+        // interpolate Tesla's quantized SOC into invented sub-percent measurements.
+        guard force || elapsed > (points.last?.elapsedSeconds ?? -1) else { return }
         var distance: Double?
         if let start = row.startOdometerKm, let odo = observedOdometer,
            (-5...120).contains(now.timeIntervalSince(odo.at)), abs(odo.at.timeIntervalSince(observedSOC.at)) <= 30 {
@@ -160,10 +164,11 @@ final class TripEnergyStore: ObservableObject {
             if travelled.isFinite, (0...3000).contains(travelled), travelled >= (points.last?.distanceKm ?? 0) { distance = travelled }
         }
         let point = TripEnergyPoint(elapsedSeconds: elapsed, distanceKm: distance,
-            predictedSOC: distance.flatMap { row.predictedSOC(distanceKm: $0, at: observedSOC.at, actualSOC: observedSOC.value) }, actualSOC: observedSOC.value)
+            predictedSOC: distance.flatMap { row.predictedSOC(distanceKm: $0, at: measuredAt, actualSOC: observedSOC.value) }, actualSOC: observedSOC.value,
+            socObservedAt: observedSOC.at)
         if points.last?.elapsedSeconds == elapsed { points[points.count - 1] = point } else { points.append(point) }
         // Keep the full trip span when sampling longer journeys, without unbounded graph data.
-        if points.count > 120 {
+        if points.count > 1200 {
             let last = points.last!
             points = points.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
             if points.last != last { points.append(last) }
@@ -171,11 +176,11 @@ final class TripEnergyStore: ObservableObject {
         row.points = points; session = row
     }
     private func save(writeRecords: Bool = false) {
-        if let session, let data = try? JSONEncoder().encode(session), data.count <= 131072 {
+        if let session, let data = try? JSONEncoder().encode(session), data.count <= 262144 {
             defaults.set(data, forKey: storageKey + ".session")
         } else if session == nil { defaults.removeObject(forKey: storageKey + ".session") }
         // History is written only at route completion; periodic checkpoints contain the current trip only.
-        if writeRecords, let data = try? JSONEncoder().encode(records), data.count <= 2097152 {
+        if writeRecords, let data = try? JSONEncoder().encode(records), data.count <= 8388608 {
             defaults.set(data, forKey: storageKey + ".records")
         }
     }

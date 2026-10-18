@@ -30,6 +30,25 @@
     return measured<=now+5000&&now-measured<=TTL.location;
   };
   // Match the Fleet drive source-age limit; slow-changing charge/climate groups retain their own rules.
+  function recordTripLocation(trip,location,now){
+    if(!trip||!freshLocation(location,now))return;
+    const at=location.gpsAt??location.at,points=trip.points??(trip.points=[]);
+    if(at<trip.start-15000||points.length&&at<=points[points.length-1].at)return;
+    const point={at,lat:location.latitude,lng:location.longitude};
+    if(points.length&&at-points[points.length-1].at>TTL.location)trip.routeIncomplete=true;
+    trip.observedPointCount=(trip.observedPointCount??points.length)+1;
+    if(points.length>=2000){trip.points=points.filter((_,i)=>i%2===0);trip.routeSampled=true;}
+    trip.points.push(point);
+  }
+  function mergeTripRoute(target,source){
+    const old=target.points??[],next=source.points??[];
+    if(next.length&&(!old.length||next[0].at<=old[0].at&&next[next.length-1].at>old[old.length-1].at)){
+      if(old.length&&(old[0].lat!==next[0].lat||old[0].lng!==next[0].lng))delete target.startAddress;
+      if(old.length&&(old[old.length-1].lat!==next[next.length-1].lat||old[old.length-1].lng!==next[next.length-1].lng))delete target.endAddress;
+      target.points=next;target.routeSampled=source.routeSampled===true;target.routeIncomplete=source.routeIncomplete===true;
+      target.observedPointCount=source.observedPointCount??next.length;
+    }
+  }
   const freshNavigation=(g,now)=>fresh(g,now)&&g.at<=now+5000&&now-g.at<=120000;
   function navURL(drive,now,appname){
     if(!freshNavigation(drive,now))throw Error('목적지 데이터가 오래됨. 차량에서 다시 수신해야 함.');
@@ -289,7 +308,7 @@
     // Copy only known top-level keys. Never restore running sessions or an active route.
     const clean=initial();for(const k of Object.keys(clean))if(k in s)clean[k]=JSON.parse(JSON.stringify(s[k]));
     if(s.batteryBaseline){const b=s.batteryBaseline;if(!num(b.at,0,1e14)||b.healthPercent!==100||b.source!=='assumedNew'||!optional(b.capacityKWh,20,200))throw Error('배터리 기준 형식 오류');clean.batteryBaseline={at:b.at,healthPercent:100,source:'assumedNew',capacityKWh:b.capacityKWh??null,referenceIds:[]};}
-    if(s.activeTrip){const t=s.activeTrip;if(typeof t.id!=='string'||!t.id)t.id=id();if(typeof t.id!=='string'||!num(t.start,0,1e14)||!num(t.lastAt,t.start,1e14)||!optional(t.startSOC,0,100)||!optional(t.lastSOC,0,100)||!num(t.distanceKm,0,100000))throw Error('진행 중 운행 기록 오류');const resume=opts.resumeActive===true&&Date.now()-t.lastAt<=1800000&&num(t.lastOdo,0,1e7);if(resume)clean.activeTrip={...JSON.parse(JSON.stringify(t)),resumed:true,lastPowerKW:null,parkAt:t.parkAt??null,points:Array.isArray(t.points)?t.points.slice(-2000):[]};else if(!clean.trips.some(x=>x.id===t.id))append(clean.trips,{id:t.id,start:t.start,end:t.lastAt,startSOC:t.startSOC??null,endSOC:t.lastSOC??null,distanceKm:t.distanceKm,missing:true,points:[],recovered:true});}
+    if(s.activeTrip){const t=s.activeTrip;if(typeof t.id!=='string'||!t.id)t.id=id();if(typeof t.id!=='string'||!num(t.start,0,1e14)||!num(t.lastAt,t.start,1e14)||!optional(t.startSOC,0,100)||!optional(t.lastSOC,0,100)||!num(t.distanceKm,0,100000))throw Error('진행 중 운행 기록 오류');const resume=opts.resumeActive===true&&Date.now()-t.lastAt<=1800000&&num(t.lastOdo,0,1e7);if(resume)clean.activeTrip={...JSON.parse(JSON.stringify(t)),resumed:true,lastPowerKW:null,parkAt:t.parkAt??null,points:Array.isArray(t.points)?t.points.slice(-2000):[]};else if(!clean.trips.some(x=>x.id===t.id))append(clean.trips,{id:t.id,start:t.start,end:t.lastAt,startSOC:t.startSOC??null,endSOC:t.lastSOC??null,distanceKm:t.distanceKm,missing:true,points:Array.isArray(t.points)?t.points:[],routeSampled:t.routeSampled===true,routeIncomplete:true,observedPointCount:t.observedPointCount,startOdo:t.startOdo,endOdo:t.lastOdo,recovered:true});}
     let resumedCharge=null;
     if(s.activeCharge){const c={...s.activeCharge,complete:false,storedKWh:null,supplyKWh:null,cost:null};validateCharge(c);if(typeof c.id!=='string'||!c.id)c.id=id();const age=Date.now()-(c.lastAt??c.at);if(opts.resumeActive===true&&age>=0&&age<=48*3600000){clean.activeCharge={...c,resumed:true};resumedCharge=clean.activeCharge;}else if(!clean.charges.some(x=>x.id===c.id))append(clean.charges,{...c,end:c.lastAt??c.at,source:c.source??'차량 복구',partial:true});}
     // v30: a trip interrupted by an app restart within 30 min continues (odometer continuity is re-checked on the next sample).
@@ -395,6 +414,7 @@
         this.state.groups[name]=g;
         this.observed[name]=g;
         if(name==='drive')this.drive(g,now,{...this.state.groups,charge:snapshot.groups.charge??this.state.groups.charge});
+        if(name==='location')recordTripLocation(this.state.activeTrip,g,now);
         if(name==='charge'){const loc=snapshot.groups.location??this.state.groups.location;this.charge({...g,...(freshLocation(loc,now)?{latitude:loc.latitude,longitude:loc.longitude}:{})},now);}
         if(name==='tire'&&g.at-this.lastTireAt>=60000){this.state.tires.push({id:id(),at:g.at,values:g.values,seenAt:g.seenAt});this.state.tires=this.state.tires.slice(-2000);this.lastTireAt=g.at;}
       }
@@ -447,9 +467,7 @@
         if(hasOdometers){if(validDistance)t.distanceKm+=dx;else t.missing=true;}
         else t.missing=true;
         t.lastAt=g.at;t.lastOdo=g.odometerKm;if(c)t.lastSOC=c.soc;
-        const loc=context.location,fixAt=loc?.gpsAt??loc?.at;
-        if(freshLocation(loc,now)&&fixAt>=t.start&&fixAt<=g.at+5000&&t.points.length<2000&&
-           (!t.points.length||fixAt>t.points[t.points.length-1].at))t.points.push({at:fixAt,lat:loc.latitude,lng:loc.longitude});
+        recordTripLocation(t,context.location,now);
         // A fresh explicit P ends an observed drive now; no second packet after exiting is required.
         if(g.gear==='P'&&(g.speedKmh==null||num(g.speedKmh,0,0.5))&&now-g.at<=120000){t.parkAt=g.at;this.finish(g.at,false);}else t.parkAt=null;
       }
@@ -465,6 +483,7 @@
         observedMotorUsedKWh:motorObserved?round(t.powerUsedKWh,3):null,observedMotorRecoveredKWh:motorObserved?round(t.powerRecoveredKWh,3):null,
         observedMotorNetKWh:motorObserved?round(motorNet,3):null,observedMotorDistanceKm:motorDistance==null?null:round(motorDistance,3),
         observedMotorWhPerKm:motorDistance>0?round(motorNet/motorDistance*1000,1):null};
+      trip.observedPointCount=t.observedPointCount??t.points.length;trip.routeSampled=t.routeSampled===true;trip.routeIncomplete=t.routeIncomplete===true;
       append(s.trips,trip);s.activeTrip=null;
       s.lastPark=t.parkAt!=null?{at:end,soc:t.lastSOC,odometerKm:t.lastOdo,gear:'P'}:null;
       const delta=trip.startSOC!=null&&trip.endSOC!=null?round(trip.startSOC-trip.endSOC):null;
@@ -617,6 +636,18 @@
       if(this.state.trips.length===before)throw Error('삭제할 기록을 찾을 수 없음');
       return {removed:1};
     }
+    updateTripPlaces(v){
+      if(!v||v.vin!==this.state.settings.vin)throw Error('차량이 변경됨');
+      const t=this.state.trips.find(t=>t.id===v.id),p=t?.points??[];
+      if(!p.length||!Array.isArray(v.endpoints)||v.endpoints.length!==4||
+         v.endpoints.some((x,i)=>x!==[p[0].lat,p[0].lng,p[p.length-1].lat,p[p.length-1].lng][i]))throw Error('경로 위치가 변경됨');
+      let changed=false;
+      for(const key of ['startAddress','endAddress']){
+        const address=text(v[key],500).trim();
+        if(address&&t[key]!==address){t[key]=address;changed=true;}
+      }
+      return {changed};
+    }
     captureParking(now=Date.now()){
       const d=this.state.groups.drive,l=this.state.groups.location;
       if(this.observed.drive!==d||this.observed.location!==l||!fresh(d,now)||d.gear!=='P'||!freshLocation(l,now)||
@@ -694,7 +725,10 @@
           }
           previousCharge=charging;
         }
-        if(['P','D','R','N'].includes(gear)&&['Gear','VehicleSpeed','Odometer'].some(k=>fields.has(k)))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at:socField?latest[socField].at:0,soc},location:{}});
+        const fix=latest.Location&&!latest.Location.invalid?scalar('Location'):null;
+        const location=fix?{at:latest.Location.at,gpsAt:latest.Location.at,latitude:Number(fix.latitude??fix.lat),longitude:Number(fix.longitude??fix.lon??fix.lng)}:{};
+        if(fields.has('Location'))recordTripLocation(replay.state.activeTrip,location,at);
+        if(['P','D','R','N'].includes(gear)&&['Gear','VehicleSpeed','Odometer'].some(k=>fields.has(k)))replay.drive({at,gear,speedKmh:num(speed,0,220)?speed*1.609344:null,odometerKm:num(odo,0,1e7)?odo*1.609344:null},at,{charge:{at:socField?latest[socField].at:0,soc},location});
       }
       for(const kind of ['trips','charges'])for(const source of replay.state[kind]){
         const start=kind==='trips'?source.start:source.at,end=source.end??start;
@@ -706,6 +740,7 @@
         if(active&&end>start&&activeStart>=start-120000&&activeStart<=end&&
            (active.lastAt??activeStart)<=end+120000){
           row.id=active.id;
+          if(kind==='trips')mergeTripRoute(row,active);
           for(const key of ['cost','note','place','chargeOperator','memberPricing','roamingPricing','chargeTypeManual','receiptText','siteMatch'])if(active[key]!=null)row[key]=active[key];
           this.state[activeKey]=null;
         }
@@ -726,7 +761,11 @@
             if(!old.startTimeObserved&&row.startTimeObserved){merged.at=row.at;merged.startTimeObserved=true;merged.startTimeBasis=row.startTimeBasis;merged.initialAddedKWh=row.initialAddedKWh;merged.collectedAfterEnd=false;}
             if(!old.endTimeObserved&&row.endTimeObserved){merged.end=row.end;merged.endTimeObserved=true;}
             merged.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};list[same]=merged;
-          }else list[same]=row;
+          }else{
+            const merged={...row,...old};mergeTripRoute(merged,row);
+            for(const key of ['startSOC','endSOC'])if(merged[key]==null&&row[key]!=null)merged[key]=row[key];
+            list[same]=merged;
+          }
           continue;
         }
         const overlaps=x=>{const a=kind==='trips'?x.start:x.at,b=x.end??x.lastAt??a;return Math.min(end,b)>=Math.max(start,a);};
@@ -747,6 +786,7 @@
             if(!existing.startSOCObserved&&row.startSOCObserved){existing.startSOC=row.startSOC;existing.startSOCObserved=true;existing.startSOCEstimated=false;}
             if(!existing.endSOCObserved&&row.endSOCObserved){existing.endSOC=row.endSOC;existing.endSOCObserved=true;existing.endSOCEstimated=false;}
           }else{
+            mergeTripRoute(existing,row);
             for(const key of ['startSOC','endSOC'])if(existing[key]==null&&num(row[key],0,100))existing[key]=row[key];
           }
           continue;

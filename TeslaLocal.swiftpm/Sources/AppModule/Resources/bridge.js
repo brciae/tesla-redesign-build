@@ -47,6 +47,7 @@ function hostCallObject(op,json){
       case 'updateCharge':value=engine.updateCharge(a);break;
       case 'deleteCharge':value=engine.deleteCharge(a);break;
       case 'deleteTrip':value=engine.deleteTrip(a);break;
+      case 'updateTripPlaces':value=engine.updateTripPlaces(a);break;
       case 'deleteParking':value=engine.deleteParking(a);break;
       case 'captureParking':if(!liveFresh('drive',now)||!liveFresh('location',now))throw Error('최신 차량 P·위치 수신 필요');value=engine.captureParking(now);break;
       case 'mergeHistory':value=engine.mergeHistory(a);break;

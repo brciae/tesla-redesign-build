@@ -188,10 +188,26 @@ struct FullscreenNavigationProbe: View {
     @State private var theme: NavigationTheme = .cluster
     @State private var stopped = false
     @State private var junctionVisible = ProcessInfo.processInfo.arguments.contains("junction-probe")
+    private var noVehicle: Bool { ProcessInfo.processInfo.arguments.contains("no-vehicle-route-probe") }
+    private let recoveryStore = NavigationRecoveryStore(defaults: UserDefaults(suiteName: "NavigationStopProbe")!)
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("no-vehicle-route-probe") {
+            if ProcessInfo.processInfo.arguments.contains("reset-route-probe") {
+                _ = recoveryStore.save(NavigationRecoveryCheckpoint(vin: "", name: "테스트 목적지", latitude: 37.5, longitude: 127, manual: true, savedAt: Date()))
+            }
+            _stopped = State(initialValue: recoveryStore.load() == nil)
+        }
+    }
+    private func stopGuidance() { recoveryStore.clear(); stopped = true }
     var body: some View {
-        NavigationWorkspaceChrome {
+        NavigationWorkspaceChrome(endGuidance: noVehicle && !stopped ? stopGuidance : nil) {
             NavigationDashboard(theme: theme, data: sample) { NavigationMapFixture() }
                 car: { Color.clear }
+                .overlay(alignment: .bottom) {
+                    if noVehicle && stopped {
+                        Text("안내 종료됨").padding(12).background(.black).accessibilityIdentifier("fullscreen.stopped")
+                    }
+                }
                 .overlay {
                     GeometryReader { geometry in
                         Text("\(Int(geometry.size.width))/\(Int(geometry.size.height))")
@@ -209,8 +225,10 @@ struct FullscreenNavigationProbe: View {
                     }
                 }
             }.frame(height: 44)
-            if !stopped { ParkedNavigationActions { stopped = true } }
-            else { Text("안내 종료됨").accessibilityIdentifier("fullscreen.stopped") }
+            if !noVehicle {
+                if !stopped { ParkedNavigationActions { stopped = true } }
+                else { Text("안내 종료됨").accessibilityIdentifier("fullscreen.stopped") }
+            }
             if ProcessInfo.processInfo.arguments.contains("junction-probe") {
                 Button("진출 지점 통과") { junctionVisible = false }
             }
@@ -223,6 +241,7 @@ struct FullscreenNavigationProbe: View {
             r.junctionMetres = 300
         }
         r.speed = "0"; r.gear = "P"; r.battery = "71%"; r.range = "399 km"
+        if noVehicle { r.speed = "—"; r.gear = "—"; r.battery = "—"; r.range = "—" }
         r.turn = "출발지 지나고 진행"; r.turnDistance = "0 m"; r.turnSymbol = "arrow.up"
         r.next = "24 m · 좌회전"; r.remaining = "54분 남음"; r.remainingDistance = "29.9 km"; r.arrival = "18:19"
         r.mediaTitle = "Orbit Pop"; r.mediaPlaying = true

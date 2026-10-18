@@ -84,6 +84,7 @@ struct TripEnergyPoint: Codable, Equatable {
     var distanceKm: Double?
     var predictedSOC: Double?
     var actualSOC: Double
+    var socObservedAt: Date? = nil
 }
 
 struct TripEnergyChargingStop: Codable, Identifiable, Equatable {

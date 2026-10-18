@@ -15,7 +15,7 @@ struct DrivingWorkspace: View {
     @State private var carError: String?
     var body: some View {
         GeometryReader { proxy in
-            NavigationWorkspaceChrome {
+            NavigationWorkspaceChrome(endGuidance: endGuidanceAction) {
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: 0.50, anchorY: 0.72)
@@ -55,9 +55,6 @@ struct DrivingWorkspace: View {
                         Spacer(minLength: 0)
                     }.frame(maxWidth: .infinity, minHeight: 44)
                 }
-                if readout.gear == "P", navigation.guiding || navigation.busy {
-                    ParkedNavigationActions { navigation.endGuidance() }
-                }
             }
             .background(navigation.theme.canvas)
         }
@@ -79,6 +76,11 @@ struct DrivingWorkspace: View {
         }
         .onDisappear { navigation.screenDisappeared() }
         .onChange(of: navigation.renderEpoch) { _, _ in carError = nil }
+    }
+
+    private var endGuidanceAction: (() -> Void)? {
+        guard navigation.guiding || navigation.busy else { return nil }
+        return { navigation.endGuidance() }
     }
 
     private func topBar(compact: Bool) -> some View {
