@@ -16,6 +16,9 @@ import MapKit
     var body: some Scene { WindowGroup {
         Group {
             if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("live-activity-settings-probe") {
+                NavigationStack { Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle("잠금화면·아일랜드") }
+            }
             else if ProcessInfo.processInfo.arguments.contains("system-navigation-probe") || ProcessInfo.processInfo.arguments.contains("system-charging-probe") { SystemActivityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("lock-screen-navigation-probe") { LockScreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }

@@ -1,6 +1,15 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testLiveActivitySettingsAreVisibleWithoutHiddenDiagnostics() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["live-activity-settings-probe"]; app.launch()
+        XCTAssertTrue(app.navigationBars["잠금화면·아일랜드"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.switches["실시간 현황 표시"].exists)
+        XCTAssertTrue(app.buttons["실시간 현황 다시 시작"].exists)
+        XCTAssertTrue(app.buttons["iPhone 앱 설정 열기"].exists)
+        captureSystemCard("Live Activity production settings visible status and controls")
+    }
     private func showSystemLockScreenPresentation(_ app: XCUIApplication) -> XCUIApplication {
         XCUIDevice.shared.press(.home)
         let board = XCUIApplication(bundleIdentifier: "com.apple.springboard")
@@ -29,6 +38,11 @@ final class InteractionTests: XCTestCase {
         app.activate()
         app.buttons["세션 종료"].tap()
         XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 8))
+        board = showSystemLockScreenPresentation(app)
+        let removed = NSPredicate { _, _ in !board.staticTexts["길안내 준비 중"].exists && !board.staticTexts["오크밸리1길 우회전"].exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: removed, object: nil)], timeout: 12), .completed)
+        captureSystemCard("System Lock Screen navigation card removed after end")
+        app.activate()
     }
     func testSystemLockScreenChargingCardProgressStaleAndEnd() {
         XCUIDevice.shared.orientation = .portrait

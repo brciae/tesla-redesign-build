@@ -40,6 +40,7 @@ enum Page: String, Hashable {
     case appearance = "차꾸미기"
     case fleetInsights = "차량 상세 데이터"
     case notifications = "알림 설정"
+    case liveActivity = "잠금화면·아일랜드"
     case chargingSettings = "충전 계획·요금", recordSettings = "기록·백업"
     case parking = "주차 기록"
     case displaySettings = "화면·표시 단위"
@@ -207,6 +208,7 @@ private struct AppDestinations: ViewModifier {
         case .parking: ParkingView()
         case .displaySettings: DisplaySettingsView()
         case .preferences: PreferencesView()
+        case .liveActivity: LiveActivitySettingsView()
         case .releaseNotes: ReleaseNotesView()
         case .character: CharacterSelectView()
         case .appearance: VehicleAppearanceView()

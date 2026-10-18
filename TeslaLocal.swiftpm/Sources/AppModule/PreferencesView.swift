@@ -1,6 +1,14 @@
 import SwiftUI
 import AVFoundation
 
+struct LiveActivitySettingsView: View {
+    @EnvironmentObject private var model: AppModel
+    var body: some View {
+        Form { LiveActivitySettingsPanel(refresh: model.updateLiveActivity) }
+            .navigationTitle("잠금화면·아일랜드")
+    }
+}
+
 private struct VehicleUnitsKey: EnvironmentKey { static let defaultValue = VehicleUnits() }
 extension EnvironmentValues {
     var vehicleUnits: VehicleUnits { get { self[VehicleUnitsKey.self] } set { self[VehicleUnitsKey.self] = newValue } }
@@ -28,23 +36,11 @@ struct PreferencesView: View {
     @State private var floatVoicePicker = false
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
-    @AppStorage("liveActivityEnabled") private var liveActivity = true
-    @ObservedObject private var activityManager = VehicleLiveActivityManager.shared
     @ObservedObject private var typecast = TypecastClient.shared
 
     var body: some View {
         Form {
-            Section("Dynamic Island·잠금화면") {
-                Toggle("길안내·충전 실시간 현황", isOn: $liveActivity)
-                    .onChange(of: liveActivity) { _, _ in model.updateLiveActivity() }
-                InfoRow("표시 방식", "잠금화면에 길안내 또는 충전 상태 표시. 카드를 누르면 해당 화면으로 이동함.")
-                DisclosureGroup("표시 문제 해결") {
-                    Text(activityManager.status).font(.caption).fixedSize(horizontal: false, vertical: true)
-                    Button("실시간 현황 다시 시작") { activityManager.restart() }
-                    Caption(activityManager.installationSummary)
-                    Caption("처음에는 앱을 연 상태에서 시작해야 함. iPhone 설정에서 이 앱의 실시간 현황 허용 필요함. 백그라운드 수신이 중단되면 마지막 값 대신 갱신 대기를 표시함.")
-                }
-            }
+            LiveActivitySettingsPanel(refresh: model.updateLiveActivity)
             Section("음성 안내") {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceOutputSettings()

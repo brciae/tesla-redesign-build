@@ -6,7 +6,8 @@ extension AppModel {
     func activityChargePresentation(now: Date = Date()) -> Object {
         var candidates: [Object] = []
         let ble = groups.object("charge")
-        if let raw = ble.number("charging"), (0...100).contains(raw), let status = ChargeEventPolicy.bleState(Int(raw)), let at = ble.number("at") {
+        if settings.string("vin") == energyVehicleVIN, let raw = ble.number("charging"), (0...100).contains(raw),
+           let status = ChargeEventPolicy.bleState(Int(raw)), let at = ble.number("at") {
             var row = ble; row["status"] = status; row["at"] = at; candidates.append(row)
         }
         if let snapshot = fleet.vehicleSnapshot, snapshot.vin == energyVehicleVIN,
@@ -16,11 +17,10 @@ extension AppModel {
             row["status"] = status; row["at"] = at; candidates.append(row)
         }
         let latest = FleetTelemetryData.latest(archiveReadings, vin: energyVehicleVIN)
-        if let reading = latest["DetailedChargeState"], !reading.invalid,
-           let data = reading.text.data(using: .utf8),
-           let raw = try? JSONSerialization.jsonObject(with: data) as? Object,
-           let detailed = raw["detailedChargeStateValue"] as? String {
-            let status = String(detailed.dropFirst("DetailedChargeState".count))
+        if let reading = [latest["DetailedChargeState"], latest["ChargeState"]].compactMap({ $0 })
+            .filter({ !$0.invalid }).max(by: { $0.at < $1.at }),
+           let detailed = FleetTelemetryData.firstStringValue(reading) {
+            let status = detailed.replacingOccurrences(of: "DetailedChargeState", with: "")
             var row: Object = ["status": status, "at": reading.at.timeIntervalSince1970 * 1000]
             for (field, key, scale) in [("Soc", "soc", 1.0), ("ChargeLimitSoc", "limit", 1.0),
                 ("TimeToFullCharge", "minutesToLimit", 60.0), ("ACChargingPower", "chargerKW", 1.0),

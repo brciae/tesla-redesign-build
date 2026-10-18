@@ -1426,6 +1426,7 @@ struct MenuTabRootView: View {
 
                     GlassMenuCard {
                         glassMenuItem(.connection, "antenna.radiowaves.left.and.right", title: "차량·NAS 연결", subtitle: "계정 · 블루투스 · 서버", colors: [Color.cyan, Color.blue])
+                        glassMenuItem(.liveActivity, "rectangle.topthird.inset.filled", title: "잠금화면·아일랜드", subtitle: "길안내 · 충전 카드 · 표시 상태", colors: [Color.blue, Color.cyan])
                         glassMenuItem(.navigation, "map", title: "내비게이션", subtitle: "지도 · 위치 권한 · 하이패스", colors: [Color.blue, Color.cyan])
                         glassMenuItem(.chargingSettings, "bolt.fill", title: "충전 계획·요금", subtitle: "충전 기준 · 전기 단가", colors: [Color.green, Color.mint])
                         glassMenuItem(.recordSettings, "externaldrive", title: "기록·백업", subtitle: "내보내기 · 복원", colors: [Color.blue, Color.cyan])
