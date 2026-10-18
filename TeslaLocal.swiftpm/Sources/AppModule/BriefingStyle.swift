@@ -21,6 +21,7 @@ enum BriefingStyle: String, CaseIterable, Identifiable {
 /// Screen-style fragments ("충전 중 · 80%", "문 열림", "확인 필요") read aloud as full polite sentences.
 /// Navigation cues keep the separately constructed maneuver sentence.
 enum SpeechEnding {
+    private static let statusNouns: Set<String> = ["충전", "공조", "문", "창문", "차량", "잠금", "연결", "설정", "점검", "휴식", "기록", "정보", "내용", "상태", "위치", "경로", "목적지", "주행", "배터리", "충전량", "조회", "음성", "소리", "예약", "신호", "운행", "표시", "전원", "통신", "알림", "온도", "공기압"]
     static func natural(_ text: String) -> String {
         let normalized = text.replacingOccurrences(of: " · ", with: ", ").replacingOccurrences(of: "·", with: ", ")
         // Split on sentence ends only, never on decimal points ("80.5%").
@@ -52,7 +53,8 @@ enum SpeechEnding {
                        (" 없음", "없습니다"), (" 있음", "있습니다")]
         for (tail, predicate) in clauses where s.hasSuffix(tail) {
             let noun = String(s.dropLast(tail.count)).trimmingCharacters(in: .whitespaces)
-            if !noun.isEmpty { return noun + particle(noun, object: false) + " " + predicate + "." }
+            // Only rewrite known status nouns, never a verb phrase such as "열려 있음".
+            if statusNoun(noun) { return noun + particle(noun, object: false) + " " + predicate + "." }
         }
         if s.hasSuffix("미수신") {
             let noun = String(s.dropLast("미수신".count)).trimmingCharacters(in: .whitespaces)
@@ -69,11 +71,18 @@ enum SpeechEnding {
         return s + "입니다."
     }
     private static func particle(_ noun: String, object: Bool) -> String {
+        let word = noun.split(separator: " ").last.map(String.init) ?? noun
+        let markers = object ? ["을", "를"] : ["이", "가"]
+        if markers.contains(String(word.suffix(1))), statusNouns.contains(String(word.dropLast())) { return "" }
         let value = noun.unicodeScalars.last?.value ?? 0
         let hasFinal: Bool
         if (0xAC00...0xD7A3).contains(value) { hasFinal = (value - 0xAC00) % 28 != 0 }
         else if let digit = noun.last?.wholeNumberValue { hasFinal = [0, 1, 3, 6, 7, 8].contains(digit) }
         else { hasFinal = false }
         return object ? (hasFinal ? "을" : "를") : (hasFinal ? "이" : "가")
+    }
+    private static func statusNoun(_ noun: String) -> Bool {
+        let word = noun.split(separator: " ").last.map(String.init) ?? noun
+        return statusNouns.contains(word) || (["이", "가"].contains(String(word.suffix(1))) && statusNouns.contains(String(word.dropLast())))
     }
 }
