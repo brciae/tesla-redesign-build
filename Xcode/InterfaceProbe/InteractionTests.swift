@@ -180,9 +180,14 @@ final class InteractionTests: XCTestCase {
         shot.name = "Live activity shared views compact expanded and stale"; shot.lifetime = .keepAlways; add(shot)
         for _ in 0..<3 {
             XCUIDevice.shared.press(.home)
-            XCTAssertTrue(app.wait(for: .runningBackground, timeout: 3) || app.state == .runningBackgroundSuspended)
+            let background = NSPredicate { _, _ in
+                app.state == .runningBackground || app.state == .runningBackgroundSuspended
+            }
+            let entered = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: background, object: app)], timeout: 8) == .completed
+            XCTAssertTrue(entered, "App did not enter background; state=\(app.state.rawValue)")
             app.activate()
             XCTAssertTrue(app.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["200%"].exists, "Background return must preserve the local slider state without a relaunch")
         }
     }
     func testActualLiveActivityExtensionOnHomeScreen() {

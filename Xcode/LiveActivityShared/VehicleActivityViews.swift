@@ -55,6 +55,7 @@ struct VehicleNavigationCard: View {
                         Text(arrival, style: .time).monospacedDigit()
                         Text("도착")
                     }.font(.caption).foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("live.navigation.arrival")
                 }
             }
@@ -76,7 +77,7 @@ struct VehicleNavigationCard: View {
             }
         }
         .padding(14).foregroundStyle(.black)
-        .accessibilityIdentifier("live.navigation.card")
+        .accessibilityElement(children: .contain)
     }
 }
 
