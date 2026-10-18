@@ -47,5 +47,10 @@ const drive=(at,n=0,gear='D')=>({at,receivedAt:at,gear,speedKmh:gear==='P'?0:40,
  trip.note='keep';e.ingestArchive({vin,rows});
  assert.equal(e.state.trips.length,1);assert.equal(e.state.trips[0].endAddress,'도착');assert.equal(e.state.trips[0].note,'keep');
  assert.equal(e.state.trips[0].points.length,3);
+ // Replay may improve an older machine row; it must not freeze stale timing/distance.
+ e.state.trips[0].end=t+10000;e.state.trips[0].distanceKm=0.1;
+ e.ingestArchive({vin,rows});
+ assert.equal(e.state.trips[0].end,t+20000);assert.ok(e.state.trips[0].distanceKm>0.1);
+ assert.equal(e.state.trips[0].endAddress,'도착');assert.equal(e.state.trips[0].note,'keep');
 }
 console.log('PASS: destination-free drive, bounded full-span route, location-only samples, durable addresses/restart, NAS route replay and idempotent preservation');

@@ -762,8 +762,11 @@
             if(!old.endTimeObserved&&row.endTimeObserved){merged.end=row.end;merged.endTimeObserved=true;}
             merged.archiveValues={vehicleReportedKWh:row.vehicleReportedKWh,supplyKWh:row.supplyKWh};list[same]=merged;
           }else{
-            const merged={...row,...old};mergeTripRoute(merged,row);
-            for(const key of ['startSOC','endSOC'])if(merged[key]==null&&row[key]!=null)merged[key]=row[key];
+            // A later archive page can extend the machine-observed trip. Keep
+            // annotations and the better route without freezing old end/distance.
+            const merged={...old,...row,points:old.points,routeSampled:old.routeSampled,routeIncomplete:old.routeIncomplete,observedPointCount:old.observedPointCount};
+            mergeTripRoute(merged,row);
+            for(const key of ['startSOC','endSOC'])if(merged[key]==null&&old[key]!=null)merged[key]=old[key];
             list[same]=merged;
           }
           continue;
