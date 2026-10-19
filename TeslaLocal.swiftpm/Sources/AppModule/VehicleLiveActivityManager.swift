@@ -20,14 +20,14 @@ final class VehicleLiveActivityManager: ObservableObject {
     @Published private(set) var status = "실시간 현황 대기"
     @Published private(set) var lifecycle = "활동 없음"
     @Published private(set) var lastPublishedAt: Date?
-    private var extensionBundle: Bundle? {
+    private lazy var extensionBundle: Bundle? = {
         guard let root = Bundle.main.builtInPlugInsURL,
               let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return nil }
         return urls.filter { $0.pathExtension == "appex" }.compactMap { Bundle(url: $0) }.first {
             ($0.object(forInfoDictionaryKey: "NSExtension") as? [String: Any])?["NSExtensionPointIdentifier"] as? String == "com.apple.widgetkit-extension"
                 && $0.bundleIdentifier?.hasSuffix(".liveactivity") == true
         }
-    }
+    }()
     private var installationIssue: String? {
         guard let bundle = extensionBundle else { return "설치된 실시간 현황 확장 프로그램 없음 · 확장을 포함해 재설치 필요" }
         guard bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String == Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else {
