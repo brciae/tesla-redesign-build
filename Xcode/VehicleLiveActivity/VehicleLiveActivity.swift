@@ -29,15 +29,18 @@ struct VehicleLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VehicleActivityCompact(state: context.state, stale: context.isStale)
+                        .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VehicleActivitySummary(state: context.state, stale: context.isStale)
+                        .foregroundStyle(.white)
                         .environment(\.colorScheme, .dark)
                 }
             } compactLeading: {
                 VehicleActivityIcon()
             } compactTrailing: {
                 VehicleActivityCompact(state: context.state, stale: context.isStale)
+                    .foregroundStyle(.white)
             } minimal: {
                 VehicleActivityMinimal(state: context.state, stale: context.isStale)
             }

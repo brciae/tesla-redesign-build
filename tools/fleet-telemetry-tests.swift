@@ -2,6 +2,21 @@ import Foundation
 
 @main struct FleetTelemetryTests {
     static func main() throws {
+        let historyNow = Date(timeIntervalSince1970: 1_800_000_000)
+        let originalAt = historyNow.addingTimeInterval(-7200.125)
+        let mainPayload = FleetTelemetryData.mainMotionPayload(["gear": "P", "at": originalAt.timeIntervalSince1970 * 1000], vin: "MAIN", now: historyNow)!
+        let mainRows = try FleetTelemetryData.decode(mainPayload, vin: "MAIN", now: historyNow)
+        precondition(mainRows.count == 1 && mainRows[0].origin == "appMain" && mainRows[0].at == originalAt, "Main P preserves original historical time, never current receipt time")
+        precondition(mainRows[0].field == "Gear" && mainRows[0].number == nil, "Do not invent SOC, odometer or zero speed from a displayed P")
+        let roundtrip = try JSONDecoder().decode([FleetTelemetryReading].self, from: JSONEncoder().encode(mainRows))
+        precondition(roundtrip[0].origin == "appMain")
+        let oldEncoded = try JSONSerialization.data(withJSONObject: [["vin":"MAIN", "field":"Gear", "at":originalAt.timeIntervalSinceReferenceDate, "text":"P", "invalid":false]])
+        let oldRows = try JSONDecoder().decode([FleetTelemetryReading].self, from: oldEncoded)
+        precondition(oldRows[0].origin == nil, "Old history without origin remains readable")
+        for invalid in [["gear":"", "at":originalAt.timeIntervalSince1970 * 1000], ["gear":"unknown", "at":originalAt.timeIntervalSince1970 * 1000], ["gear":"P", "at":historyNow.addingTimeInterval(60).timeIntervalSince1970 * 1000]] as [[String: Any]] {
+            precondition(FleetTelemetryData.mainMotionPayload(invalid, vin: "MAIN", now: historyNow) == nil)
+        }
+        do { _ = try FleetTelemetryData.decode(mainPayload, vin: "OTHER", now: historyNow); preconditionFailure("Main cache cross-VIN") } catch {}
         let anchor = Date(timeIntervalSince1970: 1_790_000_000)
         func reading(_ seconds: Double, _ field: String, _ value: String) -> FleetTelemetryReading {
             FleetTelemetryReading(vin: "WINDOW", field: field, at: anchor.addingTimeInterval(seconds), number: nil, text: "{\"stringValue\":\"\(value)\"}", invalid: false)

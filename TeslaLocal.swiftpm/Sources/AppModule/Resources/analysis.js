@@ -809,8 +809,9 @@
         append(list,row);list.sort((a,b)=>(a.start??a.at)-(b.start??b.at));
       }
       // Archive replay already reconstructs parking; retain those observations too.
+      const mainGearTimes=new Set(rows.filter(r=>r.origin==='appMain'&&r.field==='Gear').map(r=>r.at));
       for(const source of replay.state.parkingPeriods){
-        const row={...source,id:'nas:'+vin+':parking:'+source.start,source:'NAS'};
+        const row={...source,id:'nas:'+vin+':parking:'+source.start,source:(mainGearTimes.has(source.start)||mainGearTimes.has(source.end))?'앱 메인·차량 관측':'NAS'};
         const index=this.state.parkingPeriods.findIndex(p=>p.id===row.id);
         if(index>=0)this.state.parkingPeriods[index]=row;
         else {

@@ -3,7 +3,11 @@ import WidgetKit
 
 struct VehicleActivityIcon: View {
     var body: some View {
-        Image("IslandAppIcon").renderingMode(.original).resizable().scaledToFit()
+        ZStack {
+            RoundedRectangle(cornerRadius: 5).fill(.cyan)
+            Image(systemName: "car.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.black)
+            Image("IslandAppIcon").renderingMode(.original).resizable().scaledToFit()
+        }
             .frame(width: 20, height: 20).clipShape(RoundedRectangle(cornerRadius: 5))
             .accessibilityLabel("YL Companion")
     }
@@ -123,7 +127,7 @@ struct VehicleActivityCompact: View {
     let state: VehicleActivityAttributes.ContentState
     var stale = false
     var body: some View {
-        if stale { Image(systemName: "clock") }
+        if stale { Image(systemName: "clock").foregroundStyle(.orange) }
         else if state.guiding {
             HStack(spacing: 3) {
                 Image(systemName: state.turnSymbol ?? "location.fill").foregroundStyle(.cyan)
@@ -137,7 +141,7 @@ struct VehicleActivityCompact: View {
                 Image(systemName: "bolt.fill").foregroundStyle(.green)
                 if let battery = state.batteryPercent { Text("\(battery)%").monospacedDigit() }
             }.font(.caption.bold())
-        } else { Image(systemName: state.connected ? "link" : "link.badge.plus") }
+        } else { Image(systemName: state.connected ? "link" : "link.badge.plus").foregroundStyle(.cyan) }
     }
 }
 

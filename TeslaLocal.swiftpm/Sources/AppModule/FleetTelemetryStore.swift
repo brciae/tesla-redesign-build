@@ -10,6 +10,8 @@ import CoreFoundation
     private var persistence: FleetTelemetryJournal?
     private var appliedRevision: UInt64 = 0
     private var pendingIngestions = 0
+    private var mainMotionSeen = Set<String>()
+    private var mainMotionGear: [String: String] = [:]
     init() {
         file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/fleet-telemetry.json")
         do {
@@ -45,30 +47,26 @@ import CoreFoundation
         return update.changed
     }
     func latest(vin: String) -> [String: FleetTelemetryReading] { FleetTelemetryData.latest(records, vin: vin) }
-    func observe(_ snapshot: FleetVehicleSnapshot) {
-        let mappings: [(String, [(String, String)])] = [
-            ("charge_state", [("battery_level", "BatteryLevel"), ("charging_state", "ChargeState"), ("charge_limit_soc", "ChargeLimitSoc"), ("charger_voltage", "ChargerVoltage"), ("charger_actual_current", "ChargeAmps"), ("time_to_full_charge", "TimeToFullCharge"), ("charger_power", "ChargePower"), ("charge_energy_added", "ChargeEnergyAdded")]),
-            ("drive_state", [("shift_state", "Gear"), ("speed", "VehicleSpeed")]),
-            ("climate_state", [("inside_temp", "InsideTemp"), ("outside_temp", "OutsideTemp"), ("is_climate_on", "HvacPower")]),
-            ("vehicle_state", [("odometer", "Odometer"), ("sentry_mode", "SentryMode"), ("locked", "Locked"), ("tpms_pressure_fl", "TpmsPressureFl"), ("tpms_pressure_fr", "TpmsPressureFr"), ("tpms_pressure_rl", "TpmsPressureRl"), ("tpms_pressure_rr", "TpmsPressureRr")])
-        ]
-        var payloads: [[String: Any]] = []
-        for (section, pairs) in mappings where snapshot.sectionIsRecent(section) {
-            guard let source = snapshot.payload[section] as? [String: Any], let at = snapshot.number(section, "timestamp") else { continue }
-            var fields: [[String: Any]] = []
-            for (key, field) in pairs {
-                guard let raw = source[key] else { continue }
-                let value: [String: Any]
-                if raw is NSNull { value = ["invalid": true] }
-                else if let number = raw as? NSNumber {
-                    if CFGetTypeID(number) == CFBooleanGetTypeID() { value = ["booleanValue": number.boolValue] }
-                    else { value = ["doubleValue": number.doubleValue] }
-                } else if let text = raw as? String { value = ["stringValue": text] }
-                else { continue }
-                fields.append(["key": field, "value": value])
-            }
-            if !fields.isEmpty { payloads.append(["vin": snapshot.vin, "createdAt": ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: at / 1000)), "data": fields]) }
+    @discardableResult func observeMainMotion(_ drive: [String: Any], vin: String) async throws -> Int {
+        guard let data = FleetTelemetryData.mainMotionPayload(drive, vin: vin),
+              let at = drive["at"] as? Double, let gear = drive["gear"] as? String else { return 0 }
+        let key = vin + ":" + String(at) + ":" + gear
+        guard mainMotionSeen.insert(key).inserted else { return 0 }
+        if mainMotionSeen.count > 2000 { mainMotionSeen = [key] }
+        guard mainMotionGear[vin] != gear else { return 0 }
+        // Raw telemetry, including an explicit invalid value, is stronger than a display cache.
+        guard !records.contains(where: { $0.vin == vin && $0.field == "Gear" && abs($0.at.timeIntervalSince1970 * 1000 - at) < 1 }) else { return 0 }
+        do {
+            let count = try await ingest(data, vin: vin)
+            mainMotionGear[vin] = gear
+            return count
+        } catch {
+            mainMotionSeen.remove(key)
+            throw error
         }
+    }
+    func observe(_ snapshot: FleetVehicleSnapshot) {
+        let payloads = snapshot.historyPayloads()
         guard !payloads.isEmpty else { return }
         Task { @MainActor in
             do { try await ingest(JSONSerialization.data(withJSONObject: payloads), vin: snapshot.vin) }

@@ -22,6 +22,35 @@ struct FleetVehicleSnapshot {
     var locked: Bool? { flag("vehicle_state", "locked") }
     var charging: Bool { (payload["charge_state"] as? [String: Any])?["charging_state"] as? String == "Charging" }
     var hasMeasurements: Bool { soc != nil || insideC != nil || locked != nil }
+    /// Historical observations keep their source time even when they are too old for live controls.
+    func historyPayloads(now: Date = Date()) -> [[String: Any]] {
+        let mappings: [(String, [(String, String)])] = [
+            ("charge_state", [("battery_level", "BatteryLevel"), ("charging_state", "ChargeState"), ("charge_limit_soc", "ChargeLimitSoc"), ("charger_voltage", "ChargerVoltage"), ("charger_actual_current", "ChargeAmps"), ("time_to_full_charge", "TimeToFullCharge"), ("charger_power", "ChargePower"), ("charge_energy_added", "ChargeEnergyAdded")]),
+            ("drive_state", [("shift_state", "Gear"), ("speed", "VehicleSpeed")]),
+            ("climate_state", [("inside_temp", "InsideTemp"), ("outside_temp", "OutsideTemp"), ("is_climate_on", "HvacPower")]),
+            ("vehicle_state", [("odometer", "Odometer"), ("sentry_mode", "SentryMode"), ("locked", "Locked"), ("tpms_pressure_fl", "TpmsPressureFl"), ("tpms_pressure_fr", "TpmsPressureFr"), ("tpms_pressure_rl", "TpmsPressureRl"), ("tpms_pressure_rr", "TpmsPressureRr")])
+        ]
+        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var payloads: [[String: Any]] = []
+        for (section, pairs) in mappings {
+            guard let source = self.payload[section] as? [String: Any], let at = self.number(section, "timestamp"),
+                  at > 0, at <= now.timeIntervalSince1970 * 1000 + 5000 else { continue }
+            var fields: [[String: Any]] = []
+            for (key, field) in pairs {
+                guard let raw = source[key] else { continue }
+                let value: [String: Any]
+                if raw is NSNull { value = ["invalid": true] }
+                else if let number = raw as? NSNumber {
+                    if CFGetTypeID(number) == CFBooleanGetTypeID() { value = ["booleanValue": number.boolValue] }
+                    else { value = ["doubleValue": number.doubleValue] }
+                } else if let text = raw as? String { value = ["stringValue": text] }
+                else { continue }
+                fields.append(["key": field, "value": value])
+            }
+            if !fields.isEmpty { payloads.append(["vin": self.vin, "createdAt": formatter.string(from: Date(timeIntervalSince1970: at / 1000)), "data": fields]) }
+        }
+        return payloads
+    }
     func sectionIsRecent(_ section: String, now: Date = Date()) -> Bool {
         let age = now.timeIntervalSince(receivedAt)
         guard age >= 0, age <= 120, let at = number(section, "timestamp") else { return false }
@@ -103,7 +132,7 @@ struct FleetVehicleSnapshot {
         let parked = d["gear"] as? String == "P"
         if emptyName, explicitEmpty("active_route_minutes_to_arrival"), explicitEmpty("active_route_miles_to_arrival"),
            parked || (explicitEmpty("active_route_latitude") && explicitEmpty("active_route_longitude")) {
-            return ["type": "absent", "at": stamp, "receivedAt": receipt, "parked": parked]
+            return ["type": "absent", "at": stamp, "receivedAt": receipt, "parked": parked, "confirmed": true]
         }
         return ["type": "wait"]
     }

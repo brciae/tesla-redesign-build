@@ -14,8 +14,50 @@ final class VehicleLiveActivityManager: ObservableObject {
     private var latestInput: VehicleActivityAttributes.ContentState?
     private var latestEnabled = false
     private var foregroundObserver: AnyCancellable?
+    private var stateTask: Task<Void, Never>?
+    private var trackedID: String?
     private var endingIDs: Set<String> = []
     @Published private(set) var status = "실시간 현황 대기"
+    @Published private(set) var lifecycle = "활동 없음"
+    @Published private(set) var lastPublishedAt: Date?
+    private var extensionBundle: Bundle? {
+        guard let root = Bundle.main.builtInPlugInsURL,
+              let urls = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { return nil }
+        return urls.filter { $0.pathExtension == "appex" }.compactMap { Bundle(url: $0) }.first {
+            ($0.object(forInfoDictionaryKey: "NSExtension") as? [String: Any])?["NSExtensionPointIdentifier"] as? String == "com.apple.widgetkit-extension"
+                && $0.bundleIdentifier?.hasSuffix(".liveactivity") == true
+        }
+    }
+    private var installationIssue: String? {
+        guard let bundle = extensionBundle else { return "설치된 실시간 현황 확장 프로그램 없음 · 확장을 포함해 재설치 필요" }
+        guard bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String == Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String else {
+            return "앱과 실시간 현황 확장 버전이 다름 · 함께 재설치 필요"
+        }
+        guard let appID = Bundle.main.bundleIdentifier, bundle.bundleIdentifier?.hasPrefix(appID + ".") == true else {
+            return "앱과 실시간 현황 확장 식별자가 다름 · 함께 재서명 필요"
+        }
+        return nil
+    }
+    private func track(_ current: Activity<VehicleActivityAttributes>) {
+        guard trackedID != current.id else { return }
+        stateTask?.cancel(); trackedID = current.id
+        recordState(current.activityState)
+        stateTask = Task { [weak self] in
+            for await state in current.activityStateUpdates {
+                guard !Task.isCancelled, let self, self.trackedID == current.id else { return }
+                self.recordState(state)
+            }
+        }
+    }
+    private func recordState(_ state: ActivityState) {
+        switch state {
+        case .active: lifecycle = "활동 활성 · 실제 화면 렌더링은 별도 확인"
+        case .stale: lifecycle = "갱신 지연"
+        case .ended: lifecycle = "활동 종료"
+        case .dismissed: lifecycle = "시스템에서 제거됨"
+        @unknown default: lifecycle = "활동 상태 확인 필요"
+        }
+    }
     private init() {
         foregroundObserver = NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
@@ -28,8 +70,6 @@ final class VehicleLiveActivityManager: ObservableObject {
     }
     var installationSummary: String {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        let path = Bundle.main.builtInPlugInsURL?.appendingPathComponent("VehicleLiveActivity.appex")
-        let extensionBundle = path.flatMap { Bundle(url: $0) }
         let extensionBuild = extensionBundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "없음"
         return "앱 \(build) · 위젯 \(extensionBuild) · iOS \(UIDevice.current.systemVersion) · 서명 유효성은 기기 로그로 확인"
     }
@@ -43,6 +83,7 @@ final class VehicleLiveActivityManager: ObservableObject {
             }
         }
         guard enabled else { end(); status = "실시간 현황 꺼짐"; return }
+        if let issue = installationIssue { end(); status = issue; return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             end(); status = "iPhone 설정에서 실시간 현황 허용 필요"; return
         }
@@ -77,7 +118,9 @@ final class VehicleLiveActivityManager: ObservableObject {
             guard hasSession, Date() >= failedUntil else { return }
             do {
                 activity = try Activity.request(attributes: VehicleActivityAttributes(), content: content, pushType: nil)
+                if let activity { track(activity) }
                 lastUpdate = Date(); lastState = state
+                lastPublishedAt = lastUpdate
                 UserDefaults.standard.set(build, forKey: "liveActivity.rendererBuild")
                 status = "실시간 현황 요청됨 · 화면 표시 별도 확인"
             } catch {
@@ -94,7 +137,9 @@ final class VehicleLiveActivityManager: ObservableObject {
             lastState?.chargeStatus != state.chargeStatus || lastState?.chargeLimit != state.chargeLimit ||
             lastState?.chargerKW != state.chargerKW || lastState?.chargeRemainingMinutes != state.chargeRemainingMinutes
         guard changed || Date().timeIntervalSince(lastUpdate) >= 20 else { return }
+        if let activity { track(activity) }
         lastUpdate = Date(); lastState = state
+        lastPublishedAt = lastUpdate
         status = "실시간 현황 요청됨 · 화면 표시 별도 확인"
         updateTask?.cancel()
         let current = activity
@@ -122,6 +167,7 @@ final class VehicleLiveActivityManager: ObservableObject {
     }
     private func end() {
         updateTask?.cancel(); updateTask = nil
+        stateTask?.cancel(); stateTask = nil; trackedID = nil; lifecycle = "활동 없음"
         let current = activity
         activity = nil; lastState = nil
         guard let current else { return }

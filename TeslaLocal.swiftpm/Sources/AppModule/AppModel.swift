@@ -47,7 +47,9 @@ final class AppModel: ObservableObject {
         let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
         guard !vin.isEmpty, !demo else { return drive }
         let key = "motion.last." + vin
+        if let previous = UserDefaults.standard.dictionary(forKey: key) { preserveMainMotion(previous, vin: vin) }
         if !drive.string("gear").isEmpty, let at = drive.number("at") {
+            preserveMainMotion(drive, vin: vin)
             let stored: [String: Any] = ["gear": drive.string("gear"), "at": at,
                                          "speedKmh": drive.number("speedKmh") ?? 0]
             if (UserDefaults.standard.dictionary(forKey: key)?["at"] as? Double) != at {
@@ -65,6 +67,20 @@ final class AppModel: ObservableObject {
         merged["mode"] = "cached"
         merged["motionFromMemory"] = true
         return merged
+    }
+    private func preserveMainMotion(_ observation: Object, vin: String) {
+        Task { @MainActor [weak self] in
+            guard let self, !self.demo, !self.recoveryLock,
+                  (self.fleet.selectedVin.isEmpty ? self.settings.string("vin") : self.fleet.selectedVin) == vin else { return }
+            do {
+                if try await FleetTelemetryStore.shared.observeMainMotion(observation, vin: vin) > 0 {
+                    guard self.settings.string("vin") == vin else { return }
+                    try self.mergeArchiveHistory(vin: vin)
+                    self.saveRecordsWhenAvailable(force: true)
+                    FleetTelemetryStore.shared.historySaved(vin: vin)
+                }
+            } catch { self.storageStatus = "메인 상태 이력 보완 대기: " + error.localizedDescription }
+        }
     }
     var isSpeaking: Bool { voice.speaking }
     @Published var receiptDraft: Object = [:]
@@ -376,7 +392,7 @@ final class AppModel: ObservableObject {
         let window = FleetTelemetryData.historyWindow(store.records, vin: vin, since: since)
         let rows: [Object] = window.rows.map { r in
             var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "field": r.field, "text": r.text, "invalid": r.invalid]
-            if let n = r.number { value["number"] = n }; return value
+            if let n = r.number { value["number"] = n }; if let origin = r.origin { value["origin"] = origin }; return value
         }
         guard !rows.isEmpty else { return }
         output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output

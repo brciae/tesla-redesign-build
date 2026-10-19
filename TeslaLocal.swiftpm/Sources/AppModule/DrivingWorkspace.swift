@@ -64,14 +64,14 @@ struct DrivingWorkspace: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .sheet(isPresented: $settings) {
+        .sheet(isPresented: $settings, onDismiss: { navigation.controller?.resumeRendering() }) {
             NavigationStack {
                 Form {
                     NavigationDisplaySettings(navigation: navigation)
                 }.navigationTitle("운전 화면 설정").toolbar { ToolbarItem(placement: .confirmationAction) { Button("완료") { settings = false } } }
             }
         }
-        .sheet(isPresented: $destinationSearch) { DestinationSearchView(navigation: navigation, canEdit: readout.gear != "D" && readout.gear != "R" && readout.speedKmh <= 5).environmentObject(model) }
+        .sheet(isPresented: $destinationSearch, onDismiss: { navigation.controller?.resumeRendering() }) { DestinationSearchView(navigation: navigation, canEdit: readout.gear != "D" && readout.gear != "R" && readout.speedKmh <= 5).environmentObject(model) }
         .onAppear {
             if !model.demo { spotify.reconnect() }
             navigation.screenAppeared()

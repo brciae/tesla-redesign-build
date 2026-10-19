@@ -467,9 +467,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             status = message + (manualRouteToken != nil ? " · 재시도를 눌러 선택한 목적지로 다시 안내" : " · 다음 차량 수신 시 자동 재시도 (\(startFailures)/3)")
         }
     }
-    private func stopNative(keepDisplay: Bool = false) {
+    private func stopNative(keepDisplay: Bool = false, keepMap: Bool = false) {
         deadline?.invalidate(); deadline = nil; locator.stopUpdatingLocation()
-        controller?.eventHandler = nil; controller?.telemetryHandler = nil; controller?.stopNavigation(); controller = nil
+        controller?.eventHandler = nil; controller?.telemetryHandler = nil
+        if keepMap { controller?.endGuidanceKeepingMap() }
+        else { controller?.stopNavigation(); controller = nil }
         telemetry = [:]; lastTelemetry = [:]; following = true; speedSample = nil; brakeUntil = 0
         holdBackgroundLocation(false)
         onVoiceActivity?(false); onAudioSession?(false)
@@ -490,8 +492,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         guard guiding || busy else { return }
         clearRecoveryCheckpoint()
         let keepDisplay = presented
-        stopNative(keepDisplay: keepDisplay)
-        if keepDisplay { startStandbyKakaoMap() }
+        stopNative(keepDisplay: keepDisplay, keepMap: keepDisplay)
+        if keepDisplay {
+            if let controller { configureStandbyCallbacks(controller); locator.startUpdatingLocation(); controller.resumeRendering() }
+            else { startStandbyKakaoMap() }
+        }
         status = "자유주행 · 경로 안내 종료"
         onGuidanceEnd?(arrived) // End announcement follows cleanup, so cleanup cannot cancel it.
     }
@@ -542,6 +547,39 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         userDismissed = true
         presented = false
     }
+    private func configureStandbyCallbacks(_ view: YLKakaoController) {
+        view.eventHandler = { [weak self, weak view] event, message in
+            let handle = {
+                guard let self, let view, self.controller === view else { return }
+                if event == "audioAcquired" { self.onAudioSession?(true); return }
+                if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
+                if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
+                if event == "follow" { self.following = message == "1"; return }
+                if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
+                if event == "visible" {
+                    self.navigationScene = view.view.window?.windowScene
+                    NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene)
+                    return
+                }
+                if event == "ended" { self.stop(); return }
+                if event == "error" { self.status = message; return }
+                if !self.guiding { self.status = message }
+            }
+            if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
+        }
+        view.telemetryHandler = { [weak self, weak view] snapshot in
+            let handle = {
+                guard let self, let view, self.controller === view else { return }
+                if snapshot.isEmpty { return }
+                var merged = self.lastTelemetry
+                snapshot.forEach { merged[$0.key] = $0.value }
+                self.lastTelemetry = merged
+                self.telemetry = merged
+                self.onActivityChange?()
+            }
+            if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
+        }
+    }
     func startStandbyKakaoMap() {
         guard hasKey, consent, controller == nil, !busy, !guiding else { return }
         do {
@@ -551,37 +589,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             controller = view
             status = "카카오 실시간 지도 준비 중"
             applyAudioPreferences()
-            view.eventHandler = { [weak self, weak view] event, message in
-                let handle = {
-                    guard let self, let view, self.controller === view else { return }
-                    if event == "audioAcquired" { self.onAudioSession?(true); return }
-                    if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
-                    if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
-                    if event == "follow" { self.following = message == "1"; return }
-                    if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
-                    if event == "visible" {
-                        self.navigationScene = view.view.window?.windowScene
-                        NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene)
-                        return
-                    }
-                    if event == "ended" { self.stop(); return }
-                    if event == "error" { self.status = message; return }
-                    if !self.guiding { self.status = message }
-                }
-                if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
-            }
-            view.telemetryHandler = { [weak self, weak view] snapshot in
-                let handle = {
-                    guard let self, let view, self.controller === view else { return }
-                    if snapshot.isEmpty { return }
-                    var merged = self.lastTelemetry
-                    snapshot.forEach { merged[$0.key] = $0.value }
-                    self.lastTelemetry = merged
-                    self.telemetry = merged
-                    self.onActivityChange?()
-                }
-                if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
-            }
+            configureStandbyCallbacks(view)
             let loc = locator.location.flatMap { Self.usableLocation($0) ? $0.coordinate : nil } ?? CLLocationCoordinate2D(latitude: .nan, longitude: .nan)
             view.prepareStandby(appKey: key, latitude: loc.latitude, longitude: loc.longitude)
             locator.startUpdatingLocation()
@@ -676,8 +684,9 @@ struct KakaoMapSurface: View {
     var anchorY: Double = 0.72
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            KakaoMapSurfaceController(controller: controller, theme: theme.rawValue + ":" + resolvedAppearance(context.date),
+            KakaoMapSurfaceController(controller: controller, theme: "dashboard:" + resolvedAppearance(context.date),
                                       marker: markerStyle + "@" + String(format: "%.2f", markerScale), anchorX: anchorX, anchorY: anchorY)
+                .id(ObjectIdentifier(controller))
         }
         .onChange(of: scenePhase) { _, phase in if phase == .active { controller.resumeRendering() } }
     }

@@ -40,6 +40,9 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["실시간 현황 다시 시작"].exists)
         XCTAssertTrue(app.buttons["iPhone 앱 설정 열기"].exists)
         captureSystemCard("Live Activity production settings visible status and controls")
+        app.buttons["설치·활동 상태"].tap()
+        XCTAssertTrue(app.staticTexts["활동 없음"].waitForExistence(timeout: 3))
+        captureSystemCard("Live Activity production installation and lifecycle diagnostics")
     }
     private func showSystemLockScreenPresentation(_ app: XCUIApplication) -> XCUIApplication {
         XCUIDevice.shared.press(.home)

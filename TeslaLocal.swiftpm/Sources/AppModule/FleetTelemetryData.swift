@@ -9,10 +9,20 @@ struct FleetTelemetryReading: Codable, Identifiable, Sendable {
     let number: Double?
     let text: String
     let invalid: Bool
+    var origin: String? = nil
     var id: String { vin + ":" + field + ":" + String(at.timeIntervalSince1970) }
 }
 
 enum FleetTelemetryData {
+    /// A displayed/cached gear is a historical observation, never a new live packet.
+    static func mainMotionPayload(_ drive: [String: Any], vin: String, now: Date = Date()) -> Data? {
+        guard !vin.isEmpty, let gear = drive["gear"] as? String, ["P", "D", "R", "N"].contains(gear),
+              let at = drive["at"] as? Double, at.isFinite, at > 0, at <= now.timeIntervalSince1970 * 1000 + 5000 else { return nil }
+        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let packet: [String: Any] = ["vin": vin, "origin": "appMain", "createdAt": formatter.string(from: Date(timeIntervalSince1970: at / 1000)),
+            "data": [["key": "Gear", "value": ["stringValue": gear]]]]
+        return try? JSONSerialization.data(withJSONObject: packet)
+    }
     /// Rebuild only sessions affected by new/late data, with previous field values as context.
     static func historyWindow(_ records: [FleetTelemetryReading], vin: String, since: Date) -> (rows: [FleetTelemetryReading], start: Date) {
         let ordered = records.filter { $0.vin == vin }.sorted { $0.at < $1.at }
@@ -86,7 +96,8 @@ enum FleetTelemetryData {
                 }
                 let raw = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
                 let text = invalid ? "차량에서 유효하지 않다고 보고함" : String(data: raw, encoding: .utf8) ?? ""
-                result.append(FleetTelemetryReading(vin: vin, field: field, at: at, number: number, text: text, invalid: invalid))
+                result.append(FleetTelemetryReading(vin: vin, field: field, at: at, number: number, text: text, invalid: invalid,
+                    origin: payload["origin"] as? String == "appMain" ? "appMain" : nil))
                 guard result.count <= 50000 else { throw failure("필드 수가 너무 많습니다. 기간을 나누어 가져와 주세요.") }
             }
         }

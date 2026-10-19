@@ -522,8 +522,29 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 }
 - (void)configureMapAnchorX:(double)x y:(double)y {
     if (!isfinite(x) || !isfinite(y)) return;
-    self.mapAnchor = FloatPointMake(fmax(0.2, fmin(0.8, x)), fmax(0.3, fmin(0.85, y)));
+    FloatPoint anchor = FloatPointMake(fmax(0.2, fmin(0.8, x)), fmax(0.3, fmin(0.85, y)));
+    if (fabs(anchor.x - self.mapAnchor.x) < 0.001 && fabs(anchor.y - self.mapAnchor.y) < 0.001) return;
+    self.mapAnchor = anchor;
     [self updateMap];
+}
+- (void)endGuidanceKeepingMap {
+    // Guidance owns routes/delegates, not the map's lifetime. Keep its camera and tiles.
+    self.generation++;
+    self.validUntil = DBL_MAX;
+    self.guiding = NO;
+    if (YLGuidanceOwner == self) {
+        self.guidance.guideStateDelegate = nil; self.guidance.locationGuideDelegate = nil;
+        self.guidance.routeGuideDelegate = nil; self.guidance.safetyGuideDelegate = nil;
+        self.guidance.voiceGuideDelegate = nil; self.guidance.citsGuideDelegate = nil;
+        [self.guidance stop]; YLGuidanceOwner = nil;
+    }
+    [self.freshnessTimer invalidate]; self.freshnessTimer = nil;
+    self.guidance = nil; self.locationGuide = nil; self.routeGuide = nil; self.safetyGuide = nil;
+    self.routePath = nil; self.trafficRerouting = NO;
+    self.lastLaneCount = 0; self.lastLaneRoad = nil; self.lastLaneAt = 0;
+    [self.map removeRoutesAll]; self.map.isVisibleTraffic = YES;
+    [self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects]; [self.announcedPoints removeAllObjects];
+    [self resumeRendering];
 }
 - (void)stopNavigation {
     self.generation++;

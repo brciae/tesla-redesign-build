@@ -70,12 +70,19 @@ import Foundation
         precondition((unknownGear.parkingTelemetry(now: now)?["drive"] as? [String: Any])?["gear"] == nil)
         let oldGPS = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["vehicle_state": ["timestamp": ms], "drive_state": ["shift_state": "P", "timestamp": ms - 900000, "latitude": 37.5, "longitude": 127.1]])
         precondition(oldGPS.parkingTelemetry(now: now) == nil)
+        let historical = oldGPS.historyPayloads(now: now)
+        let historicalDrive = historical.first { ($0["data"] as? [[String:Any]])?.contains(where: { $0["key"] as? String == "Gear" }) == true }!
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        precondition(iso.date(from: historicalDrive["createdAt"] as! String)!.timeIntervalSince1970 == (ms - 900000) / 1000, "Old displayed P must enter history with its original timestamp")
+        let futureHistory = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["drive_state": ["shift_state":"P", "timestamp":ms + 60000]])
+        precondition(futureHistory.historyPayloads(now: now).isEmpty, "Do not archive future samples")
         let mixed = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["drive_state": ["shift_state": "P", "timestamp": ms], "climate_state": ["timestamp": ms - 900000], "vehicle_state": ["timestamp": ms - 900000]])
         precondition(mixed.parkingTelemetry(now: now) != nil, "Fresh P survives stale climate/closures")
         precondition(mixed.driveDisplay(now: now)["gear"] as? String == "P")
         precondition(mixed.navigationEvent(now: now)["type"] as? String == "wait", "Omitted route fields cannot cancel guidance")
         let noRoute = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["drive_state": ["shift_state": "P", "timestamp": ms, "active_route_destination": NSNull(), "active_route_minutes_to_arrival": 0, "active_route_miles_to_arrival": 0]])
         precondition(noRoute.navigationEvent(now: now)["type"] as? String == "absent")
+        precondition(noRoute.navigationEvent(now: now)["confirmed"] as? Bool == true, "Explicit route termination must also end a newer app-manual route")
         precondition(noRoute.navigationEvent(now: now.addingTimeInterval(121))["type"] as? String == "wait")
         precondition((oldGPS.homeOverlay(now: now)["location"] as? [String: Any])?["mode"] as? String == "cached")
         let stations = NearbyChargingSite.parse(["superchargers": [
