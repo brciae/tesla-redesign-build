@@ -19,6 +19,7 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
     private var remote: SPTAppRemote?
     private var authentication: ASWebAuthenticationSession?
     private var request: UUID?
+    private var exchanging = false
     private var observers: [NSObjectProtocol] = []
     private let service = "local.ylcompanion.spotify"
     var clientID: String { UserDefaults.standard.string(forKey: "spotify.clientID") ?? SpotifyPlaybackPolicy.defaultClientID }
@@ -30,7 +31,7 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         observers.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.remote?.playerAPI?.delegate = nil
             self?.remote?.disconnect(); self?.connected = false; self?.clearPlayback()
-            if self?.authentication == nil { self?.working = false }
+            if self?.authentication == nil && self?.exchanging != true { self?.working = false }
         })
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
@@ -82,6 +83,7 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         exchange(["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientID], request: id)
     }
     private func exchange(_ values: [String: String], request id: UUID) {
+        exchanging = true
         var body = URLComponents(); body.queryItems = values.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         var req = URLRequest(url: URL(string: "https://accounts.spotify.com/api/token")!)
         req.httpMethod = "POST"; req.timeoutInterval = 20
@@ -90,6 +92,7 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 guard let self, self.request == id else { return }
+                self.exchanging = false
                 self.working = false
                 let code = (response as? HTTPURLResponse)?.statusCode
                 guard error == nil, code == 200, let data,
@@ -121,7 +124,7 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         remote?.connect()
     }
     func disconnect() {
-        request = nil; authentication?.cancel(); authentication = nil
+        request = nil; authentication?.cancel(); authentication = nil; exchanging = false
         remote?.delegate = nil; remote?.disconnect(); remote = nil
         clearTokens(); connected = false; working = false; clearPlayback(); status = "연결 해제됨"
     }
@@ -225,6 +228,6 @@ struct SpotifySettingsView: View {
                     VStack(alignment: .leading) { Text(spotify.title); Text(spotify.artist).font(.caption) }
                 }
             } }
-        }.navigationTitle("Spotify 연결").onAppear { clientID = spotify.clientID }
+        }.navigationTitle("Spotify 연결").onAppear { clientID = spotify.clientID; spotify.reconnect() }
     }
 }

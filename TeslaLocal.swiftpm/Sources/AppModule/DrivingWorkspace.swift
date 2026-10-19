@@ -73,6 +73,7 @@ struct DrivingWorkspace: View {
         }
         .sheet(isPresented: $destinationSearch) { DestinationSearchView(navigation: navigation, canEdit: readout.gear != "D" && readout.gear != "R" && readout.speedKmh <= 5).environmentObject(model) }
         .onAppear {
+            if !model.demo { spotify.reconnect() }
             navigation.screenAppeared()
             if preferredMapEngine == "kakao" && navigation.controller == nil {
                 navigation.startStandbyKakaoMap()

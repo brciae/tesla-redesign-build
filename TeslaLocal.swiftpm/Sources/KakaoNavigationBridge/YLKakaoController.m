@@ -652,6 +652,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
             (((KNDirection *)object).rgCode == 101 || ((KNDirection *)object).rgCode == 1000);
         if (distance <= 0 && !arrival) return;
         if (arrival) {
+            message[@"stateChange"] = @YES; message[@"kind"] = @"status";
             NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
             if (data) [self emit:@"spokenGuide" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
             return;

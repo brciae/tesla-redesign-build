@@ -51,10 +51,13 @@ enum FleetParkingAnalysis {
             let gear = scalar(held("Gear"))
             guard gear == "p" || gear == "shiftstatep" else { previous = nil; continue }
             if let speed = current("VehicleSpeed", at: date)?.number, speed > 1 { previous = nil; continue }
-            let newestCharge = [latest["DetailedChargeState"], latest["ChargeState"]].compactMap { $0 }.max {
-                $0.at == $1.at ? ($0.field != "DetailedChargeState" && $1.field == "DetailedChargeState") : $0.at < $1.at
-            }
-            let charging = newestCharge.flatMap { $0.invalid ? nil : scalar($0) }
+            let chargeRows: [FleetTelemetryReading] = [latest["DetailedChargeState"], latest["ChargeState"]].compactMap { $0 }
+            let newestCharge: FleetTelemetryReading? = chargeRows.sorted { lhs, rhs in
+                if lhs.at != rhs.at { return lhs.at > rhs.at }
+                return lhs.field == "DetailedChargeState" && rhs.field != "DetailedChargeState"
+            }.first
+            let charging: String?
+            if let newestCharge, !newestCharge.invalid { charging = scalar(newestCharge) } else { charging = nil }
             guard ["stopped", "complete", "disconnected", "nopower"].contains(where: { charging?.hasSuffix($0) == true }) else { previous = nil; continue }
             if ["ChargePower", "ACChargingPower", "DCChargingPower"].contains(where: { (current($0, at: date)?.number ?? 0) > 0 }) { previous = nil; continue }
             let sentry = state(held("SentryMode"))

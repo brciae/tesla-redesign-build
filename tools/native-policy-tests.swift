@@ -32,6 +32,9 @@ import Foundation
         normal.markPlayed(cue: cue("turn", 40, true), detail: 1, now: detailTime)
         precondition(!normal.accepts(cue: cue("turn", 30, true), detail: 1, now: detailTime))
         precondition(detailed.accepts(cue: cue("facility", 300), detail: 2, now: detailTime))
+        var arrival = NavigationSpeechCue(text: "목적지에 도착했습니다.", validUntil: 22, targetID: nil)
+        arrival.kind = "status"; arrival.stateChange = true
+        precondition(brief.accepts(cue: arrival, detail: 0, now: detailTime), "Arrival survives brief mode without a distance target")
         let warningTime = Date(timeIntervalSince1970: 100)
         precondition(overlap.accepts(text: "300미터 앞 과속 단속", safety: true, incidental: false, navigationBusy: false, now: warningTime))
         precondition(!overlap.accepts(text: "주의하세요.", safety: true, incidental: true, navigationBusy: true, now: warningTime.addingTimeInterval(1)))
