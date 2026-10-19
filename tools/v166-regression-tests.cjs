@@ -24,6 +24,12 @@ const r=(dt,field,v)=>({at:t+dt,field,number:typeof v==='number'?v:undefined,tex
 }
 {
  const e=new C.Engine();e.state.settings.vin=vin;
+ e.ingestArchive({vin,rows:[r(0,'Gear','P'),r(0,'Odometer',100),r(1000,'Soc',80),r(3600000,'Gear','D'),r(3600000,'Odometer',100),r(3601000,'Soc',79)]});
+ assert.equal(e.state.parkingPeriods.length,1,'P before the first SOC packet must still establish the parking boundary');
+ assert.equal(e.parkingSummary().count,1,'late asynchronous endpoint SOC is observed and repaired');
+}
+{
+ const e=new C.Engine();e.state.settings.vin=vin;
  e.state.charges=[{id:'one',at:t,end:t+3600000,startSOC:30,endSOC:60,vehicleReportedKWh:24,complete:true},{id:'small',at:t+7200000,end:t+7300000,startSOC:60,endSOC:65,vehicleReportedKWh:4,complete:true}];
  const h=e.healthIndex();assert.equal(h.qualifiedChargeCount,1);assert.equal(h.capacityMedianKWh,80);assert.equal(h.degradationPercent,null,'one observation is a reference capacity, not a degradation result');
  assert(h.excludedChargeReasons.some(r=>r.reason.includes('20%p')&&r.count===1));

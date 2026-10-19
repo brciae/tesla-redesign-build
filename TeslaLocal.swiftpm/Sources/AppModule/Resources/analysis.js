@@ -435,7 +435,7 @@
       if(!fresh(g,now)||this.lastDrive&&g.at<=this.lastDrive.at)return;
       const s=this.state,prev=this.lastDrive,c=fresh(context.charge,now,TTL.charge)&&num(context.charge.soc,0,100)?context.charge:null;
       if(s.lastPark&&['D','R','N'].includes(g.gear)){const parkedDistance=num(s.lastPark.odometerKm,0,1e7)&&num(g.odometerKm,0,1e7)?g.odometerKm-s.lastPark.odometerKm:null;append(s.parkingPeriods,{id:id(),start:s.lastPark.at,end:g.at,startSOC:s.lastPark.soc,endSOC:c?.soc??null,deltaSOC:s.lastPark.soc==null||c?.soc==null?null:round(s.lastPark.soc-c.soc),startGear:'P',endGear:g.gear,startOdo:s.lastPark.odometerKm??null,endOdo:g.odometerKm??null,classification:parkedDistance!=null&&parkedDistance>=0&&parkedDistance<=0.2?'parking':'unclassified',note:'양 끝 주행거리로 주차 추정 · 미관측 충전·온도 영향 가능'});s.lastPark=null;}
-      if(!s.lastPark&&!s.activeTrip&&g.gear==='P'&&c&&num(c.soc,0,100))s.lastPark={at:g.at,soc:c.soc,odometerKm:g.odometerKm,gear:'P',startObserved:false};
+      if(!s.lastPark&&!s.activeTrip&&g.gear==='P')s.lastPark={at:g.at,soc:c?.soc??null,odometerKm:g.odometerKm,gear:'P',startObserved:false};
       const moving=['D','R'].includes(g.gear)&&num(g.speedKmh,1,350);
       if(moving&&!s.activeTrip){
         s.activeTrip={id:id(),start:g.at,startSOC:c?.soc??null,lastSOC:c?.soc??null,startOdo:g.odometerKm,lastOdo:g.odometerKm,distanceKm:0,missing:false,observedStart:!!prev&&prev.gear==='P'&&g.at-prev.at<=15000,socUnknown:c==null,gaps:0,gapSeconds:0,lastAt:g.at,parkAt:null,points:[]};
@@ -871,6 +871,11 @@
           const dx=num(row.startOdo,0,1e7)&&num(row.endOdo,0,1e7)?row.endOdo-row.startOdo:null;
           if(dx!=null)row.classification=dx>=0&&dx<=.2?'parking':'unclassified';
         }
+      }
+      if(this.state.lastPark){
+        const parked=this.state.lastPark;
+        if(!num(parked.soc,0,100)){const sample=nearest(parked.at);if(sample){parked.soc=sample.number;parked.socObservedAt=sample.at;}}
+        if(!num(parked.odometerKm,0,1e7))parked.odometerKm=odometerAt(parked.at);
       }
     }
     mergeHistory(value){
