@@ -15,8 +15,9 @@ assert(read('AutomationCoordinator').includes('UIApplication.shared.applicationS
 assert(read('VehicleCommandRouting').includes('guard !demo'));
 const navigation = read('EmbeddedNavigation');
 assert(navigation.includes('func endGuidance(arrived: Bool = false)'));
-assert(navigation.includes('stopNative(keepDisplay: keepDisplay)'));
-assert(navigation.includes('if keepDisplay { startStandbyKakaoMap() }'));
+assert(navigation.includes('stopNative(keepDisplay: keepDisplay, keepMap: keepDisplay)'));
+assert(navigation.includes('configureStandbyCallbacks(controller); locator.startUpdatingLocation()'), 'Route end must continue current-position updates on the same map');
+assert(navigation.includes('.id(ObjectIdentifier(controller))'), 'A new native controller must replace the mounted controller rather than leaving the old stopped view');
 assert(read('DrivingWorkspace').includes('navigation.endGuidance()'));
 assert(read('DrivingWorkspace').includes('NavigationWorkspaceChrome(endGuidance: endGuidanceAction)'));
 assert(!read('DrivingWorkspace').includes('if readout.gear == "P", navigation.guiding'), 'Route stop cannot depend on vehicle P gear');
@@ -30,6 +31,9 @@ assert(endCallback.indexOf('voice.stop()') >= 0 && endCallback.indexOf('voice.st
 const endCleanup = navigation.split('private func returnToFreeDrive(arrived: Bool = false)')[1].split('func retry()')[0];
 assert(endCleanup.indexOf('stopNative(') < endCleanup.indexOf('onGuidanceEnd?(arrived)'), 'Cleanup must precede the end announcement');
 const bridge = fs.readFileSync('TeslaLocal.swiftpm/Sources/KakaoNavigationBridge/YLKakaoController.m', 'utf8');
+const mapEnd = bridge.split('- (void)endGuidanceKeepingMap {')[1].split('- (void)stopNavigation')[0];
+assert(mapEnd.includes('[self.guidance stop]') && mapEnd.includes('[self.map removeRoutesAll]'));
+assert(!mapEnd.includes('removeFromSuperview') && !mapEnd.includes('self.map = nil'), 'Ending guidance must preserve map tiles and camera');
 assert(!bridge.includes('shouldSpeak:'), 'SDK voice timing must not be suppressed by app timers');
 assert(!bridge.includes('YLSpokenDistance'), 'No legacy recording distance buckets');
 assert(!bridge.includes('[@"spoken"]'), 'Voice must not reuse dashboard maneuver labels');
