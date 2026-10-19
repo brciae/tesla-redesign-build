@@ -492,7 +492,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         guard guiding || busy else { return }
         clearRecoveryCheckpoint()
         let keepDisplay = presented
-        stopNative(keepDisplay: keepDisplay, keepMap: keepDisplay)
+        stopNative(keepDisplay: keepDisplay, keepMap: keepDisplay && guiding)
         if keepDisplay {
             if let controller { configureStandbyCallbacks(controller); locator.startUpdatingLocation(); controller.resumeRendering() }
             else { startStandbyKakaoMap() }
