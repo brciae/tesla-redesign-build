@@ -241,7 +241,10 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                 clearRecoveryCheckpoint()
                 _ = gate("reset") // Manual selection's later timestamp must not block the vehicle route.
             }
-        } else if !local, manualRouteToken != nil { return }
+        } else if !local, manualRouteToken != nil {
+            guard ["clear", "absent"].contains(event.string("type")), event.flag("confirmed"),
+                  routeAuthority.acceptsVehicleEnd(at: event.number("at"), receivedAt: event.number("receivedAt"), now: Date().timeIntervalSince1970 * 1000) else { return }
+        }
         if event.string("type") == "clear" || (event.string("type") == "absent" && event.flag("parked")) {
             pendingNetworkRoute = nil
         }
@@ -258,6 +261,9 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if decision.string("type") == "refresh" || decision.string("type") == "wait", lifecycleDiagnostics.last?.hasSuffix(decision.string("type") + " · 안내 \(guiding ? "중" : "꺼짐")") == true { lifecycleDiagnostics.removeLast() }
         if lifecycleDiagnostics.count > 24 { lifecycleDiagnostics.removeFirst(lifecycleDiagnostics.count - 24) }
         if decision.string("type") == "clear" || decision.string("type") == "cancel" {
+            routeAuthority.endManual()
+            manualRouteToken = nil; manualDestination = ""; manualCoordinate = nil
+            pendingNetworkRoute = nil
             returnToFreeDrive(); return
         }
         if decision.string("type") == "refresh" {

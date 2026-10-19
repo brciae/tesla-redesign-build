@@ -10,6 +10,7 @@ enum Page: String, Hashable {
     case fleetInsights = "차량 상세 데이터"
     case notifications = "알림 설정"
     case liveActivity = "잠금화면·아일랜드"
+    case spotify = "Spotify 연결"
     case chargingSettings = "충전 계획·요금", recordSettings = "기록·백업"
     case parking = "주차 기록"
     case displaySettings = "화면·표시 단위"
@@ -114,6 +115,7 @@ struct SettingsMenuGroups: View {
             .init(.security, "shield.fill", "보안 및 운전자", "감시 모드 · 운전자", [.blue, .cyan])]),
         .init(title: "연결·기록", items: [
             .init(.connection, "antenna.radiowaves.left.and.right", "차량·NAS 연결", "계정 · 블루투스 · 서버", [.cyan, .blue]),
+            .init(.spotify, "music.note", "Spotify 연결", "휴대폰 재생 정보 · 음악 제어", [.green, .mint]),
             .init(.recordSettings, "externaldrive", "기록·백업", "내보내기 · 복원", [.blue, .cyan])]),
         .init(title: "화면·꾸미기", items: [
             .init(.displaySettings, "textformat.size", "화면·표시 단위", "배경 · 거리 · 온도 단위", [.gray, .secondary]),

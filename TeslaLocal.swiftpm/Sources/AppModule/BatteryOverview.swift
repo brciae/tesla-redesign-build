@@ -66,7 +66,15 @@ struct BatteryOverview: View {
             Text(index.string("statusReason").isEmpty ? "계산 가능한 충전 \(Int(index.number("sampleCount") ?? 0))회 · 최소 3회 필요" : index.string("statusReason"))
                 .font(.caption).foregroundStyle(index.flag("initial") ? Color.orange : accent)
                 .accessibilityIdentifier("battery.health.reason")
-            Text("계산 가능 \(Int(index.number("sampleCount") ?? 0))회 · 최근 비교 \(Int(index.number("stableSampleCount") ?? 0))회").font(.caption).foregroundStyle(.secondary)
+            Text(index.string("method") == "bmsNominal" ? "BMS 관측 \(Int(index.number("sampleCount") ?? 0))일" : "계산 가능 충전 \(Int(index.number("sampleCount") ?? 0))회")
+                .font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("충전 기록 집계·제외 사유") {
+                Text("전체 \(Int(index.number("totalChargeCount") ?? 0))회 · 용량 계산 가능 \(Int(index.number("qualifiedChargeCount") ?? index.number("sampleCount") ?? 0))회")
+                ForEach(Array(index.rows("excludedChargeReasons").enumerated()), id: \.offset) { _, row in
+                    HStack { Text(row.string("reason")); Spacer(); Text("\(Int(row.number("count") ?? 0))회") }
+                }
+            }.font(.caption).accessibilityIdentifier("battery.health.exclusions")
+            if index.flag("provisionalCapacity") { Text("소수 관측 참고 용량 · 열화율 확정 전").font(.caption).foregroundStyle(.secondary) }
             if let low = index.number("capacityMinKWh"), let high = index.number("capacityMaxKWh") {
                 Text(String(format: "최근 관측 범위 %.1f~%.1f kWh", low, high)).font(.caption).foregroundStyle(.secondary)
             }
@@ -118,9 +126,27 @@ struct BatteryOverview: View {
         let parking = usage.object("parking")
         return VStack(alignment: .leading, spacing: 8) {
             Text("주차 중 잔량 감소").font(.headline)
-            HStack { measure("확인된 구간", parking.number("count"), "회"); measure("하루 환산 · 중앙값", parking.number("medianPerDay"), "%p/일") }
-            Text("P 상태 주차 구간 · 주행거리 변화 200m 이내. 짧은 주차도 기록하며 하루 환산은 정밀도 충분한 구간만 사용.").font(.caption).foregroundStyle(.secondary)
-            if let count = parking.number("excludedCount"), count > 0 { Text("확인 보류 \(Int(count))구간 · 상세에서 이유 확인").font(.caption).foregroundStyle(.orange) }
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("확인된 구간").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Int(parking.number("count") ?? 0))회").font(.system(size: 25, weight: .medium)).monospacedDigit()
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                measure("하루 환산 · 중앙값", parking.number("medianPerDay"), "%p/일")
+            }
+            Text("짧은 P 주차도 포함. 하루 환산은 6시간·1%p 이상 관측한 구간만 사용.").font(.caption).foregroundStyle(.secondary)
+            let rows = parking.rows("rows")
+            if !rows.isEmpty {
+                DisclosureGroup("주차 기록·보류 사유 \(Int(parking.number("excludedCount") ?? 0))건") {
+                    ForEach(Array(rows.sorted { ($0.number("end") ?? 0) > ($1.number("end") ?? 0) }.prefix(20).enumerated()), id: \.offset) { _, row in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(Self.tripRowDateFormatter.string(from: Date(timeIntervalSince1970: (row.number("start") ?? 0) / 1000))).font(.caption.weight(.medium))
+                            Text("\(number(row.number("hours")))시간 · \(number(row.number("startSOC")))% → \(number(row.number("endSOC")))%")
+                            Text(row.string("exclusionReason").isEmpty ? (row.flag("precisionLimited") ? "기록 포함 · 하루 환산 대기" : "기록·하루 환산 포함") : row.string("exclusionReason"))
+                                .foregroundStyle(row.string("exclusionReason").isEmpty ? Color.secondary : .orange)
+                        }.font(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
+                    }
+                }.accessibilityIdentifier("battery.parking.reasons")
+            }
         }.accessibilityIdentifier("battery.parking")
     }
     private func tripEnergyRow(_ t: Object) -> some View {

@@ -7,6 +7,9 @@ import Foundation
             FleetTelemetryReading(vin: "WINDOW", field: field, at: anchor.addingTimeInterval(seconds), number: nil, text: "{\"stringValue\":\"\(value)\"}", invalid: false)
         }
         let oldWindow = [reading(0, "ChargeState", "Charging"), reading(60, "Soc", "40"), reading(120, "ChargeState", "Complete"), reading(130, "Soc", "80")]
+        let parked = [reading(0, "Gear", "P"), reading(3600, "Gear", "D")]
+        precondition(FleetTelemetryData.historyWindow(parked, vin: "WINDOW", since: anchor.addingTimeInterval(3500)).start == anchor, "An open parking period rewinds to its P boundary")
+        precondition(FleetTelemetryData.historyWindow(parked, vin: "WINDOW", since: anchor.addingTimeInterval(3620)).start == anchor, "Delayed parking endpoint keeps the P start")
         let currentWindow = [reading(10000, "ChargeState", "Charging"), reading(10060, "Soc", "50"), reading(10120, "ChargeState", "Complete")]
         let window = FleetTelemetryData.historyWindow(oldWindow + currentWindow, vin: "WINDOW", since: anchor.addingTimeInterval(10060))
         precondition(window.start == anchor.addingTimeInterval(10000), "Continue current session from its start")
@@ -96,6 +99,16 @@ import Foundation
             ]), vin: "CAR-A", now: now)
         }
         let buckets = FleetParkingAnalysis.buckets(parking, vin: "CAR-A", from: Date(timeIntervalSince1970: 1_800_000_000), to: now)
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let heldNow = start.addingTimeInterval(1000)
+        var heldParking = parking.filter { $0.at == start }
+        for second in stride(from: 60, through: 600, by: 60) {
+            heldParking += try FleetTelemetryData.decode(packet(1_800_000_000 + second, [["key": "LifetimeEnergyUsed", "value": ["doubleValue": 100.0 + Double(second) / 3600]]]), vin: "CAR-A", now: heldNow)
+        }
+        let heldBuckets = FleetParkingAnalysis.buckets(heldParking, vin: "CAR-A", from: start.addingTimeInterval(60), to: heldNow)
+        precondition(heldBuckets.first?.seconds == 540, "Unchanged Gear/Charge/Sentry states survive while energy counters establish continuous coverage")
+        let gap = heldParking.filter { $0.at == start || $0.at == start.addingTimeInterval(600) }
+        precondition(FleetParkingAnalysis.buckets(gap, vin: "CAR-A", from: start, to: heldNow).isEmpty, "Unobserved gaps do not become measured parking time")
         precondition(buckets.count == 1 && buckets[0].id == "sentry" && buckets[0].seconds == 60)
         precondition(abs(buckets[0].measuredKWh - 1.0 / 60) < 0.00001)
         precondition(FleetParkingAnalysis.buckets(parking, vin: "CAR-B", from: .distantPast, to: now).isEmpty)

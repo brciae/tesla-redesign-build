@@ -9,6 +9,7 @@ struct DrivingWorkspace: View {
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearance = VehicleAppearanceStore.shared
     @ObservedObject private var tripEnergy = TripEnergyStore.shared
+    @ObservedObject private var spotify = SpotifyPlayback.shared
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @State private var settings = false
     @State private var destinationSearch = false
@@ -36,6 +37,9 @@ struct DrivingWorkspace: View {
                             }
                         }
                     } onMedia: { action in
+                        if readout.phoneSpotify && !["mediaVolumeUp", "mediaVolumeDown"].contains(action) {
+                            spotify.command(action); return
+                        }
                         switch action {
                         case "mediaVolumeUp": link.mediaCommand("mediaVolume", delta: 1)
                         case "mediaVolumeDown": link.mediaCommand("mediaVolume", delta: -1)
@@ -231,6 +235,13 @@ struct DrivingWorkspace: View {
             r.braking = true // Tesla Brake Hold (H) in D: brake lights ON
         }
         readMedia(into: &r, fresh: fresh)
+        if !model.demo, SpotifyPlaybackPolicy.usePhonePlayer(connected: spotify.connected, playing: spotify.playing,
+               phoneTitle: spotify.title, carSource: r.mediaSourceCode, carTitle: r.mediaTitle) {
+            r.phoneSpotify = true; r.mediaTitle = spotify.title; r.mediaArtist = spotify.artist
+            r.mediaSourceCode = 12; r.mediaSource = "Spotify"; r.mediaPlaying = spotify.playing
+            r.mediaArtwork = spotify.artwork; r.mediaElapsed = spotify.position; r.mediaDuration = spotify.duration
+            r.mediaBusy = spotify.working; r.mediaStatus = ""
+        }
 
         if fresh.flag("climate"), let inside = t.number("insideC") {
             r.inside = units.format(inside, suffix: "°C")

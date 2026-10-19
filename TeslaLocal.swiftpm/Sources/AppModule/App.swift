@@ -193,6 +193,7 @@ private struct AppDestinations: ViewModifier {
         case .displaySettings: DisplaySettingsView()
         case .preferences: PreferencesView()
         case .liveActivity: LiveActivitySettingsView()
+        case .spotify: SpotifySettingsView()
         case .releaseNotes: ReleaseNotesView()
         case .character: CharacterSelectView()
         case .appearance: VehicleAppearanceView()

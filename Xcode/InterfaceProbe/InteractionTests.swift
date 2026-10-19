@@ -1,6 +1,21 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testSpotifySettingsValidateClientIDAndShowLocalPhoneConnection() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["settings-menu-probe"]; app.launch()
+        let entry = app.staticTexts["Spotify 연결"]
+        for _ in 0..<8 where !entry.isHittable { app.swipeUp() }
+        XCTAssertTrue(entry.isHittable); entry.tap()
+        app.buttons["연동 설정"].tap()
+        let field = app.textFields["spotify.clientID"]
+        XCTAssertTrue(field.waitForExistence(timeout: 8))
+        let connect = app.buttons["spotify.connect"]
+        field.tap(); field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 32)); field.typeText("not-a-client-id")
+        XCTAssertFalse(connect.isEnabled)
+        captureSystemCard("Spotify local phone settings invalid Client ID requires developer app registration")
+        // No external login is invoked by a UI test.
+    }
     func testProductionSettingsMenuGroupsAndDirectCardSettings() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["settings-menu-probe"]; app.launch()
@@ -600,6 +615,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["battery.health.reason"].label.contains("기준 용량 미등록"))
         XCTAssertFalse(app.staticTexts["현재 지수 100%"].exists)
         let top = XCTAttachment(screenshot: app.screenshot()); top.name = "Battery summary and missing same-method reference"; top.lifetime = .keepAlways; add(top)
+        let exclusions = app.buttons["battery.health.exclusions"]
+        XCTAssertTrue(exclusions.exists); exclusions.tap()
+        XCTAssertTrue(app.staticTexts["SOC 변화 20%p 미만"].exists)
+        captureSystemCard("Battery degradation qualifying charges and exclusion reasons")
+        exclusions.tap()
         app.buttons["같은 종류 기준 등록 예시"].tap()
         XCTAssertTrue(app.staticTexts["battery.health.reason"].label.contains("동일 종류 기준"))
         for period in ["7일", "30일", "90일"] {
@@ -611,6 +631,11 @@ final class InteractionTests: XCTestCase {
         let graphs = XCTAttachment(screenshot: app.screenshot()); graphs.name = "Battery separate SOC events and trip consumption"; graphs.lifetime = .keepAlways; add(graphs)
         app.swipeUp()
         let trips = XCTAttachment(screenshot: app.screenshot()); trips.name = "Battery trip rows and parking precision"; trips.lifetime = .keepAlways; add(trips)
+        let parkingReasons = app.buttons["battery.parking.reasons"]
+        for _ in 0..<6 where !parkingReasons.isHittable { app.swipeUp() }
+        XCTAssertTrue(parkingReasons.isHittable); parkingReasons.tap()
+        XCTAssertTrue(app.staticTexts["양 끝 잔량 미확인"].exists)
+        captureSystemCard("Parking measured short interval and excluded endpoint reason directly accessible")
     }
     func testHomeChargingRadiusAndDatedSave() {
         XCUIDevice.shared.orientation = .portrait
@@ -782,6 +807,12 @@ final class InteractionTests: XCTestCase {
             XCTAssertTrue(app.buttons["navigation.chrome.close"].waitForExistence(timeout: 4))
             app.buttons[title].tap()
             XCTAssertTrue(stop.isHittable)
+            let panel = app.otherElements["navigation.chrome.panel"].firstMatch
+            let separated = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                panel.exists && stop.exists && stop.frame.minY >= panel.frame.maxY
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [separated], timeout: 4), .completed, "Open toolbar overlaps maneuver/stop: \(title)")
+            captureSystemCard("Integrated route stop and expanded toolbar \(title) \(orientation.rawValue)")
             app.buttons["navigation.chrome.close"].tap()
             XCTAssertTrue(app.buttons["navigation.chrome.open"].waitForExistence(timeout: 4))
             let pause = app.buttons["일시정지"].firstMatch

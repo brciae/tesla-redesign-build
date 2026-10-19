@@ -177,6 +177,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         guard let cue = NavigationSpeechCue.parse(text, now: now) else { automaticTrace(text.hasPrefix("{") && text.contains("\"text\"") ? "길안내 수신 · 안내 지점 통과 후 도착 (건너뜀)" : "길안내 수신 · 형식 오류"); return }
         let text = NavigationDistanceWording.normalize(cue.text)
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { automaticTrace("길안내 수신 · 음성 설정 꺼짐"); return }
+        let detail = d.object(forKey: "navVoiceDetail") == nil ? 0 : d.integer(forKey: "navVoiceDetail")
+        guard navigationPolicy.accepts(cue: cue, detail: detail, now: now) else { return }
         automaticTrace("길안내 요청 수신")
         let prepared = SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines)
         let incidental = cue.incidental == true || text == "주의하세요."
@@ -199,7 +201,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         // Normalize unit pronunciation only; do not rewrite the provider's maneuver.
         navigationPreparation?.cancel()
-        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines), expires: Date(timeIntervalSince1970: cue.validUntil), priority: priority, manual: true, navigationID: cue.targetID), now: now)
+        queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines), expires: Date(timeIntervalSince1970: cue.validUntil), priority: priority, manual: true, navigationID: cue.targetID, navigationCue: cue, navigationDetail: detail), now: now)
         drain()
     }
 
@@ -436,6 +438,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             p.volume = Float(min(1, gain))
             p.prepareToPlay()
             guard p.play() else { throw LocalError.message("오디오 출력을 시작하지 못했습니다.") }
+            if let cue = item.navigationCue, let detail = item.navigationDetail { navigationPolicy.markPlayed(cue: cue, detail: detail, now: Date()) }
             playbackStarts += 1
             if !item.manual || item.key.hasPrefix("navigation.") {
                 GuidanceJournal.shared.append(vin: spokenVehicleIdentity(), text: item.text, navigation: item.key.hasPrefix("navigation."))

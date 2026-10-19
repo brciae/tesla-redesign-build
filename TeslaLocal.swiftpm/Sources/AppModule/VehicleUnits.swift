@@ -141,6 +141,9 @@ struct NavigationSpeechCue: Decodable {
     var stateChange: Bool? = nil
     var incidental: Bool? = nil
     var imminent: Bool? = nil
+    var kind: String? = nil
+    var metres: Double? = nil
+    var speedMps: Double? = nil
     static func parse(_ message: String, now: Date) -> NavigationSpeechCue? {
         if message.hasPrefix("{") {
             // Lenient read: the bridge's booleans may arrive as true/false or 0/1.
@@ -153,6 +156,9 @@ struct NavigationSpeechCue: Decodable {
             cue.stateChange = (raw["stateChange"] as? NSNumber)?.boolValue
             cue.incidental = (raw["incidental"] as? NSNumber)?.boolValue
             cue.imminent = (raw["imminent"] as? NSNumber)?.boolValue
+            cue.kind = raw["kind"] as? String
+            cue.metres = (raw["metres"] as? NSNumber)?.doubleValue
+            cue.speedMps = (raw["speedMps"] as? NSNumber)?.doubleValue
             return cue
         }
         return message.isEmpty ? nil : Self(text: message, validUntil: now.timeIntervalSince1970 + 12, targetID: nil)
@@ -177,6 +183,27 @@ enum NavigationDistanceWording {
 /// Repeated safety callbacks must not restart a sentence already being spoken.
 struct NavigationSpeechPolicy {
     private var recent: [String: Date] = [:]
+    private var stages: [String: Date] = [:]
+    mutating func accepts(cue: NavigationSpeechCue, detail: Int, now: Date) -> Bool {
+        if cue.stateChange == true { stages.removeAll(); return true }
+        if detail < 2 && (cue.incidental == true || cue.kind == "information") { return false }
+        if detail == 0 && cue.kind == "facility" { return false }
+        if detail == 0 && cue.kind == "turn", cue.imminent != true {
+            guard let metres = cue.metres, metres.isFinite, metres >= 0,
+                  metres <= max(200, min(700, (cue.speedMps ?? 0) * 20)) else { return false }
+        }
+        guard detail < 2, let target = cue.targetID else { return true }
+        stages = stages.filter { now.timeIntervalSince($0.value) < 120 }
+        // Brief: one useful cue per point. Normal: one approach + one final cue.
+        let key = target + (detail == 0 ? "" : (cue.imminent == true ? ":final" : ":approach"))
+        guard stages[key] == nil else { return false }
+        return true
+    }
+    mutating func markPlayed(cue: NavigationSpeechCue, detail: Int, now: Date) {
+        guard detail < 2, let target = cue.targetID else { return }
+        let key = target + (detail == 0 ? "" : (cue.imminent == true ? ":final" : ":approach"))
+        stages[key] = now
+    }
     mutating func accepts(text: String, safety: Bool, incidental: Bool, navigationBusy: Bool, now: Date, targetID: String? = nil) -> Bool {
         if incidental && navigationBusy { return false }
         recent = recent.filter { now.timeIntervalSince($0.value) < 20 }
@@ -201,6 +228,8 @@ struct VoiceItem {
     var navigationID: String? = nil
     /// v1.48: Typecast voice for this item only (the floating character's own voice); nil = app voice.
     var voice: String? = nil
+    var navigationCue: NavigationSpeechCue? = nil
+    var navigationDetail: Int? = nil
     // Manual reports may finish synthesis after their queue deadline. Maneuvers
     // and automatic events retain their strict real-time playback deadline.
     func canStartPlayback(at now: Date) -> Bool {

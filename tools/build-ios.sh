@@ -23,6 +23,8 @@ node tools/ui-copy-audit.cjs
 node tools/typecast-only-audit.cjs
 node tools/briefing-coverage.cjs
 node tools/control-path-audit.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlaybackPolicy.swift tools/spotify-policy-tests.swift -o Xcode/SpotifyPolicyTests
+Xcode/SpotifyPolicyTests
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
 swiftc Xcode/LiveActivityShared/GuidanceCardLabel.swift Xcode/LiveActivityShared/VehicleActivitySessionPolicy.swift tools/guidance-card-tests.swift -o Xcode/GuidanceCardTests
 Xcode/GuidanceCardTests

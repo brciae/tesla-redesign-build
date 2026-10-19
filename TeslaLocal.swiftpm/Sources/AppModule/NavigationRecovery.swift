@@ -28,6 +28,12 @@ struct VehicleRouteAuthority {
     private var manualBaseline: Spot?
     mutating func beginManual(at: Double) { manualAt = at; manualBaseline = lastSpot }
     mutating func endManual() { manualAt = nil; manualBaseline = nil }
+    func acceptsVehicleEnd(at: Double?, receivedAt: Double?, now: Double) -> Bool {
+        guard let at, let receivedAt, at.isFinite, receivedAt.isFinite,
+              (-5000...30000).contains(now - at), (-5000...30000).contains(now - receivedAt),
+              at >= lastAt, receivedAt >= lastReceipt else { return false }
+        return manualAt.map { at >= $0 } ?? true
+    }
     mutating func observe(latitude: Double, longitude: Double, at: Double, receivedAt: Double, now: Double) -> Decision {
         guard latitude.isFinite, longitude.isFinite, abs(latitude) <= 90, abs(longitude) <= 180,
               !(latitude == 0 && longitude == 0), at.isFinite, receivedAt.isFinite,

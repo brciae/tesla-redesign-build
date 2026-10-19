@@ -385,7 +385,7 @@ final class AppModel: ObservableObject {
     }
     @MainActor private func repairSavedHistoryIfNeeded() {
         guard UIApplication.shared.applicationState == .active, !demo, !recoveryLock else { return }
-        let vin = settings.string("vin"), key = "history.endpointRepair.v163." + settings.string("vin")
+        let vin = settings.string("vin"), key = "history.endpointRepair.v166." + settings.string("vin")
         guard !vin.isEmpty, !UserDefaults.standard.bool(forKey: key),
               FleetTelemetryStore.shared.records.contains(where: { $0.vin == vin }) else { return }
         do {

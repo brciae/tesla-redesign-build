@@ -83,7 +83,7 @@ struct PreferencesView: View {
                 Picker("안내 빈도", selection: $navDetail) {
                     Text("간단").tag(0); Text("보통").tag(1); Text("자세히").tag(2)
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
-                InfoRow("안내 빈도", "간단: 교차로에 가까워졌을 때의 회전 안내와 실제 위험 구간만 안내함. 보통: 중간 거리 회전 안내와 경로 변경 안내를 추가함. 자세히: 카카오 내비가 제공하는 안내를 모두 읽음(버스전용차로·하이패스·직진 안내 포함).")
+                InfoRow("안내 빈도", "간단: 회전·위험 지점별 가까운 안내 1회. 보통: 사전·최종 안내와 보호구역 정보. 자세히: 터널·시설 등 추가 정보와 거리별 안내. 경로 변경·도착은 모든 모드에서 안내함.")
             }
             // v1.55: the floating character's own voice sits with the other voices (its look/size is in 캐릭터).
             Section("떠있는 캐릭터 대화 목소리") {

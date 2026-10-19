@@ -20,7 +20,8 @@ import MapKit
                 NavigationStack {
                     ScrollView { SettingsMenuGroups().padding(16) }.navigationTitle("메뉴 및 설정")
                         .navigationDestination(for: Page.self) { page in
-                            if page == .liveActivity {
+                            if page == .spotify { SpotifySettingsView() }
+                            else if page == .liveActivity {
                                 Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle(page.rawValue)
                             } else { Text(page.rawValue) }
                         }
@@ -384,12 +385,15 @@ struct BatteryProbe: View {
         ScrollView {
             Button("같은 종류 기준 등록 예시") { reference.toggle() }
             BatteryOverview(index: ["degradationPercent": 5.0, "initial": !reference, "sampleCount": 7, "stableSampleCount": 7,
+                "totalChargeCount": 12, "qualifiedChargeCount": 7, "excludedChargeReasons": [["reason":"SOC 변화 20%p 미만","count":5]],
                 "capacityMedianKWh": 76.0, "capacityMinKWh": 75.5, "capacityMaxKWh": 76.5, "capacityLabel": "차량 보고 완충 용량", "comparisonLabel": "등록 기준 대비 감소",
                 "statusReason": reference ? "등록한 동일 종류 기준 용량 대비 감소 추정" : "같은 종류의 기준 용량 미등록 · 관측 용량 표시", "note": "검증용 관측 자료 · 실제 차량 진단 아님"],
                 usage: ["tripCount": 5, "completeTrips": 4, "excludedRateTrips": 1, "driveSOC": 65.0,
                     "chargeSOC": 125.0, "socPer100Km": 22.4, "distanceKm": 290.0, "observedDischargeCycles": 0.65,
                     "energy": ["drivingKmPerKWh": 8.02, "overallKmPerKWh": 6.78, "drivingKWh": 36.2, "parkingKWh": 0.0, "unclassifiedKWh": 2.25],
-                    "parking": ["count": 4, "excludedCount": 1, "medianPerDay": 1.2],
+                    "parking": ["count": 1, "excludedCount": 1, "medianPerDay": 1.2, "rows": [
+                        ["id":"p1","start":1789390800000.0,"end":1789394400000.0,"startSOC":80.0,"endSOC":79.5,"hours":1.0,"deltaSOC":0.5,"precisionLimited":true,"classification":"parking","exclusionReason":""],
+                        ["id":"p2","start":1789380800000.0,"end":1789384400000.0,"hours":1.0,"classification":"unclassified","exclusionReason":"양 끝 잔량 미확인"]]],
                     "tripRows": [["id":"t1","at":1789390800000.0,"km":30.0,"startSOC":80.0,"endSOC":74.0,"kwh":4.5,"whPerKm":150.0,"method":"SOC 기반 추정"],
                                  ["id":"t2","at":1789394400000.0,"km":18.0,"startSOC":74.0,"endSOC":70.0,"kwh":3.0,"whPerKm":166.7,"method":"SOC 기반 추정"],
                                  ["id":"t3","at":1789398000000.0,"km":12.0,"startSOC":70.0,"endSOC":67.0,"kwh":2.25,"whPerKm":187.5,"method":"SOC 기반 추정","partial":true]],

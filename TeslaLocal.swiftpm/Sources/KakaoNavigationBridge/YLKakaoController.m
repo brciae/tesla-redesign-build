@@ -641,6 +641,9 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     message[@"stateChange"] = @(stateChange);
     message[@"incidental"] = @(code == KNVoiceCode_Alert && !target);
     message[@"imminent"] = @(self.forceImminent || [text hasPrefix:@"잠시 후"]);
+    message[@"kind"] = [object isKindOfClass:KNDirection.class] ? @"turn" : @"safety";
+    if ([object isKindOfClass:KNDirection.class] && [@[@0,@84,@85,@86] containsObject:@(((KNDirection *)object).rgCode)]) message[@"kind"] = @"information";
+    if ([object isKindOfClass:KNSafety.class] && [@[@15,@17,@18,@20,@26,@83,@85,@87,@88,@101] containsObject:@(((KNSafety *)object).code)]) message[@"kind"] = @"information";
     if (stateChange) { [self.speechTargets removeAllObjects]; [self.announcedPoints removeAllObjects]; }
     if (target) {
         if (![self locationIsFresh]) return;
@@ -660,6 +663,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         message[@"targetID"] = identifier;
         KNGPSData *gps = self.locationGuide.gpsMatched;
         double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
+        message[@"metres"] = @(distance); message[@"speedMps"] = @(speed);
         // Never extend a near/passed point merely to survive the queue.
         double lifetime = speed > 1 ? fmin(12, fmax(0, distance / speed - 0.8)) : 12;
         message[@"validUntil"] = @(NSDate.date.timeIntervalSince1970 + lifetime);
@@ -724,7 +728,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     KNGPSData *gps = self.locationGuide.gpsMatched;
     double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
     double lifetime = speed > 1 ? fmin(12, fmax(0, distance / speed - 0.8)) : 12;
-    NSDictionary *message = @{@"text": text, @"targetID": identifier, @"validUntil": @(NSDate.date.timeIntervalSince1970 + lifetime), @"stateChange": @NO, @"incidental": @NO, @"imminent": @([text hasPrefix:@"잠시 후"])};
+    NSDictionary *message = @{@"text": text, @"targetID": identifier, @"validUntil": @(NSDate.date.timeIntervalSince1970 + lifetime), @"stateChange": @NO, @"incidental": @NO, @"imminent": @([text hasPrefix:@"잠시 후"]), @"kind": @"facility", @"metres": @(distance), @"speedMps": @(speed)};
     NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
     if (data) [self emit:safety ? @"spokenSafety" : @"spokenGuide" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
 }
@@ -736,7 +740,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     if (self.announcedPoints.count > 400) [self.announcedPoints removeAllObjects];
     KNGPSData *gps = self.locationGuide.gpsMatched;
     double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-    for (KNSafetyZone *zone in self.routeGuide.safetyZones ?: @[]) {
+    for (KNSafetyZone *zone in self.voiceDetail == 0 ? @[] : (self.routeGuide.safetyZones ?: @[])) {
         if (!zone.fromLocation) continue;
         SInt32 d = [self.locationGuide.location distToLocation:zone.fromLocation];
         NSString *key = [NSString stringWithFormat:@"zone:%d:%d", (int)zone.fromLocation.pos.x, (int)zone.fromLocation.pos.y];
@@ -770,7 +774,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     }
     // Tunnels ahead come from the route's facility list: "500미터 앞, OO터널입니다. 길이 1.2킬로미터."
     KNRoute *route = self.guidance.routesOnGuide.firstObject;
-    for (KNRoadInfo_Facility *f in [route mainFacilityList] ?: @[]) {
+    for (KNRoadInfo_Facility *f in self.voiceDetail < 2 ? @[] : ([route mainFacilityList] ?: @[])) {
         if (f.facilityType != KNFacilityType_Tunnel || !f.fromLocation) continue;
         SInt32 d = [self.locationGuide.location distToLocation:f.fromLocation];
         NSString *key = [NSString stringWithFormat:@"tunnel:%d:%d", (int)f.fromLocation.pos.x, (int)f.fromLocation.pos.y];
@@ -809,12 +813,13 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     if ([object isKindOfClass:KNDirection.class]) {
         KNDirection *dir = (KNDirection *)object;
         SInt32 metres = target && [self locationIsFresh] ? [self spokenMetres:target] : -1;
+        if (self.voiceDetail == 0) return YLNavigationSpeech(dir.rgCode, @"", @[], metres);
         return YLNavigationSpeech(dir.rgCode, dir.nodeName, dir.directionNames, metres);
     }
     if ([object isKindOfClass:KNSafety.class]) {
         KNSafety *point = object;
         if (point.code == KNSafetyCode_Hump && [self humpGroupForPoint:point].count > 1) {
-            return [prefix stringByAppendingString:@"과속방지턱이 연속으로 있습니다. 속도를 줄이세요."];
+            return [prefix stringByAppendingString:self.voiceDetail == 0 ? @"과속방지턱이 연속으로 있습니다." : @"과속방지턱이 연속으로 있습니다. 속도를 줄이세요."];
         }
         NSDictionary *labels = @{@0:@"사고 다발 구간", @1:@"급커브 구간", @2:@"낙석 주의 구간", @3:@"안개 주의 구간", @4:@"추락 주의", @5:@"미끄러운 도로", @6:@"과속 방지턱", @10:@"철도 건널목", @11:@"어린이 보호 구역", @12:@"도로 폭 좁아짐", @13:@"급경사 내리막", @14:@"야생동물 출몰 지역", @15:@"졸음 쉼터", @16:@"졸음운전 사고 다발 구간", @17:@"오르막 구간", @18:@"신호등 주의", @20:@"무정차 요금소", @21:@"차량 사고 다발 구간", @22:@"보행자 사고 다발 구간", @23:@"어린이 사고 다발 구간", @24:@"상습 결빙 구간", @26:@"고의성 교통사고 다발 지점", @28:@"높이 제한", @29:@"중량 제한", @31:@"안개 주의 구간", @32:@"상습 결빙 구간", @40:@"지하차도 침수 주의", @80:@"단속 지점", @81:@"이동식 과속 단속 구간", @82:@"과속 단속", @83:@"교통 정보 수집 카메라", @84:@"버스 전용 차로 단속 구간", @85:@"과적 단속", @86:@"신호 과속 단속 구간", @87:@"주정차 단속 구간", @88:@"적재 불량 단속", @89:@"버스 전용 차로 및 신호 단속 구간", @90:@"고정식 단속 구간", @91:@"차로 및 과속 단속", @92:@"구간 단속 시작", @93:@"구간 단속 종료", @94:@"갓길 단속", @95:@"끼어들기 단속", @96:@"구간 단속", @97:@"지정차로 단속", @98:@"구간 단속 시작", @99:@"구간 단속 종료", @100:@"과속 단속", @101:@"안전띠 단속", @102:@"후면 과속 단속", @103:@"후면 신호 과속 단속 구간", @104:@"노후 경유차 운행 제한 단속", @105:@"후면 구간 단속 시작", @106:@"후면 구간 단속 종료", @692:@"구간 단속 시작", @693:@"구간 단속 종료", @696:@"구간 단속", @705:@"후면 구간 단속 시작", @706:@"후면 구간 단속 종료"};
         // Announce the point ahead, not an event that has supposedly already happened.

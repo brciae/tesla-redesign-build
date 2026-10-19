@@ -11,6 +11,27 @@ import Foundation
         precondition(TirePressureSample(bar: .nan, at: tireNow).validBar == nil)
 
         var overlap = NavigationSpeechPolicy()
+        let detailTime = Date(timeIntervalSince1970: 10)
+        func cue(_ kind: String, _ metres: Double, _ imminent: Bool = false) -> NavigationSpeechCue {
+            var c = NavigationSpeechCue(text: "거리 안내", validUntil: 22, targetID: kind)
+            c.kind = kind; c.metres = metres; c.speedMps = 15; c.imminent = imminent
+            return c
+        }
+        var brief = NavigationSpeechPolicy(), normal = NavigationSpeechPolicy(), detailed = NavigationSpeechPolicy()
+        precondition(!brief.accepts(cue: cue("turn", 1000), detail: 0, now: detailTime))
+        precondition(brief.accepts(cue: cue("turn", 200), detail: 0, now: detailTime))
+        precondition(brief.accepts(cue: cue("turn", 40, true), detail: 0, now: detailTime), "A cue dropped before playback must not suppress the final warning")
+        brief.markPlayed(cue: cue("turn", 200), detail: 0, now: detailTime)
+        precondition(!brief.accepts(cue: cue("turn", 40, true), detail: 0, now: detailTime), "Brief suppresses same-point SDK/final repetition")
+        precondition(!brief.accepts(cue: cue("facility", 300), detail: 0, now: detailTime))
+        precondition(!brief.accepts(cue: cue("information", 300), detail: 0, now: detailTime))
+        precondition(brief.accepts(cue: cue("safety", 200), detail: 0, now: detailTime), "Actual hazard remains enabled")
+        precondition(normal.accepts(cue: cue("turn", 1000), detail: 1, now: detailTime))
+        normal.markPlayed(cue: cue("turn", 1000), detail: 1, now: detailTime)
+        precondition(normal.accepts(cue: cue("turn", 40, true), detail: 1, now: detailTime))
+        normal.markPlayed(cue: cue("turn", 40, true), detail: 1, now: detailTime)
+        precondition(!normal.accepts(cue: cue("turn", 30, true), detail: 1, now: detailTime))
+        precondition(detailed.accepts(cue: cue("facility", 300), detail: 2, now: detailTime))
         let warningTime = Date(timeIntervalSince1970: 100)
         precondition(overlap.accepts(text: "300미터 앞 과속 단속", safety: true, incidental: false, navigationBusy: false, now: warningTime))
         precondition(!overlap.accepts(text: "주의하세요.", safety: true, incidental: true, navigationBusy: true, now: warningTime.addingTimeInterval(1)))

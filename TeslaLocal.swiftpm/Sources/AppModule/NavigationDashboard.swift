@@ -148,6 +148,9 @@ struct NavigationReadout {
     var mediaVolumeMax: Double? = nil
     var mediaStatus = ""
     var mediaBusy = false
+    var phoneSpotify = false
+    var mediaArtwork: UIImage? = nil
+    var mediaControllable: Bool { (connected || phoneSpotify) && !mediaBusy }
 
     var hasMedia: Bool { !mediaTitle.isEmpty || !mediaSource.isEmpty || (mediaSourceCode ?? 0) > 0 }
     var showsMedia: Bool { hasMedia }
@@ -1647,7 +1650,7 @@ private struct MediaCard: View {
         .accessibilityIdentifier("navigation.media")
     }
 
-    private var enabled: Bool { data.connected && !data.mediaBusy }
+    private var enabled: Bool { data.mediaControllable }
     private var title: String {
         if !data.mediaTitle.isEmpty { return data.mediaTitle }
         return data.hasMedia ? data.mediaApp.name : "재생 정보 없음"
@@ -1671,7 +1674,7 @@ private struct MediaCard: View {
     }
 
     private func art(_ side: CGFloat) -> some View {
-        PlaybackSourceIcon(source: data.mediaApp, side: side)
+        PlaybackArtwork(data: data, side: side)
     }
 
     private func control(_ name: String, _ symbol: String, _ label: String, size: CGFloat) -> some View {
@@ -1742,7 +1745,7 @@ private struct MediaCard: View {
             control("mediaToggle", toggleSymbol, toggleLabel, size: 22 * u)
             Spacer(minLength: 0)
             control("mediaNext", "forward.fill", "다음 곡", size: 16 * u)
-            if volume {
+            if volume && data.connected {
                 Spacer(minLength: 0)
                 control("mediaVolumeDown", "speaker.minus.fill", "볼륨 낮추기", size: 14 * u)
                 control("mediaVolumeUp", "speaker.plus.fill", "볼륨 높이기", size: 14 * u)
@@ -1777,12 +1780,10 @@ struct NavigationEndButton: View {
     let stop: () -> Void
     var body: some View {
         Button(action: stop) {
-            Label("안내 종료", systemImage: "xmark.circle.fill")
-                .font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                .padding(.horizontal, 12).frame(minHeight: 44)
+            Image(systemName: "xmark").font(.system(size: 17, weight: .semibold))
+                .frame(width: 44, height: 44).contentShape(Rectangle())
         }
-        .buttonStyle(.plain).foregroundStyle(.white)
-        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
+        .buttonStyle(.plain).accessibilityLabel("안내 종료")
         .accessibilityIdentifier("navigation.parked.stop")
     }
 }
@@ -1859,12 +1860,23 @@ private struct PlaybackSourceIcon: View {
     }
 }
 
+private struct PlaybackArtwork: View {
+    let data: NavigationReadout
+    let side: CGFloat
+    var body: some View {
+        if let art = data.mediaArtwork {
+            Image(uiImage: art).resizable().scaledToFill().frame(width: side, height: side)
+                .clipShape(RoundedRectangle(cornerRadius: side * 0.15))
+                .overlay(alignment: .bottomTrailing) { PlaybackSourceIcon(source: data.mediaApp, side: max(12, side * 0.38)) }
+        } else { PlaybackSourceIcon(source: data.mediaApp, side: side) }
+    }
+}
 private struct NavigationMediaHeader: View {
     let data: NavigationReadout
     let action: (String) -> Void
     var body: some View {
         HStack(spacing: 8) {
-            PlaybackSourceIcon(source: data.mediaApp, side: 26)
+            PlaybackArtwork(data: data, side: 26)
             Text(data.mediaTitle.isEmpty ? data.mediaApp.name : data.mediaTitle)
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1873,7 +1885,7 @@ private struct NavigationMediaHeader: View {
                 Image(systemName: data.mediaPlaying ? "pause.fill" : "play.fill").frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .disabled(!data.connected || data.mediaBusy)
+            .disabled(!data.mediaControllable)
             .accessibilityLabel(data.mediaPlaying ? "일시정지" : "재생")
         }
         .padding(.leading, 12).frame(height: 44)
@@ -1890,7 +1902,7 @@ private struct MediaIsland: View {
 
     var body: some View {
         HStack(spacing: 8 * u) {
-            PlaybackSourceIcon(source: data.mediaApp, side: 26 * u)
+            PlaybackArtwork(data: data, side: 26 * u)
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 15 * u, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.5)
@@ -1925,7 +1937,7 @@ private struct MediaIsland: View {
         if !data.mediaStatus.isEmpty { return data.mediaStatus }
         return [data.mediaArtist, data.mediaTitle.isEmpty ? "" : data.mediaApp.name].filter { !$0.isEmpty }.joined(separator: " · ")
     }
-    private var enabled: Bool { data.connected && !data.mediaBusy }
+    private var enabled: Bool { data.mediaControllable }
 
     private func button(_ name: String, _ symbol: String, _ label: String) -> some View {
         Button { action(name) } label: {
@@ -1971,7 +1983,16 @@ private struct IslandBars: View {
 
 private struct DashboardSafeAreaKey: EnvironmentKey { static let defaultValue = EdgeInsets() }
 private struct DashboardChromeClearanceKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+private struct NavigationEndActionKey: EnvironmentKey { static let defaultValue: (() -> Void)? = nil }
+private struct NavigationChromeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
 extension EnvironmentValues {
+    var navigationEndAction: (() -> Void)? {
+        get { self[NavigationEndActionKey.self] }
+        set { self[NavigationEndActionKey.self] = newValue }
+    }
     var dashboardChromeClearance: CGFloat {
         get { self[DashboardChromeClearanceKey.self] }
         set { self[DashboardChromeClearanceKey.self] = newValue }
@@ -1987,6 +2008,7 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var expanded = false
     @State private var activity = 0
+    @State private var chromeHeight: CGFloat = 0
     var endGuidance: (() -> Void)? = nil
     @ViewBuilder var content: () -> Content
     @ViewBuilder var controls: () -> Controls
@@ -1994,7 +2016,8 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
         GeometryReader { geometry in
         content()
             .environment(\.dashboardSafeArea, geometry.safeAreaInsets)
-            .environment(\.dashboardChromeClearance, endGuidance == nil ? 0 : (geometry.size.width > geometry.size.height ? 58 : 100))
+            .environment(\.navigationEndAction, endGuidance)
+            .environment(\.dashboardChromeClearance, expanded ? chromeHeight : 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea(.container)
             .overlay(alignment: .top) {
@@ -2003,7 +2026,6 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                         HStack(spacing: 4) {
                             VStack(spacing: 4) {
                                 controls()
-                                if let endGuidance { ParkedNavigationActions(stop: endGuidance) }
                             }.frame(maxWidth: .infinity)
                             Button { setExpanded(false) } label: {
                                 Image(systemName: "chevron.up").frame(width: 44, height: 44)
@@ -2012,6 +2034,7 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                         }
                         .padding(.horizontal, 8)
                         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                        .accessibilityElement(children: .contain).accessibilityIdentifier("navigation.chrome.panel")
                         .simultaneousGesture(TapGesture().onEnded { activity += 1 })
                         .transition(.move(edge: .top).combined(with: .opacity))
                     } else {
@@ -2023,19 +2046,18 @@ struct NavigationWorkspaceChrome<Content: View, Controls: View>: View {
                                 .contentShape(Rectangle())
                         }.accessibilityLabel("상단 조작 열기")
                             .accessibilityIdentifier("navigation.chrome.open")
-                        if let endGuidance {
-                            HStack { Spacer(); NavigationEndButton(stop: endGuidance) }
-                        }
                         }
                     }
                 }.foregroundStyle(.white).padding(.horizontal, 8)
                     .padding(.leading, geometry.safeAreaInsets.leading)
                     .padding(.trailing, geometry.safeAreaInsets.trailing)
                     .padding(.top, geometry.size.width > geometry.size.height ? 6 : 48)
+                    .background(GeometryReader { size in Color.clear.preference(key: NavigationChromeHeightKey.self, value: size.size.height + 8) })
                     // v1.24: pin the panel to the screen's top edge in every orientation.
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .ignoresSafeArea()
             }
+            .onPreferenceChange(NavigationChromeHeightKey.self) { chromeHeight = $0 }
             .task(id: activity) {
                 guard expanded, !voiceOver else { return }
                 do { try await Task.sleep(for: .seconds(6)) } catch { return }
@@ -2068,9 +2090,13 @@ struct NavigationTrafficRefreshButton: View {
 }
 
 private struct TeslaGuidanceSurface: ViewModifier {
+    @Environment(\.navigationEndAction) private var endGuidance
     let radius: CGFloat
     func body(content: Content) -> some View {
-        content.foregroundStyle(.black)
+        HStack(spacing: 0) {
+            content.frame(maxWidth: .infinity)
+            if let endGuidance { NavigationEndButton(stop: endGuidance).padding(.trailing, 2) }
+        }.foregroundStyle(.black)
             .environment(\.guidanceDarkInk, true)
             .background {
                 let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -2078,6 +2104,7 @@ private struct TeslaGuidanceSurface: ViewModifier {
                 shape.fill(Color.white.opacity(0.65))
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .accessibilityElement(children: .contain).accessibilityIdentifier("navigation.maneuver.surface")
     }
 }
 

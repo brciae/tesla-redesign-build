@@ -24,11 +24,17 @@ enum FleetParkingAnalysis {
         let groups = Dictionary(grouping: selected, by: \.at)
         let dates = groups.keys.sorted()
         var latest: [String: FleetTelemetryReading] = [:]
+        for row in records.filter({ $0.vin == vin && $0.at < from }).sorted(by: { $0.at < $1.at }) { latest[row.field] = row }
         var buckets: [String: FleetParkingBucket] = [:]
         var previous: (at: Date, category: String, energy: Double?)?
         func current(_ field: String, at: Date) -> FleetTelemetryReading? {
             guard let value = latest[field], !value.invalid, at.timeIntervalSince(value.at) <= 120 else { return nil }
             return value
+        }
+        // Categorical telemetry is change-based. Fresh counter intervals, not repeated
+        // identical Gear/Sentry/ChargeState values, establish observation coverage.
+        func held(_ field: String) -> FleetTelemetryReading? {
+            guard let value = latest[field], !value.invalid else { return nil }; return value
         }
         func scalar(_ reading: FleetTelemetryReading?) -> String? {
             guard let reading, let data = reading.text.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let raw = object.values.first else { return nil }
@@ -42,13 +48,17 @@ enum FleetParkingAnalysis {
         }
         for date in dates {
             for item in groups[date] ?? [] { latest[item.field] = item }
-            let gear = scalar(current("Gear", at: date))
+            let gear = scalar(held("Gear"))
             guard gear == "p" || gear == "shiftstatep" else { previous = nil; continue }
-            let charging = scalar(current("ChargeState", at: date))
-            let detail = scalar(current("DetailedChargeState", at: date))
-            guard charging == "stopped" || charging == "complete" || charging == "disconnected" || charging == "nopower" || detail?.hasSuffix("stopped") == true || detail?.hasSuffix("complete") == true || detail?.hasSuffix("disconnected") == true else { previous = nil; continue }
-            let sentry = state(current("SentryMode", at: date))
-            let climate = state(current("HvacPower", at: date)) ?? current("HvacFanStatus", at: date)?.number.map { $0 > 0 }
+            if let speed = current("VehicleSpeed", at: date)?.number, speed > 1 { previous = nil; continue }
+            let newestCharge = [latest["DetailedChargeState"], latest["ChargeState"]].compactMap { $0 }.max {
+                $0.at == $1.at ? ($0.field != "DetailedChargeState" && $1.field == "DetailedChargeState") : $0.at < $1.at
+            }
+            let charging = newestCharge.flatMap { $0.invalid ? nil : scalar($0) }
+            guard ["stopped", "complete", "disconnected", "nopower"].contains(where: { charging?.hasSuffix($0) == true }) else { previous = nil; continue }
+            if ["ChargePower", "ACChargingPower", "DCChargingPower"].contains(where: { (current($0, at: date)?.number ?? 0) > 0 }) { previous = nil; continue }
+            let sentry = state(held("SentryMode"))
+            let climate = state(held("HvacPower")) ?? held("HvacFanStatus")?.number.map { $0 > 0 }
             let category: String
             switch (sentry, climate) {
             case (true?, true?): category = "combined"

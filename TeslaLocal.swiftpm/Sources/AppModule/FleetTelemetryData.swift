@@ -17,7 +17,7 @@ enum FleetTelemetryData {
     static func historyWindow(_ records: [FleetTelemetryReading], vin: String, since: Date) -> (rows: [FleetTelemetryReading], start: Date) {
         let ordered = records.filter { $0.vin == vin }.sorted { $0.at < $1.at }
         var chargeStart: Date?, driveStart: Date?, recentChargeStart: Date?, chargeEnd: Date?
-        var recentDriveStart: Date?, driveEnd: Date?
+        var recentDriveStart: Date?, driveEnd: Date?, parkingStart: Date?, recentParkingStart: Date?, parkingEnd: Date?
         var chargeState = "", gear = ""
         for row in ordered where row.at < since && !row.invalid {
             if ["ChargeState", "DetailedChargeState"].contains(row.field), let raw = firstStringValue(row) {
@@ -31,12 +31,17 @@ enum FleetTelemetryData {
             }
             if row.field == "Gear", let raw = firstStringValue(row) {
                 let state = raw.replacingOccurrences(of: "ShiftState", with: "")
+                if state == "P", gear != "P" { parkingStart = row.at }
+                if ["D", "R", "N"].contains(state), let parked = parkingStart {
+                    recentParkingStart = parked; parkingEnd = row.at; parkingStart = nil
+                }
                 if ["D", "R", "N"].contains(state), !["D", "R", "N"].contains(gear) { driveStart = row.at }
                 if state == "P", let started = driveStart { recentDriveStart = started; driveEnd = row.at; driveStart = nil }
                 gear = state
             }
         }
-        var start = min(since, chargeStart ?? since, driveStart ?? since)
+        var start = min(since, chargeStart ?? since, driveStart ?? since, parkingStart ?? since)
+        if let end = parkingEnd, since.timeIntervalSince(end) <= 120, let previous = recentParkingStart { start = min(start, previous) }
         if let end = chargeEnd, since.timeIntervalSince(end) <= 120, let previous = recentChargeStart { start = min(start, previous) }
         if let end = driveEnd, since.timeIntervalSince(end) <= 120, let previous = recentDriveStart { start = min(start, previous) }
         var seed: [String: FleetTelemetryReading] = [:]
