@@ -147,7 +147,7 @@ struct BatteryOverview: View {
                     }
                 }.accessibilityIdentifier("battery.parking.reasons")
             }
-        }.accessibilityIdentifier("battery.parking")
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("battery.parking")
     }
     private func tripEnergyRow(_ t: Object) -> some View {
         VStack(alignment: .leading, spacing: 5) {

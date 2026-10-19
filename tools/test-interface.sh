@@ -15,6 +15,13 @@ elif [[ "${1:-}" == junction ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit)
 elif [[ "${1:-}" == island ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testActualLiveActivityExtensionOnHomeScreen)
+elif [[ "${1:-}" == regression ]]; then
+  test_filter=(
+    -only-testing:InterfaceProbeTests/InteractionTests/testBatteryBaselineAndPeriods
+    -only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit
+    -only-testing:InterfaceProbeTests/InteractionTests/testNoVehicleRouteStopVisibleWithoutOpeningChromeAndSurvivesRelaunch
+    -only-testing:InterfaceProbeTests/InteractionTests/testLiveActivitySettingsAreVisibleWithoutHiddenDiagnostics
+  )
 elif [[ "${1:-}" == new ]]; then
   test_filter=(
       -only-testing:InterfaceProbeTests/InteractionTests/testRecoveredChargeTimingAndRemovedScreenBriefing

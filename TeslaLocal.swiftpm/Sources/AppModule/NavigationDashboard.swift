@@ -2128,10 +2128,12 @@ struct DashboardShadeControl: View {
 
 private struct JunctionGuidance: ViewModifier {
     let data: NavigationReadout
+    @Environment(\.navigationEndAction) private var endGuidance
     func body(content: Content) -> some View {
         let visible = data.junctionImage != nil && data.junctionMetres.isFinite && data.junctionMetres > 0
         VStack(spacing: 5) {
         content.opacity(visible ? 0 : 1)
+            .environment(\.navigationEndAction, visible ? nil : endGuidance)
             .allowsHitTesting(!visible).accessibilityHidden(visible)
             .overlay {
                 if visible, let image = data.junctionImage {

@@ -814,7 +814,7 @@ final class InteractionTests: XCTestCase {
             for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
             let stop = app.buttons["navigation.parked.stop"]
             XCTAssertTrue(stop.waitForExistence(timeout: 8)); XCTAssertTrue(stop.isHittable)
-            XCTAssertGreaterThanOrEqual(stop.frame.height, 44)
+            XCTAssertGreaterThanOrEqual(stop.frame.height + 0.01, 44, "44pt target with subpixel coordinate tolerance")
             XCTAssertTrue(app.buttons["navigation.chrome.open"].exists)
             app.buttons["navigation.chrome.open"].tap()
             XCTAssertTrue(app.buttons["navigation.chrome.close"].waitForExistence(timeout: 4))
