@@ -267,6 +267,16 @@ final class InteractionTests: XCTestCase {
         app.buttons["진출 지점 통과"].tap()
         app.buttons["navigation.chrome.close"].tap()
         XCTAssertFalse(app.otherElements["navigation.junction"].exists)
+        app.terminate()
+        XCUIDevice.shared.orientation = .portrait
+        app.launchArguments = ["fullscreen-navigation-probe", "junction-probe", "no-vehicle-route-probe", "reset-route-probe"]
+        app.launch()
+        let stop = app.buttons["navigation.parked.stop"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 8)); XCTAssertEqual(app.buttons.matching(identifier: "navigation.parked.stop").count, 1)
+        XCTAssertTrue(stop.isHittable)
+        captureSystemCard("Integrated route stop on junction image")
+        stop.tap()
+        XCTAssertTrue(app.staticTexts["fullscreen.stopped"].waitForExistence(timeout: 4))
     }
     func testLiveActivityViewsAndBackgroundReturn() {
         XCUIDevice.shared.orientation = .portrait

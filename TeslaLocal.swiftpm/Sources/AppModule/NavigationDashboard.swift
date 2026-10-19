@@ -2132,10 +2132,11 @@ private struct JunctionGuidance: ViewModifier {
         let visible = data.junctionImage != nil && data.junctionMetres.isFinite && data.junctionMetres > 0
         VStack(spacing: 5) {
         content.opacity(visible ? 0 : 1)
+            .allowsHitTesting(!visible).accessibilityHidden(visible)
             .overlay {
                 if visible, let image = data.junctionImage {
                     NavigationJunctionCard(image: image, metres: data.junctionMetres)
-                        .allowsHitTesting(false)
+                        .accessibilityHidden(false)
                 }
             }
         if let prediction = data.energyPrediction { TripEnergyPredictionRow(estimate: prediction) }
