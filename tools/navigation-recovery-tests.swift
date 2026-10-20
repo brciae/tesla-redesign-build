@@ -1,6 +1,15 @@
 import Foundation
 @main struct NavigationRecoveryTests {
     static func main() throws {
+        var traffic = NavigationTrafficAnnouncement()
+        precondition(traffic.consume("rerouting") == nil, "GPS wait must not announce submission")
+        precondition(traffic.consume("trafficRequestStarted") == "경로를 재탐색합니다.")
+        precondition(traffic.consume("trafficRequestStarted") == nil, "SDK callback must not duplicate speech")
+        precondition(traffic.consume("trafficUpdated") == nil)
+        precondition(traffic.consume("trafficRequestStarted") != nil, "A subsequent actual request speaks again")
+        precondition(traffic.consume("trafficUpdated") == nil)
+        precondition(traffic.consume("rerouting") == nil)
+        precondition(traffic.consume("trafficUpdated") == nil, "GPS timeout must not announce a request")
         let now = Date()
         let state = NavigationRecoveryCheckpoint(vin: "TEST", name: "목적지", latitude: 37.5, longitude: 127,
                                                   manual: true, savedAt: now)

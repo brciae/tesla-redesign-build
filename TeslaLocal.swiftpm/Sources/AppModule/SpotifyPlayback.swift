@@ -16,13 +16,18 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
     @Published private(set) var duration: Double = 0
     @Published private(set) var position: Double = 0
     @Published private(set) var status = "연결 안 됨"
+    @Published private(set) var connectionIssue = ""
     private var trackURI = ""
     private var artworkRequestAt = Date.distantPast
     private var connectionGeneration = UUID()
+    private var commandGeneration = UUID()
     private var remote: SPTAppRemote?
     private var authentication: ASWebAuthenticationSession?
     private var request: UUID?
     private var exchanging = false
+    private var wakeAfterAuthorization = false
+    private var remoteAuthorizationPending = false
+    private var authorizationGeneration = UUID()
     private var observers: [NSObjectProtocol] = []
     private let service = "local.ylcompanion.spotify"
     var clientID: String { UserDefaults.standard.string(forKey: "spotify.clientID") ?? SpotifyPlaybackPolicy.defaultClientID }
@@ -49,7 +54,10 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         guard !working else { return }
         guard SpotifyPlaybackPolicy.validClientID(clientID) else { status = "Spotify 개발자 앱의 Client ID 필요"; return }
         guard UIApplication.shared.canOpenURL(URL(string: "spotify:")!) else { status = "Spotify 앱 설치 필요"; return }
-        if authorized { reconnect(); return }
+        // Account authorization alone does not wake the Spotify app. An explicit
+        // connect action must complete the SDK app-switch handshake as well.
+        if authorized { openSpotifyAndConnect(); return }
+        wakeAfterAuthorization = true
         let verifier = UUID().uuidString + UUID().uuidString
         let state = UUID().uuidString
         let id = UUID(); request = id; working = true
@@ -77,8 +85,15 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
     }
     func reconnect() {
+        guard !remoteAuthorizationPending else { return }
+        if wakeAfterAuthorization, authorized, UIApplication.shared.applicationState == .active {
+            openSpotifyAndConnect(); return
+        }
         guard UIApplication.shared.applicationState == .active, !working, !connected,
               SpotifyPlaybackPolicy.validClientID(clientID), let refresh = token("refresh") else { return }
+        if SpotifyPlaybackPolicy.remoteTokenUsable(expires: Double(token("remoteExpires") ?? "") ?? 0, now: Date().timeIntervalSince1970), let access = token("remoteAccess") {
+            attach(access); return
+        }
         let expires = Double(token("expires") ?? "") ?? 0
         if expires > Date().timeIntervalSince1970 + 60, let access = token("access") { attach(access); return }
         working = true
@@ -112,16 +127,62 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
                       self.saveToken("expires", String(Date().timeIntervalSince1970 + seconds)) else {
                     self.clearTokens(); self.status = "인증 저장 실패 · 앱 서명 확인 필요"; return
                 }
-                self.attach(access)
+                if self.wakeAfterAuthorization {
+                    if UIApplication.shared.applicationState == .active { self.openSpotifyAndConnect() }
+                    else { self.status = "계정 인증 완료 · 앱 복귀 후 Spotify 연결" }
+                } else { self.attach(access) }
             }
         }.resume()
     }
-    private func attach(_ access: String) {
-        guard UIApplication.shared.applicationState == .active else { return }
+    private func configureRemote() {
         if remote == nil {
             remote = SPTAppRemote(configuration: SPTConfiguration(clientID: clientID, redirectURL: URL(string: SpotifyPlaybackPolicy.redirect)!), logLevel: .none)
             remote?.delegate = self
         }
+    }
+    private func openSpotifyAndConnect() {
+        guard UIApplication.shared.applicationState == .active else { wakeAfterAuthorization = true; return }
+        wakeAfterAuthorization = false
+        connectionGeneration = UUID(); connectionIssue = ""
+        remote?.delegate = nil; remote?.disconnect(); remote = nil
+        configureRemote()
+        remoteAuthorizationPending = true; working = true
+        status = "Spotify에서 연결 승인 후 돌아오기"
+        let generation = UUID(); authorizationGeneration = generation
+        // Spotify's documented iOS handshake wakes its player and returns an SDK
+        // token to onOpenURL. Empty URI resumes the current/last track.
+        remote?.authorizeAndPlayURI("", completionHandler: { [weak self] opened in
+            DispatchQueue.main.async {
+                guard let self, self.authorizationGeneration == generation, self.remoteAuthorizationPending, !opened else { return }
+                self.remoteAuthorizationPending = false; self.working = false
+                self.status = "Spotify를 열지 못함 · 앱 설치 확인 필요"
+            }
+        })
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
+            guard let self, self.authorizationGeneration == generation, self.remoteAuthorizationPending else { return }
+            self.remoteAuthorizationPending = false; self.working = false
+            self.status = "Spotify 연결 미완료 · 다시 연결"
+        }
+    }
+    @discardableResult func receive(_ url: URL) -> Bool {
+        guard SpotifyPlaybackPolicy.acceptsRemoteCallback(url, pending: remoteAuthorizationPending) else { return false }
+        guard let parameters = remote?.authorizationParameters(from: url),
+              let access = parameters[SPTAppRemoteAccessTokenKey], !access.isEmpty else {
+            remoteAuthorizationPending = false; working = false
+            status = "Spotify 연결 승인 실패 · 개발자 앱 설정 확인 필요"
+            return true
+        }
+        remoteAuthorizationPending = false; working = false
+        guard saveToken("remoteAccess", access), saveToken("remoteExpires", String(Date().timeIntervalSince1970 + 3600)) else {
+            status = "Spotify 인증 저장 실패 · 앱 서명 확인 필요"; return true
+        }
+        status = "Spotify 승인 완료 · 플레이어 연결 중"
+        attach(access) // If callback precedes activation, reconnect() uses the saved token.
+        return true
+    }
+    private func attach(_ access: String) {
+        guard UIApplication.shared.applicationState == .active else { return }
+        configureRemote()
         remote?.connectionParameters.accessToken = access
         status = "Spotify 연결 중"; working = true
         let generation = UUID(); connectionGeneration = generation
@@ -133,6 +194,7 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         }
     }
     func disconnect() {
+        wakeAfterAuthorization = false; remoteAuthorizationPending = false; authorizationGeneration = UUID(); connectionGeneration = UUID()
         request = nil; authentication?.cancel(); authentication = nil; exchanging = false
         remote?.delegate = nil; remote?.disconnect(); remote = nil
         clearTokens(); connected = false; working = false; clearPlayback(); status = "연결 해제됨"
@@ -140,34 +202,50 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
     private func clearPlayback() { title = ""; artist = ""; album = ""; playing = false; artwork = nil; trackURI = ""; duration = 0; position = 0; artworkRequestAt = .distantPast }
     func refreshPlayback() {
         guard connected else { reconnect(); return }
+        let generation = connectionGeneration
         remote?.playerAPI?.getPlayerState({ [weak self] result, error in
             DispatchQueue.main.async {
-                if let state = result as? SPTAppRemotePlayerState { self?.playerStateDidChange(state) }
-                else if error != nil { self?.status = "재생 정보 수신 실패 · 다시 새로고침" }
+                guard let self, self.connected, self.connectionGeneration == generation else { return }
+                if let state = result as? SPTAppRemotePlayerState { self.playerStateDidChange(state) }
+                else { self.status = error != nil ? "재생 정보 수신 실패 · 다시 새로고침" : "Spotify 연결됨 · 재생 정보 대기" }
             }
         })
     }
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
+        if !Thread.isMainThread { DispatchQueue.main.async { [weak self] in self?.appRemoteDidEstablishConnection(appRemote) }; return }
         guard appRemote === remote else { return }
-        connected = true; working = false; status = "이 iPhone의 Spotify와 연결됨"
+        connected = true; working = false; status = "Spotify 연결됨 · 재생 정보 대기"
+        connectionIssue = ""
         appRemote.playerAPI?.delegate = self
         appRemote.playerAPI?.subscribe(toPlayerState: { [weak self] _, error in
-            if error != nil { DispatchQueue.main.async { self?.status = "재생 정보 구독 실패"; self?.connected = false; self?.clearPlayback() } }
+            if error != nil { DispatchQueue.main.async { self?.status = "재생 정보 구독 실패 · 새로고침 가능" } }
         })
-        appRemote.playerAPI?.getPlayerState({ [weak self] result, _ in
-            if let state = result as? SPTAppRemotePlayerState { self?.playerStateDidChange(state) }
-        })
+        refreshPlayback()
+        // Bounded initial recovery if the first state request races player startup.
+        let generation = connectionGeneration
+        for delay in [1.0, 3.0, 7.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.connectionGeneration == generation, self.connected, self.title.isEmpty else { return }
+                self.refreshPlayback()
+            }
+        }
     }
     func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
+        if !Thread.isMainThread { DispatchQueue.main.async { [weak self] in self?.appRemote(appRemote, didFailConnectionAttemptWithError: error) }; return }
         guard appRemote === remote else { return }
+        if let error = error as NSError? { connectionIssue = "\(error.domain) · \(error.code)" }
         connected = false; working = false; clearPlayback(); status = "Spotify에서 음악 재생 후 다시 연결"
     }
     func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
+        if !Thread.isMainThread { DispatchQueue.main.async { [weak self] in self?.appRemote(appRemote, didDisconnectWithError: error) }; return }
         guard appRemote === remote else { return }
+        if let error = error as NSError? { connectionIssue = "\(error.domain) · \(error.code)" }
         connected = false; working = false; clearPlayback(); status = "Spotify 연결 대기"
     }
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
+        if !Thread.isMainThread { DispatchQueue.main.async { [weak self] in self?.playerStateDidChange(playerState) }; return }
         guard connected else { return }
+        status = "재생 정보 수신 중"
         title = playerState.track.name; artist = playerState.track.artist.name; album = playerState.track.album.name
         playing = !playerState.isPaused; duration = Double(playerState.track.duration) / 1000
         position = Double(playerState.playbackPosition) / 1000
@@ -183,8 +261,18 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
     func command(_ action: String) {
         guard connected, !working, let api = remote?.playerAPI else { return }
         working = true
+        let generation = UUID(); commandGeneration = generation
+        let connection = connectionGeneration
         let done: SPTAppRemoteCallback = { [weak self] _, error in
-            DispatchQueue.main.async { self?.working = false; if error != nil { self?.status = "Spotify 재생 제어 실패" } }
+            DispatchQueue.main.async {
+                guard let self, self.commandGeneration == generation, self.connectionGeneration == connection else { return }
+                self.working = false; if error != nil { self.status = "Spotify 재생 제어 실패" }
+                self.refreshPlayback()
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self, self.commandGeneration == generation, self.connectionGeneration == connection, self.working else { return }
+            self.working = false; self.status = "재생 제어 응답 지연 · 다시 연결 가능"
         }
         switch action {
         case "mediaToggle": if playing { api.pause(done) } else { api.resume(done) }
@@ -210,7 +298,7 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
-    private func clearTokens() { for key in ["access", "refresh", "expires"] {
+    private func clearTokens() { for key in ["access", "refresh", "expires", "remoteAccess", "remoteExpires"] {
         SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: key] as CFDictionary)
     } }
 }
@@ -243,13 +331,16 @@ struct SpotifySettingsView: View {
             }
             Section("Spotify") {
                 Text(spotify.status).accessibilityIdentifier("spotify.status")
-                Button(spotify.connected ? "연결됨" : spotify.authorized ? "다시 연결" : "계정 연결") { spotify.saveClientID(clientID); spotify.connect() }
-                    .disabled(spotify.working || spotify.connected || !SpotifyPlaybackPolicy.validClientID(clientID))
+                Button(spotify.connected ? "플레이어 다시 연결" : spotify.authorized ? "다시 연결" : "계정 연결") { spotify.saveClientID(clientID); spotify.connect() }
+                    .disabled(spotify.working || !SpotifyPlaybackPolicy.validClientID(clientID))
                     .accessibilityIdentifier("spotify.connect")
                 Link("Spotify 열기", destination: URL(string: "spotify:")!)
                 if spotify.authorized { Button("연결 해제", role: .destructive) { spotify.disconnect() } }
                 Text("블루투스 출력을 유지하며 곡·앨범아트·재생 제어를 연동함.")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("계정 등록과 플레이어 연결은 별개임. 연결 시 Spotify가 열리며 현재 또는 마지막 곡이 재생될 수 있음.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if !spotify.connectionIssue.isEmpty { LabeledContent("연결 오류", value: spotify.connectionIssue).font(.caption) }
             }
             Section {
               DisclosureGroup("연동 설정") {
@@ -264,11 +355,6 @@ struct SpotifySettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
               }
             }
-            if !spotify.title.isEmpty { Section("현재 재생") {
-                HStack { if let art = spotify.artwork { Image(uiImage: art).resizable().scaledToFit().frame(width: 64, height: 64) }
-                    VStack(alignment: .leading) { Text(spotify.title); Text(spotify.artist).font(.caption) }
-                }
-            } }
         }.navigationTitle("Spotify 연결").onAppear { clientID = spotify.clientID; spotify.reconnect() }
     }
 }

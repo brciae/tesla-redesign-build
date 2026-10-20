@@ -65,6 +65,19 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     @Published private(set) var networkAvailable = true
     @Published private(set) var trafficRefreshing = false
     @Published private(set) var trafficFeedback = ""
+    private var trafficAnnouncement = NavigationTrafficAnnouncement()
+    @discardableResult private func handleTrafficEvent(_ event: String, message: String) -> Bool {
+        guard ["rerouting", "trafficRequestStarted", "trafficUpdated"].contains(event) else { return false }
+        trafficRefreshing = event != "trafficUpdated"
+        status = message; trafficFeedback = message
+        if let text = trafficAnnouncement.consume(event),
+           let data = try? JSONSerialization.data(withJSONObject: ["text": text,
+                "validUntil": Date().timeIntervalSince1970 + 10, "stateChange": true, "kind": "status"]),
+           let cue = String(data: data, encoding: .utf8) {
+            onSpokenGuide?(cue, false)
+        }
+        return true
+    }
     func refreshTrafficRoute() {
         guard guiding, networkAvailable, !trafficRefreshing else {
             status = networkAvailable ? "길안내 중에 교통정보 재탐색 가능함" : "통신 복구 대기 · 기존 경로 안내 유지"
@@ -383,8 +396,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                         self.navigationScene = view.view.window?.windowScene
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene); return
                     }
-                    if event == "rerouting" { self.trafficRefreshing = true; self.status = message; self.trafficFeedback = message; return }
-                    if event == "trafficUpdated" { self.trafficRefreshing = false; self.status = message; self.trafficFeedback = message; return }
+                    if self.handleTrafficEvent(event, message: message) { return }
                     if event == "error" { self.failed(message, ticket: ticket); return }
                     if event == "ended" { self.endGuidance(arrived: true); return }
                     if event == "ready" || event == "started" {
@@ -393,6 +405,9 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                     }
                     if event == "started" {
                         self.busy = false; self.guiding = true; self.startFailures = 0; self.deadline?.invalidate()
+                        if UserDefaults.standard.bool(forKey: "navVoiceEnabled") {
+                            self.onPrepareGuide?("[\"경로를 재탐색합니다.\"]")
+                        }
                         self.holdBackgroundLocation(true); self.lastRecoverySave = .distantPast; self.saveRecoveryCheckpoint()
                         // Request the Live Activity while still foreground, before the first GPS tick.
                         self.onActivityChange?()
@@ -470,6 +485,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         }
     }
     private func stopNative(keepDisplay: Bool = false, keepMap: Bool = false) {
+        trafficAnnouncement = NavigationTrafficAnnouncement(); trafficFeedback = ""
         deadline?.invalidate(); deadline = nil; locator.stopUpdatingLocation()
         controller?.eventHandler = nil; controller?.telemetryHandler = nil
         if keepMap { controller?.endGuidanceKeepingMap() }
@@ -556,6 +572,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                 if event == "audioAcquired" { self.onAudioSession?(true); return }
                 if event == "spokenGuide" || event == "spokenSafety" { self.onSpokenGuide?(message, event == "spokenSafety"); return }
                 if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
+                if self.handleTrafficEvent(event, message: message) { return }
                 if event == "follow" { self.following = message == "1"; return }
                 if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
                 if event == "visible" {

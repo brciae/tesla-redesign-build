@@ -1,6 +1,15 @@
 import Foundation
 @main struct SpotifyPolicyTests {
     static func main() {
+        let remoteURL = URL(string: "ylcompanion://spotify/callback#access_token=fixture")!
+        precondition(SpotifyPlaybackPolicy.acceptsRemoteCallback(remoteURL, pending: true))
+        precondition(!SpotifyPlaybackPolicy.acceptsRemoteCallback(remoteURL, pending: false))
+        for value in ["other://spotify/callback", "ylcompanion://activity", "ylcompanion://spotify/wrong"] {
+            precondition(!SpotifyPlaybackPolicy.acceptsRemoteCallback(URL(string: value)!, pending: true))
+        }
+        precondition(SpotifyPlaybackPolicy.remoteTokenUsable(expires: 200, now: 100))
+        precondition(!SpotifyPlaybackPolicy.remoteTokenUsable(expires: 160, now: 100))
+        precondition(!SpotifyPlaybackPolicy.remoteTokenUsable(expires: .nan, now: 100))
         precondition(SpotifyPlaybackPolicy.challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk") == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
         precondition(SpotifyPlaybackPolicy.validClientID(String(repeating: "a", count: 32)))
         for bad in ["someone@example.com", "spotify-user", "", String(repeating: "z", count: 32)] { precondition(!SpotifyPlaybackPolicy.validClientID(bad)) }

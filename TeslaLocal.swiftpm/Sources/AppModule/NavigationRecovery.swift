@@ -1,5 +1,17 @@
 import Foundation
 
+/// Waiting for GPS is not an SDK request. Speak once only after submission;
+/// duplicate SDK callbacks must not repeat the announcement.
+struct NavigationTrafficAnnouncement {
+    private var announced = false
+    mutating func consume(_ event: String) -> String? {
+        if event == "trafficUpdated" { announced = false; return nil }
+        guard event == "trafficRequestStarted", !announced else { return nil }
+        announced = true
+        return "경로를 재탐색합니다."
+    }
+}
+
 /// Route announcements use the same active SDK route as the navigation screen.
 struct NavigationAnnouncementContext {
     var active = false

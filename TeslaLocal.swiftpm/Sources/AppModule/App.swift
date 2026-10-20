@@ -101,6 +101,7 @@ struct MainView: View {
             .tint(Color.primary)
             .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
             .onOpenURL { url in
+                if SpotifyPlayback.shared.receive(url) { return }
                 if url.scheme == "ylcompanion", url.host == "charging" {
                     selectedTab = .energy
                     model.chargingPresented = true

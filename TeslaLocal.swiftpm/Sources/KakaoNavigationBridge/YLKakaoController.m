@@ -242,8 +242,8 @@ static NSArray *YLLifecycleObservers;
 - (void)performTrafficRequest {
     if (!self.guiding || !self.trafficRerouting || ![self locationIsFresh]) return;
     self.trafficWaitingForLocation = NO;
+    [self emit:@"trafficRequestStarted" message:@"경로 재탐색 중"];
     [(KNDriveGuidance *)self.guidance reRouteWithPriority:KNRoutePriority_Recommand avoidOptions:KNRouteAvoidOption_None];
-    [self emit:@"rerouting" message:@"최신 교통정보 반영 · 경로 재탐색 중"];
 }
 - (void)pauseOfflineMapDownload { [[[KNSDK sharedInstance] sharedMapDownLoader] downLoadPause]; }
 - (void)useOfflineMap:(BOOL)enabled {
@@ -594,7 +594,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 - (void)guidanceGuideStarted:(KNGuidance *)guidance {
     YL_FORWARD(self.guiding = YES; if (guidance.routesOnGuide.count) [self.map setRoutes:guidance.routesOnGuide]; [self emit:@"started" message:@"길안내 중"]);
 }
-- (void)guidanceCheckingRouteChange:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = YES; self.trafficWaitingForLocation = NO; [self watchTrafficRequest]; [self emit:@"rerouting" message:@"교통 상황 반영 · 경로 재탐색 중"]); }
+- (void)guidanceCheckingRouteChange:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = YES; self.trafficWaitingForLocation = NO; [self watchTrafficRequest]; [self emit:@"trafficRequestStarted" message:@"교통 상황 반영 · 경로 재탐색 중"]); }
 - (void)guidanceOutOfRoute:(KNGuidance *)guidance { YL_FORWARD(self.routeGuide = nil; [self publishTelemetry]; [self emit:@"rerouting" message:@"경로 이탈 · 다시 탐색 중"]); }
 - (void)guidanceRouteUnchanged:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = NO; [self emit:@"trafficUpdated" message:@"교통정보 확인 · 기존 경로 유지"]); }
 - (void)guidance:(KNGuidance *)guidance routeUnchangedWithError:(KNError *)error { YL_FORWARD(self.trafficRerouting = NO; [self emit:@"trafficUpdated" message:@"교통정보 갱신 지연 · 기존 경로 안내 유지"]); }

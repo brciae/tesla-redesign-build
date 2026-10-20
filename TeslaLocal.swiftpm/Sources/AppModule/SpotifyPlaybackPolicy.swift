@@ -5,6 +5,12 @@ import CryptoKit
 enum SpotifyPlaybackPolicy {
     static let defaultClientID = "e2ad541a9a4f46daa4acc776cdc5d97e" // Public OAuth client identifier, not a secret.
     static let redirect = "ylcompanion://spotify/callback"
+    static func acceptsRemoteCallback(_ url: URL, pending: Bool) -> Bool {
+        pending && url.scheme == "ylcompanion" && url.host == "spotify" && url.path == "/callback"
+    }
+    static func remoteTokenUsable(expires: TimeInterval, now: TimeInterval) -> Bool {
+        expires > now + 60
+    }
     static func validClientID(_ value: String) -> Bool {
         value.range(of: "^[a-fA-F0-9]{32}$", options: .regularExpression) != nil
     }

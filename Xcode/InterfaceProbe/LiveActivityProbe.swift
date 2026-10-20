@@ -121,15 +121,28 @@ struct LiveActivityProbe: View {
 struct TrafficRefreshProbe: View {
     @State private var refreshing = false
     @State private var status = "기존 경로 안내 중"
+    @State private var announcement = NavigationTrafficAnnouncement()
+    @State private var spoken = ""
+    @State private var speechRequests = 0
     var body: some View {
         VStack(spacing: 20) {
             Text("기존 경로 A")
             NavigationTrafficRefreshButton(enabled: true, refreshing: refreshing) {
-                refreshing = true; status = "재탐색 중"
+                refreshing = true; status = "현재 위치 확인 후 재탐색"
+                _ = announcement.consume("rerouting")
             }
             Text(status)
+            Text("음성 요청 \(speechRequests)회").accessibilityIdentifier("traffic.speech.count")
+            if !spoken.isEmpty { Text(spoken) }
             if refreshing {
-                Button("응답 실패") { refreshing = false; status = "갱신 지연 · 기존 경로 유지" }
+                Button("SDK 요청 시작") {
+                    if let text = announcement.consume("trafficRequestStarted") { spoken = text; speechRequests += 1 }
+                    status = "경로 재탐색 중"
+                }
+                Button("응답 실패") {
+                    _ = announcement.consume("trafficUpdated")
+                    refreshing = false; status = "갱신 지연 · 기존 경로 유지"
+                }
             }
         }.padding()
     }
