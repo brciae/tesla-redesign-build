@@ -11,7 +11,7 @@ struct SystemActivityProbe: View {
     private var state: VehicleActivityAttributes.ContentState {
         let at = Date().addingTimeInterval(stale ? -180 : 0)
         let preparing = !charge && !progress
-        return .init(connected: false, guiding: !charge && !ended, destination: "고등기술연구원",
+        return .init(connected: ended, guiding: !charge && !ended, destination: "고등기술연구원",
             instruction: preparing ? "길안내 준비 중" : "오크밸리1길 우회전", remainingMinutes: preparing ? nil : 15, batteryPercent: progress ? 62 : 60,
             observedAt: at, turnSymbol: preparing ? nil : "arrow.turn.up.right", turnMetres: preparing ? nil : progress ? 200 : 300,
             arrivalAt: preparing ? nil : at.addingTimeInterval(900), chargeStatus: charge && !ended ? "Charging" : "Stopped",

@@ -7,7 +7,10 @@ final class InteractionTests: XCTestCase {
         let entry = app.staticTexts["Spotify 연결"]
         for _ in 0..<8 where !entry.isHittable { app.swipeUp() }
         XCTAssertTrue(entry.isHittable); entry.tap()
-        app.buttons["연동 설정"].tap()
+        XCTAssertTrue(app.otherElements["spotify.nowPlaying"].waitForExistence(timeout: 5))
+        let advanced = app.buttons["연동 설정"]
+        for _ in 0..<5 where !advanced.isHittable { app.swipeUp() }
+        advanced.tap()
         let field = app.textFields["spotify.clientID"]
         XCTAssertTrue(field.waitForExistence(timeout: 8))
         let connect = app.buttons["spotify.connect"]
@@ -228,7 +231,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["traffic-refresh-probe"]; app.launch()
         let button = app.buttons["navigation.traffic.refresh"]
         XCTAssertTrue(button.waitForExistence(timeout: 5))
-        button.tap()
+        button.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
         XCTAssertFalse(button.isEnabled)
         XCTAssertTrue(app.staticTexts["기존 경로 A"].exists)
         app.buttons["응답 실패"].tap()

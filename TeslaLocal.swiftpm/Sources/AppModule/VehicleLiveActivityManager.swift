@@ -92,13 +92,13 @@ final class VehicleLiveActivityManager: ObservableObject {
             // Respect the user's dismissal until the next foreground visit.
             guard UIApplication.shared.applicationState == .active else { return }
         }
-        let hasSession = state.connected || state.guiding || (state.charging && !state.chargingStale)
+        let hasSession = state.guiding || (state.charging && !state.chargingStale)
         let previouslyGuiding = lastState?.guiding ?? activity?.content.state.guiding ?? false
         let previouslyCharging = lastState?.charging ?? activity?.content.state.charging ?? false
         if VehicleActivitySessionPolicy.shouldEnd(connected: state.connected, guiding: state.guiding,
             previouslyGuiding: previouslyGuiding, observationAge: Date().timeIntervalSince(state.observedAt),
             charging: state.charging, previouslyCharging: previouslyCharging) {
-            end(); status = "차량 연결·길안내·충전 시작 후 표시 가능"; return
+            end(); status = "길안내·충전 중에만 표시"; return
         }
         guard hasSession || activity != nil else { status = "차량 연결·길안내·충전 시작 후 표시 가능"; return }
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""

@@ -132,6 +132,8 @@ static NSArray *YLLifecycleObservers;
 @property(nonatomic, strong) NSMutableSet<NSString *> *announcedPoints;
 @property(nonatomic, strong) KNLocation *imminentTarget;
 @property(nonatomic) BOOL trafficRerouting;
+@property(nonatomic) BOOL trafficWaitingForLocation;
+@property(nonatomic) NSUInteger trafficRequestGeneration;
 @property(nonatomic) NSTimeInterval lastTrafficRequest;
 @property(nonatomic) FloatPoint mapAnchor;
 @property(nonatomic) BOOL cameraReady;
@@ -217,11 +219,31 @@ static NSArray *YLLifecycleObservers;
 - (void)configureAutoTrafficReroute:(BOOL)enabled { self.guidance.useAutoReroute = enabled; }
 - (BOOL)refreshTrafficRoute {
     NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
-    if (!self.guiding || ![self locationIsFresh] || self.trafficRerouting || now - self.lastTrafficRequest < 30) return NO;
+    if (!self.guiding || !self.guidance || self.trafficRerouting || now - self.lastTrafficRequest < 30) return NO;
     self.lastTrafficRequest = now; self.trafficRerouting = YES;
+    self.trafficWaitingForLocation = ![self locationIsFresh];
+    [self watchTrafficRequest];
+    if (self.trafficWaitingForLocation) {
+        [self emit:@"rerouting" message:@"현재 위치 확인 후 재탐색"];
+    } else { [self performTrafficRequest]; }
+    return YES;
+}
+- (void)watchTrafficRequest {
+    NSUInteger generation = ++self.trafficRequestGeneration;
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        typeof(self) self = weakSelf;
+        if (!self || generation != self.trafficRequestGeneration || !self.trafficRerouting) return;
+        BOOL waiting = self.trafficWaitingForLocation;
+        self.trafficRerouting = NO; self.trafficWaitingForLocation = NO;
+        [self emit:@"trafficUpdated" message:waiting ? @"현재 위치 미확인 · 재탐색 다시 시도" : @"재탐색 응답 지연 · 기존 경로 유지"];
+    });
+}
+- (void)performTrafficRequest {
+    if (!self.guiding || !self.trafficRerouting || ![self locationIsFresh]) return;
+    self.trafficWaitingForLocation = NO;
     [(KNDriveGuidance *)self.guidance reRouteWithPriority:KNRoutePriority_Recommand avoidOptions:KNRouteAvoidOption_None];
     [self emit:@"rerouting" message:@"최신 교통정보 반영 · 경로 재탐색 중"];
-    return YES;
 }
 - (void)pauseOfflineMapDownload { [[[KNSDK sharedInstance] sharedMapDownLoader] downLoadPause]; }
 - (void)useOfflineMap:(BOOL)enabled {
@@ -572,7 +594,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 - (void)guidanceGuideStarted:(KNGuidance *)guidance {
     YL_FORWARD(self.guiding = YES; if (guidance.routesOnGuide.count) [self.map setRoutes:guidance.routesOnGuide]; [self emit:@"started" message:@"길안내 중"]);
 }
-- (void)guidanceCheckingRouteChange:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = YES; [self emit:@"rerouting" message:@"교통 상황 반영 · 경로 재탐색 중"]); }
+- (void)guidanceCheckingRouteChange:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = YES; self.trafficWaitingForLocation = NO; [self watchTrafficRequest]; [self emit:@"rerouting" message:@"교통 상황 반영 · 경로 재탐색 중"]); }
 - (void)guidanceOutOfRoute:(KNGuidance *)guidance { YL_FORWARD(self.routeGuide = nil; [self publishTelemetry]; [self emit:@"rerouting" message:@"경로 이탈 · 다시 탐색 중"]); }
 - (void)guidanceRouteUnchanged:(KNGuidance *)guidance { YL_FORWARD(self.trafficRerouting = NO; [self emit:@"trafficUpdated" message:@"교통정보 확인 · 기존 경로 유지"]); }
 - (void)guidance:(KNGuidance *)guidance routeUnchangedWithError:(KNError *)error { YL_FORWARD(self.trafficRerouting = NO; [self emit:@"trafficUpdated" message:@"교통정보 갱신 지연 · 기존 경로 안내 유지"]); }
@@ -584,7 +606,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 }
 - (void)guidance:(KNGuidance *)guidance didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { YL_FORWARD([self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects]; if (routes.count) [self.map setRoutes:routes]; else [self.map removeRoutesAll]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateIndoorRoute:(KNRoute *)route { if (route) YL_FORWARD([self.map setRoute:route]); }
-- (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate]; [self updateMap]; [self publishTelemetry]; [self emitImminentTurn]; [self emitAreaAndHumpCues]); }
+- (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate]; if (self.trafficWaitingForLocation) [self performTrafficRequest]; [self updateMap]; [self publishTelemetry]; [self emitImminentTurn]; [self emitAreaAndHumpCues]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateRouteGuide:(KNGuide_Route *)route { YL_FORWARD(self.routeGuide = route; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateSafetyGuide:(KNGuide_Safety *)safety { YL_FORWARD(self.safetyGuide = safety; [self publishTelemetry]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateAroundSafeties:(NSArray<__kindof KNSafety *> *)safeties { }

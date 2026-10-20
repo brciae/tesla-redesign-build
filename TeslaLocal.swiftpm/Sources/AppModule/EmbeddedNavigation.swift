@@ -64,13 +64,15 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var onActivityChange: (() -> Void)?
     @Published private(set) var networkAvailable = true
     @Published private(set) var trafficRefreshing = false
+    @Published private(set) var trafficFeedback = ""
     func refreshTrafficRoute() {
         guard guiding, networkAvailable, !trafficRefreshing else {
             status = networkAvailable ? "길안내 중에 교통정보 재탐색 가능함" : "통신 복구 대기 · 기존 경로 안내 유지"
+            trafficFeedback = status
             return
         }
         trafficRefreshing = controller?.refreshTrafficRoute() == true
-        if !trafficRefreshing { status = "현재 위치 확인 또는 재탐색 완료 후 다시 시도 가능함" }
+        if !trafficRefreshing { status = "위치 확인 또는 직전 재탐색 완료 후 다시 시도"; trafficFeedback = status }
     }
     func applyTrafficPreferences() {
         controller?.configureAutoTrafficReroute((UserDefaults.standard.object(forKey: "navigation.autoTrafficReroute") as? Bool) ?? true)
@@ -381,8 +383,8 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                         self.navigationScene = view.view.window?.windowScene
                         NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene); return
                     }
-                    if event == "rerouting" { self.trafficRefreshing = true; self.status = message; return }
-                    if event == "trafficUpdated" { self.trafficRefreshing = false; self.status = message; return }
+                    if event == "rerouting" { self.trafficRefreshing = true; self.status = message; self.trafficFeedback = message; return }
+                    if event == "trafficUpdated" { self.trafficRefreshing = false; self.status = message; self.trafficFeedback = message; return }
                     if event == "error" { self.failed(message, ticket: ticket); return }
                     if event == "ended" { self.endGuidance(arrived: true); return }
                     if event == "ready" || event == "started" {

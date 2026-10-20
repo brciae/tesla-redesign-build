@@ -429,7 +429,7 @@ struct TypecastSettingsSection: View {
 
             if typecast.cacheFileCount > 0 {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("영구 보관 캐시: \(typecast.cacheFileCount)개 (\(String(format: "%.1f", typecast.cacheTotalSizeMB))MB)")
+                    Text("저장 음성 \(typecast.cacheFileCount)개 · \(String(format: "%.1f", typecast.cacheTotalSizeMB))MB / 256MB")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

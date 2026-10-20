@@ -23,6 +23,9 @@ node tools/ui-copy-audit.cjs
 node tools/typecast-only-audit.cjs
 node tools/briefing-coverage.cjs
 node tools/control-path-audit.cjs
+mkdir -p Xcode/BuildOutput
+swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceDiskCache.swift tools/voice-cache-tests.swift -o Xcode/VoiceCacheTests
+Xcode/VoiceCacheTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlaybackPolicy.swift tools/spotify-policy-tests.swift -o Xcode/SpotifyPolicyTests
 Xcode/SpotifyPolicyTests
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift

@@ -51,12 +51,13 @@ struct DrivingWorkspace: View {
             } controls: {
                 topBar(compact: true).frame(maxWidth: .infinity).frame(height: 52)
                 if navigation.guiding {
-                    HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
                         NavigationTrafficRefreshButton(enabled: navigation.networkAvailable,
                                                        refreshing: navigation.trafficRefreshing) { navigation.refreshTrafficRoute() }
-                        Text(navigation.trafficRefreshing ? "교통 반영 재탐색 중" : "교통 반영 재탐색")
-                            .font(.caption).lineLimit(1)
-                        Spacer(minLength: 0)
+                        if !navigation.trafficFeedback.isEmpty {
+                            Text(navigation.trafficFeedback).font(.caption2).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("navigation.traffic.feedback")
+                        }
                     }.frame(maxWidth: .infinity, minHeight: 44)
                 }
             }

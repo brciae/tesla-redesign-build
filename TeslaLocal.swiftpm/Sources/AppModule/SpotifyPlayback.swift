@@ -10,12 +10,15 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
     @Published private(set) var working = false
     @Published private(set) var title = ""
     @Published private(set) var artist = ""
+    @Published private(set) var album = ""
     @Published private(set) var playing = false
     @Published private(set) var artwork: UIImage?
     @Published private(set) var duration: Double = 0
     @Published private(set) var position: Double = 0
     @Published private(set) var status = "연결 안 됨"
     private var trackURI = ""
+    private var artworkRequestAt = Date.distantPast
+    private var connectionGeneration = UUID()
     private var remote: SPTAppRemote?
     private var authentication: ASWebAuthenticationSession?
     private var request: UUID?
@@ -121,14 +124,29 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
         }
         remote?.connectionParameters.accessToken = access
         status = "Spotify 연결 중"; working = true
+        let generation = UUID(); connectionGeneration = generation
         remote?.connect()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            guard let self, self.connectionGeneration == generation, !self.connected, self.working else { return }
+            self.remote?.disconnect(); self.working = false
+            self.status = "Spotify 연결 시간 초과 · 음악 재생 후 다시 연결"
+        }
     }
     func disconnect() {
         request = nil; authentication?.cancel(); authentication = nil; exchanging = false
         remote?.delegate = nil; remote?.disconnect(); remote = nil
         clearTokens(); connected = false; working = false; clearPlayback(); status = "연결 해제됨"
     }
-    private func clearPlayback() { title = ""; artist = ""; playing = false; artwork = nil; trackURI = ""; duration = 0; position = 0 }
+    private func clearPlayback() { title = ""; artist = ""; album = ""; playing = false; artwork = nil; trackURI = ""; duration = 0; position = 0; artworkRequestAt = .distantPast }
+    func refreshPlayback() {
+        guard connected else { reconnect(); return }
+        remote?.playerAPI?.getPlayerState({ [weak self] result, error in
+            DispatchQueue.main.async {
+                if let state = result as? SPTAppRemotePlayerState { self?.playerStateDidChange(state) }
+                else if error != nil { self?.status = "재생 정보 수신 실패 · 다시 새로고침" }
+            }
+        })
+    }
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         guard appRemote === remote else { return }
         connected = true; working = false; status = "이 iPhone의 Spotify와 연결됨"
@@ -150,12 +168,14 @@ final class SpotifyPlayback: NSObject, ObservableObject, SPTAppRemoteDelegate, S
     }
     func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
         guard connected else { return }
-        title = playerState.track.name; artist = playerState.track.artist.name
+        title = playerState.track.name; artist = playerState.track.artist.name; album = playerState.track.album.name
         playing = !playerState.isPaused; duration = Double(playerState.track.duration) / 1000
         position = Double(playerState.playbackPosition) / 1000
         let uri = playerState.track.uri
-        guard trackURI != uri else { return }
-        trackURI = uri; artwork = nil
+        let changed = trackURI != uri
+        guard changed || (artwork == nil && Date().timeIntervalSince(artworkRequestAt) >= 15) else { return }
+        trackURI = uri; if changed { artwork = nil }
+        artworkRequestAt = Date()
         remote?.imageAPI?.fetchImage(forItem: playerState.track, with: CGSize(width: 160, height: 160), callback: { [weak self] image, _ in
             DispatchQueue.main.async { if self?.connected == true, self?.trackURI == uri { self?.artwork = image as? UIImage } }
         })
@@ -200,6 +220,27 @@ struct SpotifySettingsView: View {
     @State private var clientID = ""
     var body: some View {
         Form {
+            Section("현재 재생") {
+                HStack(spacing: 12) {
+                    Group {
+                        if let art = spotify.artwork { Image(uiImage: art).resizable().scaledToFill() }
+                        else { Image(systemName: "music.note").resizable().scaledToFit().padding(16) }
+                    }.frame(width: 72, height: 72).clipShape(RoundedRectangle(cornerRadius: 10))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(spotify.title.isEmpty ? "재생 정보 없음" : spotify.title).font(.headline)
+                        if !spotify.artist.isEmpty { Text(spotify.artist).font(.subheadline) }
+                        if !spotify.album.isEmpty { Text(spotify.album).font(.caption).foregroundStyle(.secondary) }
+                    }
+                }.accessibilityElement(children: .contain).accessibilityIdentifier("spotify.nowPlaying")
+                HStack {
+                    Button { spotify.command("mediaPrev") } label: { Image(systemName: "backward.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("이전 곡")
+                    Spacer()
+                    Button { spotify.command("mediaToggle") } label: { Image(systemName: spotify.playing ? "pause.fill" : "play.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(spotify.playing ? "일시정지" : "재생")
+                    Spacer()
+                    Button { spotify.command("mediaNext") } label: { Image(systemName: "forward.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("다음 곡")
+                }.buttonStyle(.borderless).disabled(!spotify.connected || spotify.working)
+                Button("재생 정보 새로고침") { spotify.refreshPlayback() }.disabled(spotify.working)
+            }
             Section("Spotify") {
                 Text(spotify.status).accessibilityIdentifier("spotify.status")
                 Button(spotify.connected ? "연결됨" : spotify.authorized ? "다시 연결" : "계정 연결") { spotify.saveClientID(clientID); spotify.connect() }

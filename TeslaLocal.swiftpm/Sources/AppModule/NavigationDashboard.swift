@@ -1877,10 +1877,12 @@ private struct NavigationMediaHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             PlaybackArtwork(data: data, side: 26)
-            Text(data.mediaTitle.isEmpty ? data.mediaApp.name : data.mediaTitle)
+            VStack(alignment: .leading, spacing: 1) {
+              Text(data.mediaTitle.isEmpty ? data.mediaApp.name : data.mediaTitle)
                 .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.5)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("navigation.media.title")
+              if !data.mediaArtist.isEmpty { Text(data.mediaArtist).font(.system(size: 10)).foregroundStyle(.white.opacity(0.75)).lineLimit(1).minimumScaleFactor(0.7) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
             Button { action("mediaToggle") } label: {
                 Image(systemName: data.mediaPlaying ? "pause.fill" : "play.fill").frame(width: 44, height: 44)
             }
@@ -1907,7 +1909,7 @@ private struct MediaIsland: View {
                 Text(title).font(.system(size: 15 * u, weight: .semibold))
                     .lineLimit(1).minimumScaleFactor(0.5)
                     .accessibilityIdentifier("navigation.media.title")
-                if expanded, !subtitle.isEmpty {
+                if !subtitle.isEmpty {
                     Text(subtitle).font(.system(size: 12 * u)).foregroundStyle(NavInk.muted).lineLimit(1).minimumScaleFactor(0.5)
                 }
             }
@@ -2079,10 +2081,14 @@ struct NavigationTrafficRefreshButton: View {
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Group {
+            HStack(spacing: 8) {
+              Group {
                 if refreshing { ProgressView().tint(.cyan) }
                 else { Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 14)) }
-            }.frame(width: 44, height: 44)
+              }.frame(width: 44, height: 44)
+              Text(refreshing ? "교통 반영 재탐색 중" : "교통 반영 재탐색").font(.caption)
+              Spacer(minLength: 0)
+            }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
         }.disabled(!enabled || refreshing)
             .accessibilityLabel("교통 반영 재탐색")
             .accessibilityIdentifier("navigation.traffic.refresh")
