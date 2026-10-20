@@ -72,7 +72,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         status = message; trafficFeedback = message
         if let text = trafficAnnouncement.consume(event),
            let data = try? JSONSerialization.data(withJSONObject: ["text": text,
-                "validUntil": Date().timeIntervalSince1970 + 10, "stateChange": true, "kind": "status"]),
+                "validUntil": Date().timeIntervalSince1970 + 10, "stateChange": false, "kind": "status"]),
            let cue = String(data: data, encoding: .utf8) {
             onSpokenGuide?(cue, false)
         }
