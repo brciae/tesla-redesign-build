@@ -8,6 +8,7 @@ final class InteractionTests: XCTestCase {
         for _ in 0..<8 where !entry.isHittable { app.swipeUp() }
         XCTAssertTrue(entry.isHittable); entry.tap()
         XCTAssertTrue(app.otherElements["spotify.nowPlaying"].waitForExistence(timeout: 5))
+        captureSystemCard("Spotify now playing controls and metadata panel")
         let advanced = app.buttons["연동 설정"]
         for _ in 0..<5 where !advanced.isHittable { app.swipeUp() }
         advanced.tap()

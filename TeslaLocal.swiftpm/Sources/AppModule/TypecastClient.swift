@@ -183,6 +183,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }.sorted { $0.date > $1.date }
     }
     func deleteCached(_ items: [CachedPhrase]) {
+        VoiceDiskCache.lock.lock(); defer { VoiceDiskCache.lock.unlock() }
         for i in items {
             try? FileManager.default.removeItem(at: i.id)
             try? FileManager.default.removeItem(at: i.id.deletingPathExtension().appendingPathExtension("txt"))
@@ -191,6 +192,7 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
         lastStatus = "음성 캐시 \(items.count)개를 삭제했습니다."
     }
     func clearCache(voice id: String) {
+        VoiceDiskCache.lock.lock(); defer { VoiceDiskCache.lock.unlock() }
         if id == Self.unsortedCacheID {
             let files = (try? FileManager.default.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil)) ?? []
             for f in files where f.pathExtension == "wav" || f.pathExtension == "txt" { try? FileManager.default.removeItem(at: f) }
@@ -532,7 +534,9 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func clearCache() {
+        VoiceDiskCache.lock.lock(); defer { VoiceDiskCache.lock.unlock() }
         try? FileManager.default.removeItem(at: cacheDirectory)
+        cacheBackupMarked = false
         updateCacheCount()
         lastStatus = "캐시가 모두 삭제되었습니다."
     }

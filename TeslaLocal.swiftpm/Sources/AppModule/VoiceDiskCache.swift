@@ -46,7 +46,7 @@ enum VoiceDiskCache {
         for entries in groups.values {
             lock.lock()
             defer { lock.unlock() }
-            guard entries.allSatisfy({ (try? $0.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) == $0.date }) else { continue }
+            guard entries.allSatisfy({ (try? FileManager.default.attributesOfItem(atPath: $0.url.path)[.modificationDate] as? Date) == $0.date }) else { continue }
             let ordered = entries.sorted { $0.date == $1.date ? $0.url.path < $1.url.path : $0.date > $1.date }
             guard let newest = ordered.first,
                   let text = try? String(contentsOf: newest.url.deletingPathExtension().appendingPathExtension("txt"), encoding: .utf8) else { continue }
@@ -66,7 +66,7 @@ enum VoiceDiskCache {
         for entry in entries where bytes > byteLimit || count > fileLimit {
             lock.lock()
             defer { lock.unlock() }
-            guard (try? entry.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) == entry.date else { continue }
+            guard (try? FileManager.default.attributesOfItem(atPath: entry.url.path)[.modificationDate] as? Date) == entry.date else { continue }
             remove(entry.url); removed.insert(entry.url); bytes -= entry.bytes; count -= 1
         }
         entries.removeAll { removed.contains($0.url) }
