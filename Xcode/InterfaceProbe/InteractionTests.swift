@@ -75,7 +75,7 @@ final class InteractionTests: XCTestCase {
         captureSystemCard("System Lock Screen navigation card updated guidance")
         app.activate()
         app.buttons["세션 종료"].tap()
-        XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["길안내·충전 중에만 표시"].waitForExistence(timeout: 8))
         board = showSystemLockScreenPresentation(app)
         let removed = NSPredicate { _, _ in !board.staticTexts["길안내 준비 중"].exists && !board.staticTexts["오크밸리1길 우회전"].exists }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: removed, object: nil)], timeout: 12), .completed)
@@ -103,7 +103,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertFalse(board.staticTexts["62%"].exists)
         captureSystemCard("System Lock Screen charging card stale hides old values")
         app.activate(); app.buttons["세션 종료"].tap()
-        XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["길안내·충전 중에만 표시"].waitForExistence(timeout: 8))
         board = showSystemLockScreenPresentation(app)
         let removed = NSPredicate { _, _ in !board.staticTexts["충전 업데이트 대기"].exists && !board.staticTexts["충전 중"].exists }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: removed, object: nil)], timeout: 12), .completed)
@@ -182,7 +182,7 @@ final class InteractionTests: XCTestCase {
         capture("Lock Screen shared card stale hides old turn distance and ETA")
         app.buttons["안내 종료"].tap()
         XCTAssertTrue(app.staticTexts["live.navigation.ended"].exists)
-        XCTAssertTrue(app.staticTexts["차량 연결·길안내·충전 시작 후 표시 가능"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["길안내·충전 중에만 표시"].waitForExistence(timeout: 5))
         capture("Lock Screen guidance ended without vehicle")
     }
 

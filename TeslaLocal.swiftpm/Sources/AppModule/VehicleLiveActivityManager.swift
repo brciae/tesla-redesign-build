@@ -100,7 +100,7 @@ final class VehicleLiveActivityManager: ObservableObject {
             charging: state.charging, previouslyCharging: previouslyCharging) {
             end(); status = "길안내·충전 중에만 표시"; return
         }
-        guard hasSession || activity != nil else { status = "차량 연결·길안내·충전 시작 후 표시 가능"; return }
+        guard hasSession || activity != nil else { status = "길안내·충전 중에만 표시"; return }
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         // A first request must not wait for an asynchronous restart of an empty activity list.
         if activity != nil, UIApplication.shared.applicationState == .active,
@@ -155,13 +155,13 @@ final class VehicleLiveActivityManager: ObservableObject {
         if existing.isEmpty {
             restarting = false
             if let state = latestInput { update(state, enabled: latestEnabled) }
-            else { status = "차량 연결·길안내·충전 시작 후 표시 가능" }
+            else { status = "길안내·충전 중에만 표시" }
             return
         }
         Task {
             for current in existing { await current.end(nil, dismissalPolicy: .immediate) }
             restarting = false
-            guard let state = latestInput else { status = "차량 연결·길안내·충전 시작 후 표시 가능"; return }
+            guard let state = latestInput else { status = "길안내·충전 중에만 표시"; return }
             update(state, enabled: latestEnabled)
         }
     }
