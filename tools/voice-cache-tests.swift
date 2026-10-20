@@ -28,7 +28,8 @@ import Foundation
         precondition(fm.fileExists(atPath: other.path))
         precondition(VoiceDiskCache.maintain(root).count == 2, "Idempotent migration")
         let limited = VoiceDiskCache.maintain(root, byteLimit: 300, fileLimit: 1)
-        precondition(limited.count == 1 && limited[0].url == latest, "Oldest generated recording is removed under budget")
+        precondition(limited.count == 1, "Exactly one recording remains under the byte/count budget")
+        precondition(limited[0].url.standardizedFileURL.path == latest.standardizedFileURL.path, "Newest canonical path remains under budget")
         precondition(!fm.fileExists(atPath: other.deletingPathExtension().appendingPathExtension("txt").path))
         // A symlink in the cache must not expose another folder to cleanup.
         let outside = root.deletingLastPathComponent().appendingPathComponent("VoiceCacheOutside-" + UUID().uuidString)
