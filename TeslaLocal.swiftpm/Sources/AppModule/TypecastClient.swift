@@ -486,10 +486,12 @@ final class TypecastClient: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func cachedURL(for text: String, voiceId: String) -> URL? {
         VoiceDiskCache.lock.lock(); defer { VoiceDiskCache.lock.unlock() }
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lower = voiceId.lowercased()
-        let noSpaces = lower.replacingOccurrences(of: " ", with: "")
+        var candidates = [voiceId]
+        if let character = TypecastCatalog.find(voiceId) {
+            candidates += [character.id, character.nameKo, character.nameEn]
+        }
         var ids = [voiceId]
-        if let mapped = voiceCatalog[lower] ?? voiceCatalog[noSpaces], mapped != voiceId { ids.insert(mapped, at: 0) }
+        if let mapped = TypecastAPIPolicy.resolve(candidates, in: voiceCatalog), mapped != voiceId { ids.insert(mapped, at: 0) }
         for id in ids {
             let key = cacheKey(for: clean, voiceId: id)
             let inVoice = voiceDirectory(id).appendingPathComponent("\(key).wav")
