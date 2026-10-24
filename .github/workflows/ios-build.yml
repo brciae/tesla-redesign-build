@@ -1,52 +1,36 @@
-name: iOS Build
+name: CI crash evidence
 on:
   workflow_dispatch:
     inputs:
-      ui_screens_only:
-        description: Verify fullscreen captures only (no IPA)
-        type: boolean
-        default: false
-      probe_focus:
-        description: Focus for screenshot-only diagnostic runs (full builds always run all tests)
-        type: choice
-        options: [fullscreen, junction, new, island, regression]
-        default: fullscreen
-  push:
-    branches: [main]
+      evidence_run:
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
 jobs:
-  build:
+  diagnose:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - name: Read app version
-        id: version
-        run: |
-          node -e 'const fs=require("fs"),s=require("./Xcode/project.json").settings.base; fs.appendFileSync(process.env.GITHUB_OUTPUT, "version="+s.MARKETING_VERSION+"\nbuild="+s.CURRENT_PROJECT_VERSION+"\n");'
-      - name: Tools
-        run: brew install xcodegen
-      - name: Node route-gate / freshness tests
-        run: node tools/js-logic-tests.cjs
-      - name: Build (parse, policy tests, interface probe, unsigned IPA)
+      - name: Extract existing test diagnostics
         env:
-          UI_SCREENS_ONLY: ${{ inputs.ui_screens_only }}
-          PROBE_FOCUS: ${{ inputs.probe_focus }}
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_RUN: ${{ inputs.evidence_run }}
         run: |
-          if [[ "$UI_SCREENS_ONLY" == true ]]; then
-            bash tools/test-interface.sh "${PROBE_FOCUS:-fullscreen}"
-          else
-            bash tools/build-ios.sh
-          fi
-      - uses: actions/upload-artifact@v4
-        if: inputs.ui_screens_only != true
-        with:
-          name: App-Tesla ${{ steps.version.outputs.version }} Build${{ steps.version.outputs.build }} v01 Review
-          path: Xcode/BuildOutput/*.ipa
+          mkdir -p Evidence Diagnostics
+          gh run download "$EVIDENCE_RUN" --repo "$GITHUB_REPOSITORY" -n interface-screens -D Evidence
+          xcrun xcresulttool help export diagnostics
+          n=0
+          while IFS= read -r -d '' result; do
+            n=$((n+1))
+            xcrun xcresulttool export diagnostics --path "$result" --output-path "Diagnostics/result$n"
+            xcrun xcresulttool get test-results summary --path "$result" > "Diagnostics/summary$n.json"
+          done < <(find Evidence -type d -name '*.xcresult' -print0)
+          find Diagnostics -type f -maxdepth 5
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: interface-screens
-          path: |
-            Xcode/**/*.xcresult
-            Xcode/BuildOutput/InterfaceScreens/**
-          if-no-files-found: ignore
+          name: build169 crash diagnostics
+          path: Diagnostics/**
+          if-no-files-found: error
