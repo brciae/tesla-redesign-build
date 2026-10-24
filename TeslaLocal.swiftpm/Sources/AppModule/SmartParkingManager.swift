@@ -45,14 +45,41 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
     private let storageKey = "SmartParkingManager.LatestRecord"
     private var lastKnownValidCoordinates: (lat: Double, lng: Double)?
     private var cachedVehicleTelemetry: Object = [:]
+    private var fixWaiters: [CheckedContinuation<CLLocation?, Never>] = []
+    private var fixDeadline: Timer?
+    private var backgroundObserver: NSObjectProtocol?
 
     override init() {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
-        locationManager.requestWhenInUseAuthorization()
-        locationManager.startUpdatingLocation()
+        locationManager.pausesLocationUpdatesAutomatically = true
+        backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in self?.finishPhoneFix(nil) }
         loadLatestRecord()
+    }
+    deinit {
+        fixDeadline?.invalidate()
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+    }
+    @MainActor private func requestPhoneFix() async -> CLLocation? {
+        if let location = usablePhoneLocation { return location }
+        if let location = AppModel.shared?.navigation.recentPhoneLocation { return location }
+        guard UIApplication.shared.applicationState == .active else { return nil }
+        let permission = locationManager.authorizationStatus
+        guard permission == .notDetermined || [.authorizedAlways, .authorizedWhenInUse].contains(permission) else { return nil }
+        return await withCheckedContinuation { continuation in
+            fixWaiters.append(continuation)
+            guard fixWaiters.count == 1 else { return }
+            fixDeadline = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in self?.finishPhoneFix(nil) }
+            if permission == .notDetermined { locationManager.requestWhenInUseAuthorization() }
+            else { locationManager.requestLocation() }
+        }
+    }
+    private func finishPhoneFix(_ location: CLLocation?) {
+        fixDeadline?.invalidate(); fixDeadline = nil
+        locationManager.stopUpdatingLocation()
+        let waiting = fixWaiters; fixWaiters = []
+        for continuation in waiting { continuation.resume(returning: location) }
     }
 
     // MARK: - CLLocationManagerDelegate
@@ -63,17 +90,20 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
               CLLocationCoordinate2DIsValid(loc.coordinate), !(loc.coordinate.latitude == 0 && loc.coordinate.longitude == 0) else { return }
         self.currentPhoneLocation = loc
         self.lastKnownValidCoordinates = (loc.coordinate.latitude, loc.coordinate.longitude)
+        finishPhoneFix(loc)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         currentPhoneLocation = nil
+        finishPhoneFix(nil)
     }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         if [.authorizedAlways, .authorizedWhenInUse].contains(manager.authorizationStatus) {
-            manager.startUpdatingLocation()
+            if !fixWaiters.isEmpty { manager.requestLocation() }
         } else {
             currentPhoneLocation = nil
             manager.stopUpdatingLocation()
+            finishPhoneFix(nil)
         }
     }
 
@@ -255,7 +285,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
 
         // 2. Extract mobile snapshot
         var mobileSnapshot = MobileParkingSnapshot()
-        let phoneLoc = self.usablePhoneLocation
+        let phoneLoc = await requestPhoneFix()
         if let loc = phoneLoc, abs(loc.timestamp.timeIntervalSinceNow) <= 30 {
             mobileSnapshot.mobileLatitude = loc.coordinate.latitude
             mobileSnapshot.mobileLongitude = loc.coordinate.longitude
@@ -341,7 +371,7 @@ final class SmartParkingManager: NSObject, ObservableObject, CLLocationManagerDe
         mobileSnapshot.ocrSpecialZone = ocr.specialZone
         mobileSnapshot.rawOcrText = ocr.rawText
 
-        let phoneLoc = self.currentPhoneLocation
+        let phoneLoc = await requestPhoneFix()
         if let loc = phoneLoc, abs(loc.timestamp.timeIntervalSinceNow) <= 30 {
             mobileSnapshot.mobileLatitude = loc.coordinate.latitude
             mobileSnapshot.mobileLongitude = loc.coordinate.longitude

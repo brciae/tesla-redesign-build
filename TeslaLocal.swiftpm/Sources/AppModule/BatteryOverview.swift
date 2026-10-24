@@ -54,14 +54,19 @@ struct BatteryOverview: View {
         }.padding(18).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
     }
     private var healthCard: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        let full = index.object("fullChargeRange")
+        let rangeOnly = index.number("capacityMedianKWh") == nil && full.number("latestKm") != nil
+        return VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text("배터리 용량·열화 추정").font(.headline)
                 InfoNote("열화율 추정", "차량 보고 완충 용량을 우선 사용. 충전 기반 참고 용량은 저장 에너지와 관측 SOC로 계산하며, 두 종류를 섞지 않음. 신차 기준이 없으면 기록 시작 대비 변화만 표시.")
             }
             HStack {
-                measure(index.string("capacityLabel").isEmpty ? "관측 용량" : index.string("capacityLabel"), index.number("capacityMedianKWh") ?? index.number("recentCapacityKWh"), "kWh")
-                measure(index.string("comparisonLabel").isEmpty ? "기준 대비 감소" : index.string("comparisonLabel"), index.flag("initial") ? nil : index.number("degradationPercent"), "%")
+                measure(rangeOnly ? "완충 표시거리" : index.string("capacityLabel").isEmpty ? "관측 용량" : index.string("capacityLabel"), rangeOnly ? full.number("latestKm") : index.number("capacityMedianKWh") ?? index.number("recentCapacityKWh"), rangeOnly ? "km" : "kWh")
+                measure(rangeOnly ? "기록 시작 대비 거리 변화" : index.string("comparisonLabel").isEmpty ? "기준 대비 감소" : index.string("comparisonLabel"), rangeOnly ? full.number("changePercent") : index.flag("initial") ? nil : index.number("degradationPercent"), "%")
+            }
+            if (full.number("count") ?? 0) > 0 {
+                Text("100% 완료 관측 \(Int(full.number("count") ?? 0))회 · 표시거리 변화는 열화율과 별도 참고값").font(.caption).foregroundStyle(.secondary)
             }
             Text(index.string("statusReason").isEmpty ? "계산 가능한 충전 \(Int(index.number("sampleCount") ?? 0))회 · 최소 3회 필요" : index.string("statusReason"))
                 .font(.caption).foregroundStyle(index.flag("initial") ? Color.orange : accent)
@@ -133,7 +138,7 @@ struct BatteryOverview: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 measure("하루 환산 · 중앙값", parking.number("medianPerDay"), "%p/일")
             }
-            Text("짧은 P 주차도 포함. 하루 환산은 6시간·1%p 이상 관측한 구간만 사용.").font(.caption).foregroundStyle(.secondary)
+            Text("P 관측 구간도 포함. 하루 환산은 2시간·0.5%p 이상인 참고값.").font(.caption).foregroundStyle(.secondary)
             let rows = parking.rows("rows")
             if !rows.isEmpty {
                 DisclosureGroup("주차 기록·보류 사유 \(Int(parking.number("excludedCount") ?? 0))건") {
@@ -141,6 +146,7 @@ struct BatteryOverview: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(Self.tripRowDateFormatter.string(from: Date(timeIntervalSince1970: (row.number("start") ?? 0) / 1000))).font(.caption.weight(.medium))
                             Text("\(number(row.number("hours")))시간 · \(number(row.number("startSOC")))% → \(number(row.number("endSOC")))%")
+                            if !row.string("evidence").isEmpty { Text(row.string("evidence")).foregroundStyle(.secondary) }
                             Text(row.string("exclusionReason").isEmpty ? (row.flag("precisionLimited") ? "기록 포함 · 하루 환산 대기" : "기록·하루 환산 포함") : row.string("exclusionReason"))
                                 .foregroundStyle(row.string("exclusionReason").isEmpty ? Color.secondary : .orange)
                         }.font(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)

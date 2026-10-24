@@ -15,7 +15,7 @@ const charge=(id,at=t,extra={})=>({id,at,end:at+3600000,startSOC:30,endSOC:60,ve
 }
 {
  const e=new Engine();e.state.charges=Array.from({length:7},(_,i)=>charge('c'+i,t+i*DAY));
- const h=e.healthIndex(now);assert.equal(h.sampleCount,7,'imports before app install must count');assert.equal(h.capacityMedianKWh,70);assert.equal(h.degradationPercent,null,'75kWh assumption is not an SOH reference');
+ const h=e.healthIndex(now);assert.equal(h.sampleCount,7,'imports before app install must count');assert.equal(h.capacityMedianKWh,70);assert.equal(h.degradationPercent,0,'six observations now permit initial-versus-recent comparison');assert.equal(h.baselineCapacityKWh,70,'75kWh assumption is not a reference');assert.equal(h.provisional,true);
  e.settings({healthReferenceMethod:'chargeUsable',healthReferenceKWh:80});assert.equal(e.healthIndex(now).degradationPercent,12.5);
  e.state.charges.push(charge('circular',t+8*DAY,{startSOCEstimated:true}));assert.equal(e.healthIndex(now).sampleCount,7);
  e.state.charges.push(charge('missing-end',t+9*DAY,{endSOCEstimated:true}));assert.equal(e.healthIndex(now).sampleCount,7);

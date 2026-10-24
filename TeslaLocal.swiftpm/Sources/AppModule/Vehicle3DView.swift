@@ -5,12 +5,22 @@ import simd
 
 private let closureLabels: [(String, String)] = [("driverFront", "운전석 앞문"), ("driverRear", "운전석 뒷문"), ("passengerFront", "조수석 앞문"), ("passengerRear", "조수석 뒷문"), ("frunk", "프렁크"), ("trunk", "트렁크")]
 
+private struct VehicleRenderingKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    var vehicleRenderingActive: Bool {
+        get { self[VehicleRenderingKey.self] }
+        set { self[VehicleRenderingKey.self] = newValue }
+    }
+}
+
 @MainActor
 struct Vehicle3DPanel: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.vehicleRenderingActive) private var renderingActive
+    @AppStorage("energy.saving") private var energySaving = true
     var compact = false
     var chargingMode = false
     var isCharging = false
@@ -24,7 +34,8 @@ struct Vehicle3DPanel: View {
     @State private var sceneError: String?
     @State private var sceneVisible = false
     private var presentation: Object {
-        var base = (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
+        var base = (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced || energySaving || AppEnergyPolicy.saving])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
+        if chargingMode { base["allowInteraction"] = false }
         if chargingMode {
             if isPlugged || isCharging {
                 base["chargingPlugged"] = true
@@ -43,8 +54,8 @@ struct Vehicle3DPanel: View {
                     .aspectRatio(compact ? HomeVisualStyle.vehicleAspect : 16.0/9.0, contentMode: .fit)
                     .overlay {
                         GeometryReader { geometry in
-                            if sceneVisible {
-                                RealityVehicleView(runtime: model.runtime, presentation: p, command: camera, reducedMotion: reduced, appearance: appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))) { sceneError = $0 }
+                            if sceneVisible && renderingActive {
+                                RealityVehicleView(runtime: model.runtime, presentation: p, command: chargingMode ? VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95) : camera, reducedMotion: reduced || energySaving || AppEnergyPolicy.saving, appearance: appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))) { sceneError = $0 }
                                     .frame(width: geometry.size.width, height: geometry.size.height)
                             }
                         }
@@ -107,7 +118,7 @@ struct Vehicle3DPanel: View {
             sceneError = nil
             // v1.55: the charge-port (rear) angle only while a cable is actually connected; otherwise the
             // normal front three-quarter view. Before this every home card opened from behind.
-            if chargingMode && (isPlugged || isCharging) {
+            if chargingMode {
                 camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95)
             }
             sceneVisible = true

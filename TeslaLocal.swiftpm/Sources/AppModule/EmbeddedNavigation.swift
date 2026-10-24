@@ -353,11 +353,28 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     /// v29: while guidance runs, keep our own location session alive so iOS keeps the process running
     /// when the screen is locked or another app is in front (BLE polling timers + Kakao engine keep working).
     private func holdBackgroundLocation(_ on: Bool) {
+        if on {
+            locator.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+            locator.distanceFilter = kCLDistanceFilterNone
+            locator.pausesLocationUpdatesAutomatically = false
+        }
         let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
         guard modes.contains("location") else { return }
         locator.allowsBackgroundLocationUpdates = on
         locator.showsBackgroundLocationIndicator = on
         if on { locator.startUpdatingLocation() } else { locator.stopUpdatingLocation() }
+    }
+    var recentPhoneLocation: CLLocation? { locator.location.flatMap { Self.usableLocation($0) ? $0 : nil } }
+    private func updateStandbyLocationUse() {
+        let mode = AppEnergyPolicy.locationMode(guiding: guiding, starting: busy, presented: presented, visible: heldOrientation, active: UIApplication.shared.applicationState == .active)
+        guard mode != .guidance else { return }
+        guard mode == .standby else {
+            locator.stopUpdatingLocation(); return
+        }
+        locator.desiredAccuracy = AppEnergyPolicy.saving ? kCLLocationAccuracyNearestTenMeters : kCLLocationAccuracyBest
+        locator.distanceFilter = AppEnergyPolicy.saving ? 10 : kCLDistanceFilterNone
+        locator.pausesLocationUpdatesAutomatically = true
+        locator.startUpdatingLocation()
     }
     private static func usableLocation(_ point: CLLocation) -> Bool {
         let age = Date().timeIntervalSince(point.timestamp)
@@ -512,7 +529,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         let keepDisplay = presented
         stopNative(keepDisplay: keepDisplay, keepMap: keepDisplay && guiding)
         if keepDisplay {
-            if let controller { configureStandbyCallbacks(controller); locator.startUpdatingLocation(); controller.resumeRendering() }
+            if let controller { configureStandbyCallbacks(controller); updateStandbyLocationUse(); controller.resumeRendering() }
             else { startStandbyKakaoMap() }
         }
         status = "자유주행 · 경로 안내 종료"
@@ -529,6 +546,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func reset() { clearRecoveryCheckpoint(); routeAuthority = VehicleRouteAuthority(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; startFailures = 0; userDismissed = false; _ = gate("reset"); stopNative(); status = "최신 차량 목적지 대기" }
     /// v29: returning to the foreground re-shows guidance that started or continued under the lock screen.
     func foregrounded(vin: String) {
+        updateStandbyLocationUse()
         renderEpoch += 1
         controller?.resumeRendering()
         if busy, controller == nil {
@@ -564,6 +582,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func dismissWorkspace() {
         userDismissed = true
         presented = false
+        updateStandbyLocationUse()
     }
     private func configureStandbyCallbacks(_ view: YLKakaoController) {
         view.eventHandler = { [weak self, weak view] event, message in
@@ -574,7 +593,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                 if event == "prepareSpeech" { self.onPrepareGuide?(message); return }
                 if self.handleTrafficEvent(event, message: message) { return }
                 if event == "follow" { self.following = message == "1"; return }
-                if event == "positionWaiting" { self.status = message; self.locator.startUpdatingLocation(); return }
+                if event == "positionWaiting" { self.status = message; self.updateStandbyLocationUse(); return }
                 if event == "visible" {
                     self.navigationScene = view.view.window?.windowScene
                     NavigationOrientation.apply(self.orientation.mask, scene: self.navigationScene)
@@ -611,7 +630,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             configureStandbyCallbacks(view)
             let loc = locator.location.flatMap { Self.usableLocation($0) ? $0.coordinate : nil } ?? CLLocationCoordinate2D(latitude: .nan, longitude: .nan)
             view.prepareStandby(appKey: key, latitude: loc.latitude, longitude: loc.longitude)
-            locator.startUpdatingLocation()
+            updateStandbyLocationUse()
         } catch {
             status = "카카오 지도 준비 실패: \(error.localizedDescription)"
         }
@@ -641,16 +660,18 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     /// v30: return the map camera to the car after manual browsing.
     func recenter() {
         recenterRequest += 1
-        locator.startUpdatingLocation()
+        if guiding || busy { locator.startUpdatingLocation() } else { updateStandbyLocationUse() }
         controller?.recenter()
     }
     func suspendPending() {
+        if !guiding && !busy { locator.stopUpdatingLocation() }
         // App switching is not a route cancellation. Keep the map and pending startup.
         if busy { deadline?.invalidate(); deadline = nil; status = "앱 전환 중 · 경로 준비 유지" }
     }
     func screenAppeared() {
         if !heldOrientation { previousIdleTimer = UIApplication.shared.isIdleTimerDisabled }
         heldOrientation = true
+        updateStandbyLocationUse()
         navigationScene = controller?.view.window?.windowScene
         NavigationOrientation.apply(orientation.mask, scene: navigationScene)
         DeviceTiltOrientation.follow(orientation == .auto, scene: navigationScene)
@@ -659,6 +680,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func screenDisappeared() {
         guard heldOrientation else { return }
         heldOrientation = false; DeviceTiltOrientation.follow(false, scene: nil); NavigationOrientation.apply(.all, scene: navigationScene)
+        updateStandbyLocationUse()
         navigationScene = nil; UIApplication.shared.isIdleTimerDisabled = previousIdleTimer
     }
 }

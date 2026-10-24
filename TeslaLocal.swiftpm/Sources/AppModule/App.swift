@@ -134,7 +134,8 @@ struct MainView: View {
             } menu: {
                 NavigationStack(path: $menuPath) { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
             }
-            .opacity(navigation.presented ? 0 : 1).allowsHitTesting(!navigation.presented).accessibilityHidden(navigation.presented)
+            .environment(\.vehicleRenderingActive, !navigation.presented && !model.chargingPresented)
+            .opacity(navigation.presented || model.chargingPresented ? 0 : 1).allowsHitTesting(!navigation.presented && !model.chargingPresented).accessibilityHidden(navigation.presented || model.chargingPresented)
             .overlay(alignment: .bottomTrailing) {
                 if !navigation.presented && !model.chargingPresented {
                     CharacterChatButton(chat: characterChat).padding(.trailing, 16).padding(.bottom, 96)

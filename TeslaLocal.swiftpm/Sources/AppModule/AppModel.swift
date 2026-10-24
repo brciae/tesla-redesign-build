@@ -96,6 +96,7 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var analyticsVisible = false
     private var lastAnalytics = Date.distantPast
+    private var lastEnergyRefresh = Date.distantPast
     private var tripAddressBusy = false
     private var tripAddressAttempt = Date.distantPast
     private let recordWriteQueue = DispatchQueue(label: "YLCompanion.recordWriter", qos: .utility)
@@ -350,7 +351,13 @@ final class AppModel: ObservableObject {
             Task { @MainActor in CharacterRig.trimInactiveCaches() }
         }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            self?.refresh()
+            if let self {
+                let interval = AppEnergyPolicy.refreshInterval(active: UIApplication.shared.applicationState == .active,
+                    guiding: self.navigation.guiding, charging: self.state.object("groups").object("charge").chargingNow, saving: AppEnergyPolicy.saving)
+                if Date().timeIntervalSince(self.lastEnergyRefresh) >= interval {
+                    self.lastEnergyRefresh = Date(); self.refresh()
+                }
+            }
             if let self, self.analyticsVisible, UIApplication.shared.applicationState == .active, !self.phoneCalls.isActive, Date().timeIntervalSince(self.lastAnalytics) >= 30 { self.refresh(detailed: true) }
             self?.syncArchiveIfNeeded()
             // Fleet API is billed per call and can wake the car: poll every 30 s, not every 5 s timer tick.
@@ -360,6 +367,7 @@ final class AppModel: ObservableObject {
             }
             if self?.savePending == true { self?.saveRecordsWhenAvailable() }
         }
+        timer?.tolerance = 1
     }
     deinit {
         timer?.invalidate()
@@ -401,7 +409,7 @@ final class AppModel: ObservableObject {
     }
     @MainActor private func repairSavedHistoryIfNeeded() {
         guard UIApplication.shared.applicationState == .active, !demo, !recoveryLock else { return }
-        let vin = settings.string("vin"), key = "history.endpointRepair.v166." + settings.string("vin")
+        let vin = settings.string("vin"), key = "history.energyRepair.v169." + settings.string("vin")
         guard !vin.isEmpty, !UserDefaults.standard.bool(forKey: key),
               FleetTelemetryStore.shared.records.contains(where: { $0.vin == vin }) else { return }
         do {

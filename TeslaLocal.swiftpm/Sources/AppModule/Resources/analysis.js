@@ -14,7 +14,7 @@
   const id=()=>Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12);
   const append=(list,value)=>{if(list.length>=10000)throw Error('기록 10,000건 한도. 원본을 유지하며 내보내기 후 관리가 필요함.');list.push(value);};
   const text=(v,max=300)=>typeof v==='string'?v.slice(0,max):'';
-  function initial(){return {schema:1,settings:{name:'Model Y',model:'Model Y L',vin:'',reserveSOC:20,dailyLimit:null,tariff:null,plannedKm:null},batteryBaseline:null,batteryObservations:[],groups:{},trips:[],charges:[],maintenance:[],parkingNotes:[],parkingPeriods:[],tires:[],activeTrip:null,activeCharge:null,lastPark:null,navSent:null,weather:null,lastBrief:'차량에 연결하면 최신 상태를 안내함.'};}
+  function initial(){return {schema:1,settings:{name:'Model Y',model:'Model Y L',vin:'',reserveSOC:20,dailyLimit:null,tariff:null,plannedKm:null},batteryBaseline:null,batteryObservations:[],fullChargeRangeObservations:[],groups:{},trips:[],charges:[],maintenance:[],parkingNotes:[],parkingPeriods:[],tires:[],activeTrip:null,activeCharge:null,lastPark:null,navSent:null,weather:null,lastBrief:'차량에 연결하면 최신 상태를 안내함.'};}
   // Two parking records describe the same spot when they are within ~35 m.
   function nearby(a,b,r=35){
     if(!validCoordinates(a?.latitude,a?.longitude)||!validCoordinates(b?.latitude,b?.longitude))return false;
@@ -298,6 +298,7 @@
     if(!num(s.settings.reserveSOC,0,80)||!optional(s.settings.assumedCapacityKWh,20,200)||!optional(s.settings.dailyLimit,1,100)||!optional(s.settings.tariff,0,10000)||!optional(s.settings.plannedKm,0,3000))throw Error('백업 설정 수치 오류');
     for(const t of s.trips){if(!num(t.start,0,1e14)||!num(t.end,t.start,1e14)||!optional(t.distanceKm,0,100000)||!optional(t.startSOC,0,100)||!optional(t.endSOC,0,100)||!optional(t.observedMotorUsedKWh,0,1e5)||!optional(t.observedMotorRecoveredKWh,0,1e5)||!optional(t.observedMotorNetKWh,-1e5,1e5)||!optional(t.observedMotorDistanceKm,0,100000)||!optional(t.observedMotorWhPerKm,-1e6,1e6))throw Error('운행 기록 수치 오류');}
     if(s.batteryObservations!=null&&(!Array.isArray(s.batteryObservations)||s.batteryObservations.length>10000||s.batteryObservations.some(p=>p.method!=='bmsNominal'||!num(p.at,0,1e14)||!num(p.value,20,200))))throw Error('배터리 관측 기록 오류');
+    if(s.fullChargeRangeObservations!=null&&(!Array.isArray(s.fullChargeRangeObservations)||s.fullChargeRangeObservations.length>10000||s.fullChargeRangeObservations.some(p=>p.method!=='fullRatedRange'||!num(p.at,0,1e14)||!num(p.value,100,1200))))throw Error('완충 거리 관측 기록 오류');
     validateRates(s.settings);
     for(const c of s.charges)validateCharge(c);
     for(const g of Object.values(s.groups)){if(!g||!num(g.at,0,1e14))throw Error('상태 수신시각 오류');}
@@ -415,7 +416,7 @@
         this.observed[name]=g;
         if(name==='drive')this.drive(g,now,{...this.state.groups,charge:snapshot.groups.charge??this.state.groups.charge});
         if(name==='location')recordTripLocation(this.state.activeTrip,g,now);
-        if(name==='charge'){const loc=snapshot.groups.location??this.state.groups.location;this.charge({...g,...(freshLocation(loc,now)?{latitude:loc.latitude,longitude:loc.longitude}:{})},now);}
+      if(name==='charge'){const loc=snapshot.groups.location??this.state.groups.location;this.charge({...g,...(freshLocation(loc,now)?{latitude:loc.latitude,longitude:loc.longitude}:{})},now);if(g.charging===6&&num(g.soc,99.5,100)&&num(g.rangeKm,100,1200))this.recordFullRange(g.at,g.rangeKm);}
         if(name==='tire'&&g.at-this.lastTireAt>=60000){this.state.tires.push({id:id(),at:g.at,values:g.values,seenAt:g.seenAt});this.state.tires=this.state.tires.slice(-2000);this.lastTireAt=g.at;}
       }
       const d=this.state.groups.drive,l=this.state.groups.location;
@@ -663,6 +664,12 @@
       }
       append(this.state.parkingNotes,p);return p;
     }
+    recordFullRange(at,km){
+      if(!num(at,1,Date.now()+5000)||!num(km,100,1200))return;
+      const key='full-range:'+Math.floor((at+9*3600000)/DAY),list=this.state.fullChargeRangeObservations??(this.state.fullChargeRangeObservations=[]);
+      const old=list.findIndex(p=>p.id===key),point={id:key,at,value:km,method:'fullRatedRange'};
+      if(old<0)append(list,point);else if(at>list[old].at)list[old]=point;
+    }
     ingestArchive(input){
       const vin=input.vin, rows=input.rows;
       if(typeof vin!=='string'||!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)||!Array.isArray(rows)||rows.length>50000)throw Error('NAS 기록 형식 오류');
@@ -702,6 +709,13 @@
         const stateFields=['DetailedChargeState','ChargeState'].filter(k=>latest[k]).sort((a,b)=>latest[b].at-latest[a].at);
         const detail=String(scalar(stateFields[0])??'').replace('DetailedChargeState','');
         const charging={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[detail];
+        // Preserve the vehicle's displayed rated distance at an observed full-charge completion.
+        // Range is miles in Fleet telemetry. It is never converted into usable kWh or BMS SOH.
+        const rangeRow=latest.RatedRange,stateRow=latest[stateFields[0]];
+        if(charging===6&&num(soc,99.5,100)&&rangeRow&&!rangeRow.invalid&&stateRow&&!stateRow.invalid&&
+           at-rangeRow.at<=300000&&at-stateRow.at<=300000&&num(scalar('RatedRange')*1.609344,100,1200)){
+          this.recordFullRange(at,scalar('RatedRange')*1.609344);
+        }
         if(charging===5&&previousCharge!==5){chargeBegan=at;finishedCharge=null;}
         // DCChargingEnergyIn measures battery input on both AC and DC charging.
         // ACChargingEnergyIn is grid-side supply: retain it separately, never add counters.
@@ -935,18 +949,21 @@
       const method=direct?'bmsNominal':'chargeUsable';
       const samples=direct?bms.map(p=>({id:p.id,at:p.at,kwh:p.value})):charge;
       const stable=rows=>{if(rows.length<5)return rows;const m=median(rows.map(c=>c.kwh)),mad=median(rows.map(c=>Math.abs(c.kwh-m)));const kept=rows.filter(c=>Math.abs(c.kwh-m)<=Math.max(m*.05,3*mad));return kept.length>=Math.ceil(rows.length*.7)?kept:rows;};
-      const first=stable(samples.slice(0,5)),recentSet=stable(samples.slice(-10));
+      const first=stable(samples.slice(0,3)),recentSet=stable(samples.slice(-10));
       const recent=recentSet.length?median(recentSet.map(c=>c.kwh)):null;
       const configured=s.settings.healthReferenceMethod===method&&num(s.settings.healthReferenceKWh,20,200)?s.settings.healthReferenceKWh:null;
-      const personal=!configured&&samples.length>=10?median(first.map(c=>c.kwh)):null;
+      const personal=!configured&&samples.length>=6?median(first.map(c=>c.kwh)):null;
       const baseline=configured??personal;
       // Reference and current values must be the same energy definition. Never use the generic75kWh consumption assumption as SOH.
-      const compareSet=personal?stable(samples.slice(5).slice(-10)):recentSet;
-      const current=compareSet.length>=3?median(compareSet.map(c=>c.kwh)):null;
+      const compareSet=personal?stable(samples.slice(3).slice(-10)):recentSet;
+      const current=compareSet.length>=(configured?1:3)?median(compareSet.map(c=>c.kwh)):null;
       const spread=compareSet.length?Math.max(...compareSet.map(c=>c.kwh))-Math.min(...compareSet.map(c=>c.kwh)):null;
       const comparable=baseline!=null&&current!=null&&spread/current<=.2;
       const ratio=comparable?current/baseline*100:null;
-      const reason=samples.length<(direct?1:3)?'시작·종료 SOC와 배터리 충전량을 확인한 20%p 이상 충전 3회 필요':!baseline?'같은 종류의 기준 용량 미등록 · 관측 용량 표시, 기록 10회부터 초기 대비 변화 제공':!current?'비교용 관측 자료 3회 필요':!comparable?'관측 용량 편차가 큼 · 변화율 계산 보류':ratio>100?'기준보다 높은 관측 용량 · 온도·BMS 보정 영향 확인':configured?'등록한 동일 종류 기준 용량 대비 감소 추정':'기록 시작 용량 대비 감소 · 신차 대비 열화율 아님';
+      const reason=!samples.length?'배터리 용량 자료 미수신 · 완충 표시거리도 별도 확인':!baseline?'관측 용량 표시 · 초기 3회와 이후 3회부터 변화 비교':!current?'비교용 관측 자료 3회 필요':!comparable?'관측 용량 편차가 큼 · 변화율 계산 보류':ratio>100?'기준보다 높은 관측 용량 · 온도·BMS 보정 영향 확인':configured?(samples.length<3?'등록 기준 대비 단일 관측 참고값':'등록한 동일 종류 기준 용량 대비 감소 추정'):'기록 시작 용량 대비 감소 · 신차 대비 열화율 아님';
+      const full=(s.fullChargeRangeObservations??[]).filter(p=>p.method==='fullRatedRange'&&num(p.at,since,now)&&num(p.value,100,1200)).sort((a,b)=>a.at-b.at);
+      const fullFirst=full[0]?.value??null,fullRecent=full.length>1?median(full.slice(1).slice(-3).map(p=>p.value)):fullFirst;
+      const fullChange=full.length>=2?(fullRecent/fullFirst-1)*100:null;
       const ids=new Set(charge.map(c=>c.id)),excluded=new Map();
       for(const c of this.auditedCharges().accepted){
         if(ids.has(c.id))continue;
@@ -955,8 +972,9 @@
       }
       if(this.auditedCharges().review.length)excluded.set('중복·무결성 확인 필요',this.auditedCharges().review.length);
       return {method,qualifiedChargeCount:charge.length,excludedChargeReasons:[...excluded].map(([reason,count])=>({reason,count})),provisionalCapacity:samples.length<3,capacityLabel:direct?'차량 보고 완충 용량':'충전 기반 참고 용량',comparisonLabel:configured?'등록 기준 대비 감소':'기록 시작 대비 감소',
-        sampleCount:samples.length,stableSampleCount:compareSet.length,samplesNeeded:baseline?3:10,totalChargeCount:s.charges.length,
-        capacityMedianKWh:round(recent,1),recentCapacityKWh:round(recent,1),baselineCapacityKWh:round(baseline,1),capacityMinKWh:recentSet.length?round(Math.min(...recentSet.map(c=>c.kwh)),1):null,capacityMaxKWh:recentSet.length?round(Math.max(...recentSet.map(c=>c.kwh)),1):null,
+        fullChargeRange:{count:full.length,latestKm:round(fullRecent,1),initialKm:round(fullFirst,1),changePercent:round(fullChange,1),latestAt:full.at(-1)?.at??null},
+        sampleCount:samples.length,stableSampleCount:compareSet.length,samplesNeeded:configured?1:6,totalChargeCount:s.charges.length,
+        capacityMedianKWh:round(current??recent,1),recentCapacityKWh:round(current??recent,1),baselineCapacityKWh:round(baseline,1),capacityMinKWh:recentSet.length?round(Math.min(...recentSet.map(c=>c.kwh)),1):null,capacityMaxKWh:recentSet.length?round(Math.max(...recentSet.map(c=>c.kwh)),1):null,
         initial:!comparable,estimated:comparable,provisional:!configured,soh:ratio==null?null:round(Math.min(100,ratio),1),capacityRatioPercent:round(ratio,1),degradationPercent:ratio==null?null:round(Math.max(0,100-ratio),1),relativeChangePercent:ratio==null?null:round(ratio-100,1),statusReason:reason,
         latestAt:samples.at(-1)?.at??null,baselineSource:configured?'userSameMethod':'initialObservations',forecastSOH180:null,forecastDegradation180:null,uncertaintyPercent:null,
         note:direct?'Tesla가 보고한 NominalFullPackEnergyKwh의 일별 관측 중앙값. 사용 가능 용량·Tesla 상태검사 결과와 같은 값으로 간주하지 않음.':'배터리 충전량 ÷ 직접 확인한 SOC 변화의 참고값. 충전 손실·보조 소비·SOC 비선형·온도 영향이 남아 Tesla BMS 진단과 동일하지 않음.',
@@ -974,7 +992,7 @@
       const d=s.groups.drive,c=s.groups.charge,p=s.lastPark;
       if(p&&d?.gear==='P'&&fresh(d,now)&&fresh(c,now,TTL.charge)&&c.at>p.at&&num(p.soc,0,100)&&num(c.soc,0,100)){
         const dx=num(p.odometerKm,0,1e7)&&num(d.odometerKm,0,1e7)?d.odometerKm-p.odometerKm:null;
-        periods.push({id:'current-parking',start:p.at,end:c.at,startSOC:p.soc,endSOC:c.soc,deltaSOC:round(p.soc-c.soc),classification:dx!=null&&dx>=0&&dx<=.2?'parking':'unclassified',ongoing:true});
+        periods.push({id:'current-parking',start:p.at,end:c.at,startSOC:p.soc,endSOC:c.soc,deltaSOC:round(p.soc-c.soc),startGear:'P',endGear:'P',startOdo:p.odometerKm??null,endOdo:d.odometerKm??null,classification:dx!=null&&dx>=0&&dx<=.2?'parking':'unclassified',ongoing:true});
       }
       const charges=this.auditedCharges().accepted.concat(s.activeCharge?[s.activeCharge]:[]),rows=[];let occupied=-1;
       for(const row of periods.sort((a,b)=>a.start-b.start)){
@@ -982,8 +1000,10 @@
         occupied=row.end;const overlap=(a,b)=>row.start<b&&a<row.end;
         const mixed=charges.some(c=>overlap(c.at,c.end??c.lastAt??now)),moved=s.trips.some(t=>overlap(t.start,t.end));
         const hours=(row.end-row.start)/3600000;
-        let reason=mixed?'주차 중 충전 포함':moved?'주행과 겹치는 구간':!num(row.deltaSOC,-100,100)?'양 끝 잔량 미확인':row.deltaSOC<0?'잔량 증가 · 온도·BMS 보정 가능':row.classification!=='parking'?'양 끝 주행거리 미확인':'';
-        rows.push({...row,hours:round(hours,2),classification:reason?'unclassified':'parking',exclusionReason:reason,precisionLimited:hours<6||Math.abs(row.deltaSOC)<1,perDay:!reason&&hours>=1?round(row.deltaSOC/hours*24,2):null,highLoss:!reason&&row.deltaSOC/hours*24>8});
+        const hasOdo=num(row.startOdo,0,1e7)&&num(row.endOdo,0,1e7),dx=hasOdo?row.endOdo-row.startOdo:null;
+        const gearOnly=!hasOdo&&row.startGear==='P'&&(['D','R','N'].includes(row.endGear)||row.ongoing&&row.endGear==='P');
+        let reason=mixed?'주차 중 충전 포함':moved?'주행과 겹치는 구간':!num(row.deltaSOC,-100,100)?'양 끝 잔량 미확인':row.deltaSOC<0?'잔량 증가 · 온도·BMS 보정 가능':hasOdo&&(dx<0||dx>.2)?'주행거리 변화 확인':row.classification!=='parking'&&!gearOnly?'주차 상태 근거 미확인':'';
+        rows.push({...row,hours:round(hours,2),classification:reason?'unclassified':'parking',evidence:gearOnly?'P 상태 관측 기반':'주행거리·기록 기반',exclusionReason:reason,precisionLimited:hours<2||Math.abs(row.deltaSOC)<.5,perDay:!reason&&hours>=1?round(row.deltaSOC/hours*24,2):null,highLoss:!reason&&row.deltaSOC/hours*24>8});
       }
       const usable=rows.filter(p=>p.classification==='parking'),rates=usable.filter(p=>!p.precisionLimited).map(p=>p.perDay);
       return {rows,count:usable.length,excludedCount:rows.length-usable.length,medianPerDay:round(median(rates),2),lossSOC:usable.length?round(usable.reduce((n,p)=>n+p.deltaSOC,0),1):null};

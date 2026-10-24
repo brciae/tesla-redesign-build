@@ -464,12 +464,17 @@ struct VoiceStatus: View {
 }
 
 struct DisplaySettingsView: View {
+    @AppStorage("energy.saving") private var energySaving = true
     @AppStorage("unitDistance") private var distance = "km"
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
     @AppStorage("tabBarOpacity") private var tabBarOpacity = 1.0
     @AppStorage("appearance") private var appearance = "dark"
     var body: some View { Form {
+            Section("배터리") {
+                Toggle("절전모드", isOn: $energySaving).accessibilityIdentifier("display.energySaving")
+                Text("대기 갱신과 3D 효과를 줄임. 길안내·차량 기록은 유지.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("화면 모드") {
                 Picker("화면 모드", selection: $appearance) {
                     Text("시스템").tag("system")

@@ -1,6 +1,25 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testChargingEnergySavingModelPersistenceAndFullChargeRangeCard() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["charging-energy-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["씬 생성 1회 · 갱신 0회"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.staticTexts["charging.energy.error"].exists)
+        captureSystemCard("Energy saving charging renderer initial synthetic state")
+        app.buttons["충전 값 100회 갱신"].tap()
+        XCTAssertTrue(app.staticTexts["씬 생성 1회 · 갱신 100회"].waitForExistence(timeout: 10))
+        app.buttons["수신 상태 전환"].tap(); app.buttons["수신 상태 전환"].tap()
+        XCTAssertTrue(app.staticTexts["씬 생성 1회 · 갱신 100회"].exists)
+        captureSystemCard("Energy saving charging renderer after telemetry updates")
+        XCUIDevice.shared.press(.home); app.activate()
+        XCTAssertTrue(app.staticTexts["씬 생성 1회 · 갱신 100회"].waitForExistence(timeout: 5))
+        captureSystemCard("Energy saving charging renderer foreground return")
+        app.segmentedControls.buttons["배터리"].tap()
+        XCTAssertTrue(app.staticTexts["완충 표시거리"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["기록 시작 대비 거리 변화"].exists)
+        captureSystemCard("Full charge range battery card synthetic evidence")
+    }
     func testSpotifySettingsValidateClientIDAndShowLocalPhoneConnection() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["settings-menu-probe"]; app.launch()

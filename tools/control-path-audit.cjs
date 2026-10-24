@@ -14,9 +14,10 @@ assert(!/func (pause|resignActive)\(\)[^\n]*resetObservation/.test(read('AppMode
 assert(read('AutomationCoordinator').includes('UIApplication.shared.applicationState == .active,\n'), 'Background speech must not unlock physical automation');
 assert(read('VehicleCommandRouting').includes('guard !demo'));
 const navigation = read('EmbeddedNavigation');
+assert(navigation.includes('AppEnergyPolicy.locationMode(') && navigation.includes('locator.stopUpdatingLocation()'), 'Hidden standby must release GPS through the shared policy');
 assert(navigation.includes('func endGuidance(arrived: Bool = false)'));
 assert(navigation.includes('stopNative(keepDisplay: keepDisplay, keepMap: keepDisplay && guiding)'), 'Retain an installed guiding map; a cancelled startup without a map must create standby');
-assert(navigation.includes('configureStandbyCallbacks(controller); locator.startUpdatingLocation()'), 'Route end must continue current-position updates on the same map');
+assert(navigation.includes('configureStandbyCallbacks(controller); updateStandbyLocationUse(); controller.resumeRendering()'), 'Route end must retain the map and apply visibility-aware location policy');
 assert(navigation.includes('.id(ObjectIdentifier(controller))'), 'A new native controller must replace the mounted controller rather than leaving the old stopped view');
 assert(read('DrivingWorkspace').includes('navigation.endGuidance()'));
 assert(read('DrivingWorkspace').includes('NavigationWorkspaceChrome(endGuidance: endGuidanceAction)'));

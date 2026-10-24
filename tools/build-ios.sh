@@ -26,6 +26,9 @@ node tools/control-path-audit.cjs
 mkdir -p Xcode/BuildOutput
 swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceDiskCache.swift tools/voice-cache-tests.swift -o Xcode/VoiceCacheTests
 Xcode/VoiceCacheTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/AppEnergyPolicy.swift tools/energy-policy-tests.swift -o Xcode/EnergyPolicyTests
+Xcode/EnergyPolicyTests
+node tools/energy-battery-regression-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlaybackPolicy.swift tools/spotify-policy-tests.swift -o Xcode/SpotifyPolicyTests
 Xcode/SpotifyPolicyTests
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift

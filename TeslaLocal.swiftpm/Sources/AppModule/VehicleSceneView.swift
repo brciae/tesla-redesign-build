@@ -57,6 +57,7 @@ struct RealityVehicleView: UIViewRepresentable {
     let reducedMotion: Bool
     var appearance: VehicleAppearance = .original
     var backgroundColor = UIColor.clear // transparent so the car sits on the light or dark page
+    var onSceneReady: (() -> Void)? = nil
     let onError: (String?) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(runtime: runtime, onError: onError) }
     func makeUIView(context: Context) -> VehicleARView {
@@ -66,7 +67,7 @@ struct RealityVehicleView: UIViewRepresentable {
             view.backgroundColor = backgroundColor
             view.isOpaque = false
         }
-        do { try context.coordinator.build(in: view) }
+        do { try context.coordinator.build(in: view); DispatchQueue.main.async { onSceneReady?() } }
         catch { DispatchQueue.main.async { onError(error.localizedDescription) } }
         view.didLayout = { [weak coordinator = context.coordinator] size in coordinator?.layout(size) }
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:))); pan.maximumNumberOfTouches = 1; pan.delegate = context.coordinator; view.addGestureRecognizer(pan)
@@ -115,6 +116,7 @@ struct RealityVehicleView: UIViewRepresentable {
         private var panStart: Float = 0
         private var pinchStart: Float = 0.86
         private var lastCommand = -1
+        private var lifecycleObservers: [NSObjectProtocol] = []
         private var viewport = CGSize.zero
         private var cameraBoxes: [Object] = []
         private var expanded = Set<String>()
@@ -279,9 +281,11 @@ struct RealityVehicleView: UIViewRepresentable {
             if !animate && lastAnimate { controllers.values.forEach { $0.stop() }; controllers = [:]; previous = [:] }
             if !allow || reduced { stopTween() }
             lastAnimate = animate
+            var poseChanged = false
             for (key, node) in hinges {
                 let status = states.string(key, "unknown")
                 guard previous[key] != status else { continue }; previous[key] = status
+                poseChanged = true
                 controllers[key]?.stop(); controllers[key] = nil
                 // Unknown freezes the displayed pose, never pretends the car has closed it.
                 guard status != "unknown", let definition = definitions[key] else { continue }
@@ -293,7 +297,7 @@ struct RealityVehicleView: UIViewRepresentable {
                 if animate { controllers[key] = node.move(to: transform, relativeTo: root, duration: 0.7, timingFunction: .easeInOut) }
                 else { node.transform = transform }
             }
-            placeCamera()
+            if poseChanged { placeCamera() }
             if lastCommand != command.serial {
                 lastCommand = command.serial
                 pitch = command.pitch.isFinite ? min(1.45, max(0.1, command.pitch)) : atan(0.34)
@@ -308,9 +312,18 @@ struct RealityVehicleView: UIViewRepresentable {
             }
         }
         private var motionActive: Bool {
-            !UIAccessibility.isReduceMotionEnabled && (wheelSpeed > 0.1 || decor?.needsAnimation == true || chargingDecor?.needsAnimation == true)
+            UIApplication.shared.applicationState == .active && !reduced && !AppEnergyPolicy.saving && !UIAccessibility.isReduceMotionEnabled && (wheelSpeed > 0.1 || decor?.needsAnimation == true || chargingDecor?.needsAnimation == true)
         }
         private func updateMotionLink() {
+            if lifecycleObservers.isEmpty {
+                for name in [UIApplication.willResignActiveNotification, UIApplication.didBecomeActiveNotification] {
+                    lifecycleObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                        self?.updateMotionLink()
+                        if UIApplication.shared.applicationState == .active { self?.placeCamera() }
+                        else { self?.stopTween() }
+                    })
+                }
+            }
             if motionActive, motionLink == nil {
                 let link = CADisplayLink(target: self, selector: #selector(stepMotion(_:)))
                 link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
@@ -384,6 +397,7 @@ struct RealityVehicleView: UIViewRepresentable {
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { gestureRecognizer is UIPinchGestureRecognizer || otherGestureRecognizer is UIPinchGestureRecognizer }
         func stop() {
+            lifecycleObservers.forEach(NotificationCenter.default.removeObserver); lifecycleObservers = []
             controllers.values.forEach { $0.stop() }; controllers = [:]
             surfaces = []
             stopTween(); motionLink?.invalidate(); motionLink = nil
