@@ -1,6 +1,16 @@
 name: iOS Build
 on:
   workflow_dispatch:
+    inputs:
+      ui_screens_only:
+        description: Verify fullscreen captures only (no IPA)
+        type: boolean
+        default: false
+      probe_focus:
+        description: Focus for screenshot-only diagnostic runs (full builds always run all tests)
+        type: choice
+        options: [fullscreen, junction, new, island, regression]
+        default: fullscreen
   push:
     branches: [main]
 jobs:
@@ -18,8 +28,17 @@ jobs:
       - name: Node route-gate / freshness tests
         run: node tools/js-logic-tests.cjs
       - name: Build (parse, policy tests, interface probe, unsigned IPA)
-        run: bash tools/build-ios.sh
+        env:
+          UI_SCREENS_ONLY: ${{ inputs.ui_screens_only }}
+          PROBE_FOCUS: ${{ inputs.probe_focus }}
+        run: |
+          if [[ "$UI_SCREENS_ONLY" == true ]]; then
+            bash tools/test-interface.sh "${PROBE_FOCUS:-fullscreen}"
+          else
+            bash tools/build-ios.sh
+          fi
       - uses: actions/upload-artifact@v4
+        if: inputs.ui_screens_only != true
         with:
           name: App-Tesla ${{ steps.version.outputs.version }} Build${{ steps.version.outputs.build }} v01 Review
           path: Xcode/BuildOutput/*.ipa

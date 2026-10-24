@@ -1,4 +1,58 @@
 #import <Foundation/Foundation.h>
+#import <math.h>
+
+// Estimate only until the cached clip is opened; playback uses its actual duration.
+static inline double YLNavigationSpeechSeconds(NSString *text) {
+    return fmax(1, text.length / 5.0);
+}
+static inline double YLNavigationLeadDistance(double speed, double speechSeconds) {
+    return fmax(25, fmax(0, speed) * (speechSeconds + 1.5 + fmax(0, speed) / 20.0));
+}
+static inline BOOL YLNavigationCanFinish(double distance, double speed, double age, double duration) {
+    if (!isfinite(distance) || distance <= 0 || !isfinite(speed) || !isfinite(duration) || !isfinite(age) || age < 0 || age > 3) return NO;
+    return distance - fmax(0, speed) * (age + fmax(0, duration) + 0.8) > 0;
+}
+
+static inline BOOL YLNavigationPositionUsable(BOOL valid, double gpsAge, double callbackAge, BOOL routePosition) {
+    if (!valid) return NO;
+    if (isfinite(gpsAge) && gpsAge >= -3 && gpsAge <= 15) return YES;
+    // The SDK's current, valid matched-route result may advance while raw GPS is unavailable.
+    return routePosition && isfinite(callbackAge) && callbackAge >= 0 && callbackAge <= 3;
+}
+
+// Route distances, not straight-line proximity: nearby parallel roads must not form a cluster.
+static inline NSArray<NSNumber *> *YLHumpClusterDistances(NSInteger first, NSArray<NSNumber *> *distances) {
+    NSMutableArray<NSNumber *> *result = [NSMutableArray arrayWithObject:@(first)];
+    NSInteger last = first;
+    for (NSNumber *value in [distances sortedArrayUsingSelector:@selector(compare:)]) {
+        NSInteger distance = value.integerValue;
+        if (distance <= last) continue;
+        if (distance > first + 1200 || distance - last > 250) break;
+        [result addObject:value]; last = distance;
+    }
+    return result;
+}
+
+// Voice uses approximate distance bands; the map retains the SDK's exact distance.
+// Negative means no fresh distance. Never turn it into an imminent maneuver.
+static inline NSString *YLNavigationDistancePrefix(NSInteger metres) {
+    if (metres < 0) return @"";
+    // Conventional wording: "잠시 후" when close, otherwise whole 100 m steps (never "35미터").
+    if (metres < 80) return @"잠시 후, ";
+    if (metres < 950) {
+        NSInteger band = MAX(100, ((metres + 50) / 100) * 100);
+        return [NSString stringWithFormat:@"%ld미터 앞, ", (long)band];
+    }
+    return [NSString stringWithFormat:@"%ld킬로미터 앞, ", (long)((metres + 500) / 1000)];
+}
+
+static inline NSString *YLNavigationCompactNumber(double value) {
+    // Keep meaningful precision for clearance/weight restrictions, not trailing .0.
+    NSString *text = [NSString stringWithFormat:@"%.2f", value];
+    while ([text hasSuffix:@"0"]) text = [text substringToIndex:text.length - 1];
+    if ([text hasSuffix:@"."]) text = [text substringToIndex:text.length - 1];
+    return text;
+}
 
 // Speech is independent of dashboard labels. Numeric IDs are the pinned
 // KNSDK 1.12.19 KNRGCode contract; the build audit checks every named SDK value.
@@ -27,7 +81,7 @@ static inline NSString *YLNavigationAction(NSInteger code) {
         case 49: return @"분기점에서 오른쪽으로 가세요.";
         case 61: return @"페리 승선 지점입니다.";
         case 62: return @"페리 하선 지점입니다.";
-        case 63: return @"비보호 좌회전입니다.";
+        case 63: return @"비보호 좌회전하세요. 반대편 차량과 신호에 주의하세요.";
         case 64: return @"터널로 진입하세요.";
         case 65: return @"터널 옆길로 가세요.";
         case 66: return @"왼쪽 터널로 진입하세요.";
@@ -38,7 +92,7 @@ static inline NSString *YLNavigationAction(NSInteger code) {
         case 83: return @"오른쪽 도로로 직진하세요.";
         case 84: return @"요금소입니다.";
         case 85: return @"무정차 요금소입니다.";
-        case 86: return @"분기 후 합류 구간입니다.";
+        case 86: return @"도로가 갈라졌다가 다시 합쳐지는 구간입니다. 차로를 유지하세요.";
         case 87: return @"왼쪽 고가도로로 진입하세요.";
         case 88: return @"고가도로 왼쪽 옆길로 가세요.";
         case 89: return @"오른쪽 고가도로로 진입하세요.";
@@ -69,21 +123,53 @@ static inline NSString *YLNavigationAction(NSInteger code) {
     }
 }
 
+// v1.35: the SDK sometimes puts maneuver words ("분기후 합류", "분기점", "진출") in the direction
+// names. Those are not places, so "분기후 합류 방면, …" must never be spoken.
+static inline BOOL YLNavigationIsPlaceName(NSString *name) {
+    NSString *flat = [[name stringByReplacingOccurrencesOfString:@" " withString:@""] stringByReplacingOccurrencesOfString:@"·" withString:@""];
+    if (flat.length < 2) return NO;
+    NSArray<NSString *> *generic = @[@"분기", @"합류", @"분기점", @"진입", @"진출", @"출구", @"입구", @"방향", @"방면", @"직진", @"좌회전", @"우회전",
+                                     @"유턴", @"후", @"고속도로", @"도시고속도로", @"고가도로", @"지하차도", @"터널", @"요금소", @"옆길", @"왼쪽", @"오른쪽", @"회전교차로", @"로터리", @"교차로", @"사거리", @"삼거리"];
+    NSString *rest = flat;
+    for (NSString *w in [generic sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) { return a.length > b.length ? NSOrderedAscending : NSOrderedDescending; }])
+        rest = [rest stringByReplacingOccurrencesOfString:w withString:@""];
+    return rest.length >= 2; // something besides maneuver vocabulary remains → a real road/place name
+}
+
+static inline NSString *YLNavigationSignName(NSString *raw) {
+    if (![raw isKindOfClass:NSString.class]) return @"";
+    NSString *name = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    // Sign metadata may already contain this suffix; say it exactly once.
+    for (NSString *suffix in @[@"방면", @"방향"]) {
+        if ([name hasSuffix:suffix]) name = [[name substringToIndex:name.length-suffix.length] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    }
+    return YLNavigationIsPlaceName(name) ? name : @"";
+}
+
+static inline NSString *YLNavigationCameraSpeech(NSString *prefix, NSString *kind, NSInteger limit) {
+    NSString *type = [[kind stringByReplacingOccurrencesOfString:@" 카메라" withString:@""] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    NSString *speed = limit > 0 ? [NSString stringWithFormat:@" 제한 속도는 시속 %ld킬로미터입니다.", (long)limit] : @"";
+    return [NSString stringWithFormat:@"%@%@ 지점입니다.%@", prefix, type, speed];
+}
+
 static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArray<NSString *> *towards, NSInteger metres) {
+    if (metres == 0 && code == 101) return @"목적지에 도착했습니다.";
+    if (metres == 0 && code == 1000) return @"경유지에 도착했습니다.";
     NSString *action = YLNavigationAction(code);
     if (!action.length) return @"";
     NSMutableArray<NSString *> *names = [NSMutableArray array];
     for (NSString *raw in towards) {
         if (![raw isKindOfClass:NSString.class]) continue;
-        NSString *name = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        NSString *name = YLNavigationSignName(raw);
         if (name.length && ![names containsObject:name]) [names addObject:name];
+        if (names.count == 2) break; // One road sign pair is enough; do not read a destination list.
     }
     NSString *context = @"";
     // Destinations/facilities already identify the point. Road signs help at forks.
     if (code != 101 && code != 1000 && code != 84 && code != 85) {
         if (names.count) context = [NSString stringWithFormat:@"%@ 방면, ", [names componentsJoinedByString:@", "]];
-        else if (node.length) context = [NSString stringWithFormat:@"%@, ", node];
+        else if (node.length && YLNavigationIsPlaceName(node)) context = [NSString stringWithFormat:@"%@, ", node];
     }
-    NSString *prefix = metres > 0 ? [NSString stringWithFormat:@"%ld미터 앞, ", (long)metres] : @"";
+    NSString *prefix = YLNavigationDistancePrefix(metres);
     return [NSString stringWithFormat:@"%@%@%@", prefix, context, action];
 }

@@ -48,7 +48,7 @@
     const right=[Math.cos(a.yaw),0,-Math.sin(a.yaw)],up=cross(back,right),tanV=Math.tan(39*Math.PI/360)*0.90,tanH=tanV*a.aspect;
     let minimumDistance=0.2;
     for(const p of corners){const q=p.map((v,i)=>v-target[i]),z=dot(q,back);minimumDistance=Math.max(minimumDistance,z+0.1,z+Math.abs(dot(q,right))/tanH,z+Math.abs(dot(q,up))/tanV);}
-    const zoom=Math.min(2.5,Math.max(1,a.zoom)),distance=minimumDistance*zoom;
+    const zoom=Math.min(2.5,Math.max(0.7,a.zoom)),distance=minimumDistance*zoom;
     return {target,position:target.map((v,i)=>v+back[i]*distance),minimumDistance,distance,zoom};
   }
   const api={parts,presentation,fitCamera};root.YL3D=api;if(typeof module!=='undefined')module.exports=api;

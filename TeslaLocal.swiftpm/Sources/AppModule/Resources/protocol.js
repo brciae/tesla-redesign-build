@@ -80,9 +80,13 @@
       // Some responses retain zero-valued ETA/traffic/coordinate fields after cancellation.
       // Positive ETA/distance prevents cancellation. In P, retained coordinates alone may outlive
       // the route; a missing name and zero/absent ETA still require repeated fresh receipts.
-      const emptyRoute=(d.destination===null||d.destination==='')&&(emptyCoordinates||d.gear==='P')&&
+      const explicitEmptyETA=d.arrivalMinutes===0&&d.arrivalKm===0;
+      const emptyRoute=(d.destination===null||d.destination==='')&&(emptyCoordinates||d.gear==='P'||explicitEmptyETA)&&
         (d.arrivalMinutes===null||d.arrivalMinutes===0)&&(d.arrivalKm===null||d.arrivalKm===0);
       d.routeFieldsAbsent=emptyRoute&&sourceTime(drive,4,null)!==null&&!!d.gear&&(d.gear==='P'||d.speedKmh!==null);
+      const gpsSeconds=loc?uint(loc,104):null;
+      d.routeEndConfirmed=d.routeFieldsAbsent&&(d.gear==='P'||explicitEmptyETA||
+        (gpsSeconds!==null&&gpsSeconds*1000<=now+5000&&now-gpsSeconds*1000<=30000));
     }
     if (climate) result.groups.climate = {at: sourceTime(climate, 33, now), insideC: float(climate, 101), outsideC: float(climate, 102)};
     if (tire) result.groups.tire = {at: sourceTime(tire, 1, now), values: [2,3,4,5].map(n => float(tire, n)), seenAt: [6,7,8,9].map(n => sourceTime(tire, n, null)), warnings: [10,11,12,13].map((n,i) => uint(tire,n) === 1 || uint(tire,n+4) === 1)};

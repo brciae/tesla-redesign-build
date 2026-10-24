@@ -2,13 +2,44 @@ import Foundation
 
 @main struct FleetSnapshotTests {
     static func main() {
+        let originalConfig: [String: Any] = ["hostname": "fixture.example", "port": 8443, "ca": "fixture-ca", "exp": Date().addingTimeInterval(600).timeIntervalSince1970, "delivery_policy": "latest", "fields": ["Soc": ["interval_seconds": 30]]]
+        let patched = try! FleetLocationRepair.configuration(["key_paired": true, "config": originalConfig])
+        let patchedFields = patched["fields"] as! [String: Any]
+        precondition(patched["hostname"] as? String == "fixture.example" && patched["ca"] as? String == "fixture-ca")
+        precondition((patchedFields["Location"] as? [String: Int])?["interval_seconds"] == 10)
+        precondition((patchedFields["Soc"] as? [String: Int])?["interval_seconds"] == 30)
+        precondition(FleetStreamingStatus(payload: ["config": patched, "synced": true]).locationConfigured)
+        precondition(!FleetStreamingStatus(payload: ["config": originalConfig, "synced": true]).locationConfigured)
+        precondition((try? FleetLocationRepair.configuration(["key_paired": false, "config": originalConfig])) == nil)
+        precondition((try? FleetLocationRepair.configuration(["config": ["hostname": "fixture.example", "port": 8443, "fields": ["Soc": [:]], "exp": 1]])) == nil)
+        let existingLocation: [String: Any] = ["hostname": "fixture.example", "port": 8443, "fields": ["Location": ["interval_seconds": 60]]]
+        let kept = try! FleetLocationRepair.configuration(["config": existingLocation])
+        precondition(((kept["fields"] as? [String: Any])?["Location"] as? [String: Int])?["interval_seconds"] == 60)
+        let absentStream = FleetStreamingStatus(payload: ["synced": true, "config": NSNull(), "key_paired": false])
+        precondition(!absentStream.configured && !absentStream.synced && absentStream.title == "차량 가상 키 등록 필요")
+        let waitingStream = FleetStreamingStatus(payload: ["synced": false, "config": ["hostname": "fixture.example"], "key_paired": true])
+        precondition(waitingStream.configured && !waitingStream.synced)
+        let activeStream = FleetStreamingStatus(payload: ["synced": true, "config": ["hostname": "fixture.example"], "key_paired": true])
+        precondition(activeStream.synced && activeStream.hostname == "fixture.example")
         let now = Date(timeIntervalSince1970: 1800000000)
         let ms = now.timeIntervalSince1970 * 1000
         let snapshot = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: [
             "charge_state": ["battery_level": 72, "battery_range": 100, "charging_state": "Charging", "timestamp": ms],
             "climate_state": ["inside_temp": 0, "outside_temp": -5, "timestamp": ms],
-            "vehicle_state": ["locked": false, "timestamp": ms]
+            "vehicle_state": ["locked": false, "timestamp": ms, "odometer": 1000]
         ])
+        precondition(abs((snapshot.driveDisplay(now: now)["odometerKm"] as? Double ?? 0) - 1609.344) < 0.001)
+        let supplement = FleetSupplementResult(vin: "TEST", receivedAt: now, payload: ["superchargers": [["name": "충전소 A", "available_stalls": 3, "total_stalls": 8, "internal_id": "hidden"]]])
+        precondition(supplement.cards.count == 1)
+        precondition(supplement.cards[0].rows.contains { $0.label == "사용 가능" && $0.value == "3" })
+        precondition(!supplement.cards[0].rows.contains { $0.value == "hidden" })
+        let sections = snapshot.insightSections()
+        precondition(sections.count == 7)
+        precondition(sections.first(where: { $0.title == "타이어 상태" })!.rows.first!.value == "미수신")
+        precondition(snapshot.flattenedFields(section: "charge_state").contains(where: { $0.label == "charge_state.battery_level" && $0.value == "72" }))
+        let nested = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["vehicle_state": ["software_update": ["status": "available"], "missing": NSNull()]])
+        precondition(nested.flattenedFields(section: "vehicle_state").count == 2)
+        precondition(nested.flattenedFields(section: "vehicle_state").contains(where: { $0.value == "미수신 (null)" }))
         precondition(snapshot.soc == 72 && abs(snapshot.rangeKm! - 160.9344) < 0.00001)
         precondition(snapshot.insideC == 0 && snapshot.outsideC == -5 && snapshot.locked == false)
         precondition(snapshot.charging && snapshot.hasMeasurements && snapshot.isRecent(now: now))
@@ -39,14 +70,52 @@ import Foundation
         precondition((unknownGear.parkingTelemetry(now: now)?["drive"] as? [String: Any])?["gear"] == nil)
         let oldGPS = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["vehicle_state": ["timestamp": ms], "drive_state": ["shift_state": "P", "timestamp": ms - 900000, "latitude": 37.5, "longitude": 127.1]])
         precondition(oldGPS.parkingTelemetry(now: now) == nil)
+        let historical = oldGPS.historyPayloads(now: now)
+        let historicalDrive = historical.first { ($0["data"] as? [[String:Any]])?.contains(where: { $0["key"] as? String == "Gear" }) == true }!
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        precondition(iso.date(from: historicalDrive["createdAt"] as! String)!.timeIntervalSince1970 == (ms - 900000) / 1000, "Old displayed P must enter history with its original timestamp")
+        let futureHistory = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["drive_state": ["shift_state":"P", "timestamp":ms + 60000]])
+        precondition(futureHistory.historyPayloads(now: now).isEmpty, "Do not archive future samples")
         let mixed = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["drive_state": ["shift_state": "P", "timestamp": ms], "climate_state": ["timestamp": ms - 900000], "vehicle_state": ["timestamp": ms - 900000]])
         precondition(mixed.parkingTelemetry(now: now) != nil, "Fresh P survives stale climate/closures")
         precondition(mixed.driveDisplay(now: now)["gear"] as? String == "P")
         precondition(mixed.navigationEvent(now: now)["type"] as? String == "wait", "Omitted route fields cannot cancel guidance")
         let noRoute = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["drive_state": ["shift_state": "P", "timestamp": ms, "active_route_destination": NSNull(), "active_route_minutes_to_arrival": 0, "active_route_miles_to_arrival": 0]])
         precondition(noRoute.navigationEvent(now: now)["type"] as? String == "absent")
+        precondition(noRoute.navigationEvent(now: now)["confirmed"] as? Bool == true, "Explicit route termination must also end a newer app-manual route")
         precondition(noRoute.navigationEvent(now: now.addingTimeInterval(121))["type"] as? String == "wait")
         precondition((oldGPS.homeOverlay(now: now)["location"] as? [String: Any])?["mode"] as? String == "cached")
-        print("PASS: Fleet display snapshot unit conversion, missing values, timestamps and stale-state labeling")
+        let stations = NearbyChargingSite.parse(["superchargers": [
+            ["name": "지도 충전소", "location": ["lat": 37.5, "long": 127.1], "available_stalls": 2, "total_stalls": 8, "power_kw": 250],
+            ["name": "지도 충전소", "location": ["lat": 37.5, "long": 127.1]],
+            ["name": "잘못된 좌표", "location": ["lat": 137.5, "long": 127.1]],
+            ["name": "좌표 없음"],
+            ["name": "잘못된 잔여 수", "location": ["lat": 37.6, "long": 127.2], "available_stalls": 9, "total_stalls": 8]
+        ]])
+        precondition(stations.count == 2 && stations[0].available == 2 && stations[0].powerKW == 250)
+        precondition(stations[1].available == nil)
+        precondition(NearbyChargingSite.parse(["destination_charging": [["location": ["lat": true, "long": 127.1]]]]).isEmpty)
+        let publicRows = [
+            PublicCharger(fields: ["statId": "A", "chgerId": "01", "statNm": "복합 충전소", "chgerType": "04", "stat": "2", "lat": "37.5", "lng": "127.1", "statUpdDt": "20200101000000"]),
+            PublicCharger(fields: ["statId": "A", "chgerId": "02", "chgerType": "02", "stat": "3"]),
+            PublicCharger(fields: ["statId": "A", "chgerId": "03", "chgerType": "08", "stat": "2", "limitYn": "Y"]),
+            PublicCharger(fields: ["statId": "A", "chgerId": "04", "chgerType": "04", "stat": "2", "delYn": "Y"])
+        ]
+        let publicSites = PublicChargingData.sites(publicRows + [publicRows[0]], fetchedAt: now, now: now)
+        precondition(publicSites.count == 1 && publicSites[0].total == 3 && publicSites[0].available == 1)
+        precondition(publicSites[0].matches("급속") && publicSites[0].matches("완속"))
+        precondition(PublicChargingData.sites(publicRows, fetchedAt: now.addingTimeInterval(-601), now: now)[0].available == nil)
+        let updated = PublicChargingData.merge(publicRows, [PublicCharger(fields: ["statId": "A", "chgerId": "01", "stat": "3", "statUpdDt": "20260928230000"])])
+        precondition(updated.first?.value("lat") == "37.5" && updated.first?.value("stat") == "3")
+        let invalidUpdate = PublicChargingData.merge(updated, [PublicCharger(fields: ["statId": "A", "chgerId": "01", "stat": "2", "statUpdDt": "invalid"])])
+        precondition(invalidUpdate.first?.value("stat") == "3")
+        precondition(PublicChargingData.merge(updated, []).count == 4, "Empty delta must preserve unchanged chargers")
+        let sample = Data("{\"header\":{\"resultCode\":\"00\",\"totalCount\":1},\"items\":{\"item\":{\"statId\":\"A\",\"chgerId\":\"01\",\"stat\":2}}}".utf8)
+        let decoded = try! PublicChargingData.decode(sample)
+        precondition(decoded.total == 1 && decoded.rows[0].id == "A:01" && decoded.rows[0].value("stat") == "2")
+        precondition((try? PublicChargingData.decode(Data("{\"resultCode\":\"30\"}".utf8))) == nil)
+        let identity = PublicChargingData.sites([PublicCharger(fields: ["statId": "identity", "chgerId": "01", "lat": "37.5", "lng": "127.1", "chgerType": "02", "busiNm": "GS차지비", "bnm": "fallback"])], fetchedAt: Date())
+        precondition(identity.first?.providerName == "GS차지비")
+        print("PASS: Fleet snapshots and validated, deduplicated charging map coordinates")
     }
 }

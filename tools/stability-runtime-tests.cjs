@@ -1,0 +1,42 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const root = path.join(__dirname,'../TeslaLocal.swiftpm/Sources/AppModule');
+const C = require(path.join(root,'Resources/analysis.js'));
+const e = new C.Engine(), now = Date.now();
+// Synthetic stress fixture, never real vehicle data: route history must not enter the BLE view.
+e.state.trips = Array.from({length:2000},(_,i)=>({id:'stress-'+i,start:now-100000-i*2000,end:now-99000-i*2000,distanceKm:1,startSOC:80,endSOC:79,points:Array.from({length:100},(_,j)=>({at:now-i*2000+j,latitude:37+j/10000,longitude:127+j/10000}))}));
+e.state.activeTrip = {...e.state.trips[0],id:'active'};
+e.state.groups.charge = {at:now,receivedAt:now,soc:70};
+const sourceHistoryBytes = JSON.stringify(e.state).length;
+e.chargeSummary = e.energyEstimates = e.batteryUsage = e.healthIndex = () => { throw Error('Detailed analytics entered from live callback'); };
+e._liveOnly = true;
+const start = performance.now();
+for(let i=0;i<100;i++){
+ const live = e.ingest({groups:{charge:{at:now+i,receivedAt:now+i,soc:70}}},now+i);
+ assert.equal(live.liveDelta,true);
+ assert.equal(live.history.trips.count,2000);
+ assert.equal(live.history.trips.rows.length,1);
+ assert.equal(live.state.activeTrip.points,undefined);
+ assert.equal(live.history.trips.rows[0].points,undefined);
+ assert.ok(JSON.stringify(live).length<12000,'Live bridge payload stays bounded as history grows');
+}
+assert.equal(e.state.trips[0].points.length,100,'Only the presentation is reduced; original route remains');
+console.log('PASS: 2000 trips/200000 points,100 live callbacks bypass analytics; historyBytes='+sourceHistoryBytes+',elapsedMs='+Math.round(performance.now()-start));
+const context={console,nativeCrypto:()=>JSON.stringify({ok:true,value:'00'.repeat(64)}),nativeControlCrypto:()=>JSON.stringify({ok:true,value:'00'.repeat(64)})};
+vm.createContext(context);
+for(const name of ['protocol','analysis','vehicle3d','home','bridge'])vm.runInContext(fs.readFileSync(path.join(root,'Resources',name+'.js'),'utf8'),context);
+const delta=vm.runInContext('hostCallObject("ingestLive",JSON.stringify({groups:{}}))',context);
+assert.equal(delta.ok,true);assert.equal(delta.value.liveDelta,true);
+assert.equal(vm.runInContext('engine._liveOnly',context),false,'Live mode cannot leak into later detailed calls');
+const exported=JSON.parse(vm.runInContext('hostExportJSON()',context));assert.equal(exported.schema,1);
+assert.equal(JSON.parse(vm.runInContext('hostCall("liveView","{}")',context)).ok,true,'Existing JSON caller contract is preserved');
+const model=fs.readFileSync(path.join(root,'AppModel.swift'),'utf8');
+assert.ok(model.includes('runtime.call("ingestLive", snapshot)'));
+assert.ok(model.includes('Date().timeIntervalSince(lastSaved) >= 30'));
+assert.ok(model.includes('recordWriteQueue.async'));
+assert.ok(!model.includes('decodeJSON(runtime.call("export")'));
+const native=fs.readFileSync(path.join(root,'LocalRuntime.swift'),'utf8');
+assert.ok(native.includes('result?.toDictionary()'));
+console.log('PASS: object bridge, live-mode reset, raw checkpoint export and background/coalesced writer source contract');
