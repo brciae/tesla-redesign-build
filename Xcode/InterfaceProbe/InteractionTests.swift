@@ -590,6 +590,13 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["40.36"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["1452.96"].exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Charge duplicate quarantine calendar"; shot.lifetime = .keepAlways; add(shot)
+        app.terminate(); app.launchArguments = ["charge-audit-probe", "observed-charge"]; app.launch()
+        app.segmentedControls.buttons["충전"].tap()
+        XCTAssertTrue(app.staticTexts["86.50"].waitForExistence(timeout: 10))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["+78%p"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["+약 102%"].exists)
+        let observed = XCTAttachment(screenshot: app.screenshot()); observed.name = "Vehicle battery kWh with independently observed SOC calendar"; observed.lifetime = .keepAlways; add(observed)
     }
     func testNASConnectionFieldsVisible() {
         XCUIDevice.shared.orientation = .portrait

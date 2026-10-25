@@ -965,6 +965,11 @@ struct ChargeAuditCalendarProbe: View {
              "startSOC": 25, "endSOC": 80 - Double(i) * 0.11, "vehicleReportedKWh": 40.36,
              "collectedAfterEnd": true, "source": "Fleet", "complete": false]
         }
+        if ProcessInfo.processInfo.arguments.contains("observed-charge") {
+            state["charges"] = [["id": "observed-battery-charge", "at": at, "end": at + 1800000,
+                "startSOC": 21.7, "endSOC": 100.0, "vehicleReportedKWh": 86.5, "supplyKWh": 94.0,
+                "startSOCObserved": true, "endSOCObserved": true, "complete": true, "source": "NAS"]]
+        }
         m.output = (try! m.runtime.call("load", state)) as! Object
         _model = StateObject(wrappedValue: m)
     }

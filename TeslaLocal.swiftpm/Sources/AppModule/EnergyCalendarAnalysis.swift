@@ -18,6 +18,11 @@ struct EnergyCalendarDay: Identifiable {
     var hasParking = false
     var hasSupply = false
     var hasVehicleCharge = false
+    var chargeSOCAdded: Double = 0
+    var chargeSOCCount = 0
+    var chargeSessionCount = 0
+    var hasUnknownChargeSOC = false
+    var unknownBatteryChargeCount = 0
 }
 
 enum EnergyCalendarAnalysis {
@@ -52,8 +57,17 @@ enum EnergyCalendarAnalysis {
         for charge in charges where charge["chargeExcluded"] as? Bool != true {
             guard let i = index(number(charge, "at")) else { continue }
             // Select one amount per session, never add vehicle and charger readings together.
-            let amount = ["chargedKWh", "vehicleReportedKWh", "estimatedStoredKWh"].compactMap { number(charge, $0) }.first(where: { $0 >= 0 })
+            result[i].chargeSessionCount += 1
+            // A battery value is measured once per session. Never substitute a grid counter,
+            // capacity-derived estimate, or an ambiguous precomputed total for vehicle kWh.
+            let verified = charge["storageVerified"] as? Bool == true ? number(charge, "storedKWh") : nil
+            let amount = [number(charge, "vehicleReportedKWh"), verified].compactMap { $0 }.first(where: { $0 >= 0 })
             if let amount { result[i].chargeTotal += amount; result[i].hasCharge = true }
+            else { result[i].unknownBatteryChargeCount += 1 }
+            let observed = charge["collectedAfterEnd"] as? Bool != true && charge["startSOCEstimated"] as? Bool != true && charge["endSOCEstimated"] as? Bool != true && charge["endSOCLastObserved"] as? Bool != true && charge["startSOCObserved"] as? Bool != false && charge["endSOCObserved"] as? Bool != false
+            if observed, let start = number(charge, "startSOC"), let end = number(charge, "endSOC"), (0...100).contains(start), (start...100).contains(end) {
+                result[i].chargeSOCAdded += end - start; result[i].chargeSOCCount += 1
+            } else { result[i].hasUnknownChargeSOC = true }
             if let value = number(charge, "supplyKWh"), value >= 0 { result[i].chargeSupply += value; result[i].hasSupply = true }
             if let value = number(charge, "vehicleReportedKWh"), value >= 0 { result[i].chargeVehicle += value; result[i].hasVehicleCharge = true }
             if charge["collectedAfterEnd"] as? Bool != true, charge["startTimeObserved"] as? Bool != false, charge["endTimeObserved"] as? Bool != false, let start = number(charge, "at"), let end = number(charge, "end"), end >= start {

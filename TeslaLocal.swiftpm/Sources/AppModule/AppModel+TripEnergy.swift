@@ -29,11 +29,21 @@ extension AppModel {
         guard !demo else { return }
         let now = Date(), charge = groups.object("charge")
         var soc: Double?, socAt: Date?
-        if output.object("fresh").flag("charge"), let at = charge.number("at") {
-            soc = charge.number("soc"); socAt = Date(timeIntervalSince1970: at / 1000)
-        } else if let snapshot = fleet.vehicleSnapshot, snapshot.vin == energyVehicleVIN,
-                  snapshot.sectionIsRecent("charge_state", now: now), let at = snapshot.number("charge_state", "timestamp") {
-            soc = snapshot.soc; socAt = Date(timeIntervalSince1970: at / 1000)
+        func accept(_ value: Double?, at: Double?) {
+            guard let value, value.isFinite, (0...100).contains(value), let at, at.isFinite,
+                  (-5000...120000).contains(now.timeIntervalSince1970 * 1000 - at),
+                  socAt == nil || at > socAt!.timeIntervalSince1970 * 1000 else { return }
+            soc = value; socAt = Date(timeIntervalSince1970: at / 1000)
+        }
+        if settings.string("vin") == energyVehicleVIN {
+            accept(charge.number("soc"), at: charge.number("at"))
+        }
+        if let snapshot = fleet.vehicleSnapshot, snapshot.vin == energyVehicleVIN {
+            accept(snapshot.soc, at: snapshot.number("charge_state", "timestamp"))
+        }
+        let archive = FleetTelemetryData.latest(archiveReadings, vin: energyVehicleVIN)
+        for key in ["Soc", "BatteryLevel"] {
+            if let reading = archive[key], !reading.invalid { accept(reading.number, at: reading.at.timeIntervalSince1970 * 1000) }
         }
         tripEnergy.update(vin: energyVehicleVIN, state: state, health: output.object("health"), nav: navigation.telemetry,
             guiding: navigation.guiding, routeKey: navigation.energyRouteKey, destination: navigation.energyDestination,

@@ -191,18 +191,19 @@ enum FleetTelemetryData {
         let maps: [(String, [(String, String, Double)])] = [
             // v91: ChargerVoltage and ChargeAmps were ingested and then had no
             // consumer, so the charging card rendered "요청 32 A · — V" forever.
-            ("charge", [("Soc", "soc", 1), ("RatedRange", "rangeKm", 1.609344), ("ChargeLimitSoc", "limit", 1), ("TimeToFullCharge", "minutesToLimit", 60),
+            ("charge", [("Soc", "soc", 1), ("BatteryLevel", "soc", 1), ("RatedRange", "rangeKm", 1.609344), ("ChargeLimitSoc", "limit", 1), ("TimeToFullCharge", "minutesToLimit", 60),
                         ("ChargerVoltage", "chargerVoltage", 1), ("ChargeAmps", "chargerAmps", 1), ("ACChargingPower", "chargerKW", 1), ("DCChargingPower", "chargerKW", 1), ("ChargePower", "chargerKW", 1)]),
             ("climate", [("InsideTemp", "insideC", 1), ("OutsideTemp", "outsideC", 1)])
         ]
         for (group, fields) in maps {
             var values: [String: Any] = [:]
-            var stamps: [Date] = []
+            var fieldAt: [String: Double] = [:]
             for (field, key, scale) in fields {
                 guard let r = latest[field], !r.invalid, let n = r.number,
                       now.timeIntervalSince(r.at) >= -5 else { continue }
                 if ["minutesToLimit", "chargerKW", "chargerVoltage", "chargerAmps"].contains(key), now.timeIntervalSince(r.at) > 120 { continue }
-                values[key] = n * scale; stamps.append(r.at)
+                guard n.isFinite, fieldAt[key].map({ r.at.timeIntervalSince1970 * 1000 > $0 }) ?? true else { continue }
+                values[key] = n * scale; fieldAt[key] = r.at.timeIntervalSince1970 * 1000
             }
             if group == "charge", let r = latest["DetailedChargeState"], !r.invalid,
                now.timeIntervalSince(r.at) >= -5,
@@ -210,12 +211,19 @@ enum FleetTelemetryData {
                let state = raw["detailedChargeStateValue"] as? String {
                 values["charging"] = state == "DetailedChargeStateCharging"
                 values["isCharging"] = state == "DetailedChargeStateCharging"
-                stamps.append(r.at)
+                fieldAt["charging"] = r.at.timeIntervalSince1970 * 1000
+                fieldAt["isCharging"] = r.at.timeIntervalSince1970 * 1000
             }
-            if let oldest = stamps.min() {
-                values["at"] = oldest.timeIntervalSince1970 * 1000
-                values["mode"] = now.timeIntervalSince(oldest) <= 120 ? "recent" : "cached"
-                values["label"] = now.timeIntervalSince(oldest) <= 120 ? "NAS 차량 수신" : "NAS 마지막 측정"
+            let nowMS = now.timeIntervalSince1970 * 1000
+            if group == "charge", fieldAt.contains(where: { $0.key != "limit" && nowMS - $0.value <= 120000 }) {
+                for (key, at) in Array(fieldAt) where key != "limit" && nowMS - at > 120000 { values.removeValue(forKey: key); fieldAt.removeValue(forKey: key) }
+            }
+            let measured = fieldAt.filter { $0.key != "limit" }.map(\.value)
+            if let at = group == "charge" ? measured.max() ?? fieldAt.values.max() : fieldAt.values.min() {
+                values["at"] = at
+                values["fieldAt"] = fieldAt
+                values["mode"] = nowMS - at <= 120000 ? "recent" : "cached"
+                values["label"] = nowMS - at <= 120000 ? "NAS 차량 수신" : "NAS 마지막 측정"
                 result[group] = values
             }
         }
@@ -292,6 +300,34 @@ enum FleetTelemetryData {
             if let text = value as? String, !text.isEmpty { return text }
         }
         return nil
+    }
+    static func mergeDisplay(_ existing: [String: Any], _ incoming: [String: Any]) -> [String: Any] {
+        guard let stamps = incoming["fieldAt"] as? [String: Double] else {
+            guard existing["mode"] as? String == "missing" || (incoming["at"] as? Double ?? 0) > (existing["at"] as? Double ?? 0) else { return existing }
+            return existing.merging(incoming) { _, value in value }
+        }
+        var result = existing, kept = existing["fieldAt"] as? [String: Double] ?? [:]
+        var changed = false, measurementChanged = false
+        if let newest = stamps.filter({ $0.key != "limit" }).map(\.value).max() {
+            for key in ["soc", "rangeKm", "minutesToLimit", "chargerKW", "chargerVoltage", "chargerAmps", "charging", "isCharging", "status", "addedKWh"] {
+                let at = kept[key] ?? (existing["at"] as? Double ?? 0)
+                if newest - at > 120000 { result.removeValue(forKey: key); kept.removeValue(forKey: key) }
+            }
+        }
+        for (key, at) in stamps where incoming[key] != nil {
+            let oldAt = kept[key] ?? (existing["at"] as? Double ?? 0)
+            if existing[key] == nil || at > oldAt {
+                result[key] = incoming[key]; kept[key] = at; changed = true
+                if key != "limit" { measurementChanged = true }
+            }
+        }
+        if changed {
+            result["fieldAt"] = kept
+            if measurementChanged, (incoming["at"] as? Double ?? 0) >= (existing["at"] as? Double ?? 0) {
+                for key in ["at", "mode", "label"] { result[key] = incoming[key] }
+            }
+        }
+        return result
     }
     static func failure(_ text: String) -> NSError { NSError(domain: "FleetTelemetry", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
 }

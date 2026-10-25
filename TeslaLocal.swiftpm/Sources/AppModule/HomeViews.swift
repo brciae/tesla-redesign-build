@@ -40,8 +40,6 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
         for (name, raw) in FleetTelemetryData.homeOverlay(model.archiveReadings, vin: model.fleet.selectedVin) {
             guard let group = raw as? Object else { continue }
             let existing = result.object(name)
-            let newer = existing.string("mode") == "missing" || (group.number("at") ?? 0) > (existing.number("at") ?? 0)
-            guard newer else { continue }
             // v91: this used to swap the whole group. FleetTelemetryData.homeOverlay
             // only writes keys whose reading is present and valid, so a NAS update
             // carrying a fresh Soc but no TimeToFullCharge replaced BLE's chargerKW,
@@ -49,9 +47,7 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
             // has a value, and everything it is silent about survives. The
             // Fleet-snapshot merge above is already careful this way; this one was
             // not, and it gets more likely the more continuous the NAS feed becomes.
-            var merged = existing
-            for (key, value) in group { merged[key] = value }
-            result[name] = merged
+            result[name] = FleetTelemetryData.mergeDisplay(existing, group)
         }
     }
     // v91: whichever drive group won above may have come from Fleet or the NAS

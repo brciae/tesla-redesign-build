@@ -27,7 +27,14 @@ import Foundation
             ["at": start, "nasSupplyKWh": 3.0],
             ["at": start, "vehicleReportedKWh": -1.0, "supplyKWh": 2.0]]
         let combined = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: mixed, capacityKWh: 75, calendar: calendar)
-        precondition(abs(combined[26].chargeTotal - 45.36) < 0.001, "Grid supply must never inflate battery charging energy")
+        precondition(abs(combined[26].chargeTotal - 40.36) < 0.001, "Estimated kWh and grid supply must never enter measured battery charging energy")
+        let actual: [[String: Any]] = [["at": start, "vehicleReportedKWh": 86.5, "startSOC": 21.7, "endSOC": 100.0, "startSOCObserved": true, "endSOCObserved": true]]
+        let observed = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: actual, capacityKWh: 84.8, calendar: calendar)[26]
+        precondition(observed.chargeTotal == 86.5 && abs(observed.chargeSOCAdded - 78.3) < 0.001, "SOC is observed independently of kWh/capacity; never fabricate102%")
+        var estimatedSOC = actual[0]; estimatedSOC["startSOCEstimated"] = true
+        precondition(EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: [estimatedSOC], capacityKWh: 84.8, calendar: calendar)[26].chargeSOCCount == 0)
+        let repeated = EnergyCalendarAnalysis.days(month: day, trips: [], parking: [], charges: actual + actual, capacityKWh: 84.8, calendar: calendar)[26]
+        precondition(abs(repeated.chargeSOCAdded - 156.6) < 0.001, "A day may contain multiple sessions; SOC addition is percentage points, never capped")
         print("PASS: calendar excludes duplicate energy/time and never invents duration from collection times")
     }
 }

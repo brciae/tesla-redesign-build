@@ -29,6 +29,8 @@ import Foundation
             "vehicle_state": ["locked": false, "timestamp": ms, "odometer": 1000]
         ])
         precondition(abs((snapshot.driveDisplay(now: now)["odometerKm"] as? Double ?? 0) - 1609.344) < 0.001)
+        let skewed = FleetVehicleSnapshot(vin: "TEST", receivedAt: now, payload: ["drive_state": ["timestamp": ms], "vehicle_state": ["odometer": 999.0, "timestamp": ms - 86400000]])
+        precondition(skewed.driveDisplay(now: now)["odometerKm"] == nil, "Yesterday's odometer cannot acquire today's driving timestamp")
         let supplement = FleetSupplementResult(vin: "TEST", receivedAt: now, payload: ["superchargers": [["name": "충전소 A", "available_stalls": 3, "total_stalls": 8, "internal_id": "hidden"]]])
         precondition(supplement.cards.count == 1)
         precondition(supplement.cards[0].rows.contains { $0.label == "사용 가능" && $0.value == "3" })

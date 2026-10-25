@@ -31,7 +31,7 @@ struct EnergyCalendarView: View {
                 summaryStrip
                 calendarGrid
                 selectionCard
-                InfoNote("달력 집계 기준", "주행·주차는 종료일, 충전은 시작일에 기록합니다. 영수증과 차량 기록을 연결한 충전 회차별 배터리 충전량을 사용합니다. 차량 측정값을 우선하며 SOC 계산값은 추정입니다. 충전기 공급량만 있는 기록은 배터리 충전량으로 합산하지 않습니다. 비어 있는 날은 기록이 없는 날이며 소비 0을 뜻하지 않습니다. 주차 소비 세부 원인은 소비·비용 메뉴에서 확인할 수 있습니다.")
+                InfoNote("달력 집계 기준", "충전 kWh는 차량 보고량을 우선합니다. 잔량 증가는 직접 수신한 시작·종료 SOC 차이이며 kWh를 용량으로 나누어 만들지 않습니다. 하루 여러 충전은 합산하므로 잔량 증가 합계는 100%p를 넘을 수 있습니다. 차량 kWh가 없는 회차는 미확인으로 남깁니다. 주행·주차는 종료일, 충전은 시작일 기준입니다.")
             }.padding(16)
         }.background(Theme.bg).navigationTitle("에너지 달력")
     }
@@ -65,7 +65,7 @@ struct EnergyCalendarView: View {
                 Spacer()
                 Text("단위 kWh").foregroundStyle(Theme.muted)
             }.font(.caption)
-            Text(charging ? "+ 충전량 · 약 %는 배터리 용량 대비 환산값" : "달력 −값은 주행·주차 합계 · km는 주행 거리")
+            Text(charging ? "차량 충전 kWh · 잔량 증가 %p" : "달력 −값은 주행·주차 합계 · km는 주행 거리")
                 .font(.caption2).foregroundStyle(Theme.muted)
         }.accessibilityIdentifier("energy.calendar.legend")
     }
@@ -137,7 +137,9 @@ struct EnergyCalendarView: View {
         let totalDistance = days.reduce(0.0) { $0 + $1.distance }
         VStack(spacing: 10) {
             if charging {
-                summaryRow("충전량", String(format: "%.2f", totalCharge), "kWh")
+                summaryRow("차량 충전량", days.contains { $0.hasCharge } ? String(format: "%.2f", totalCharge) : "—", "kWh")
+                let unknown = days.reduce(0) { $0 + $1.unknownBatteryChargeCount }
+                if unknown > 0 { Text("차량 충전량 미확인 \(unknown)회").font(.caption).foregroundStyle(Theme.muted) }
                 summaryRow(missingTime && hasTime ? "확인된 충전 시간" : "충전 시간", hasTime ? durationText(totalMinutes) : missingTime ? "미확인" : "—", "")
             } else {
                 summaryRow("사용량", String(format: "%.1f", totalUse), "kWh")
@@ -186,9 +188,11 @@ struct EnergyCalendarView: View {
                 Text(String(format: "+%.1f", charge(day)))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.green)
-                if let share = packShare(charge(day)) {
-                    Text(share).font(.system(size: 9)).foregroundStyle(Theme.green.opacity(0.75))
+                if day.chargeSOCCount > 0 {
+                    Text(String(format: "+%.0f%%p", day.chargeSOCAdded)).font(.system(size: 9)).foregroundStyle(Theme.green.opacity(0.75))
                 }
+            } else if day.chargeSessionCount > 0 {
+                Text("kWh 미확인").font(.system(size: 9)).foregroundStyle(Theme.muted)
             }
         } else if day.hasDrive || day.hasParking {
             Text(String(format: "-%.1f", day.driving + day.parking))
@@ -205,7 +209,9 @@ struct EnergyCalendarView: View {
             InfoCard {
                 Text(selected.formatted(date: .abbreviated, time: .omitted)).font(.headline)
                 if charging {
-                    Text(String(format: "충전 %.2f kWh", charge(day)))
+                    Text(day.hasCharge ? String(format: "차량 충전 %.2f kWh", charge(day)) : "차량 충전량 미확인")
+                    if day.chargeSOCCount > 0 { Text(String(format: day.hasUnknownChargeSOC ? "확인된 잔량 증가 +%.1f%%p" : "잔량 증가 +%.1f%%p", day.chargeSOCAdded)) }
+                    if day.hasUnknownChargeSOC { Text("시작·종료 잔량 미확인 회차 포함").font(.caption).foregroundStyle(Theme.muted) }
                 } else {
                     Text(String(format: "주행 %.1f kWh · 주차 %.1f kWh · %.1f km", day.driving, day.parking, day.distance))
                 }
@@ -238,11 +244,6 @@ struct EnergyCalendarView: View {
     private func durationText(_ minutes: Double) -> String {
         let total = Int(minutes.rounded())
         return total >= 60 ? "\(total / 60)시간 \(total % 60)분" : "\(total)분"
-    }
-    private func packShare(_ kWh: Double) -> String? {
-        let capacity = model.output.object("energy").number("capacityKWh") ?? 75
-        guard capacity > 0, kWh > 0 else { return nil }
-        return String(format: "+약 %.0f%%", kWh / capacity * 100)
     }
     private func charge(_ day: EnergyCalendarDay) -> Double { day.chargeTotal }
     private func hasCharge(_ day: EnergyCalendarDay) -> Bool { day.hasCharge }

@@ -10,6 +10,12 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.74 (174)", date: "2026-10-26", items: [
+            "달력은 차량 충전 kWh와 실측 잔량 증가를 각각 표시, 용량으로 환산한 가짜 % 제거",
+            "용량·전비·열화 변화의 계산 기준 통일, 중복 주행의 통계·학습 오염 수정",
+            "확인된 중복 기록 통합과 과거 NAS 자료 자동 재수신·재계산",
+            "최신 SOC·충전 출력을 과거 값이 덮던 문제와 차량별 배터리 정보 선택 수정"
+        ]),
         ReleaseNote(version: "1.73 (173)", date: "2026-10-25", items: [
             "회전·단속·위험 안내 우선순위와 같은 지점 중복 정리, 재생 중 문장 보호",
             "GPS 지연과 안내 목록 갱신을 지점 통과로 오인하던 음성 취소 수정",

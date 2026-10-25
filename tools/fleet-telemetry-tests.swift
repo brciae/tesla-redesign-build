@@ -49,6 +49,16 @@ import Foundation
         let staleETA = FleetTelemetryReading(vin: "DISPLAY", field: "TimeToFullCharge", at: displayNow.addingTimeInterval(-3600), number: 1, text: "", invalid: false)
         let chargeDisplay = FleetTelemetryData.homeOverlay(displayRecords + [stalePower, staleETA], vin: "DISPLAY", now: displayNow)["charge"] as! [String: Any]
         precondition(chargeDisplay["chargerKW"] == nil && chargeDisplay["minutesToLimit"] == nil)
+        let freshSOC = FleetTelemetryReading(vin: "DISPLAY", field: "Soc", at: displayNow, number: 80, text: "", invalid: false)
+        let oldLimit = FleetTelemetryReading(vin: "DISPLAY", field: "ChargeLimitSoc", at: displayNow.addingTimeInterval(-864000), number: 80, text: "", invalid: false)
+        let acPower = FleetTelemetryReading(vin: "DISPLAY", field: "ACChargingPower", at: displayNow.addingTimeInterval(-5), number: 7, text: "", invalid: false)
+        let dcPower = FleetTelemetryReading(vin: "DISPLAY", field: "DCChargingPower", at: displayNow.addingTimeInterval(-60), number: 0, text: "", invalid: false)
+        let repaired = FleetTelemetryData.homeOverlay([freshSOC, oldLimit, acPower, dcPower], vin: "DISPLAY", now: displayNow)["charge"] as! [String: Any]
+        precondition(repaired["soc"] as? Double == 80 && repaired["chargerKW"] as? Double == 7 && repaired["mode"] as? String == "recent")
+        let merged = FleetTelemetryData.mergeDisplay(["at": displayNow.addingTimeInterval(-10).timeIntervalSince1970 * 1000, "soc": 79.0, "chargerKW": 8.0], repaired)
+        precondition(merged["soc"] as? Double == 80 && merged["chargerKW"] as? Double == 7)
+        let staleMerged = FleetTelemetryData.mergeDisplay(["at": displayNow.addingTimeInterval(-3600).timeIntervalSince1970 * 1000, "soc": 20.0, "charging": true], repaired)
+        precondition(staleMerged["soc"] as? Double == 80 && staleMerged["charging"] == nil, "Fresh SOC cannot make an old charging state live")
         let now = Date(timeIntervalSince1970: 1_800_000_100)
         let stableLocation = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now.addingTimeInterval(-3600), number: nil, text: "{\"locationValue\":{\"latitude\":37.5,\"longitude\":127.1}}", invalid: false)
         let noGPS = FleetTelemetryReading(vin: "DISPLAY", field: "Location", at: now, number: nil, text: "{}", invalid: true)

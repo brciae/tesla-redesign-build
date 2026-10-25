@@ -69,8 +69,9 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
         do {
             let base = address, key = try token(base)
             let scope = SHA256.hash(data: Data((base + "|" + vin).utf8)).map { String(format: "%02x", $0) }.joined()
-            // Keep the existing cursor across app upgrades. Only an explicit server rescan resets it.
-            let cursorKey = "fleet.archive.cursor.v95." + scope
+            // Re-read historical telemetry once for the v174 data repair, then resume normally.
+            let cursorKey = "fleet.archive.cursor.v174." + scope
+            if UserDefaults.standard.object(forKey: cursorKey) == nil { FleetTelemetryStore.shared.requestHistoryRebuild(vin: vin) }
             if rebuild {
                 UserDefaults.standard.removeObject(forKey: cursorKey)
                 FleetTelemetryStore.shared.requestHistoryRebuild(vin: vin)
