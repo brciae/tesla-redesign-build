@@ -55,8 +55,8 @@ import Foundation
         let dcPower = FleetTelemetryReading(vin: "DISPLAY", field: "DCChargingPower", at: displayNow.addingTimeInterval(-60), number: 0, text: "", invalid: false)
         let repaired = FleetTelemetryData.homeOverlay([freshSOC, oldLimit, acPower, dcPower], vin: "DISPLAY", now: displayNow)["charge"] as! [String: Any]
         precondition(repaired["soc"] as? Double == 80 && repaired["chargerKW"] as? Double == 7 && repaired["mode"] as? String == "recent")
-        let merged = FleetTelemetryData.mergeDisplay(["at": displayNow.addingTimeInterval(-10).timeIntervalSince1970 * 1000, "soc": 79.0, "chargerKW": 8.0], repaired)
-        precondition(merged["soc"] as? Double == 80 && merged["chargerKW"] as? Double == 7)
+        let mergedDisplay174 = FleetTelemetryData.mergeDisplay(["at": displayNow.addingTimeInterval(-10).timeIntervalSince1970 * 1000, "soc": 79.0, "chargerKW": 8.0], repaired)
+        precondition(mergedDisplay174["soc"] as? Double == 80 && mergedDisplay174["chargerKW"] as? Double == 7)
         let staleMerged = FleetTelemetryData.mergeDisplay(["at": displayNow.addingTimeInterval(-3600).timeIntervalSince1970 * 1000, "soc": 20.0, "charging": true], repaired)
         precondition(staleMerged["soc"] as? Double == 80 && staleMerged["charging"] == nil, "Fresh SOC cannot make an old charging state live")
         let now = Date(timeIntervalSince1970: 1_800_000_100)
