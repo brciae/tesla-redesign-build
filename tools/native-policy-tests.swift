@@ -2,12 +2,87 @@ import Foundation
 
 @main struct NativePolicyTests {
     static func main() {
+        let tireNow = Date()
+        let olderTire = TirePressureSample(bar: 2.8, at: tireNow.addingTimeInterval(-60))
+        let currentTire = TirePressureSample(bar: 3.0, at: tireNow)
+        precondition(TirePressureSample.newest([currentTire, olderTire], now: tireNow)?.validBar == 3.0)
+        precondition(TirePressureSample.newest([olderTire, TirePressureSample(bar: nil, at: tireNow)], now: tireNow)?.validBar == nil)
+        precondition(TirePressureSample.newest([olderTire, TirePressureSample(bar: 4, at: tireNow.addingTimeInterval(300))], now: tireNow)?.validBar == 2.8)
+        precondition(TirePressureSample(bar: .nan, at: tireNow).validBar == nil)
+
+        var overlap = NavigationSpeechPolicy()
+        let detailTime = Date(timeIntervalSince1970: 10)
+        func cue(_ kind: String, _ metres: Double, _ imminent: Bool = false) -> NavigationSpeechCue {
+            var c = NavigationSpeechCue(text: "거리 안내", validUntil: 22, targetID: kind)
+            c.kind = kind; c.metres = metres; c.speedMps = 15; c.imminent = imminent
+            return c
+        }
+        var brief = NavigationSpeechPolicy(), normal = NavigationSpeechPolicy(), detailed = NavigationSpeechPolicy()
+        precondition(!brief.accepts(cue: cue("turn", 1000), detail: 0, now: detailTime))
+        precondition(brief.accepts(cue: cue("turn", 150), detail: 0, now: detailTime))
+        precondition(brief.accepts(cue: cue("turn", 40, true), detail: 0, now: detailTime), "A cue dropped before playback must not suppress the final warning")
+        brief.markPlayed(cue: cue("turn", 200), detail: 0, now: detailTime)
+        precondition(!brief.accepts(cue: cue("turn", 40, true), detail: 0, now: detailTime), "Brief suppresses same-point SDK/final repetition")
+        precondition(!brief.accepts(cue: cue("facility", 300), detail: 0, now: detailTime))
+        precondition(!brief.accepts(cue: cue("information", 300), detail: 0, now: detailTime))
+        precondition(brief.accepts(cue: cue("safety", 200), detail: 0, now: detailTime), "Actual hazard remains enabled")
+        precondition(normal.accepts(cue: cue("turn", 1000), detail: 1, now: detailTime))
+        normal.markPlayed(cue: cue("turn", 1000), detail: 1, now: detailTime)
+        precondition(normal.accepts(cue: cue("turn", 40, true), detail: 1, now: detailTime))
+        normal.markPlayed(cue: cue("turn", 40, true), detail: 1, now: detailTime)
+        precondition(!normal.accepts(cue: cue("turn", 30, true), detail: 1, now: detailTime))
+        precondition(detailed.accepts(cue: cue("facility", 300), detail: 2, now: detailTime))
+        var arrival = NavigationSpeechCue(text: "목적지에 도착했습니다.", validUntil: 22, targetID: nil)
+        arrival.kind = "status"; arrival.stateChange = true
+        precondition(brief.accepts(cue: arrival, detail: 0, now: detailTime), "Arrival survives brief mode without a distance target")
+        let warningTime = Date(timeIntervalSince1970: 100)
+        precondition(overlap.accepts(text: "300미터 앞 과속 단속", safety: true, incidental: false, navigationBusy: false, now: warningTime))
+        precondition(!overlap.accepts(text: "주의하세요.", safety: true, incidental: true, navigationBusy: true, now: warningTime.addingTimeInterval(1)))
+        precondition(!overlap.accepts(text: "300미터 앞 과속 단속", safety: true, incidental: false, navigationBusy: false, now: warningTime.addingTimeInterval(3)))
+        precondition(overlap.accepts(text: "100미터 앞 과속 단속", safety: true, incidental: false, navigationBusy: true, now: warningTime.addingTimeInterval(4)))
+        precondition(overlap.accepts(text: "잠시 후 과속 단속", safety: true, incidental: false, navigationBusy: false, now: warningTime, targetID: "camera-A"))
+        precondition(!overlap.accepts(text: "잠시 후 과속 단속", safety: true, incidental: false, navigationBusy: true, now: warningTime.addingTimeInterval(1), targetID: "camera-A"))
+        precondition(overlap.accepts(text: "잠시 후 과속 단속", safety: true, incidental: false, navigationBusy: true, now: warningTime.addingTimeInterval(1), targetID: "camera-B"))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 5))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: true, priority: 3, activePriority: 4))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 4))
+        precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: true, navigationBusy: true, incidental: false, priority: 4, activePriority: 5))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 5, cannotWait: true), "Equal urgent camera must not cut the active sentence")
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: true, priority: 5, activePriority: 5, cannotWait: true))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 4, activePriority: 5, cannotWait: true))
+        precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: false, incidental: false, priority: 4, activePriority: 3))
+        for incoming in 1...7 { for active in 1...7 {
+            precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: false, incidental: false, priority: incoming, activePriority: active) == (incoming > active), "Low-priority facility/status cannot cut important vehicle speech")
+            precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: incoming, activePriority: active), "Nonurgent guidance waits for the active sentence")
+            precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: incoming, activePriority: active, cannotWait: true) == (incoming >= 5 && incoming > active), "Only strictly higher urgent turn/camera may preempt")
+        } }
+        precondition(NavigationDistanceWording.normalize("35미터 앞, 좌회전하세요.") == "잠시 후, 좌회전하세요.")
+        precondition(NavigationDistanceWording.normalize("약 240 m 앞, 우회전하세요.") == "200미터 앞, 우회전하세요.")
+        let expired = Date(timeIntervalSince1970: 10)
+        let afterSynthesis = Date(timeIntervalSince1970: 45)
+        let cueTime = Date(timeIntervalSince1970: 100)
+        precondition(NavigationSpeechCue.parse(#"{"text":"약 백 미터 앞","validUntil":102,"targetID":"camera"}"#, now: cueTime)?.targetID == "camera")
+        precondition(NavigationSpeechCue.parse(#"{"text":"지난 단속","validUntil":99}"#, now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse(#"{"text":"잘못된 장기 안내","validUntil":113}"#, now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse("{}", now: cueTime) == nil)
+        precondition(NavigationSpeechCue.parse(#"{"text":"전방 안내","validUntil":112,"targetID":"ahead"}"#, now: cueTime) != nil)
+        precondition(NavigationSpeechCue.parse(#"{"text":"새로운 경로로 안내합니다.","validUntil":102,"stateChange":true}"#, now: cueTime)?.stateChange == true)
+        precondition(NavigationSpeechCue.parse(#"{"text":"잠시 후 단속","validUntil":102,"imminent":true}"#, now: cueTime)?.imminent == true)
+        for key in ["manual", "preview", "climate.temp"] {
+            precondition(VoiceItem(key: key, text: "report", expires: expired, priority: 2, manual: true).canStartPlayback(at: afterSynthesis))
+        }
+        for key in ["navigation.turn", "navigation.safety", "dashboard.start"] {
+            precondition(!VoiceItem(key: key, text: "expired", expires: expired, priority: 4, manual: true).canStartPlayback(at: afterSynthesis))
+        }
+        precondition(!VoiceItem(key: "automatic", text: "expired", expires: expired, priority: 1, manual: false).canStartPlayback(at: afterSynthesis))
         let spokenUnits = ["실내 22°C": "실내 섭씨 이십이 도", "21.5 ° C": "섭씨 이십일 점 오 도", "-5℃": "섭씨 영하 오 도", "72°F": "화씨 칠십이 도", "80%": "팔십 퍼센트", "60 km/h": "시속 육십 킬로미터", "2.8 bar": "이 점 팔 바", "68도": "육십팔 도"]
         for (input, expected) in spokenUnits {
             precondition(SpeechText.prepare(input) == expected, "Speech unit: \(input)")
             precondition(SpeechText.prepare(SpeechText.prepare(input)) == expected)
         }
         precondition(SpeechText.prepare("MC 빌딩으로 안내를 시작합니다.") == "MC 빌딩으로 안내를 시작합니다.")
+        precondition(SpeechText.prepare("약 100미터 앞, 신호 과속 단속 구간입니다.") == "약 백 미터 앞, 신호 과속 단속 구간입니다.")
+        precondition(SpeechText.prepare("높이 제한, 3.0미터입니다. 중량 제한, 10.0톤입니다.") == "높이 제한, 삼 미터입니다. 중량 제한, 십 톤입니다.")
         precondition(SpeechText.prepare("온도22°C로 설정") == "온도섭씨 이십이 도로 설정")
         for (input, expected) in ["3.0m": "삼 미터", "3.00 미터": "삼 미터", "3.50km": "삼 점 오 킬로미터", "0.05m": "영 점 영 오 미터", "22.0°C": "섭씨 이십이 도", "80.0%": "팔십 퍼센트", "2.0kWh": "이 킬로와트시", "3.0 버전": "3.0 버전"] {
             precondition(SpeechText.prepare(input) == expected, "Speech decimal: \(input)")
@@ -21,7 +96,7 @@ import Foundation
         precondition(ControlVoice.message(action: "frunkOpen", result: .unknown) == "차량 응답을 확인하지 못했습니다.")
         precondition(ControlVoice.message(action: "chargeStop", result: .failed) == "선택한 기능을 실행하지 못했습니다.")
         precondition(Array(VehicleReadPlan.initial.prefix(2)) == ["drive", "location"])
-        precondition(VehicleReadPlan.regular.count == 21 && VehicleReadPlan.regular.filter { $0 == "location" }.count == 7 && VehicleReadPlan.regular.filter { $0 == "charge" }.count == 2 && VehicleReadPlan.regular.filter { $0 == "media" }.count == 1)
+        precondition(VehicleReadPlan.regular.count == 24 && VehicleReadPlan.regular.filter { $0 == "location" }.count == 6 && VehicleReadPlan.regular.filter { $0 == "charge" }.count == 6 && VehicleReadPlan.regular.filter { $0 == "media" }.count == 1)
         precondition(Set(VehicleReadPlan.initial) == Set(VehicleReadPlan.regular))
         precondition(VehicleReadPlan.enteredPark(previous: "D", gear: "P", at: 100000, now: 100000))
         precondition(!VehicleReadPlan.enteredPark(previous: "P", gear: "P", at: 100000, now: 100000))
@@ -65,6 +140,45 @@ import Foundation
         q.add(item("first"), now: now); q.add(item("second"), now: now)
         precondition(q.next(now: now)?.key == "first")
         precondition(q.next(now: now)?.key == "second")
+        let modes = (0...2).map { level -> Int in
+            var policy = NavigationSpeechPolicy(); var count = 0
+            for sample in [cue("turn", 1500), cue("turn", 500), cue("turn", 40, true), cue("turn", 30, true)] {
+                if policy.accepts(cue: sample, detail: level, now: detailTime) { count += 1; policy.markPlayed(cue: sample, detail: level, now: detailTime) }
+            }
+            return count
+        }
+        precondition(modes == [1, 2, 3], "Same driven route must produce distinct 1/2/3 cue counts")
+        precondition(NavigationSpeechPolicy.priority(cue: cue("turn", 40, true), safety: false) > NavigationSpeechPolicy.priority(cue: cue("camera", 50, true), safety: true))
+        precondition(NavigationSpeechPolicy.priority(cue: cue("camera", 50, true), safety: true) > NavigationSpeechPolicy.priority(cue: cue("hump", 50, true), safety: true))
+        var pending = VoiceQueue()
+        func pendingCue(_ id: String, _ seconds: Double, _ priority: Int) -> VoiceItem { VoiceItem(key: "navigation.safety", text: id, expires: now.addingTimeInterval(seconds), priority: priority, manual: true, navigationID: id) }
+        pending.add(pendingCue("near-camera", 4, 5), now: now)
+        pending.add(pendingCue("far-camera", 10, 5), now: now)
+        pending.add(pendingCue("turn", 5, 6), now: now)
+        precondition(pending.items.count == 3, "Distinct targets cannot erase each other under a shared category")
+        precondition(pending.next(now: now)?.navigationID == "turn")
+        precondition(pending.next(now: now)?.navigationID == "near-camera")
+        precondition(pending.next(now: now)?.navigationID == "far-camera")
+        pending.add(pendingCue("same", 8, 4), now: now); pending.add(pendingCue("same", 4, 5), now: now)
+        precondition(pending.items.count == 1 && pending.items[0].priority == 5)
+        pending.add(pendingCue("same", 9, 4), now: now)
+        precondition(pending.items.count == 1 && pending.items[0].priority == 5, "Late SDK approach cannot downgrade the final camera")
+        pending.clear(); pending.add(pendingCue("turn", 4, 6), now: now); pending.add(pendingCue("turn", 8, 3), now: now)
+        precondition(pending.items.count == 1 && pending.items[0].priority == 6, "Final turn survives reverse callback order")
+        precondition(ArrivalSpeechPolicy.message(homeDistance: 20, workDistance: 1000, hour: 23) == "집에 도착했습니다. 편안한 밤 보내세요.")
+        precondition(ArrivalSpeechPolicy.message(homeDistance: nil, workDistance: 10, hour: 9) == "회사에 도착했습니다. 좋은 하루 보내세요.")
+        precondition(ArrivalSpeechPolicy.message(homeDistance: .nan, workDistance: 300, hour: 9) == nil)
+        precondition(ArrivalSpeechPolicy.message(homeDistance: 0, workDistance: 0, hour: 9) == nil, "Ambiguous same location cannot invent home/work identity")
+        var arrivalPolicy = ArrivalSpeechPolicy()
+        precondition(arrivalPolicy.canPlay(vehicle: "car", now: now))
+        precondition(arrivalPolicy.canPlay(vehicle: "car", now: now.addingTimeInterval(1)), "A blocked/unplayed request cannot consume arrival")
+        arrivalPolicy.markPlayed(vehicle: "car", now: now)
+        precondition(!arrivalPolicy.canPlay(vehicle: "car", now: now.addingTimeInterval(2)), "Native arrival and parked trip automation share one played event")
+        arrivalPolicy.observe(gear: "D", speed: 4)
+        precondition(!arrivalPolicy.canPlay(vehicle: "car", now: now.addingTimeInterval(3)), "Rolling into parking is not another visit")
+        arrivalPolicy.observe(gear: "P", speed: 0); arrivalPolicy.observe(gear: "D", speed: 5)
+        precondition(arrivalPolicy.canPlay(vehicle: "car", now: now.addingTimeInterval(20)), "Actual next trip can arrive again")
+        print("PASS: navigation 1/2/3 mode counts, approved priority, distinct-target queue, home/work arrival deduplication")
         let parts = VehicleUnits().displayParts(8.02, suffix: " km/kWh", digits: 2)
         precondition(parts.0 == "8.02" && parts.1 == " km/kWh")
         print("PASS: natural action voice, location read priority, native unit conversions, unknown values, quiet hours, priority, dedupe, TTL and queue bound")

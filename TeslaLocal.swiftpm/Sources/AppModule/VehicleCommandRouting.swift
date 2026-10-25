@@ -34,7 +34,8 @@ extension AppModel {
                 }
                 _ = try await fleet.sendCommand(command: command, parameters: parameters)
                 voice.say("\(title) 승인 응답을 받았습니다.", category: "voiceControl", manual: true)
-            } catch { errorMessage = error.localizedDescription }
+                CharacterReact.send("nod")
+            } catch { errorMessage = error.localizedDescription; CharacterReact.send("shake") }
         }
     }
 }

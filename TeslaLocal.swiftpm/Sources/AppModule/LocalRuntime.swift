@@ -8,8 +8,17 @@ extension Dictionary where Key == String, Value == Any {
     func object(_ key: String) -> Object { self[key] as? Object ?? [:] }
     func rows(_ key: String) -> [Object] { self[key] as? [Object] ?? [] }
     func string(_ key: String, _ fallback: String = "") -> String { self[key] as? String ?? fallback }
-    func number(_ key: String) -> Double? { (self[key] as? NSNumber)?.doubleValue }
+    // v1.28: NaN/inf from the JS bridge or BLE made Int(...) trap all over the UI; only finite values leave here.
+    func number(_ key: String) -> Double? { guard let v = (self[key] as? NSNumber)?.doubleValue, v.isFinite else { return nil }; return v }
     func flag(_ key: String) -> Bool { self[key] as? Bool ?? false }
+    var chargingNow: Bool {
+        if let value = self["isCharging"] as? Bool { return value }
+        if let value = self["charging"] as? NSNumber {
+            if CFGetTypeID(value) == CFBooleanGetTypeID() { return value.boolValue }
+            if value.intValue > 0 { return value.intValue == 5 }
+        }
+        return (number("chargerKW") ?? 0) > 0.5 || flag("chargingActive")
+    }
 }
 enum LocalError: LocalizedError {
     case message(String)
@@ -112,10 +121,17 @@ final class LocalRuntime {
     }
     func call(_ operation: String, _ argument: Any = [:]) throws -> Any {
         context.exception = nil
-        let result = context.objectForKeyedSubscript("hostCall")?.call(withArguments: [operation, try encodeJSON(argument)])
+        let result = context.objectForKeyedSubscript("hostCallObject")?.call(withArguments: [operation, try encodeJSON(argument)])
         if let error = context.exception { throw LocalError.message(error.toString()) }
-        guard let json = result?.toString(), let response = try decodeJSON(json) as? Object else { throw LocalError.message("분석 엔진 응답 오류") }
+        guard let response = result?.toDictionary() as? Object else { throw LocalError.message("분석 엔진 응답 오류") }
         guard response.flag("ok") else { throw LocalError.message(response.string("error", "알 수 없는 오류")) }
         return response["value"] ?? NSNull()
+    }
+    func exportData() throws -> Data {
+        context.exception = nil
+        let result = context.objectForKeyedSubscript("hostExportJSON")?.call(withArguments: [])
+        if let error = context.exception { throw LocalError.message(error.toString()) }
+        guard let text = result?.toString() else { throw LocalError.message("기록 직렬화 실패") }
+        return Data(text.utf8)
     }
 }

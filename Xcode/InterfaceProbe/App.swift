@@ -1,9 +1,17 @@
 import SwiftUI
 import CryptoKit
+import AVFoundation
+import MapKit
 
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
     init() {
+        if ProcessInfo.processInfo.arguments.contains("navigation-card-probe") {
+            let legacy = Data(#"{"connected":false,"guiding":true,"destination":"A","instruction":"좌회전","observedAt":0}"#.utf8)
+            let decoded = try! JSONDecoder().decode(VehicleActivityAttributes.ContentState.self, from: legacy)
+            precondition(decoded.nextTurnMetres == nil && decoded.remainingMetres == nil, "Legacy Activity payload must decode")
+        }
+        if ProcessInfo.processInfo.arguments.contains("climate-probe") { precondition(UIImage(named: "TeslaYLInterior") != nil, "Cabin fixture must include the production image asset") }
         if ProcessInfo.processInfo.arguments.contains("reset-appearance-fixture") {
             for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("appearance.v1.") {
                 UserDefaults.standard.removeObject(forKey: key)
@@ -12,14 +20,104 @@ import CryptoKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
+            if ProcessInfo.processInfo.arguments.contains("navigation-card-probe") { NavigationCardProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("settings-menu-probe") {
+                SettingsMenuProbe()
+            }
+            else if ProcessInfo.processInfo.arguments.contains("live-activity-settings-probe") {
+                NavigationStack { Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle("잠금화면·아일랜드") }
+            }
+            else if ProcessInfo.processInfo.arguments.contains("system-navigation-probe") || ProcessInfo.processInfo.arguments.contains("system-charging-probe") { SystemActivityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("lock-screen-navigation-probe") { LockScreenNavigationProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("robot-probe") { RobotProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charging-energy-probe") { ChargingEnergyProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("traffic-refresh-probe") { TrafficRefreshProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charging-map-probe") { ChargingMapProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("search-probe") { DestinationSearchView(navigation: EmbeddedNavigation()).environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains(where: { ["voice-playback-probe", "voice-events-probe", "voice-lifecycle-probe"].contains($0) }) { VoicePlaybackProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charge-cost-probe") { ChargeCostProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("published-tariff-probe") { PublishedTariffProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charge-audit-probe") { ChargeAuditCalendarProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("record-recovery-probe") { RecordRecoveryProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("archive-probe") { NavigationStack { FleetTelemetryView(vin: "TEST", connectionSettings: true) }.environmentObject(AppModel()) }
+            else if ProcessInfo.processInfo.arguments.contains("climate-probe") { ClimateFleetProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("fleet-probe") { ClimateFleetProbe(fleetScreen: true) }
+            else if ProcessInfo.processInfo.arguments.contains("tabbar-probe") { TabBarProbe() }
             else if ProcessInfo.processInfo.arguments.contains("cache-probe") { VoiceCacheProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("landing-probe") { NavigationLandingProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("fullscreen-navigation-probe") { FullscreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("navigation-probe") { NavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-probe") { BatteryProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("trip-record-probe") { TripRecordProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("context-speech-probe") { ContextSpeechProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("energy-history-probe") { TripEnergyHistoryProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("home-charging-probe") { HomeChargingProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("charging-time-probe") { ChargingTimeProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("attachment-safety-probe") { AttachmentSafetyProbe() }
             else if ProcessInfo.processInfo.arguments.contains("battery-gauge-probe") { BatteryGaugeProbe() }
             else { ProbeRoot() }
         }.preferredColorScheme(.dark)
     } }
+}
+
+struct TripEnergyHistoryProbe: View {
+    @State private var charged = false
+    private var forecast: TripEnergyEstimate {
+        TripEnergyEstimate.calculate(profile: .make(samples: [.init(distanceKm: 40, startSOC: 80, endSOC: 70)], usableKWh: 72), soc: 68, remainingKm: 8.7)!
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Button("충전 포함 예시") { charged.toggle() }.accessibilityIdentifier("energy.forecast.charge.example")
+                TripEnergyRecordView(record: record)
+                TripEnergyPredictionRow(estimate: TripEnergyEstimate.calculate(profile: .make(samples: [], usableKWh: nil), soc: 5, remainingKm: 100)!)
+            }.navigationTitle("트립 에너지 예측")
+        }
+    }
+    private var record: TripEnergyRecord {
+        let start = Date(), points: [TripEnergyPoint] = (0...10).map { i in
+            let gain = charged && i >= 5 ? 10.0 : 0.0
+            return .init(elapsedSeconds: Double(i) * 90, distanceKm: Double(i), predictedSOC: 68 - Double(i) * 0.25 + gain, actualSOC: 68 - Double(i) * 0.4 + gain)
+        }
+        return .init(vin: "TEST", routeKey: "fixture", destination: "도착 비교 예시", startedAt: start, startSOC: 68,
+            initial: forecast, endedAt: start.addingTimeInterval(900), actualArrivalSOC: charged ? 74 : 64, arrived: true,
+            chargingObserved: charged, startOdometerKm: 100, points: points,
+            chargingStops: charged ? [.init(id: "charge", startedAt: start.addingTimeInterval(400), endedAt: start.addingTimeInterval(450), startSOC: 66, endSOC: 76, batteryAddedKWh: 7.2)] : nil)
+    }
+}
+
+struct TripRecordProbe: View {
+    private let start = Date(timeIntervalSince1970: 1704067200)
+    private var current: TripRecordMetrics { .init(id: "one", start: start, end: start.addingTimeInterval(2400), distanceKm: 28, energyKWh: 4, startSOC: 80, endSOC: 75) }
+    private var other: TripRecordMetrics { .init(id: "two", start: start.addingTimeInterval(-86400), end: start.addingTimeInterval(-86400 + 2280), distanceKm: 28, energyKWh: 3.5, startSOC: 80, endSOC: 75) }
+    var body: some View {
+        NavigationStack { ScrollView { VStack(spacing: 16) {
+            TripRecordSummaryCard(metrics: current, startName: "샘플 출발지", endName: "샘플 목적지")
+            NavigationLink("다른 주행과 비교") { TripComparisonScreen(current: current, candidates: [current, other]) }.buttonStyle(.borderedProminent)
+            TripGuidanceTimeline(vin: "TEST", from: start, to: current.end)
+        }.padding(16) }.navigationTitle("주행 기록") }
+    }
+}
+struct ContextSpeechProbe: View {
+    @State private var preview = "배터리 82퍼센트입니다."
+    private var context: AutomationSpeechContext { .init(trigger: "boarding", hour: 8, insideC: 35, scope: "TEST") }
+    var body: some View {
+        NavigationStack { Form {
+            ContextSpeechSettings()
+            Text(preview).accessibilityIdentifier("automation.ai.preview")
+            Button("상황 멘트 예시") {
+                let options = AutomationSpeechPolicy.options(base: "배터리 82퍼센트입니다.", context: context)
+                preview = AutomationSpeechPolicy.selected("{\"choice\":2}", options: options) ?? options[0]
+            }.accessibilityIdentifier("automation.ai.example")
+            Button("불필요한 인사 생략 예시") {
+                let options = AutomationSpeechPolicy.options(base: "탑승을 환영합니다.", context: context, allowRoutineOmission: true)
+                let value = AutomationSpeechPolicy.selected("{\"choice\":3}", options: options)
+                preview = value == "" ? "새 정보 없는 인사는 생략함" : value ?? options[0]
+            }.accessibilityIdentifier("automation.ai.omit.example")
+        }.navigationTitle("상황별 AI 안내") }
+    }
 }
 
 struct VoiceCacheProbe: View {
@@ -48,14 +146,15 @@ struct VoiceCacheProbe: View {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/TypecastAudioCache")
         let urls = voices.map { voice in
             let digest = SHA256.hash(data: Data("\(voice)_\(text)".utf8)).map { String(format: "%02x", $0) }.joined()
-            return dir.appendingPathComponent(digest + ".wav")
+            // v1.34: each voice has its own sub-folder.
+            return dir.appendingPathComponent("v_" + voice, isDirectory: true).appendingPathComponent(digest + ".wav")
         }
         defer {
             client.selectedVoiceId = previous
             for url in urls { try? FileManager.default.removeItem(at: url) }
         }
         do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            for url in urls { try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true) }
             for (index, url) in urls.enumerated() { try Data(repeating: UInt8(index + 1), count: 256).write(to: url) }
             for index in [0, 1, 0] {
                 client.selectedVoiceId = voices[index]
@@ -91,8 +190,84 @@ struct TabBarProbe: View {
     }
 }
 
+struct NavigationLandingProbe: View {
+    @State private var result = "대기"
+    var body: some View {
+        VStack {
+            NavigationLandingPanel(guiding: false, recent: [SavedNavigationPlace(name: "반포대교 남단", address: "서울 서초구", latitude: 37.5, longitude: 127)], search: { result = "검색 열림" }, dashboard: { result = "대시보드 열림" }, charging: { result = "충전소 열림" }, naver: {}, tmap: {}, select: { result = $0.name })
+            Text(result).accessibilityIdentifier("landing.result")
+        }
+    }
+}
+
+struct FullscreenNavigationProbe: View {
+    @State private var theme: NavigationTheme = .cluster
+    @State private var stopped = false
+    @State private var junctionVisible = ProcessInfo.processInfo.arguments.contains("junction-probe")
+    private var noVehicle: Bool { ProcessInfo.processInfo.arguments.contains("no-vehicle-route-probe") }
+    private let recoveryStore = NavigationRecoveryStore(defaults: UserDefaults(suiteName: "NavigationStopProbe")!)
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("no-vehicle-route-probe") {
+            if ProcessInfo.processInfo.arguments.contains("reset-route-probe") {
+                _ = recoveryStore.save(NavigationRecoveryCheckpoint(vin: "", name: "테스트 목적지", latitude: 37.5, longitude: 127, manual: true, savedAt: Date()))
+            }
+            _stopped = State(initialValue: recoveryStore.load() == nil)
+        }
+    }
+    private func stopGuidance() { recoveryStore.clear(); stopped = true }
+    var body: some View {
+        NavigationWorkspaceChrome(endGuidance: noVehicle && !stopped ? stopGuidance : nil) {
+            NavigationDashboard(theme: theme, data: sample) { NavigationMapFixture() }
+                car: { Color.clear }
+                .overlay(alignment: .bottom) {
+                    if noVehicle && stopped {
+                        Text("안내 종료됨").padding(12).background(.black).accessibilityIdentifier("fullscreen.stopped")
+                    }
+                }
+                .overlay {
+                    GeometryReader { geometry in
+                        Text("\(Int(geometry.size.width))/\(Int(geometry.size.height))")
+                            .font(.system(size: 8)).foregroundStyle(.white)
+                            .padding(2).background(.black.opacity(0.5))
+                            .accessibilityIdentifier("navigation.canvas.size")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    }.allowsHitTesting(false)
+                }
+        } controls: {
+            ScrollView(.horizontal) {
+                HStack {
+                    ForEach(NavigationTheme.allCases.filter { $0 != .running }) { value in
+                        Button(value.title) { theme = value }.frame(minHeight: 44)
+                    }
+                }
+            }.frame(height: 44)
+            if !noVehicle {
+                if !stopped { ParkedNavigationActions { stopped = true } }
+                else { Text("안내 종료됨").accessibilityIdentifier("fullscreen.stopped") }
+            }
+            if ProcessInfo.processInfo.arguments.contains("junction-probe") {
+                Button("진출 지점 통과") { junctionVisible = false }
+            }
+        }.background(.black).statusBarHidden(true).persistentSystemOverlays(.hidden)
+    }
+    private var sample: NavigationReadout {
+        var r = NavigationReadout()
+        if junctionVisible {
+            r.junctionImage = UIImage(systemName: "arrow.up.right.circle.fill")?.withTintColor(.cyan, renderingMode: .alwaysOriginal)
+            r.junctionMetres = 300
+        }
+        r.speed = "0"; r.gear = "P"; r.battery = "71%"; r.range = "399 km"
+        if noVehicle { r.speed = "—"; r.gear = "—"; r.battery = "—"; r.range = "—" }
+        r.turn = "출발지 지나고 진행"; r.turnDistance = "0 m"; r.turnSymbol = "arrow.up"
+        r.next = "24 m · 좌회전"; r.remaining = "54분 남음"; r.remainingDistance = "29.9 km"; r.arrival = "18:19"
+        r.mediaTitle = "Orbit Pop"; r.mediaPlaying = true
+        return r
+    }
+}
+
 struct NavigationProbe: View {
     @State private var theme: NavigationTheme = .cluster
+    @State private var mediaSource = "Spotify"
     @State private var blank = false
     @State private var bend = 0.0
     @State private var moving = false
@@ -102,7 +277,7 @@ struct NavigationProbe: View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
-                    Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                    Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases.filter { $0 != .running }) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
                     Button(blank ? "수신됨" : "미수신") { blank.toggle() }
                         .buttonStyle(.bordered).accessibilityIdentifier("navigation.empty")
                     if theme == .minimal && ProcessInfo.processInfo.arguments.contains("motion-probe") {
@@ -112,6 +287,16 @@ struct NavigationProbe: View {
                     }
                 }.padding(.horizontal, 8)
             }.frame(height: 44)
+            if ProcessInfo.processInfo.arguments.contains("shade-probe") { DashboardShadeControl().padding(8) }
+            if ProcessInfo.processInfo.arguments.contains("media-source-probe") {
+                HStack {
+                    Text(mediaSource)
+                    Button("다음 재생 소스") {
+                        let sources = ["Spotify", "Apple Music", "YouTube Music", "TIDAL", "Bluetooth", "USB", "AUX", "FM", "YouTube", "Netflix", "Disney+", "브라우저", "게임", "정보 없음"]
+                        mediaSource = sources[((sources.firstIndex(of: mediaSource) ?? 0) + 1) % sources.count]
+                    }.accessibilityIdentifier("media.source.next")
+                }
+            }
             if ProcessInfo.processInfo.arguments.contains("parked-route-probe") {
                 if routeStopped { Text("자유주행").accessibilityIdentifier("navigation.stopped") }
                 else { ParkedNavigationActions { routeStopped = true } }
@@ -133,13 +318,24 @@ struct NavigationProbe: View {
         r.batterySOC = 68
         r.speedKmh = moving ? 34 : 0; r.routeBend = bend; r.motionValid = true; r.connected = true; r.outside = "25°C"
         r.turn = "동작대교 방면 오른쪽 진출"; r.turnDistance = "1.5 km"; r.turnSymbol = "arrow.up.right"; r.highway = "진출"
+        if ProcessInfo.processInfo.arguments.contains("long-guidance-probe") {
+            r.turn = "동작대교 · 국립현충원 · 강남역 · 서울역 · 한강대로 오른쪽 진출"
+        }
         if ProcessInfo.processInfo.arguments.contains("roundabout-probe") { r.exitClock = 9; r.turn = "회전교차로"; r.highway = "" }
         r.next = "1.3 km · 좌회전"; r.nextSymbol = "arrow.turn.up.left"; r.remaining = "22분 남음"; r.remainingDistance = "8.7 km"; r.arrival = "19:02"; r.speedFraction = 34 / 140
         r.destination = "반포대교 남단"; r.speedLimit = 80; r.speedLimitDistance = "2.1 km"; r.clock = "18:40"; r.routeProgress = 0.42; r.odometer = "12,450 km"; r.powerKW = 18; r.laneCount = 4; r.laneSuggested = [1, 2]; r.laneDistance = "416 m"
         r.currentRoadLanes = 3; r.currentRoadClass = "urban"; r.arrivalSOC = 61; r.braking = !moving; r.night = theme != .touring
+        if ProcessInfo.processInfo.arguments.contains("energy-forecast-probe") {
+            let profile = TripEnergyProfile.make(samples: Array(repeating: .init(distanceKm: 40, startSOC: 80, endSOC: 70), count: 8), usableKWh: 72)
+            r.energyPrediction = TripEnergyEstimate.calculate(profile: profile, soc: 68, remainingKm: 8.7)
+        }
         // Gentle right-hand curve 0…80 m ahead ([left, forward] metres).
         r.routePath = stride(from: 0.0, through: 80.0, by: 10.0).flatMap { f in [-(bend * f * f / 160), f] }
         r.mediaTitle = "Night Drive (샘플 트랙)"; r.mediaArtist = "YL 샘플 아티스트"; r.mediaSource = "Bluetooth"
+        if ProcessInfo.processInfo.arguments.contains("media-source-probe") {
+            r.mediaSource = mediaSource == "정보 없음" ? "" : mediaSource
+            r.mediaSourceCode = ["Spotify": 12.0, "Bluetooth": 8, "TIDAL": 20, "USB": 6, "AUX": 9, "FM": 2, "Netflix": 29, "브라우저": 28, "게임": 30][mediaSource]
+        }
         r.mediaPlaying = true; r.mediaElapsed = 74; r.mediaDuration = 253
         return r
     }
@@ -183,13 +379,23 @@ struct BatteryGaugeProbe: View {
 }
 struct BatteryProbe: View {
     @State private var days = 30
+    @State private var reference = false
     var body: some View {
         ScrollView {
-            BatteryOverview(index: ["degradationPercent": 0.0, "soh": 100.0, "initial": true, "sampleCount": 0,
-                "note": "신차 기준 SOH 100% · 초기 가정. 실측값 아님.", "forecastNote": "관측 자료 수집 중"],
+            Button("같은 종류 기준 등록 예시") { reference.toggle() }
+            BatteryOverview(index: ["degradationPercent": 5.0, "initial": !reference, "sampleCount": 7, "stableSampleCount": 7,
+                "totalChargeCount": 12, "qualifiedChargeCount": 7, "excludedChargeReasons": [["reason":"SOC 변화 20%p 미만","count":5]],
+                "capacityMedianKWh": 76.0, "capacityMinKWh": 75.5, "capacityMaxKWh": 76.5, "capacityLabel": "차량 보고 완충 용량", "comparisonLabel": "등록 기준 대비 감소",
+                "statusReason": reference ? "등록한 동일 종류 기준 용량 대비 감소 추정" : "같은 종류의 기준 용량 미등록 · 관측 용량 표시", "note": "검증용 관측 자료 · 실제 차량 진단 아님"],
                 usage: ["tripCount": 5, "completeTrips": 4, "excludedRateTrips": 1, "driveSOC": 65.0,
                     "chargeSOC": 125.0, "socPer100Km": 22.4, "distanceKm": 290.0, "observedDischargeCycles": 0.65,
-                    "energy": ["drivingKmPerKWh": 8.02, "overallKmPerKWh": 6.78, "parkingKWh": 0.0, "unclassifiedKWh": 2.25],
+                    "energy": ["drivingKmPerKWh": 8.02, "overallKmPerKWh": 6.78, "drivingKWh": 36.2, "parkingKWh": 0.0, "unclassifiedKWh": 2.25],
+                    "parking": ["count": 1, "excludedCount": 1, "medianPerDay": 1.2, "rows": [
+                        ["id":"p1","start":1789390800000.0,"end":1789394400000.0,"startSOC":80.0,"endSOC":79.5,"hours":1.0,"deltaSOC":0.5,"precisionLimited":true,"classification":"parking","exclusionReason":""],
+                        ["id":"p2","start":1789380800000.0,"end":1789384400000.0,"hours":1.0,"classification":"unclassified","exclusionReason":"양 끝 잔량 미확인"]]],
+                    "tripRows": [["id":"t1","at":1789390800000.0,"km":30.0,"startSOC":80.0,"endSOC":74.0,"kwh":4.5,"whPerKm":150.0,"method":"SOC 기반 추정"],
+                                 ["id":"t2","at":1789394400000.0,"km":18.0,"startSOC":74.0,"endSOC":70.0,"kwh":3.0,"whPerKm":166.7,"method":"SOC 기반 추정"],
+                                 ["id":"t3","at":1789398000000.0,"km":12.0,"startSOC":70.0,"endSOC":67.0,"kwh":2.25,"whPerKm":187.5,"method":"SOC 기반 추정","partial":true]],
                     "medianDischargeDepth": 16.3, "lowEndTrips": 1, "deepDischargeTrips": 0, "highEndCharges": 1,
                     "powerCoverage": 76.0, "observedUsedKWh": 42.1, "observedRecoveredKWh": 6.5,
                     "unexplainedParkingSOC": 1.0, "mixedParkingCount": 1,
@@ -198,6 +404,43 @@ struct BatteryProbe: View {
                               ["id":"c","segment":"charge","at":1789387200000.0,"soc":64.0,"kind":"충전"],
                               ["id":"d","segment":"charge","at":1789390800000.0,"soc":90.0,"kind":"충전"]]], days: $days)
         }.background(Theme.bg)
+    }
+}
+@MainActor struct HomeChargingProbe: View {
+    @StateObject private var model: AppModel
+    init() {
+        let model = AppModel()
+        let place = SavedNavigationPlace(name: "검증용 아파트 단지", address: "검증용 주소 · 실제 집 아님", latitude: 37.5, longitude: 127.1)
+        UserDefaults.standard.set(try? JSONEncoder().encode(place), forKey: "navigation.home")
+        model.mutate("settings", ["homePoint": ["latitude": 37.5, "longitude": 127.1, "name": place.name]])
+        _model = StateObject(wrappedValue: model)
+    }
+    var body: some View { NavigationStack { HomeChargingSettingsView().environmentObject(model) } }
+}
+struct ChargingTimeProbe: View {
+    var body: some View {
+        let start = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000
+        let charges: [Object] = [0, 5, 6, 9, 12, 17, 18, 23].enumerated().map { i, hour in
+            ["id": "time-\(i)", "at": start + Double(hour) * 3600000, "startTimeObserved": true]
+        }
+        ChargeStartTimeChart(charges: charges).padding(20).background(Theme.bg)
+    }
+}
+struct AttachmentSafetyProbe: View {
+    @State private var status = "확인 중"
+    @State private var thumbnail: UIImage?
+    var body: some View {
+        VStack {
+            Text(status).accessibilityIdentifier("attachment.safety.status")
+            if let thumbnail { Image(uiImage: thumbnail).resizable().scaledToFit().frame(height: 180) }
+        }.task {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 4000, height: 3000), format: format)
+            let data = renderer.jpegData(withCompressionQuality: 0.5) { context in context.cgContext.setFillColor(UIColor.blue.cgColor); context.cgContext.fill(CGRect(x: 0, y: 0, width: 4000, height: 3000)) }
+            thumbnail = AttachmentSafety.image(data, maxPixel: 1024)
+            let safe = thumbnail?.cgImage?.width == 1024 && thumbnail?.cgImage?.height == 768 && AttachmentSafety.image(Data([0,1,2])) == nil
+            status = safe ? "PASS 사진 축소·손상 입력 방어" : "FAIL 사진 방어"
+        }
     }
 }
 struct ProbeRoot: View {
@@ -238,10 +481,582 @@ struct ProbeRoot: View {
     func stopSpeech() { spokenSummary = "" }
     let runtime = try! LocalRuntime()
     var settings: Object = [:]
+    var errorMessage: String?
+    func mutate(_ action: String, _ input: Object) {
+        do { _ = try runtime.call(action, input); output = try runtime.call("view") as? Object ?? [:]; settings = state.object("settings"); objectWillChange.send() }
+        catch { errorMessage = error.localizedDescription }
+    }
+    var output: Object = ["charging": ["rows": [
+        ["id": "fixture-charge-1", "at": Date().addingTimeInterval(-86400).timeIntervalSince1970 * 1000, "supplyKWh": 30.0, "cost": 9000],
+        ["id": "fixture-charge-2", "at": Date().addingTimeInterval(-172800).timeIntervalSince1970 * 1000, "supplyKWh": 50.0, "cost": 15000]], "supplyKWh": 80.0, "cost": 24000],
+        "energyPeriods": ["30": ["drivingKmPerKWh": 6.2, "overallKmPerKWh": 4.7, "drivingKWh": 100.0, "parkingKWh": 30.0, "totalKWh": 130.0, "totalDistanceKm": 620.0]]]
+    var state: Object { output.object("state") }
+    var groups: Object { state.object("groups") }
+    var vehicleReference: Object = ["sourceDate": "2026-09-24", "nominalKWh": 88.2, "chemistry": "NCM", "cellMaker": "검증용 제조사", "basicWarrantyEnd": "2030-09-10", "batteryWarrantyEnd": "2034-09-10"]
+    var displayOdometerKm: Double? { 1234 }
+    let fleet = TeslaFleetClient()
+    let navigation = EmbeddedNavigation()
+    let link = VehicleLink()
+    let voice = ProbeVoice()
+    func requestVehicleControl(_ key: String, title: String, args: Object = [:]) { spokenSummary = title }
+    func screenBriefing(_ scope: BriefingScope, days: Int = 30) -> String { "검증용 브리핑입니다." }
     var demo = true
 }
+// The fixture's Theme must carry every member the app's Theme carries, or a
+// shared source file compiles in the app and fails only here. It drifted once
+// already; briefing-coverage.cjs now compares the two member lists.
 enum Theme {
     static let bg = Color(red: 23/255, green: 24/255, blue: 26/255)
     static let surface = Color(red: 34/255, green: 35/255, blue: 38/255)
     static let muted = Color(red: 174/255, green: 178/255, blue: 183/255)
+    static let green = Color(red: 93/255, green: 205/255, blue: 144/255)
 }
+
+struct InfoCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(white: 0.12).opacity(0.75))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            )
+    }
+}
+struct MotionButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduced
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed && !reduced ? 0.94 : 1)
+            .animation(reduced ? nil : .spring(response: 0.22, dampingFraction: 0.65), value: configuration.isPressed)
+    }
+}
+
+
+func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { value.map { String(format: "%.*f", digits, $0) + suffix } ?? "—" }
+func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object { ["charge": ["soc": 90.0, "rangeKm": 451.0, "isCharging": false], "climate": ["insideC": 25.0, "outsideC": 29.0, "targetC": 22.0, "isOn": false]] }
+final class VehicleLink: ObservableObject {
+    var controlBusy = false; var preparingControl = false; var confirmation: String?
+    var authentic = true; var controlEnabled = false
+    func controlsReady(category: String) -> Bool { false }
+    func runAutomation(_ action: String, title: String, args: Object, authorized: @escaping () -> Bool, completion: @escaping (String) -> Void) -> String? { "검증 환경 · 차량 명령 차단" }
+}
+struct ProbeVoice { func say(_ text: String, category: String, manual: Bool) {} }
+enum FleetCommandPolicy { static func failure(_ text: String) -> Error { NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) } }
+final class TeslaFleetClient: ObservableObject {
+    static let shared = TeslaFleetClient()
+    @MainActor func sendCommand(vin: String? = nil, command: String, parameters: [String: Any]? = nil, authorized: (() -> Bool)? = nil) async throws -> Bool { throw FleetCommandPolicy.failure("검증 환경 · 차량 명령 차단") }
+    var virtualKeyPairingURL: URL? { nil }
+    var isSendingCommand = false; var isAuthenticated = true; var isReadingVehicle = false
+    var commandStatus = "UI 검증용 · 실제 차량에 명령을 보내지 않음"
+    var vehicleReadStatus = "검증용 수신값"; var vehicleReadError: String?
+    var selectedVin = "UI-FIXTURE"
+    var vehicleSnapshot: FleetVehicleSnapshot? = FleetVehicleSnapshot(vin: "UI-FIXTURE", receivedAt: Date(), payload: [
+        "charge_state": ["battery_level": 90, "battery_range": 280, "charger_power": 7, "charger_voltage": 220, "charger_actual_current": 32, "charge_energy_added": 12.4, "timestamp": Date().timeIntervalSince1970 * 1000],
+        "climate_state": ["seat_heater_left": 1, "seat_heater_right": 0, "seat_fan_front_left": 0, "seat_fan_front_right": 2, "timestamp": Date().timeIntervalSince1970 * 1000],
+        "vehicle_state": ["tpms_pressure_fl": 2.9, "tpms_pressure_fr": 2.8, "tpms_pressure_rl": 2.9, "tpms_pressure_rr": 2.85, "locked": true, "sentry_mode": false, "car_version": "fixture", "timestamp": Date().timeIntervalSince1970 * 1000]])
+    func refreshVehicleSnapshot(force: Bool = false) async {}
+    func readSupplement(_ kind: FleetSupplement) async throws -> FleetSupplementResult {
+        FleetSupplementResult(vin: selectedVin, receivedAt: Date(), payload: kind == .nearbyCharging ? ["superchargers": [["name": "검증용 충전소", "location": ["lat": 37.5665, "long": 126.978], "available_stalls": 3, "total_stalls": 8, "power_kw": 250]]] : ["fixture": true])
+    }
+    func repairLocationStreaming(vin: String) async throws -> FleetSupplementResult {
+        throw FleetCommandPolicy.failure("UI 검증에서는 차량 수집 설정을 변경하지 않습니다.")
+    }
+    func setPreconditioningMax(on: Bool) async throws -> Bool { true }
+    func setSteeringWheelHeater(on: Bool) async throws -> Bool { true }
+    func setSeatCooler(seatPosition: Int, level: Int) async throws -> Bool { true }
+    func setSeatHeater(seatPosition: Int, level: Int) async throws -> Bool { true }
+    func setClimateKeeperMode(mode: Int) async throws -> Bool { true }
+}
+struct VoicePlaybackProbe: View {
+    @StateObject private var voice = VoiceCoordinator()
+    @State private var boardingCoordinator: AutomationCoordinator?
+    @State private var boardingResult = "탑승 조건 대기"
+    @State private var eventResult = "전체 이벤트 검사 대기"
+    private let labels = ["수동 미리듣기", "화면 브리핑", "제어 응답", "연결 알림", "운행 알림", "충전 알림", "자동화", "길안내", "안전 안내"]
+    private let categories = ["", "", "voiceControl", "voiceConnection", "voiceTrip", "voiceCharge", "voiceAutomations", "", ""]
+    var body: some View {
+        VStack {
+            Text("재생 시작 \(voice.playbackStarts) / 완료 \(voice.playbackCompletions)").accessibilityIdentifier("voice.probe.count")
+            Text(voice.playbackState)
+            Text(voice.automaticStatus)
+            Text(voice.notice)
+            if ProcessInfo.processInfo.arguments.contains("voice-output-probe") {
+                VoiceOutputSettings()
+                Text(voice.lastPlaybackOutput).accessibilityIdentifier("voice.output.last")
+            }
+            ForEach(labels.indices, id: \.self) { index in Button(labels[index]) { play(index) } }
+            Button("탑승 자동화 검증") { boarding() }
+            Button("Fleet 탑승 자동화 검증") { boarding(fleet: true) }
+            Text(boardingResult)
+            Text(eventResult)
+        }.onAppear {
+            let d = UserDefaults.standard
+            for key in ["voiceEnabled", "voiceControl", "voiceConnection", "voiceTrip", "voiceCharge", "voiceAutomations", "navVoiceEnabled", "navSafetyVoice"] { d.set(true, forKey: key) }
+            d.set("system", forKey: "voiceOutput")
+            d.set(false, forKey: "voiceQuietEnabled"); d.set(0.8, forKey: "voiceVolume"); d.set(0.8, forKey: "navVoiceVolume")
+            d.set("typecast:은경", forKey: "voiceIdentifier"); TypecastClient.shared.isEnabled = true
+            if ProcessInfo.processInfo.arguments.contains("voice-events-probe") { Task { await eventMatrix() } }
+            if ProcessInfo.processInfo.arguments.contains("voice-overlap-probe") { Task { await overlapMatrix() } }
+            if ProcessInfo.processInfo.arguments.contains("voice-distance-probe") { Task { await distanceMatrix() } }
+            if ProcessInfo.processInfo.arguments.contains("voice-lifecycle-probe") { Task { await lifecycleMatrix() } }
+        }
+    }
+    @MainActor private func distanceMatrix() async {
+        let text = "잠시 후, 시속 60킬로미터 과속 단속입니다."
+        cache(SpeechText.prepare(text))
+        var distance = 100.0
+        var speed = 10.0
+        voice.navigationTargetIsAhead = { _ in distance > 0 }
+        voice.navigationTargetHasPassed = { _ in distance < 0 }
+        voice.navigationTargetCanFinish = { _, duration in distance > speed * (duration + 0.8) }
+        func cue(_ id: String) -> String {
+            let value: [String: Any] = ["text": text, "validUntil": Date().timeIntervalSince1970 + 10, "targetID": id, "imminent": true]
+            return String(data: try! JSONSerialization.data(withJSONObject: value), encoding: .utf8)!
+        }
+        voice.navigationGuide(cue("cached-before"), safety: true)
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        guard voice.playbackStarts == 1 else { eventResult = "실패 · 캐시 재생"; return }
+        distance = -5
+        for _ in 0..<10 where voice.speaking { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard !voice.speaking else { eventResult = "실패 · 통과 음성 지속"; return }
+        voice.stop()
+        // Same cached file, but acceleration leaves insufficient distance for its duration.
+        distance = 10; speed = 30
+        let changed = text + " 과속에 주의하세요."
+        cache(SpeechText.prepare(changed))
+        let late: [String: Any] = ["text": changed, "validUntil": Date().timeIntervalSince1970 + 10, "targetID": "cached-late", "imminent": true]
+        voice.navigationGuide(String(data: try! JSONSerialization.data(withJSONObject: late), encoding: .utf8)!, safety: true)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        eventResult = voice.playbackStarts == 1 ? "캐시 안내 · 통과 취소 및 속도별 재생 차단 확인" : "실패 · 지난 캐시 재생"
+    }
+    @MainActor private func overlapMatrix() async {
+        let d = UserDefaults.standard
+        d.set(0, forKey: "navVoiceDetail")
+        let turn = "잠시 후, 우회전하세요."
+        let camera = "잠시 후, 과속 단속 지점입니다."
+        let second = "300미터 앞, 후면 과속 단속 지점입니다."
+        let changed = "100미터 앞, 우회전하세요."
+        for text in [turn, camera, second, changed] { cache(SpeechText.prepare(text)) }
+        cache(SpeechText.prepare(turn), seconds: 3)
+        var positionKnown = true
+        voice.navigationTargetIsAhead = { _ in positionKnown }
+        voice.navigationTargetHasPassed = { _ in false }
+        voice.navigationTargetCanFinish = { _, _ in true }
+        func cue(_ text: String, _ id: String, _ kind: String, _ imminent: Bool) -> String {
+            let value: [String: Any] = ["text": text, "targetID": id, "kind": kind, "imminent": imminent,
+                "metres": imminent ? 100 : 300, "speedMps": 10, "validUntil": Date().timeIntervalSince1970 + 12]
+            return String(data: try! JSONSerialization.data(withJSONObject: value), encoding: .utf8)!
+        }
+        // Same location tick: late-arriving turn outranks both camera candidates.
+        voice.navigationGuide(cue(camera, "camera-A", "camera", true), safety: true)
+        voice.navigationGuide(cue(second, "camera-B", "camera", false), safety: true)
+        voice.navigationGuide(cue(turn, "turn-A", "turn", true), safety: false)
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        guard voice.playbackStarts == 1 && voice.lastText == SpeechText.prepare(turn) else { eventResult = "실패 · 임박 회전 우선순위"; return }
+        positionKnown = false
+        voice.navigationGuide(cue(changed, "turn-A", "turn", true), safety: false)
+        try? await Task.sleep(nanoseconds: 550_000_000)
+        guard voice.speaking && voice.playbackStarts == 1 else { eventResult = "실패 · GPS 지연 또는 중복으로 문장 잘림"; return }
+        positionKnown = true
+        for _ in 0..<65 where voice.playbackCompletions < 3 { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackStarts == 3 && voice.playbackCompletions == 3 else { eventResult = "실패 · 안전 안내 중첩"; return }
+        voice.navigationGuide(cue(camera, "camera-A", "camera", true), safety: true)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        eventResult = voice.playbackStarts == 3 ? "중첩 안내 3개 완주 · 중복·GPS 지연 취소 차단" : "실패 · 안전 안내 반복"
+    }
+    @MainActor private func lifecycleMatrix() async {
+        let d = UserDefaults.standard
+        let text = "전체 음성 재생 상태 검증입니다."
+        let safetyText = "전방 안전 안내 우선 재생 검증입니다."
+        cache(SpeechText.prepare(BriefingStyle.selected.phrase(text, category: "voiceAutomations")))
+        cache(SpeechText.prepare(text))
+        cache(SpeechText.prepare(safetyText))
+        var passed = 0
+        func request() { voice.say(text, key: UUID().uuidString, category: "voiceAutomations", ttl: 60, manual: false) }
+        func blocked(_ name: String, configure: () -> Void, invoke: () -> Void, restore: () -> Void) async -> Bool {
+            voice.stop(); let count = voice.playbackStarts; configure(); invoke()
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            let result = voice.playbackStarts == count
+            restore(); voice.stop()
+            if result { passed += 1 } else { eventResult = "실패 · " + name }
+            return result
+        }
+        guard await blocked("전체 음성 OFF", configure: { d.set(false, forKey: "voiceEnabled") }, invoke: request, restore: { d.set(true, forKey: "voiceEnabled") }) else { return }
+        guard await blocked("자동화 음성 OFF", configure: { d.set(false, forKey: "voiceAutomations") }, invoke: request, restore: { d.set(true, forKey: "voiceAutomations") }) else { return }
+        let hour = Calendar.current.component(.hour, from: Date())
+        guard await blocked("방해 금지", configure: { d.set(true, forKey: "voiceQuietEnabled"); d.set(hour, forKey: "voiceQuietStart"); d.set((hour + 1) % 24, forKey: "voiceQuietEnd") }, invoke: request, restore: { d.set(false, forKey: "voiceQuietEnabled") }) else { return }
+        guard await blocked("음량 0", configure: { d.set(0, forKey: "voiceVolume") }, invoke: request, restore: { d.set(0.8, forKey: "voiceVolume") }) else { return }
+        guard await blocked("타입캐스트 OFF", configure: { TypecastClient.shared.isEnabled = false }, invoke: request, restore: { TypecastClient.shared.isEnabled = true }) else { return }
+        guard await blocked("길안내 OFF", configure: { d.set(false, forKey: "navVoiceEnabled") }, invoke: { voice.navigationGuide(text, safety: false) }, restore: { d.set(true, forKey: "navVoiceEnabled") }) else { return }
+        guard await blocked("안전 안내 OFF", configure: { d.set(false, forKey: "navSafetyVoice") }, invoke: { voice.navigationGuide(text, safety: true) }, restore: { d.set(true, forKey: "navSafetyVoice") }) else { return }
+        guard await blocked("이미 지난 안내", configure: {}, invoke: {
+            let cue: Object = ["text": text, "validUntil": Date().addingTimeInterval(-1).timeIntervalSince1970]
+            voice.navigationGuide(String(data: try! JSONSerialization.data(withJSONObject: cue), encoding: .utf8)!, safety: false)
+        }, restore: {}) else { return }
+        guard await blocked("안내 지점 통과", configure: { voice.navigationTargetIsAhead = { _ in false } }, invoke: {
+            let cue: Object = ["text": text, "targetID": "passed", "validUntil": Date().addingTimeInterval(10).timeIntervalSince1970]
+            voice.navigationGuide(String(data: try! JSONSerialization.data(withJSONObject: cue), encoding: .utf8)!, safety: false)
+        }, restore: { voice.navigationTargetIsAhead = nil; voice.nativeSession(false) }) else { return }
+        guard await blocked("통화 중", configure: {
+            NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+        }, invoke: request, restore: {
+            NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(), userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue])
+        }) else { return }
+        // After the interruption a new event must actually finish, rather than remain blocked.
+        var count = voice.playbackCompletions; request()
+        for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackCompletions == count + 1 else { eventResult = "실패 · 통화 종료 후 새 안내"; return }; passed += 1
+        // A call exceeding the old 20-second fallback must remain silent until it ends.
+        voice.callStateChanged(true); let callStarts = voice.playbackStarts
+        request(); try? await Task.sleep(nanoseconds: 21_000_000_000)
+        guard voice.playbackStarts == callStarts else { eventResult = "실패 · 긴 통화 중 안내 재개"; return }
+        count = voice.playbackCompletions; voice.callStateChanged(false)
+        for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackCompletions == count + 1 else { eventResult = "실패 · 긴 통화 후 안내 복구"; return }; passed += 1
+        // Safety navigation preempts an automatic clip and itself reaches completion.
+        count = voice.playbackCompletions; let starts = voice.playbackStarts
+        request(); voice.nativeSession(false); voice.navigationGuide(safetyText, safety: true)
+        for _ in 0..<40 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackStarts == starts + 2 && voice.playbackCompletions == count + 1 else { eventResult = "실패 · 안전 안내 우선 재생"; return }; passed += 1
+        // Explicit stop cancels; a memory warning alone preserves the current sentence.
+        for memory in [false, true] {
+            voice.nativeSession(false); request(); count = voice.playbackCompletions
+            if memory { NotificationCenter.default.post(name: UIApplication.didReceiveMemoryWarningNotification, object: nil) }
+            else { voice.stopAutomatic() }
+            if memory {
+                for _ in 0..<50 where voice.playbackCompletions == count { try? await Task.sleep(nanoseconds: 100_000_000) }
+                guard voice.playbackCompletions == count + 1 else { eventResult = "실패 · 메모리 경고로 문장 잘림"; return }
+            } else {
+                try? await Task.sleep(nanoseconds: 1_300_000_000)
+                guard !voice.speaking && voice.playbackCompletions == count else { eventResult = "실패 · 안내 취소"; return }
+            }
+            passed += 1
+        }
+        voice.nativeVoice(true); count = voice.playbackStarts; request()
+        guard voice.playbackStarts == count else { eventResult = "실패 · 내비 오디오 대기"; return }
+        let finished = voice.playbackCompletions; voice.nativeVoice(false)
+        for _ in 0..<50 where voice.playbackCompletions == finished { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackCompletions == finished + 1 else { eventResult = "실패 · 내비 오디오 대기 해제"; return }; passed += 1
+        NotificationCenter.default.post(name: AVAudioSession.routeChangeNotification, object: AVAudioSession.sharedInstance())
+        guard !voice.outputDescription.isEmpty else { eventResult = "실패 · 출력 경로 상태"; return }; passed += 1
+        // Settings' Typecast test uses its own production AVAudioPlayer, not VoiceCoordinator.
+        var previewDone = false
+        TypecastClient.shared.testSpeech(text: SpeechText.prepare(text), voiceId: "은경") { previewDone = true }
+        for _ in 0..<50 where !previewDone { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard previewDone && TypecastClient.shared.lastStatus == "재생 완료" else { eventResult = "실패 · 타입캐스트 설정 미리듣기"; return }; passed += 1
+        let arrival = "집에 도착했습니다. 편안한 시간 보내세요."
+        cache(SpeechText.prepare(BriefingStyle.selected.phrase(arrival, category: "voiceAutomations")))
+        let arrivalHour = Calendar.current.component(.hour, from: Date()), beforeArrival = voice.playbackStarts
+        d.set(arrivalHour, forKey: "voiceQuietStart"); d.set((arrivalHour + 1) % 24, forKey: "voiceQuietEnd"); d.set(true, forKey: "voiceQuietEnabled")
+        voice.announceArrival(arrival, vehicle: "arrival-retry")
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        guard voice.playbackStarts == beforeArrival else { eventResult = "실패 · 조용시간 도착 안내"; return }
+        d.set(false, forKey: "voiceQuietEnabled")
+        let arrivalCompletions = voice.playbackCompletions
+        voice.announceArrival(arrival, vehicle: "arrival-retry", fromNavigation: true)
+        for _ in 0..<50 where voice.playbackCompletions == arrivalCompletions { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackStarts == beforeArrival + 1 && voice.playbackCompletions == arrivalCompletions + 1 else { eventResult = "실패 · 미재생 도착이 재요청 차단"; return }
+        voice.announceArrival(arrival, vehicle: "arrival-retry")
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        guard voice.playbackStarts == beforeArrival + 1 else { eventResult = "실패 · 도착 중복 재생"; return }; passed += 1
+        eventResult = "음성 상태 \(passed)/19 검증 완료"
+    }
+    @MainActor private func eventMatrix() async {
+        UserDefaults.standard.set(false, forKey: "voiceConnection")
+        defer { UserDefaults.standard.set(true, forKey: "voiceConnection") }
+        var passed = 0
+        let fleetSpeechCases = AutomationTrigger.allCases.filter { ![.chargeStart, .chargeEnd, .chargingLocked].contains($0) }.map { ($0, "Fleet speech") }
+        let cases = AutomationTrigger.allCases.map { ($0, "BLE") } + [(AutomationTrigger.chargeStart, "Fleet start"), (.chargeEnd, "Fleet complete"), (.chargeEnd, "Fleet stop")] + fleetSpeechCases
+        for (trigger, source) in cases {
+            let vin = String(format: "7SAYGDEE0PF%06d", 100 + passed)
+            eventResult = "검사 중 · \(trigger.title) · \(source)"
+            let text = "\(trigger.title) \(source) 이벤트 검증입니다."
+            cache(SpeechText.prepare(BriefingStyle.selected.phrase(source == "Fleet start" ? text + " 80퍼센트" : text, category: "voiceAutomations")))
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var rule = AutomationRule(name: trigger.title, trigger: trigger)
+            rule.message = text; rule.cooldownMinutes = 1
+            if source == "Fleet start" { rule.message += " {배터리}" }
+            if source == "Fleet start" || (source == "Fleet speech" && trigger == .batteryLow) { rule.cabinCondition = "above"; rule.cabinThresholdC = 26 }
+            if [.rest, .delay].contains(trigger) { rule.threshold = 1 }
+            if trigger == .remaining { rule.threshold = 10 }
+            if trigger == .tireLow { rule.threshold = 2.4 }
+            try! rule.validate()
+            var doc = AutomationDocument(); doc.rules = [rule]
+            try! JSONEncoder().encode(doc).write(to: folder.appendingPathComponent("automations.json"))
+            let base = Date().addingTimeInterval(-90)
+            var clock = base
+            let coordinator = try! AutomationCoordinator(folder: folder, observationNow: { clock.addingTimeInterval(0.01) })
+            let link = VehicleLink()
+            let before = voice.playbackCompletions
+            let startsBefore = voice.playbackStarts
+            func feed(_ seconds: Double, gear: String = "P", soc: Double = 80, charging: Int = 2, route: String = "집", minutes: Double = 11, endedTrip: Bool = false, endedCharge: Bool = false, lowTire: Bool = false, inside: Double = 30) {
+                clock = base.addingTimeInterval(seconds)
+                let at = clock.timeIntervalSince1970 * 1000
+                let groups: Object = ["drive": ["at": at, "receivedAt": at, "gear": gear, "speedKmh": gear == "P" ? 0 : 30, "destination": route, "arrivalMinutes": minutes],
+                                      "closures": ["at": at, "receivedAt": at, "userPresent": true, "driverFront": false],
+                                      "charge": ["at": at, "receivedAt": at, "soc": soc, "charging": charging],
+                                      "tire": ["at": at, "receivedAt": at, "values": [2.9, 2.9, 2.9, 2.9], "seenAt": [at, at, at, at], "warnings": [lowTire]]]
+                let output: Object = ["fresh": ["drive": true, "closures": true, "charge": true, "tire": true],
+                                      "state": ["settings": ["vin": vin], "groups": groups,
+                                                "trips": endedTrip ? [["id": "finished-trip", "start": at - 60000, "end": at, "distanceKm": 1]] : [],
+                                                "charges": endedCharge ? [["id": "finished-charge"]] : []]]
+                if source == "Fleet speech" {
+                    link.authentic = false; TeslaFleetClient.shared.selectedVin = vin
+                    let snapshot = FleetVehicleSnapshot(vin: vin, receivedAt: clock, payload: [
+                        "drive_state": ["timestamp": at, "shift_state": gear, "speed": gear == "P" ? 0 : 20, "active_route_destination": route, "active_route_minutes_to_arrival": minutes],
+                        "vehicle_state": ["timestamp": at, "is_user_present": true, "df": 0, "locked": false, "tpms_pressure_fl": 2.9, "tpms_hard_warning_fl": lowTire],
+                        "charge_state": ["timestamp": at, "battery_level": soc], "climate_state": ["timestamp": at, "inside_temp": inside]])
+                    coordinator.observeFleetSpeech(snapshot, history: output.object("state"), previousTrips: 0, link: link, voice: voice)
+                } else { coordinator.observe(output: output, previousTrips: 0, previousCharges: 0, link: link, voice: voice, demo: false) }
+            }
+            if ["Fleet start", "Fleet complete", "Fleet stop"].contains(source) || trigger == .chargingLocked {
+                TeslaFleetClient.shared.selectedVin = vin
+                func fleet(_ state: String, seconds: Double, inside: Double = 30) {
+                    let at = Date().addingTimeInterval(seconds).timeIntervalSince1970 * 1000
+                    let snapshot = FleetVehicleSnapshot(vin: vin, receivedAt: Date(), payload: ["charge_state": ["timestamp": at, "charging_state": state, "battery_level": 80, "charge_limit_soc": 80], "vehicle_state": ["timestamp": at, "locked": true], "climate_state": ["timestamp": at, "inside_temp": inside]])
+                    coordinator.observeFleet(snapshot, voice: voice, bleActive: false)
+                }
+                if trigger == .chargingLocked { fleet("Charging", seconds: 0) }
+                else if trigger == .chargeStart {
+                    fleet("Disconnected", seconds: -6); fleet("Charging", seconds: -5, inside: 20)
+                    guard voice.playbackStarts == startsBefore else { eventResult = "실패 · Fleet 충전 온도 조건 무시"; return }
+                    fleet("Disconnected", seconds: -4); fleet("Charging", seconds: -3)
+                    fleet("Disconnected", seconds: -2); fleet("Charging", seconds: -1)
+                    guard coordinator.logs.count == 1 else { eventResult = "실패 · Fleet 충전 재실행 간격"; return }
+                }
+                else { fleet("Charging", seconds: -2); fleet(source == "Fleet stop" ? "Stopped" : "Complete", seconds: 0) }
+            } else {
+                switch trigger {
+                case .boarding: feed(0); feed(3)
+                case .departure: feed(0); feed(3, gear: "D")
+                case .arrival: feed(0, gear: "D"); feed(3, endedTrip: true)
+                case .chargeStart: feed(0); feed(3, charging: 5)
+                case .chargeEnd: feed(0, charging: 5); feed(3, charging: 6, endedCharge: true)
+                case .batteryLow:
+                    feed(0)
+                    if source == "Fleet speech" {
+                        feed(3, gear: "D", soc: 10, inside: 20)
+                        guard voice.playbackStarts == startsBefore else { eventResult = "실패 · Fleet 배터리 온도 조건 무시"; return }
+                    }
+                    feed(6, gear: "D", soc: 10)
+                case .tireLow: feed(0); feed(3, gear: "D", lowTire: true)
+                case .rest: for second in stride(from: 0, through: 75, by: 15) { feed(Double(second), gear: "D") }
+                case .remaining: feed(0, gear: "D"); feed(3, gear: "D", minutes: 9)
+                case .delay: feed(0, gear: "D", minutes: 10); feed(3, gear: "D", minutes: 12)
+                case .destination: feed(0, gear: "D"); feed(3, gear: "D", route: "회사")
+                case .chargingLocked: break
+                }
+            }
+            for _ in 0..<60 where voice.playbackCompletions == before { try? await Task.sleep(nanoseconds: 100_000_000) }
+            guard voice.playbackCompletions == before + 1 else { eventResult = "실패 · \(trigger.title) · \(source) · \(coordinator.status) · \(voice.automaticStatus) · \(voice.notice)"; return }
+            passed += 1
+        }
+        eventResult = "자동화 \(passed)/\(cases.count) 재생 완료"
+    }
+    private func play(_ index: Int) {
+        // Test-only PCM cache in the simulator sandbox; no API key or paid request.
+        let text = labels[index] + " 음성 검증입니다."
+        let prepared = SpeechText.prepare(index >= 7 ? text : BriefingStyle.selected.phrase(text, category: categories[index]))
+        cache(prepared)
+        if index == 0 { voice.preview(text) }
+        else if index >= 7 { voice.navigationGuide(text, safety: index == 8) }
+        else { voice.say(text, key: "probe-\(index)", category: categories[index], priority: 2, ttl: 60, manual: index < 3) }
+    }
+    private func boarding(fleet: Bool = false) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let coordinator = try! AutomationCoordinator(folder: folder)
+        boardingCoordinator = coordinator
+        let greeting = AutomationPolicy.greeting(hour: Calendar.current.component(.hour, from: Date())) + " 배터리 80퍼센트입니다."
+        cache(SpeechText.prepare(BriefingStyle.selected.phrase(greeting, category: "voiceAutomations")))
+        let link = VehicleLink()
+        link.authentic = !fleet
+        func observe() {
+            let at = Date().timeIntervalSince1970 * 1000
+            if fleet {
+                TeslaFleetClient.shared.selectedVin = "7SAYGDEE0PF000002"
+                let snapshot = FleetVehicleSnapshot(vin: "7SAYGDEE0PF000002", receivedAt: Date(), payload: [
+                    "vehicle_state": ["timestamp": at, "is_user_present": true, "df": 0, "locked": false],
+                    "charge_state": ["timestamp": at, "battery_level": 80]])
+                coordinator.observeFleetSpeech(snapshot, link: link, voice: voice)
+                return
+            }
+            let output: Object = ["fresh": ["drive": true, "closures": true, "charge": true], "state": ["settings": ["vin": "7SAYGDEE0PF000001"], "groups": [
+                "drive": ["at": at, "receivedAt": at, "gear": "P", "speedKmh": 0],
+                "closures": ["at": at, "receivedAt": at, "userPresent": true, "driverFront": false],
+                "charge": ["at": at, "receivedAt": at, "soc": 80]]]]
+            coordinator.observe(output: output, previousTrips: 0, previousCharges: 0, link: link, voice: voice, demo: false)
+        }
+        observe()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_300_000_000)
+            observe()
+            boardingResult = coordinator.logs.contains { $0.rule == "탑승 인사" } ? (fleet ? "Fleet 탑승 조건 충족 · 실제 자동화 음성 요청" : "탑승 조건 충족 · 실제 자동화 음성 요청") : coordinator.status
+            // A reconnect cannot trigger a second greeting for the same boarding.
+            coordinator.resetObservation(); observe()
+            try? await Task.sleep(nanoseconds: 2_300_000_000)
+            observe()
+            precondition(coordinator.logs.filter { $0.rule == "탑승 인사" }.count == 1)
+        }
+    }
+    private func cache(_ prepared: String, seconds: Int = 1) {
+        let key = SHA256.hash(data: Data(("은경_" + prepared).utf8)).map { String(format: "%02x", $0) }.joined()
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/TypecastAudioCache")
+        try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+        let count = 16000 * seconds
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count))!
+        buffer.frameLength = AVAudioFrameCount(count)
+        for sample in 0..<count { buffer.int16ChannelData![0][sample] = Int16(sin(Double(sample) * 2 * .pi * 440 / 16000) * 200) }
+        do { let file = try AVAudioFile(forWriting: dir.appendingPathComponent(key + ".wav"), settings: format.settings, commonFormat: .pcmFormatInt16, interleaved: true); try file.write(from: buffer) }
+        catch { fatalError("Fixture WAV failed: \(error)") }
+        precondition(TypecastClient.shared.cachedURL(for: prepared, voiceId: "은경") != nil)
+    }
+}
+struct RecordRecoveryProbe: View {
+    @StateObject private var model: AppModel
+    init() {
+        let m = AppModel(), vin = "5YJYGDEE0LF000001"
+        let now = Date().timeIntervalSince1970 * 1000, t = now - 3602000
+        _ = try! m.runtime.call("settings", ["vin": vin])
+        _ = try! m.runtime.call("ingestFleetCharge", ["vin": vin, "at": now - 2000, "charging": 5, "soc": 52, "addedKWh": 13.48])
+        func sample(_ offset: Double, _ field: String, _ value: Any) -> Object {
+            var row: Object = ["at": t + offset, "field": field, "invalid": false]
+            if let n = value as? Double { row["number"] = n }
+            else { row["text"] = String(data: try! JSONSerialization.data(withJSONObject: ["stringValue": value]), encoding: .utf8)! }
+            return row
+        }
+        let rows = [sample(-3600000, "ChargeState", "Disconnected"), sample(0, "ChargeState", "Charging"), sample(0, "Soc", 36.0), sample(0, "ChargeEnergyAdded", 0.0), sample(3600000, "Soc", 52.0), sample(3600000, "ChargeEnergyAdded", 13.48), sample(3601000, "ChargeState", "Stopped")]
+        m.output = try! m.runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": t]) as! Object
+        _model = StateObject(wrappedValue: m)
+    }
+    var body: some View {
+        let charge = model.state.rows("charges").first ?? [:]
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("충전 기록 복구").font(.title2.bold())
+                ScreenBriefingControls(scope: .charges)
+                LocalBriefingControls(title: "주행·소비 분석", summary: { ["제거된 음성 브리핑"] })
+                Text(charge.isEmpty ? "충전 기록 없음" : "충전 종료 반영됨").font(.headline)
+                Text(String(format: "%.0f%% → %.0f%% · %.2f kWh", charge.number("startSOC") ?? -1, charge.number("endSOC") ?? -1, charge.number("vehicleReportedKWh") ?? -1)).font(.title3)
+                ChargeRecordTiming(row: charge)
+                Divider()
+                ChargeRecordTiming(row: ["at": charge["at"] ?? 0, "lastAt": charge["end"] ?? 0, "active": true, "startTimeObserved": false])
+            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        }.environmentObject(model).environment(\.colorScheme, .light).foregroundStyle(.black).background(.white)
+    }
+}
+struct ChargeAuditCalendarProbe: View {
+    @StateObject private var model: AppModel
+    init() {
+        let m = AppModel()
+        var state = (try! m.runtime.call("export")) as! Object
+        let at = Date().addingTimeInterval(-3600).timeIntervalSince1970 * 1000
+        state["charges"] = (0..<36).map { i -> Object in
+            ["id": "duplicate-fixture-\(i)", "at": at + Double(i) * 60000, "end": at + Double(i) * 60000,
+             "startSOC": 25, "endSOC": 80 - Double(i) * 0.11, "vehicleReportedKWh": 40.36,
+             "collectedAfterEnd": true, "source": "Fleet", "complete": false]
+        }
+        if ProcessInfo.processInfo.arguments.contains("observed-charge") {
+            state["charges"] = [["id": "observed-battery-charge", "at": at, "end": at + 1800000,
+                "startSOC": 21.7, "endSOC": 100.0, "vehicleReportedKWh": 86.5, "supplyKWh": 94.0,
+                "startSOCObserved": true, "endSOCObserved": true, "complete": true, "source": "NAS"]]
+        }
+        m.output = (try! m.runtime.call("load", state)) as! Object
+        _model = StateObject(wrappedValue: m)
+    }
+    var body: some View { NavigationStack { EnergyCalendarView().environmentObject(model) } }
+}
+struct SettingsMenuProbe: View {
+    @StateObject private var model = AppModel()
+    var body: some View {
+        NavigationStack {
+            ScrollView { SettingsMenuGroups().padding(16) }.navigationTitle("메뉴 및 설정")
+                .navigationDestination(for: Page.self) { page in
+                    if page == .spotify { SpotifySettingsView() }
+                    else if page == .care { CareView() }
+                    else if page == .liveActivity {
+                        Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle(page.rawValue)
+                    } else { Text(page.rawValue) }
+                }
+        }.environmentObject(model)
+    }
+}
+struct ClimateFleetProbe: View {
+    @StateObject private var model = AppModel()
+    var fleetScreen = false
+    var body: some View {
+        NavigationStack {
+            Group {
+                if fleetScreen { FleetInsightsView(fleet: model.fleet) }
+                else { TeslaInteractiveClimateView(link: model.link).navigationTitle("실내 공조") }
+            }
+        }.environmentObject(model)
+    }
+}
+
+@MainActor final class EmbeddedNavigation: ObservableObject {
+    func startManualDestination(name: String, coordinate: CLLocationCoordinate2D, vin: String) throws {}
+}
+
+struct ChargingMapProbe: View {
+    @StateObject private var model = AppModel()
+    var body: some View {
+        NavigationStack { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging, samplePublicSites: PublicChargingData.sites([
+            PublicCharger(fields: ["statId": "PROBE", "chgerId": "01", "statNm": "공공 검증 충전소", "chgerType": "04", "stat": "2", "lat": "37.565", "lng": "126.978", "output": "100", "busiNm": "GS차지비"]),
+            PublicCharger(fields: ["statId": "PROBE", "chgerId": "02", "statNm": "공공 검증 충전소", "chgerType": "02", "stat": "3", "lat": "37.565", "lng": "126.978", "output": "7", "busiNm": "GS차지비"])
+        ], fetchedAt: Date())) }.environmentObject(model)
+    }
+}
+
+private struct ProbeUnitsKey: EnvironmentKey { static let defaultValue = VehicleUnits() }
+extension EnvironmentValues { var vehicleUnits: VehicleUnits { get { self[ProbeUnitsKey.self] } set { self[ProbeUnitsKey.self] = newValue } } }
+struct CareView: View { var body: some View { ScrollView { TirePressureDiagram().padding() }.navigationTitle("타이어·정비") } }
+
+
+// This uses the real JS estimate policy and the production cost details view.
+struct PublishedTariffProbe: View {
+    @StateObject private var model = AppModel()
+    @State private var ready = false
+    private var quote: Object {
+        (try? model.runtime.call("chargeTariffQuote", ["at": Date().timeIntervalSince1970 * 1000, "chargeOperator": "플러그링크", "chargeType": "ac", "supplyKWh": 10])) as? Object ?? [:]
+    }
+    var body: some View {
+        NavigationStack { Form {
+            Text("기본 비회원가 · 플러그링크 완속 10kWh")
+            PublishedChargeMemberToggle(operatorName: "플러그링크")
+            ChargeCostDetails(charge: quote)
+            NavigationLink("사업자 전체 요금표") { PublishedChargeRateSettings() }
+        }.navigationTitle("사업자 단가 검증") }.environmentObject(model)
+            .onAppear { if !ready { ready = true; model.mutate("settings", ["chargeRates": [], "chargeMemberOperators": []]) } }
+    }
+}
+struct ChargeCostProbe: View {
+    @StateObject private var model = AppModel()
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ChargingSummary(rows: model.output.object("charging").rows("rows"), days: 30)
+                    ForEach(model.output.object("charging").rows("rows"), id: \.selfID) { row in
+                        ChargeCostDetails(charge: row)
+                    }
+                    NavigationLink("단가 설정 열기") { ChargeRateSettingsView() }
+                }.padding()
+            }.navigationTitle("충전 예상 금액")
+        }.environmentObject(model).onAppear {
+            model.mutate("settings", ["tariff": 200, "fastTariff": 350])
+            model.mutate("addCharge", ["at": Date().addingTimeInterval(-7200).timeIntervalSince1970 * 1000, "supplyKWh": 10, "place": "집", "chargeType": "ac"])
+            model.mutate("addCharge", ["at": Date().addingTimeInterval(-3600).timeIntervalSince1970 * 1000, "supplyKWh": 20, "place": "수퍼차저 검증", "chargeType": "supercharger"])
+        }
+    }
+}
+extension Dictionary where Key == String, Value == Any { var selfID: String { string("id") } }

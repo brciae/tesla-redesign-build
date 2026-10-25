@@ -3,6 +3,10 @@ import Foundation
 @main
 struct TypecastPolicyTests {
     static func main() {
+        precondition(TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: false, runningPreparation: true, samePhrase: false))
+        precondition(!TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: false, runningPreparation: true, samePhrase: true))
+        precondition(!TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: true, runningPreparation: false, samePhrase: false))
+        precondition(!TypecastAPIPolicy.shouldPreemptPreparation(incomingPreparation: false, runningPreparation: false, samePhrase: false))
         let legacy = "676cda78bde49be9d17f38e0"
         let id = "tc_" + legacy
         precondition(!TypecastAPIPolicy.isVoiceID(legacy))
@@ -24,6 +28,9 @@ struct TypecastPolicyTests {
         precondition(blocked.localizedDescription.contains("API 이용 제한"))
         precondition(blocked.localizedDescription.contains("UNUSUAL_ACTIVITY_DETECTED"))
         precondition(!blocked.localizedDescription.contains("raw account details"))
+        precondition(!blocked.localizedDescription.contains("IP당 무료 계정 제한"))
+        let stage = TypecastAPIPolicy.failure(status: 403, data: Data("forbidden".utf8), secrets: [], stage: "POST /v1/text-to-speech")
+        precondition(stage.localizedDescription.contains("POST /v1/text-to-speech"))
         precondition(!TypecastAPIPolicy.canTryNextAccount(blocked.code))
         print("PASS: Typecast error classification, account restriction stop, redaction and exact voice resolution")
     }

@@ -2,6 +2,7 @@ import Foundation
 
 @main struct FleetAuthTests {
     static func main() throws {
+        precondition(FleetAuthPolicy.requestedScopes.split(separator: " ").contains("vehicle_location"))
         precondition(FleetAuthPolicy.tokenURL.host == "fleet-auth.prd.vn.cloud.tesla.com")
         precondition(FleetAuthPolicy.asiaPacificURL == "https://fleet-api.prd.na.vn.cloud.tesla.com")
         let payload = Data(#"{"exp":1000}"#.utf8).base64EncodedString()

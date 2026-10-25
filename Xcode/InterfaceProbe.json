@@ -10,7 +10,10 @@
    "SWIFT_VERSION": "5.0",
    "CODE_SIGNING_ALLOWED": "NO",
    "TARGETED_DEVICE_FAMILY": "1,2",
-   "GENERATE_INFOPLIST_FILE": "YES"
+   "GENERATE_INFOPLIST_FILE": "YES",
+   "MARKETING_VERSION": "1.74",
+   "CURRENT_PROJECT_VERSION": "174",
+   "OTHER_LDFLAGS": "$(inherited) -ObjC"
   }
  },
  "targets": {
@@ -19,11 +22,31 @@
    "platform": "iOS",
    "sources": [
     "InterfaceProbe/App.swift",
+    "InterfaceProbe/ChargingEnergyProbe.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/DestinationSearchView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/AppInterface.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/LocalBriefingControls.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationDashboard.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AppEnergyPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AutomationSpeechPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ContextSpeechSettings.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AutomationContextSpeech.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AutomationAPI.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TripComparisonPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TripRecordComponents.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/GuidanceJournal.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TripEnergyPrediction.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TripEnergyStore.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TripEnergyPredictionView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/MediaPlaybackSource.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/CharacterRunner.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/Character3DView.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/ManeuverGlyph.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BatteryOverview.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/HomeChargingSettingsView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AttachmentSafety.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeStartTimeChart.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/BatteryGauge.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/InfoNote.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/DrivingSceneDecor.swift",
@@ -36,15 +59,101 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/LocalRuntime.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastCatalog.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastClient.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VoiceDiskCache.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VoiceCoordinator.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AutomationPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/AutomationCoordinator.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/TypecastAPIPolicy.swift",
-    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift"
+    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingStyle.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/TeslaInteractiveClimateView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetInsightsView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryStore.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryJournal.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetArchiveClient.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetParkingAnalysis.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetSupplement.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetSupplementView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/PublicChargingData.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/PublicChargingAPI.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/PublicChargingRegions.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/PublicChargingSetupView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/OwnershipAnalysis.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/OwnershipViews.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendar.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/EnergyCalendarAnalysis.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/FleetVehicleSnapshot.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/BriefingScope.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ScreenBriefing.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeRecordTiming.swift",
+    {
+     "path": "Assets.xcassets"
+    },
+    "../TeslaLocal.swiftpm/Sources/AppModule/TirePressureDiagram.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleUnits.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeCostViews.swift",
+    {
+     "path": "LiveActivityShared"
+    },
+    {
+     "path": "IslandAssets.xcassets"
+    },
+    {
+     "path": "../TeslaLocal.swiftpm/Sources/AppModule/Resources/character",
+     "type": "folder",
+     "buildPhase": "resources"
+    },
+    "InterfaceProbe/LiveActivityProbe.swift",
+    "InterfaceProbe/RobotProbe.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VoiceGainPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/VehicleLiveActivityManager.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/LiveActivitySettingsPanel.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/SettingsMenuGroups.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlayback.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlaybackPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/NavigationPictureInPicture.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/NavigationPipLifecycle.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/NavigationPipFrame.swift",
+    "InterfaceProbe/NavigationCardProbe.swift"
    ],
    "settings": {
     "base": {
      "PRODUCT_BUNDLE_IDENTIFIER": "local.ylcompanion.interfaceprobe",
      "INFOPLIST_KEY_UILaunchScreen_Generation": "YES",
-     "INFOPLIST_KEY_UISupportedInterfaceOrientations": "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+     "INFOPLIST_KEY_UISupportedInterfaceOrientations": "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight",
+     "INFOPLIST_KEY_NSSupportsLiveActivities": "YES"
+    }
+   },
+   "dependencies": [
+    {
+     "target": "ProbeLiveActivity",
+     "embed": true
+    },
+    {
+     "package": "SpotifyiOS",
+     "product": "SpotifyiOS"
+    }
+   ],
+   "info": {
+    "path": "ProbeInfo.plist",
+    "properties": {
+     "CFBundleShortVersionString": "$(MARKETING_VERSION)",
+     "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
+     "UIBackgroundModes": [
+      "audio"
+     ],
+     "NSSupportsLiveActivities": true,
+     "CFBundleURLTypes": [
+      {
+       "CFBundleURLName": "local.ylcompanion.probe",
+       "CFBundleURLSchemes": [
+        "ylcompanion"
+       ]
+      }
+     ]
     }
    }
   },
@@ -64,6 +173,40 @@
      "PRODUCT_BUNDLE_IDENTIFIER": "local.ylcompanion.interfaceprobetests"
     }
    }
+  },
+  "ProbeLiveActivity": {
+   "type": "app-extension",
+   "platform": "iOS",
+   "sources": [
+    {
+     "path": "VehicleLiveActivity"
+    },
+    {
+     "path": "LiveActivityShared"
+    },
+    {
+     "path": "IslandAssets.xcassets"
+    }
+   ],
+   "settings": {
+    "base": {
+     "PRODUCT_BUNDLE_IDENTIFIER": "local.ylcompanion.interfaceprobe.liveactivity",
+     "PRODUCT_NAME": "ProbeLiveActivity",
+     "APPLICATION_EXTENSION_API_ONLY": "YES",
+     "SKIP_INSTALL": "YES"
+    }
+   },
+   "info": {
+    "path": "Generated/ProbeLiveActivity-Info.plist",
+    "properties": {
+     "CFBundleDisplayName": "YL Companion 현황",
+     "CFBundleShortVersionString": "$(MARKETING_VERSION)",
+     "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
+     "NSExtension": {
+      "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
+     }
+    }
+   }
   }
  },
  "schemes": {
@@ -81,6 +224,12 @@
      "InterfaceProbeTests"
     ]
    }
+  }
+ },
+ "packages": {
+  "SpotifyiOS": {
+   "url": "https://github.com/spotify/ios-sdk.git",
+   "exactVersion": "5.0.1"
   }
  }
 }

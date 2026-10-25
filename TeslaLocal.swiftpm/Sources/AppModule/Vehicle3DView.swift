@@ -5,16 +5,28 @@ import simd
 
 private let closureLabels: [(String, String)] = [("driverFront", "운전석 앞문"), ("driverRear", "운전석 뒷문"), ("passengerFront", "조수석 앞문"), ("passengerRear", "조수석 뒷문"), ("frunk", "프렁크"), ("trunk", "트렁크")]
 
+private struct VehicleRenderingKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    var vehicleRenderingActive: Bool {
+        get { self[VehicleRenderingKey.self] }
+        set { self[VehicleRenderingKey.self] = newValue }
+    }
+}
+
 @MainActor
 struct Vehicle3DPanel: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
     @ObservedObject private var appearanceStore = VehicleAppearanceStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.vehicleRenderingActive) private var renderingActive
+    @AppStorage("energy.saving") private var energySaving = true
     var compact = false
     var chargingMode = false
     var isCharging = false
     var isPlugged = false
+    /// v1.26: a control screen can steer the camera (e.g. top view toward the frunk when it is opened).
+    var focus: VehicleCameraCommand? = nil
     @State private var preview = false
     @State private var confirmPreview = false
     @State private var overrides: [String: Bool] = [:]
@@ -22,7 +34,8 @@ struct Vehicle3DPanel: View {
     @State private var sceneError: String?
     @State private var sceneVisible = false
     private var presentation: Object {
-        var base = (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
+        var base = (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced || energySaving || AppEnergyPolicy.saving])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
+        if chargingMode { base["allowInteraction"] = false }
         if chargingMode {
             if isPlugged || isCharging {
                 base["chargingPlugged"] = true
@@ -41,8 +54,8 @@ struct Vehicle3DPanel: View {
                     .aspectRatio(compact ? HomeVisualStyle.vehicleAspect : 16.0/9.0, contentMode: .fit)
                     .overlay {
                         GeometryReader { geometry in
-                            if sceneVisible {
-                                RealityVehicleView(runtime: model.runtime, presentation: p, command: camera, reducedMotion: reduced, appearance: appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))) { sceneError = $0 }
+                            if sceneVisible && renderingActive {
+                                RealityVehicleView(runtime: model.runtime, presentation: p, command: chargingMode ? VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95) : camera, reducedMotion: reduced || energySaving || AppEnergyPolicy.saving, appearance: appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))) { sceneError = $0 }
                                     .frame(width: geometry.size.width, height: geometry.size.height)
                             }
                         }
@@ -54,36 +67,6 @@ struct Vehicle3DPanel: View {
                         .padding(8).background(Theme.bg.opacity(0.92), in: Capsule()).padding(.top, 6)
                 }
                 if let sceneError { Text("3D 장면을 열지 못함\n\(sceneError)").font(.caption).foregroundStyle(.orange).padding().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.bg) }
-                // Jijijik-style floating circular refresh button on the right side of the vehicle
-                if compact {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Button {
-                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                link.refreshNow(retryUnavailable: true)
-                            } label: {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color(white: 0.16).opacity(0.88))
-                                        .frame(width: 42, height: 42)
-                                        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                                        .shadow(color: .black.opacity(0.35), radius: 6, x: 0, y: 3)
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 17, weight: .semibold))
-                                        .foregroundStyle(link.refreshing || link.busy ? Color.cyan : .white)
-                                        .rotationEffect(.degrees(link.refreshing || link.busy ? 360 : 0))
-                                        .animation(link.refreshing || link.busy ? .linear(duration: 1.0).repeatForever(autoreverses: false) : .default, value: link.refreshing || link.busy)
-                                }
-                            }
-                            .buttonStyle(MotionButtonStyle())
-                            .accessibilityLabel("차량 정보 최신화")
-                            .padding(.trailing, 10)
-                            .padding(.bottom, 12)
-                        }
-                    }
-                }
             }.clipped()
             if !compact {
                 NavigationLink(value: Page.appearance) { Label("차꾸미기", systemImage: "paintpalette") }.buttonStyle(.bordered)
@@ -133,12 +116,15 @@ struct Vehicle3DPanel: View {
         .onChange(of: model.demo) { _, _ in preview = false; overrides = [:] }
         .onAppear {
             sceneError = nil
+            // v1.55: the charge-port (rear) angle only while a cable is actually connected; otherwise the
+            // normal front three-quarter view. Before this every home card opened from behind.
             if chargingMode {
-                camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 1.15)
+                camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95)
             }
             sceneVisible = true
         }
         .onDisappear { sceneVisible = false }
+        .onChange(of: focus?.serial ?? -1) { _, _ in if let focus { var c = focus; c.serial = camera.serial + 1; camera = c } }
     }
     private func cameraButton(_ title: String, yaw: Float) -> some View { Button(title) { camera.serial += 1; camera.action = "angle"; camera.yaw = yaw } }
 }
