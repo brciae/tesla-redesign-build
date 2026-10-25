@@ -10,6 +10,12 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.73 (173)", date: "2026-10-25", items: [
+            "회전·단속·위험 안내 우선순위와 같은 지점 중복 정리, 재생 중 문장 보호",
+            "GPS 지연과 안내 목록 갱신을 지점 통과로 오인하던 음성 취소 수정",
+            "간단 1회·보통 최대 2회·자세히 최대 3회와 추가 정보 구분, 분기·단속 문구 정리",
+            "저장된 집·회사 도착 인사와 내비·자동화 도착 안내 중복 방지"
+        ]),
         ReleaseNote(version: "1.72 (172)", date: "2026-10-25", items: [
             "기본 Bluetooth 안내와 플로팅의 오디오 모드 통일, 음악 혼합 유지와 안내 종료 후 음량 복구 보완",
             "안내 종료 시 시작 대기 중인 플로팅까지 취소하고 늦게 도착한 시작 콜백 차단",

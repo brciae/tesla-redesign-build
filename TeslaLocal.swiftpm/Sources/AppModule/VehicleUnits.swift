@@ -188,21 +188,36 @@ struct NavigationSpeechPolicy {
         if cue.stateChange == true { stages.removeAll(); return true }
         if detail < 2 && (cue.incidental == true || cue.kind == "information") { return false }
         if detail == 0 && cue.kind == "facility" { return false }
+        if detail == 0 && cue.kind == "roadShape" { return false }
         if detail == 0 && cue.kind == "turn", cue.imminent != true {
             guard let metres = cue.metres, metres.isFinite, metres >= 0,
-                  metres <= max(200, min(700, (cue.speedMps ?? 0) * 20)) else { return false }
+                  metres <= max(150, min(350, (cue.speedMps ?? 0) * 10)) else { return false }
         }
-        guard detail < 2, let target = cue.targetID else { return true }
+        guard let target = cue.targetID else { return true }
         stages = stages.filter { now.timeIntervalSince($0.value) < 120 }
-        // Brief: one useful cue per point. Normal: one approach + one final cue.
-        let key = target + (detail == 0 ? "" : (cue.imminent == true ? ":final" : ":approach"))
+        let key = stageKey(cue: cue, detail: detail, target: target)
         guard stages[key] == nil else { return false }
         return true
     }
     mutating func markPlayed(cue: NavigationSpeechCue, detail: Int, now: Date) {
-        guard detail < 2, let target = cue.targetID else { return }
-        let key = target + (detail == 0 ? "" : (cue.imminent == true ? ":final" : ":approach"))
+        guard let target = cue.targetID else { return }
+        let key = stageKey(cue: cue, detail: detail, target: target)
         stages[key] = now
+    }
+    private func stageKey(cue: NavigationSpeechCue, detail: Int, target: String) -> String {
+        if detail == 0 { return target }
+        if cue.kind == "roadShape" || cue.kind == "facility" || cue.kind == "information" { return target }
+        if cue.imminent == true { return target + ":final" }
+        // Normal gives one approach; detailed adds at most one farther distance band.
+        return target + (detail > 1 && (cue.metres ?? 0) > 700 ? ":far" : ":approach")
+    }
+    static func priority(cue: NavigationSpeechCue, safety: Bool) -> Int {
+        if cue.stateChange == true { return 7 }
+        if cue.kind == "turn" && cue.imminent == true { return 6 }
+        if cue.kind == "camera" && cue.imminent == true { return 5 }
+        if safety && cue.kind != "facility" && cue.kind != "information" { return 4 }
+        if cue.kind == "turn" { return 3 }
+        return cue.kind == "information" || cue.incidental == true ? 1 : 2
     }
     mutating func accepts(text: String, safety: Bool, incidental: Bool, navigationBusy: Bool, now: Date, targetID: String? = nil) -> Bool {
         if incidental && navigationBusy { return false }
@@ -215,7 +230,9 @@ struct NavigationSpeechPolicy {
     static func shouldInterrupt(stateChange: Bool, navigationBusy: Bool, incidental: Bool, priority: Int, activePriority: Int, cannotWait: Bool = false) -> Bool {
         // Normal cues finish. A route replacement or a point that cannot survive the
         // remaining audio must not wait behind obsolete speech, even on a cache hit.
-        stateChange || (!incidental && (!navigationBusy || (cannotWait && priority >= activePriority)))
+        // An imminent point that cannot wait is dropped if it becomes too late;
+        // it does not repeatedly restart a sentence already playing.
+        stateChange || (!incidental && !navigationBusy)
     }
 }
 
@@ -237,6 +254,32 @@ struct VoiceItem {
     }
 }
 
+struct ArrivalSpeechPolicy {
+    private var lastAt: Date?
+    private var lastVehicle = ""
+    private var parkedSinceArrival = false
+    mutating func observe(gear: String, speed: Double?) {
+        guard lastAt != nil else { return }
+        if gear == "P" { parkedSinceArrival = true }
+        if parkedSinceArrival && ["D", "R"].contains(gear) && (speed ?? 0) > 1 {
+            lastAt = nil; parkedSinceArrival = false
+        }
+    }
+    mutating func accepts(vehicle: String, now: Date) -> Bool {
+        if lastVehicle == vehicle, let lastAt, now.timeIntervalSince(lastAt) < 90 { return false }
+        lastVehicle = vehicle; lastAt = now; parkedSinceArrival = false; return true
+    }
+    static func message(homeDistance: Double?, workDistance: Double?, hour: Int) -> String? {
+        let home = homeDistance.flatMap { $0.isFinite && (0...250).contains($0) ? $0 : nil }
+        let work = workDistance.flatMap { $0.isFinite && (0...250).contains($0) ? $0 : nil }
+        if let home, work == nil || home < work! {
+            return "집에 도착했습니다. " + ((0..<6).contains(hour) || hour >= 21 ? "편안한 밤 보내세요." : "편안한 시간 보내세요.")
+        }
+        if let work, home == nil || work < home! { return "회사에 도착했습니다. 좋은 하루 보내세요." }
+        return nil
+    }
+}
+
 struct VoiceQueue {
     var items: [VoiceItem] = []
     mutating func pruneNavigation(forKey key: String) {
@@ -248,8 +291,12 @@ struct VoiceQueue {
         if !item.manual, let date = last[item.key], now.timeIntervalSince(date) < cooldown { return }
         last[item.key] = now
         last = last.filter { now.timeIntervalSince($0.value) < 600 }
-        items.removeAll { $0.key == item.key || $0.expires <= now }
-        let insertion = items.firstIndex { $0.priority < item.priority } ?? items.endIndex
+        items.removeAll {
+            if $0.expires <= now { return true }
+            if item.key.hasPrefix("navigation."), let target = item.navigationID { return $0.navigationID == target }
+            return $0.key == item.key
+        }
+        let insertion = items.firstIndex { $0.priority < item.priority || ($0.priority == item.priority && item.navigationID != nil && item.expires < $0.expires) } ?? items.endIndex
         items.insert(item, at: insertion)
         if items.count > 6 { items.removeLast(items.count - 6) }
     }

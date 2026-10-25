@@ -34,6 +34,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)endGuidanceKeepingMap NS_SWIFT_NAME(endGuidanceKeepingMap());
 - (void)resumeRendering NS_SWIFT_NAME(resumeRendering());
 - (BOOL)isSpeechTargetAhead:(NSString *)identifier NS_SWIFT_NAME(isSpeechTargetAhead(_:));
+- (BOOL)hasSpeechTargetPassed:(NSString *)identifier NS_SWIFT_NAME(hasSpeechTargetPassed(_:));
 - (BOOL)canFinishSpeech:(NSString *)identifier duration:(double)duration NS_SWIFT_NAME(canFinishSpeech(_:duration:));
 /// Resume camera tracking after manual map browsing.
 - (void)recenter NS_SWIFT_NAME(recenter());

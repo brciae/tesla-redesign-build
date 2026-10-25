@@ -44,10 +44,20 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var activePriority = 0
     private var activeText = ""
     var navigationTargetIsAhead: ((String) -> Bool)?
+    var navigationTargetHasPassed: ((String) -> Bool)?
     var navigationTargetCanFinish: ((String, TimeInterval) -> Bool)?
     private var activeNavigationID: String?
     private var navigationPreparation: Task<Void, Never>?
     private var navigationPreparationTimes: [Date] = []
+    private var navigationReadyAt = Date.distantPast
+    private var arrivalPolicy = ArrivalSpeechPolicy()
+    func observeArrivalVisit(gear: String, speed: Double?) { arrivalPolicy.observe(gear: gear, speed: speed) }
+    func announceArrival(_ text: String, vehicle: String, fromNavigation: Bool = false) {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: "voiceEnabled"), defaults.bool(forKey: fromNavigation ? "navVoiceEnabled" : "voiceAutomations") else { return }
+        guard arrivalPolicy.accepts(vehicle: vehicle, now: Date()) else { return }
+        say(text, key: fromNavigation ? "navigation.arrival" : "arrival:" + vehicle, category: "voiceAutomations", priority: 3, ttl: 20, manual: fromNavigation)
+    }
 
     private var preparedAutomatic = Set<String>()
     private var routeWaitSince: [String: Date] = [:]
@@ -113,7 +123,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let tick = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.refreshOutput()
-            if let id = self.activeNavigationID, self.navigationTargetIsAhead?(id) == false {
+            if let id = self.activeNavigationID, self.navigationTargetHasPassed?(id) == true {
                 self.cancelCurrent()
                 self.automaticTrace("안내 지점 통과 · 이전 음성 취소")
             }
@@ -124,7 +134,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         refreshOutput()
 
         memoryObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.cancelCurrent()
+            self?.navigationPreparation?.cancel()
         }
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.refreshOutput()
@@ -175,6 +185,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     func navigationGuide(_ text: String, safety: Bool) {
         let d = UserDefaults.standard, now = Date()
         guard let cue = NavigationSpeechCue.parse(text, now: now) else { automaticTrace(text.hasPrefix("{") && text.contains("\"text\"") ? "길안내 수신 · 안내 지점 통과 후 도착 (건너뜀)" : "길안내 수신 · 형식 오류"); return }
+        // Final arrival is owned by the place-aware arrival automation, once.
+        if cue.stateChange == true && cue.kind == "status" && cue.text.contains("목적지에 도착") { return }
         let text = NavigationDistanceWording.normalize(cue.text)
         guard !text.isEmpty, d.bool(forKey: "voiceEnabled"), d.bool(forKey: safety ? "navSafetyVoice" : "navVoiceEnabled") else { automaticTrace("길안내 수신 · 음성 설정 꺼짐"); return }
         let detail = d.object(forKey: "navVoiceDetail") == nil ? 0 : d.integer(forKey: "navVoiceDetail")
@@ -182,16 +194,18 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         automaticTrace("길안내 요청 수신")
         let prepared = SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines)
         let incidental = cue.incidental == true || text == "주의하세요."
+        // SDK approach/final callbacks for the same point cannot restart or queue
+        // another version of the sentence currently being spoken/synthesized.
+        if let id = cue.targetID, id == activeNavigationID { return }
         // A generic warning must not replace a specific camera or maneuver sentence.
         guard prepared != activeText || cue.targetID != activeNavigationID,
               navigationPolicy.accepts(text: prepared, safety: safety, incidental: incidental,
                   navigationBusy: navigationSpeaking || queue.items.contains { $0.key.hasPrefix("navigation.") }, now: now, targetID: cue.targetID) else { return }
 
-        let priority = incidental ? 3 : (safety ? 5 : 4)
+        let priority = NavigationSpeechPolicy.priority(cue: cue, safety: safety)
         if cue.stateChange == true { queue.clearNavigation() }
-        else { queue.pruneNavigation(forKey: safety ? "navigation.safety" : "navigation.turn") }
 
-        // Safety guidance interrupts regular chatter immediately
+        // Only route invalidation or interruption of non-navigation chatter preempts.
         let remaining = typecastPlayer.map { max(0, $0.duration - $0.currentTime) } ?? 0
         let cannotWait = cue.targetID.map { navigationTargetCanFinish?($0, remaining + Double(prepared.count) / 5.0) == false } ?? false
         if NavigationSpeechPolicy.shouldInterrupt(stateChange: cue.stateChange == true, navigationBusy: navigationSpeaking, incidental: incidental, priority: priority, activePriority: activePriority, cannotWait: cue.imminent == true && cannotWait) {
@@ -202,6 +216,12 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         // Normalize unit pronunciation only; do not rewrite the provider's maneuver.
         navigationPreparation?.cancel()
         queue.add(VoiceItem(key: safety ? "navigation.safety" : "navigation.turn", text: SpeechText.prepare(text).trimmingCharacters(in: .whitespacesAndNewlines), expires: Date(timeIntervalSince1970: cue.validUntil), priority: priority, manual: true, navigationID: cue.targetID, navigationCue: cue, navigationDetail: detail), now: now)
+        // Coalesce callbacks from one location tick before choosing what speaks.
+        // This is queue arbitration only; route distance/speed still set deadlines.
+        if activeTicket == nil && typecastPlayer == nil && now >= navigationReadyAt {
+            navigationReadyAt = now.addingTimeInterval(0.2)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.drain() }
+        }
         drain()
     }
 
@@ -273,6 +293,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             automaticTrace("오디오 중단 해제 · 안내 재개")
         }
         guard !interrupted, !callActive, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
+        guard Date() >= navigationReadyAt else { return }
         guard let item = queue.next(now: Date()) else { return }
         navigationSpeaking = item.key.hasPrefix("navigation.")
         activePriority = item.priority
@@ -347,11 +368,13 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             notice = "브리핑 음량이 0임"
             playbackState = "음량 0"
             automaticTrace("안내 차단 · 앱 안내 음량 0")
+            navigationSpeaking = false; activePriority = 0; drain()
             return true
         }
         guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             playbackState = "안내 기한 만료"
             automaticTrace(item.canStartPlayback(at: Date()) ? "길안내 보류 · 현재 위치 또는 안내 지점 확인 필요" : "자동 안내 기한 만료")
+            navigationSpeaking = false; activePriority = 0
             drain()
             return true
         }
@@ -387,6 +410,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                 await MainActor.run {
                     guard self.activeTicket == ticket else { return }
                     self.activeTicket = nil
+                    self.activeNavigationID = nil
                     self.activeText = ""
                     self.speaking = false
                     self.navigationSpeaking = false
@@ -408,6 +432,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         // Keep the generated cache, but never play an out-of-date instruction.
         guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
             activeTicket = nil
+            activeNavigationID = nil
             activeText = ""
             activeManual = false
             speaking = false

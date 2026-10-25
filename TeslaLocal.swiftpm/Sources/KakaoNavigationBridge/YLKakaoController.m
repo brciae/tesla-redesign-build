@@ -604,7 +604,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 - (void)guidanceGuideEnded:(KNGuidance *)guidance {
     YL_FORWARD(self.guiding = NO; self.routeGuide = nil; self.safetyGuide = nil; [self.map removeRoutesAll]; [self publishTelemetry]; [self emit:@"ended" message:@"길안내 종료됨"]);
 }
-- (void)guidance:(KNGuidance *)guidance didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { YL_FORWARD([self.speechTargets removeAllObjects]; [self.preparedSpeechPoints removeAllObjects]; if (routes.count) [self.map setRoutes:routes]; else [self.map removeRoutesAll]); }
+- (void)guidance:(KNGuidance *)guidance didUpdateRoutes:(NSArray<KNRoute *> *)routes multiRouteInfo:(KNMultiRouteInfo *)info { YL_FORWARD([self.preparedSpeechPoints removeAllObjects]; if (routes.count) [self.map setRoutes:routes]; else [self.map removeRoutesAll]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateIndoorRoute:(KNRoute *)route { if (route) YL_FORWARD([self.map setRoute:route]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateLocation:(KNGuide_Location *)location { YL_FORWARD(self.locationGuide = location; self.positionReceivedAt = [NSDate timeIntervalSinceReferenceDate]; if (self.trafficWaitingForLocation) [self performTrafficRequest]; [self updateMap]; [self publishTelemetry]; [self emitImminentTurn]; [self emitAreaAndHumpCues]); }
 - (void)guidance:(KNGuidance *)guidance didUpdateRouteGuide:(KNGuide_Route *)route { YL_FORWARD(self.routeGuide = route; [self publishTelemetry]); }
@@ -627,6 +627,21 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 }
 - (BOOL)isSpeechTargetAhead:(NSString *)identifier {
     return [self canFinishSpeech:identifier duration:0];
+}
+- (BOOL)hasSpeechTargetPassed:(NSString *)identifier {
+    NSDictionary *record = self.speechTargets[identifier];
+    if (!record || ![self locationIsFresh] || YLGuidanceOwner != self || !self.guidance.trip) return NO;
+    return YLNavigationTargetPassed([record[@"distance"] doubleValue], [record[@"remaining"] doubleValue],
+        [self.guidance.trip remainDist], -self.locationGuide.gpsMatched.timestamp.timeIntervalSinceNow,
+        [NSDate timeIntervalSinceReferenceDate] - self.positionReceivedAt);
+}
+- (void)rememberSpeechTarget:(KNLocation *)target identifier:(NSString *)identifier distance:(double)distance {
+    if (!self.speechTargets) self.speechTargets = [NSMutableDictionary dictionary];
+    if (self.speechTargets.count >= 64 && !self.speechTargets[identifier]) {
+        NSString *oldest = [self.speechTargets keysSortedByValueUsingComparator:^NSComparisonResult(id a, id b) { return [a[@"issuedAt"] compare:b[@"issuedAt"]]; }].firstObject;
+        if (oldest) [self.speechTargets removeObjectForKey:oldest];
+    }
+    self.speechTargets[identifier] = @{@"target":target, @"distance":@(distance), @"remaining":@([self.guidance.trip remainDist]), @"issuedAt":@(NSDate.date.timeIntervalSince1970)};
 }
 - (BOOL)canFinishSpeech:(NSString *)identifier duration:(double)duration {
     NSDictionary *record = self.speechTargets[identifier];
@@ -661,6 +676,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     return group;
 }
 - (void)emitTimedSpeech:(KNVoiceCode)code object:(id)object safety:(BOOL)safety {
+    if (code == KNVoiceCode_EndGuide) return; // One place-aware arrival/end owner in the app.
     if ([object isKindOfClass:KNSafety.class] && ((KNSafety *)object).code == KNSafetyCode_Hump) {
         KNSafety *point = object;
         if (![self locationIsFresh] || !point.location) return;
@@ -685,7 +701,14 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     message[@"incidental"] = @(code == KNVoiceCode_Alert && !target);
     message[@"imminent"] = @(self.forceImminent || [text hasPrefix:@"잠시 후"]);
     message[@"kind"] = [object isKindOfClass:KNDirection.class] ? @"turn" : @"safety";
+    if ([object isKindOfClass:KNSafety.class]) {
+        NSInteger code = ((KNSafety *)object).code;
+        if ([@[@81,@82,@86,@91,@100,@102,@103] containsObject:@(code)]) message[@"kind"] = @"camera";
+        else if (code == KNSafetyCode_Hump) message[@"kind"] = @"hump";
+    }
     if ([object isKindOfClass:KNDirection.class] && [@[@0,@84,@85,@86] containsObject:@(((KNDirection *)object).rgCode)]) message[@"kind"] = @"information";
+    if ([object isKindOfClass:KNDirection.class] && ((KNDirection *)object).rgCode == 86) message[@"kind"] = @"roadShape";
+    if (code == KNVoiceCode_GPSConnected) message[@"kind"] = @"information";
     if ([object isKindOfClass:KNSafety.class] && [@[@15,@17,@18,@20,@26,@83,@85,@87,@88,@101] containsObject:@(((KNSafety *)object).code)]) message[@"kind"] = @"information";
     if (stateChange) { [self.speechTargets removeAllObjects]; [self.announcedPoints removeAllObjects]; }
     if (target) {
@@ -701,9 +724,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
             return;
         }
         NSString *identifier = [NSString stringWithFormat:@"%@:%.0f:%.0f", NSStringFromClass([object class]), (double)target.pos.x, (double)target.pos.y];
-        if (!self.speechTargets) self.speechTargets = [NSMutableDictionary dictionary];
-        if (self.speechTargets.count >= 16) [self.speechTargets removeAllObjects];
-        self.speechTargets[identifier] = @{@"target":target, @"distance":@(distance)};
+        [self rememberSpeechTarget:target identifier:identifier distance:distance];
         message[@"targetID"] = identifier;
         KNGPSData *gps = self.locationGuide.gpsMatched;
         double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
@@ -761,18 +782,16 @@ static UIImage *YLArrowIcon(UIColor *fill) {
 }
 /// "잠시 후" cue a few seconds before the maneuver; the SDK's own last call comes too early for it.
 /// Free-form cue (zones, tunnels) using the same timed message the SDK-driven cues use.
-- (void)emitPlainSpeech:(NSString *)text safety:(BOOL)safety target:(KNLocation *)target {
+- (void)emitPlainSpeech:(NSString *)text safety:(BOOL)safety target:(KNLocation *)target kind:(NSString *)kind {
     if (!target || ![self locationIsFresh]) return;
     SInt32 distance = [self.locationGuide.location distToLocation:target];
     if (distance <= 0) return;
-    NSString *identifier = [NSString stringWithFormat:@"facility:%.0f:%.0f", (double)target.pos.x, (double)target.pos.y];
-    if (!self.speechTargets) self.speechTargets = [NSMutableDictionary dictionary];
-    if (self.speechTargets.count >= 16) [self.speechTargets removeAllObjects];
-    self.speechTargets[identifier] = @{@"target":target, @"distance":@(distance)};
+    NSString *identifier = [NSString stringWithFormat:@"%@:%.0f:%.0f", kind, (double)target.pos.x, (double)target.pos.y];
+    [self rememberSpeechTarget:target identifier:identifier distance:distance];
     KNGPSData *gps = self.locationGuide.gpsMatched;
     double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
     double lifetime = speed > 1 ? fmin(12, fmax(0, distance / speed - 0.8)) : 12;
-    NSDictionary *message = @{@"text": text, @"targetID": identifier, @"validUntil": @(NSDate.date.timeIntervalSince1970 + lifetime), @"stateChange": @NO, @"incidental": @NO, @"imminent": @([text hasPrefix:@"잠시 후"]), @"kind": @"facility", @"metres": @(distance), @"speedMps": @(speed)};
+    NSDictionary *message = @{@"text": text, @"targetID": identifier, @"validUntil": @(NSDate.date.timeIntervalSince1970 + lifetime), @"stateChange": @NO, @"incidental": @NO, @"imminent": @([text hasPrefix:@"잠시 후"]), @"kind": kind, @"metres": @(distance), @"speedMps": @(speed)};
     NSData *data = [NSJSONSerialization dataWithJSONObject:message options:0 error:nil];
     if (data) [self emit:safety ? @"spokenSafety" : @"spokenGuide" message:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
 }
@@ -784,14 +803,15 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     if (self.announcedPoints.count > 400) [self.announcedPoints removeAllObjects];
     KNGPSData *gps = self.locationGuide.gpsMatched;
     double speed = gps.speedTrust ? fmax(0, gps.speed / 3.6) : 0;
-    for (KNSafetyZone *zone in self.voiceDetail == 0 ? @[] : (self.routeGuide.safetyZones ?: @[])) {
+    for (KNSafetyZone *zone in self.routeGuide.safetyZones ?: @[]) {
         if (!zone.fromLocation) continue;
         SInt32 d = [self.locationGuide.location distToLocation:zone.fromLocation];
         NSString *key = [NSString stringWithFormat:@"zone:%d:%d", (int)zone.fromLocation.pos.x, (int)zone.fromLocation.pos.y];
         if (d <= 0 || d > fmax(150, fmin(400, speed * 12)) || [self.announcedPoints containsObject:key]) continue;
         [self.announcedPoints addObject:key];
         NSString *name = (zone.safetyZoneType & KNSafetyZoneType_SchoolZone) ? @"어린이 보호구역" : (zone.safetyZoneType & KNSafetyZoneType_SilverZone) ? @"노인 보호구역" : @"장애인 보호구역";
-        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다. 속도를 줄이고 주의하세요.", YLNavigationDistancePrefix(d), name] safety:YES target:zone.fromLocation];
+        NSString *advice = self.voiceDetail >= 2 ? @" 속도를 줄이고 주의하세요." : @"";
+        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.%@", YLNavigationDistancePrefix(d), name, advice] safety:YES target:zone.fromLocation kind:@"zone"];
     }
     for (KNSafety *point in self.safetyGuide.safetiesOnGuide ?: @[]) {
         if (!point.location) continue;
@@ -826,9 +846,9 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         [self.announcedPoints addObject:key];
         SInt32 len = f.toLocation ? [f.fromLocation distToLocation:f.toLocation] : 0;
         NSString *name = f.name.length ? ([f.name hasSuffix:@"터널"] ? f.name : [f.name stringByAppendingString:@" 터널"]) : @"터널";
-        NSString *length = len >= 1000 ? [NSString stringWithFormat:@" 길이 %@킬로미터.", YLNavigationCompactNumber(round(len / 100.0) / 10.0)]
-                                       : len >= 100 ? [NSString stringWithFormat:@" 길이 %d미터.", (int)(len / 100 * 100)] : @"";
-        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.%@", YLNavigationDistancePrefix(d), name, length] safety:YES target:f.fromLocation];
+        NSString *length = len >= 1000 ? [NSString stringWithFormat:@" 길이는 %@킬로미터입니다.", YLNavigationCompactNumber(round(len / 100.0) / 10.0)]
+                                       : len >= 100 ? [NSString stringWithFormat:@" 길이는 %d미터입니다.", (int)(len / 100 * 100)] : @"";
+        [self emitPlainSpeech:[NSString stringWithFormat:@"%@%@입니다.%@", YLNavigationDistancePrefix(d), name, length] safety:YES target:f.fromLocation kind:@"facility"];
     }
 }
 - (void)emitImminentTurn {
@@ -857,15 +877,14 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     if ([object isKindOfClass:KNDirection.class]) {
         KNDirection *dir = (KNDirection *)object;
         SInt32 metres = target && [self locationIsFresh] ? [self spokenMetres:target] : -1;
-        if (self.voiceDetail == 0) return YLNavigationSpeech(dir.rgCode, @"", @[], metres);
-        return YLNavigationSpeech(dir.rgCode, dir.nodeName, dir.directionNames, metres);
+        return YLNavigationSpeechForDetail(dir.rgCode, dir.nodeName, dir.directionNames, metres, self.voiceDetail);
     }
     if ([object isKindOfClass:KNSafety.class]) {
         KNSafety *point = object;
         if (point.code == KNSafetyCode_Hump && [self humpGroupForPoint:point].count > 1) {
             return [prefix stringByAppendingString:self.voiceDetail == 0 ? @"과속방지턱이 연속으로 있습니다." : @"과속방지턱이 연속으로 있습니다. 속도를 줄이세요."];
         }
-        NSDictionary *labels = @{@0:@"사고 다발 구간", @1:@"급커브 구간", @2:@"낙석 주의 구간", @3:@"안개 주의 구간", @4:@"추락 주의", @5:@"미끄러운 도로", @6:@"과속 방지턱", @10:@"철도 건널목", @11:@"어린이 보호 구역", @12:@"도로 폭 좁아짐", @13:@"급경사 내리막", @14:@"야생동물 출몰 지역", @15:@"졸음 쉼터", @16:@"졸음운전 사고 다발 구간", @17:@"오르막 구간", @18:@"신호등 주의", @20:@"무정차 요금소", @21:@"차량 사고 다발 구간", @22:@"보행자 사고 다발 구간", @23:@"어린이 사고 다발 구간", @24:@"상습 결빙 구간", @26:@"고의성 교통사고 다발 지점", @28:@"높이 제한", @29:@"중량 제한", @31:@"안개 주의 구간", @32:@"상습 결빙 구간", @40:@"지하차도 침수 주의", @80:@"단속 지점", @81:@"이동식 과속 단속 구간", @82:@"과속 단속", @83:@"교통 정보 수집 카메라", @84:@"버스 전용 차로 단속 구간", @85:@"과적 단속", @86:@"신호 과속 단속 구간", @87:@"주정차 단속 구간", @88:@"적재 불량 단속", @89:@"버스 전용 차로 및 신호 단속 구간", @90:@"고정식 단속 구간", @91:@"차로 및 과속 단속", @92:@"구간 단속 시작", @93:@"구간 단속 종료", @94:@"갓길 단속", @95:@"끼어들기 단속", @96:@"구간 단속", @97:@"지정차로 단속", @98:@"구간 단속 시작", @99:@"구간 단속 종료", @100:@"과속 단속", @101:@"안전띠 단속", @102:@"후면 과속 단속", @103:@"후면 신호 과속 단속 구간", @104:@"노후 경유차 운행 제한 단속", @105:@"후면 구간 단속 시작", @106:@"후면 구간 단속 종료", @692:@"구간 단속 시작", @693:@"구간 단속 종료", @696:@"구간 단속", @705:@"후면 구간 단속 시작", @706:@"후면 구간 단속 종료"};
+        NSDictionary *labels = @{@0:@"사고 다발 구간", @1:@"급커브 구간", @2:@"낙석 주의 구간", @3:@"안개 주의 구간", @4:@"추락 주의", @5:@"미끄러운 도로", @6:@"과속 방지턱", @10:@"철도 건널목", @11:@"어린이 보호 구역", @12:@"도로 폭 좁아짐", @13:@"급경사 내리막", @14:@"야생동물 출몰 지역", @15:@"졸음 쉼터", @16:@"졸음운전 사고 다발 구간", @17:@"오르막 구간", @18:@"신호등 주의", @20:@"무정차 요금소", @21:@"차량 사고 다발 구간", @22:@"보행자 사고 다발 구간", @23:@"어린이 사고 다발 구간", @24:@"상습 결빙 구간", @26:@"고의성 교통사고 다발 지점", @28:@"높이 제한", @29:@"중량 제한", @31:@"안개 주의 구간", @32:@"상습 결빙 구간", @40:@"지하차도 침수 주의", @80:@"단속 지점", @81:@"이동식 과속 단속 구간", @82:@"과속 단속", @83:@"교통 정보 수집 카메라", @84:@"버스 전용 차로 단속 구간", @85:@"과적 단속", @86:@"신호 과속 단속 구간", @87:@"주정차 단속 구간", @88:@"적재 불량 단속", @89:@"버스 전용 차로 및 신호 단속 구간", @90:@"신호 위반 단속", @91:@"차로 및 과속 단속", @92:@"구간 단속 시작", @93:@"구간 단속 종료", @94:@"갓길 단속", @95:@"끼어들기 단속", @96:@"구간 단속", @97:@"지정차로 단속", @98:@"차로 변경 구간 단속 시작", @99:@"차로 변경 구간 단속 종료", @100:@"과속 단속", @101:@"안전띠 단속", @102:@"후면 과속 단속", @103:@"후면 신호 과속 단속 구간", @104:@"노후 경유차 운행 제한 단속", @105:@"후면 구간 단속 시작", @106:@"후면 구간 단속 종료", @692:@"구간 단속 시작", @693:@"구간 단속 종료", @696:@"구간 단속", @705:@"후면 구간 단속 시작", @706:@"후면 구간 단속 종료"};
         // Announce the point ahead, not an event that has supposedly already happened.
         NSDictionary *sentences = @{@93:@"구간 단속 종료 지점입니다.", @99:@"차로 변경 단속 종료 지점입니다.", @106:@"후면 구간 단속 종료 지점입니다.",
                                     @693:@"구간 단속 종료 지점입니다.", @706:@"후면 구간 단속 종료 지점입니다.",
@@ -873,7 +892,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
                                     @12:@"도로 폭이 좁아집니다.", @15:@"졸음쉼터가 있습니다.",
                                     @6:@"과속 방지턱이 있습니다. 속도를 줄이세요.",
                                     @11:@"어린이 보호구역입니다. 속도를 줄이고 주의하세요.",
-                                    @14:@"야생동물 보호구역입니다. 주의하세요.",
+                                    @14:@"야생동물 출몰 주의 구간입니다.",
                                     @23:@"어린이 사고 다발 구간입니다. 주의하세요.",
                                     @0:@"사고 다발 구간입니다. 주의해서 운전하세요.",
                                     @1:@"급커브 구간입니다. 속도를 줄이세요.",
@@ -890,7 +909,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
                                     @21:@"차량 사고 다발 구간입니다. 주의해서 운전하세요.",
                                     @22:@"보행자 사고 다발 구간입니다. 보행자에 주의하세요.",
                                     @24:@"상습 결빙 구간입니다. 속도를 줄이세요.",
-                                    @26:@"교통사고 다발 지점입니다. 주의해서 운전하세요.",
+                                    @26:@"고의성 교통사고 주의 구간입니다.",
                                     @28:@"높이 제한 구간입니다.",
                                     @29:@"중량 제한 구간입니다.",
                                     @31:@"안개가 잦은 구간입니다. 주의해서 운전하세요.",
@@ -906,18 +925,18 @@ static UIImage *YLArrowIcon(UIColor *fill) {
                                     @92:@"구간 단속 시작 지점입니다.",
                                     @94:@"갓길 단속 지점이 있습니다.",
                                     @95:@"끼어들기 단속 지점이 있습니다.",
-                                    @96:@"구간 단속 중입니다. 제한 속도를 지키세요.",
+                                    @96:@"구간 단속 구간입니다.",
                                     @97:@"지정 차로 단속 지점이 있습니다.",
                                     @101:@"안전띠 착용 단속 지점이 있습니다.",
                                     @104:@"노후 경유차 운행 제한 단속 지점이 있습니다.",
                                     @105:@"후면 구간 단속 시작 지점입니다.",
                                     @692:@"구간 단속 시작 지점입니다.",
-                                    @696:@"구간 단속 중입니다. 제한 속도를 지키세요.",
+                                    @696:@"구간 단속 구간입니다.",
                                     @705:@"후면 구간 단속 시작 지점입니다."};
         // Speed cameras: "N미터 앞, 과속 단속 카메라가 있습니다. 제한 속도는 … 과속에 주의하세요."
         NSSet *speedCameras = [NSSet setWithArray:@[@81, @82, @86, @91, @100, @102, @103]];
         if ([speedCameras containsObject:@(point.code)]) {
-            NSString *kind = point.code == 81 ? @"이동식 과속 단속 카메라" : (point.code == 86 || point.code == 103) ? @"신호 과속 단속 카메라" : @"과속 단속 카메라";
+            NSString *kind = point.code == 81 ? @"이동식 과속 단속 카메라" : point.code == 91 ? @"차로 및 과속 단속 카메라" : point.code == 102 ? @"후면 과속 단속 카메라" : point.code == 103 ? @"후면 신호 과속 단속 카메라" : point.code == 86 ? @"신호 과속 단속 카메라" : @"과속 단속 카메라";
             NSInteger limit = [point isKindOfClass:KNSafety_Camera.class] ? ((KNSafety_Camera *)point).speedLimit : 0;
             return YLNavigationCameraSpeech(self.forceImminent ? @"잠시 후, " : prefix, kind, limit);
         }
@@ -930,6 +949,8 @@ static UIImage *YLArrowIcon(UIColor *fill) {
             return [NSString stringWithFormat:@"%@%@ 제한 구간입니다.", prefix, v];
         }
         NSString *whole = sentences[@(point.code)];
+        if (whole && self.voiceDetail < 2 && point.code != 10) whole = [[whole componentsSeparatedByString:@". "] firstObject];
+        if (whole.length && ![whole hasSuffix:@"."]) whole = [whole stringByAppendingString:@"."];
         if (whole) return [[prefix stringByAppendingString:whole] stringByAppendingString:limitSentence];
         NSString *label = labels[@(point.code)];
         if (!label.length) return @""; // Unknown hazards need a supported meaning, not a filler sentence.
@@ -946,7 +967,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         case KNVoiceCode_DetalDir:
         case KNVoiceCode_MultiRoute:
             return @""; // SDK does not expose the source sentence for these audio-only events.
-        case KNVoiceCode_SchoolZone: return @"어린이 보호구역입니다. 속도를 줄이고 주의하세요.";
+        case KNVoiceCode_SchoolZone: return self.voiceDetail < 2 ? @"어린이 보호구역입니다." : @"어린이 보호구역입니다. 속도를 줄이고 주의하세요.";
         case KNVoiceCode_Alert: return @""; // A bare "주의하세요" is not a complete instruction; hazards speak via their own sentence.
         case KNVoiceCode_Hipass: return @"하이패스 차로를 확인하세요.";
         case KNVoiceCode_StrateToNext: return @"계속 직진하세요.";
@@ -955,7 +976,7 @@ static UIImage *YLArrowIcon(UIColor *fill) {
         case KNVoiceCode_RouteUnchanged: return @"";
         case KNVoiceCode_OutOfRoute: return @"경로를 벗어나 다시 탐색합니다.";
         case KNVoiceCode_GPSConnected: return @"위치 신호를 수신했습니다.";
-        case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로입니다. 진입하지 않도록 차로를 확인하세요.";
+        case KNVoiceCode_BusLaneGuide: return @"버스 전용 차로에 주의하세요.";
         case KNVoiceCode_Alram: return @"";
         case KNVoiceCode_LinkSound: return @"";
         // Missing event objects cannot be replaced by a possibly different screen maneuver.

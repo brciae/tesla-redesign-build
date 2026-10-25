@@ -17,6 +17,7 @@ final class AutomationCoordinator: ObservableObject {
     var onNotification: ((String, String, String) -> Void)?
     var navigationContext: (() -> NavigationAnnouncementContext)?
     var onVehicleExit: ((String) -> Void)?
+    var onArrival: ((String, Bool) -> Void)?
     private func applyNavigation(to sample: inout AutomationSample) {
         guard let context = navigationContext?() else { return }
         sample.destination = context.destination
@@ -359,7 +360,11 @@ final class AutomationCoordinator: ObservableObject {
             if ![AutomationTrigger.arrival, .chargeStart, .chargeEnd].contains(effect.rule.trigger) {
                 onNotification?(effect.id, effect.rule.name, effect.text)
             }
-            if effect.rule.speech && effect.rule.trigger != .boarding { voice.say(effect.text, key: "auto:" + effect.rule.id, category: "voiceAutomations", priority: [.batteryLow, .tireLow].contains(effect.rule.trigger) ? 3 : 1, ttl: 60, manual: false) }
+            if effect.rule.speech && effect.rule.trigger == .arrival {
+                if let onArrival { onArrival(effect.text, effect.rule.message.isEmpty) }
+                else { voice.announceArrival(effect.text, vehicle: s.vehicle) }
+            }
+            else if effect.rule.speech && effect.rule.trigger != .boarding { voice.say(effect.text, key: "auto:" + effect.rule.id, category: "voiceAutomations", priority: [.batteryLow, .tireLow].contains(effect.rule.trigger) ? 3 : 1, ttl: 60, manual: false) }
             guard effect.rule.action != .speech else { report(effect.id, effect.rule.speech ? "음성 요청 · 음소거·조용시간·만료 적용" : "조건 감지 · 음성 꺼짐"); continue }
             let valid = { [weak self, weak link] in
                 guard let self, let link, !self.blocked, let current = self.sample,

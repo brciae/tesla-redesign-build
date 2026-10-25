@@ -84,7 +84,7 @@ struct PreferencesView: View {
                 Picker("안내 빈도", selection: $navDetail) {
                     Text("간단").tag(0); Text("보통").tag(1); Text("자세히").tag(2)
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
-                InfoRow("안내 빈도", "간단: 회전·위험 지점별 가까운 안내 1회. 보통: 사전·최종 안내와 보호구역 정보. 자세히: 터널·시설 등 추가 정보와 거리별 안내. 경로 변경·도착은 모든 모드에서 안내함.")
+                InfoRow("안내 빈도", "간단: 가까운 회전·위험 안내 1회, 지명·부연 생략. 보통: 사전·최종 최대 2회, 방면 1개. 자세히: 먼 거리 포함 최대 3회, 방면 2개·시설·추가 주의사항. 경로 변경·도착은 공통 안내함.")
             }
             // v1.55: the floating character's own voice sits with the other voices (its look/size is in 캐릭터).
             if characterEnabled { Section("캐릭터 목소리") {

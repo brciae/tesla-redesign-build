@@ -614,12 +614,14 @@ struct VoicePlaybackProbe: View {
         var distance = 100.0
         var speed = 10.0
         voice.navigationTargetIsAhead = { _ in distance > 0 }
+        voice.navigationTargetHasPassed = { _ in distance < 0 }
         voice.navigationTargetCanFinish = { _, duration in distance > speed * (duration + 0.8) }
         func cue(_ id: String) -> String {
             let value: [String: Any] = ["text": text, "validUntil": Date().timeIntervalSince1970 + 10, "targetID": id, "imminent": true]
             return String(data: try! JSONSerialization.data(withJSONObject: value), encoding: .utf8)!
         }
         voice.navigationGuide(cue("cached-before"), safety: true)
+        try? await Task.sleep(nanoseconds: 350_000_000)
         guard voice.playbackStarts == 1 else { eventResult = "실패 · 캐시 재생"; return }
         distance = -5
         for _ in 0..<10 where voice.speaking { try? await Task.sleep(nanoseconds: 100_000_000) }
@@ -635,22 +637,39 @@ struct VoicePlaybackProbe: View {
         eventResult = voice.playbackStarts == 1 ? "캐시 안내 · 통과 취소 및 속도별 재생 차단 확인" : "실패 · 지난 캐시 재생"
     }
     @MainActor private func overlapMatrix() async {
-        let camera = "300미터 앞 과속 단속입니다. 제한 속도는 시속 60킬로미터입니다."
-        let nearer = "100미터 앞 과속 단속입니다. 제한 속도는 시속 60킬로미터입니다."
-        for text in [camera, nearer, "주의하세요."] { cache(SpeechText.prepare(text)) }
-        voice.navigationGuide(camera, safety: true)
-        // Bursts arrive while the first cached clip is actually playing.
-        for _ in 0..<4 {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            voice.navigationGuide("주의하세요.", safety: true)
-            voice.navigationGuide(nearer, safety: true)
-            voice.navigationGuide(camera, safety: true)
+        let d = UserDefaults.standard
+        d.set(0, forKey: "navVoiceDetail")
+        let turn = "잠시 후, 우회전하세요."
+        let camera = "잠시 후, 과속 단속 지점입니다."
+        let second = "300미터 앞, 후면 과속 단속 지점입니다."
+        let changed = "100미터 앞, 우회전하세요."
+        for text in [turn, camera, second, changed] { cache(SpeechText.prepare(text)) }
+        cache(SpeechText.prepare(turn), seconds: 3)
+        var positionKnown = true
+        voice.navigationTargetIsAhead = { _ in positionKnown }
+        voice.navigationTargetHasPassed = { _ in false }
+        voice.navigationTargetCanFinish = { _, _ in true }
+        func cue(_ text: String, _ id: String, _ kind: String, _ imminent: Bool) -> String {
+            let value: [String: Any] = ["text": text, "targetID": id, "kind": kind, "imminent": imminent,
+                "metres": imminent ? 100 : 300, "speedMps": 10, "validUntil": Date().timeIntervalSince1970 + 12]
+            return String(data: try! JSONSerialization.data(withJSONObject: value), encoding: .utf8)!
         }
-        for _ in 0..<50 where voice.playbackCompletions < 2 { try? await Task.sleep(nanoseconds: 100_000_000) }
-        guard voice.playbackStarts == 2 && voice.playbackCompletions == 2 else { eventResult = "실패 · 안전 안내 중첩"; return }
-        voice.navigationGuide(camera, safety: true)
+        // Same location tick: late-arriving turn outranks both camera candidates.
+        voice.navigationGuide(cue(camera, "camera-A", "camera", true), safety: true)
+        voice.navigationGuide(cue(second, "camera-B", "camera", false), safety: true)
+        voice.navigationGuide(cue(turn, "turn-A", "turn", true), safety: false)
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        guard voice.playbackStarts == 1 && voice.lastText == SpeechText.prepare(turn) else { eventResult = "실패 · 임박 회전 우선순위"; return }
+        positionKnown = false
+        voice.navigationGuide(cue(changed, "turn-A", "turn", true), safety: false)
+        try? await Task.sleep(nanoseconds: 550_000_000)
+        guard voice.speaking && voice.playbackStarts == 1 else { eventResult = "실패 · GPS 지연 또는 중복으로 문장 잘림"; return }
+        positionKnown = true
+        for _ in 0..<65 where voice.playbackCompletions < 3 { try? await Task.sleep(nanoseconds: 100_000_000) }
+        guard voice.playbackStarts == 3 && voice.playbackCompletions == 3 else { eventResult = "실패 · 안전 안내 중첩"; return }
+        voice.navigationGuide(cue(camera, "camera-A", "camera", true), safety: true)
         try? await Task.sleep(nanoseconds: 400_000_000)
-        eventResult = voice.playbackStarts == 2 ? "중첩 안내 2개 완주 · 주의 반복 차단" : "실패 · 안전 안내 반복"
+        eventResult = voice.playbackStarts == 3 ? "중첩 안내 3개 완주 · 중복·GPS 지연 취소 차단" : "실패 · 안전 안내 반복"
     }
     @MainActor private func lifecycleMatrix() async {
         let d = UserDefaults.standard
@@ -867,14 +886,15 @@ struct VoicePlaybackProbe: View {
             precondition(coordinator.logs.filter { $0.rule == "탑승 인사" }.count == 1)
         }
     }
-    private func cache(_ prepared: String) {
+    private func cache(_ prepared: String, seconds: Int = 1) {
         let key = SHA256.hash(data: Data(("은경_" + prepared).utf8)).map { String(format: "%02x", $0) }.joined()
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("YLCompanion/TypecastAudioCache")
         try! FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16000)!
-        buffer.frameLength = 16000
-        for sample in 0..<16000 { buffer.int16ChannelData![0][sample] = Int16(sin(Double(sample) * 2 * .pi * 440 / 16000) * 200) }
+        let count = 16000 * seconds
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count))!
+        buffer.frameLength = AVAudioFrameCount(count)
+        for sample in 0..<count { buffer.int16ChannelData![0][sample] = Int16(sin(Double(sample) * 2 * .pi * 440 / 16000) * 200) }
         do { let file = try AVAudioFile(forWriting: dir.appendingPathComponent(key + ".wav"), settings: format.settings, commonFormat: .pcmFormatInt16, interleaved: true); try file.write(from: buffer) }
         catch { fatalError("Fixture WAV failed: \(error)") }
         precondition(TypecastClient.shared.cachedURL(for: prepared, voiceId: "은경") != nil)

@@ -55,10 +55,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     var canPresent: () -> Bool = { UIApplication.shared.applicationState == .active }
     var willStart: (() -> Void)?
     var onVoiceActivity: ((Bool) -> Void)?
-    var onGuidanceEnd: ((_ arrived: Bool) -> Void)?
+    var onGuidanceEnd: ((_ arrived: Bool, _ announce: Bool) -> Void)?
     var onSpokenGuide: ((String, Bool) -> Void)?
     var onPrepareGuide: ((String) -> Void)?
     func isSpeechTargetAhead(_ identifier: String) -> Bool { controller?.isSpeechTargetAhead(identifier) == true }
+    func hasSpeechTargetPassed(_ identifier: String) -> Bool { controller?.hasSpeechTargetPassed(identifier) == true }
     func canFinishSpeech(_ identifier: String, duration: TimeInterval) -> Bool { controller?.canFinishSpeech(identifier, duration: duration) == true }
     var onAudioSession: ((Bool) -> Void)?
     var onActivityChange: (() -> Void)?
@@ -147,6 +148,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     private var manualCoordinate: CLLocationCoordinate2D?
     @Published private(set) var manualDestination = ""
     var energyDestination: String { manualDestination.isEmpty ? candidate?.string("name", "목적지") ?? "목적지" : manualDestination }
+    private(set) var arrivalCoordinate: CLLocationCoordinate2D?
     var energyRouteKey: String {
         let lat = manualRouteToken != nil ? manualCoordinate?.latitude : candidate?.number("latitude")
         let lng = manualRouteToken != nil ? manualCoordinate?.longitude : candidate?.number("longitude")
@@ -515,15 +517,17 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if !keepDisplay { presented = false }
     }
     func stop() { clearRecoveryCheckpoint(); routeAuthority.endManual(); pendingNetworkRoute = nil; manualRouteToken = nil; manualDestination = ""; _ = gate("cancel"); stopNative(); status = "길안내 종료됨 · 같은 목적지는 직접 재시도 전까지 유지" }
-    func endGuidance(arrived: Bool = false) {
+    func endGuidance(arrived: Bool = false, announce: Bool = true) {
+        let pieces = energyRouteKey.split(separator: ",").compactMap { Double($0) }
+        arrivalCoordinate = arrived && pieces.count == 2 ? CLLocationCoordinate2D(latitude: pieces[0], longitude: pieces[1]) : nil
         clearRecoveryCheckpoint()
         routeAuthority.endManual()
         pendingNetworkRoute = nil
         manualRouteToken = nil; manualDestination = ""
         _ = gate("cancel") // Keep this destination blocked until a new route or explicit retry.
-        returnToFreeDrive(arrived: arrived)
+        returnToFreeDrive(arrived: arrived, announce: announce)
     }
-    private func returnToFreeDrive(arrived: Bool = false) {
+    private func returnToFreeDrive(arrived: Bool = false, announce: Bool = true) {
         guard guiding || busy else { return }
         clearRecoveryCheckpoint()
         let keepDisplay = presented
@@ -533,7 +537,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             else { startStandbyKakaoMap() }
         }
         status = "자유주행 · 경로 안내 종료"
-        onGuidanceEnd?(arrived) // End announcement follows cleanup, so cleanup cannot cancel it.
+        onGuidanceEnd?(arrived, announce) // Trip automation may own the single arrival sentence.
     }
     func retry() {
         guard !ownsAudio else { return }

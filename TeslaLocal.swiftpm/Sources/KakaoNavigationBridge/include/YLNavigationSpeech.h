@@ -12,6 +12,13 @@ static inline BOOL YLNavigationCanFinish(double distance, double speed, double a
     if (!isfinite(distance) || distance <= 0 || !isfinite(speed) || !isfinite(duration) || !isfinite(age) || age < 0 || age > 3) return NO;
     return distance - fmax(0, speed) * (age + fmax(0, duration) + 0.8) > 0;
 }
+// Unknown/stale position is not proof that an already playing cue has passed.
+static inline BOOL YLNavigationTargetPassed(double issuedDistance, double issuedRemaining, double remaining, double gpsAge, double callbackAge) {
+    return isfinite(issuedDistance) && issuedDistance > 0 && isfinite(issuedRemaining) && issuedRemaining > 0 &&
+        isfinite(remaining) && remaining >= 0 && isfinite(gpsAge) && gpsAge >= -3 && gpsAge <= 2.5 &&
+        isfinite(callbackAge) && callbackAge >= 0 && callbackAge <= 3 &&
+        issuedRemaining - remaining > issuedDistance + 15;
+}
 
 static inline BOOL YLNavigationPositionUsable(BOOL valid, double gpsAge, double callbackAge, BOOL routePosition) {
     if (!valid) return NO;
@@ -92,7 +99,7 @@ static inline NSString *YLNavigationAction(NSInteger code) {
         case 83: return @"오른쪽 도로로 직진하세요.";
         case 84: return @"요금소입니다.";
         case 85: return @"무정차 요금소입니다.";
-        case 86: return @"도로가 갈라졌다가 다시 합쳐지는 구간입니다. 차로를 유지하세요.";
+        case 86: return @"분기 후 합류하는 도로입니다.";
         case 87: return @"왼쪽 고가도로로 진입하세요.";
         case 88: return @"고가도로 왼쪽 옆길로 가세요.";
         case 89: return @"오른쪽 고가도로로 진입하세요.";
@@ -166,10 +173,15 @@ static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArr
     }
     NSString *context = @"";
     // Destinations/facilities already identify the point. Road signs help at forks.
-    if (code != 101 && code != 1000 && code != 84 && code != 85) {
+    if (code != 101 && code != 1000 && code != 84 && code != 85 && code != 86) {
         if (names.count) context = [NSString stringWithFormat:@"%@ 방면, ", [names componentsJoinedByString:@", "]];
         else if (node.length && YLNavigationIsPlaceName(node)) context = [NSString stringWithFormat:@"%@, ", node];
     }
     NSString *prefix = YLNavigationDistancePrefix(metres);
     return [NSString stringWithFormat:@"%@%@%@", prefix, context, action];
+}
+static inline NSString *YLNavigationSpeechForDetail(NSInteger code, NSString *node, NSArray<NSString *> *towards, NSInteger metres, NSInteger detail) {
+    if (detail == 0) return YLNavigationSpeech(code, @"", @[], metres);
+    NSArray *signs = detail == 1 && towards.count > 1 ? [towards subarrayWithRange:NSMakeRange(0, 1)] : towards;
+    return YLNavigationSpeech(code, node, signs, metres);
 }

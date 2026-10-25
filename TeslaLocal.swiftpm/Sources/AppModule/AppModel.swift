@@ -290,19 +290,23 @@ final class AppModel: ObservableObject {
         }
         navigation.willStart = { [weak self] in self?.stopSpeech(); self?.updateLiveActivity() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
-        navigation.onGuidanceEnd = { [weak self] arrived in
+        navigation.onGuidanceEnd = { [weak self] arrived, announce in
             Task { @MainActor in NavigationPictureInPicture.shared.endGuidance() }
             if let self {
                 self.updateTripEnergy(force: true)
                 self.tripEnergy.finish(arrived: arrived, vin: self.energyVehicleVIN)
             }
             self?.voice.stop()
-            self?.voice.navigationGuide(arrived ? "목적지에 도착했습니다. 안내를 종료합니다." : "안내를 종료합니다.", safety: false)
+            guard announce else { return }
+            if arrived { self?.announceArrival(coordinate: self?.navigation.arrivalCoordinate, fallback: "목적지에 도착했습니다.", fromNavigation: true) }
+            else { self?.voice.navigationGuide("안내를 종료합니다.", safety: false) }
         }
         navigation.onSpokenGuide = { [weak self] text, safety in self?.voice.navigationGuide(text, safety: safety) }
         navigation.onPrepareGuide = { [weak self] message in self?.voice.prepareNavigation(message) }
         voice.navigationTargetIsAhead = { [weak self] identifier in self?.navigation.isSpeechTargetAhead(identifier) == true }
+        voice.navigationTargetHasPassed = { [weak self] identifier in self?.navigation.hasSpeechTargetPassed(identifier) == true }
         voice.navigationTargetCanFinish = { [weak self] identifier, duration in self?.navigation.canFinishSpeech(identifier, duration: duration) == true }
+        automations.onArrival = { [weak self] text, preferPlace in self?.announceArrival(fallback: text, preferPlace: preferPlace) }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         navigation.onActivityChange = { [weak self] in self?.updateTripEnergy(); self?.updateLiveActivity() }
         automations.onVehicleExit = { [weak self] vin in
@@ -350,6 +354,7 @@ final class AppModel: ObservableObject {
                     // Note: Once userDismissed is set manually by user, it only reopens when manually tapped
                     let afterExit = self.lastVehicleExit.map { $0.vin != self.energyVehicleVIN || (d.number("at") ?? 0) > $0.driveAt } ?? true
                     let currentDrive = self.output.object("fresh").flag("drive") && (d.number("at") ?? 0) >= (self.groups.object("drive").number("at") ?? 0)
+                    if currentDrive { self.voice.observeArrivalVisit(gear: gear, speed: speed) }
                     if afterExit, currentDrive, (gear == "D" || gear == "R" || speed > 5), !self.navigation.presented, !self.navigation.userDismissed, UIApplication.shared.applicationState == .active {
                         if UserDefaults.standard.object(forKey: "autoDrivingDashboard") == nil || UserDefaults.standard.bool(forKey: "autoDrivingDashboard") {
                             self.navigation.activateWorkspace(model: self)
@@ -730,11 +735,27 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    private func announceArrival(coordinate: CLLocationCoordinate2D? = nil, fallback: String, preferPlace: Bool = true, fromNavigation: Bool = false) {
+        let location = groups.object("location")
+        let current: CLLocationCoordinate2D? = {
+            if let coordinate, CLLocationCoordinate2DIsValid(coordinate) { return coordinate }
+            guard output.object("fresh").flag("location"), let lat = location.number("latitude"), let lng = location.number("longitude") else { return nil }
+            let point = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+            return CLLocationCoordinate2DIsValid(point) && !(lat == 0 && lng == 0) ? point : nil
+        }()
+        func distance(_ key: String) -> Double? {
+            guard let current, let data = UserDefaults.standard.data(forKey: key),
+                  let place = try? JSONDecoder().decode(SavedNavigationPlace.self, from: data), CLLocationCoordinate2DIsValid(place.coordinate) else { return nil }
+            return CLLocation(latitude: current.latitude, longitude: current.longitude).distance(from: CLLocation(latitude: place.latitude, longitude: place.longitude))
+        }
+        let greeting = preferPlace ? ArrivalSpeechPolicy.message(homeDistance: distance("navigation.home"), workDistance: distance("navigation.work"), hour: Calendar.current.component(.hour, from: Date())) : nil
+        voice.announceArrival(greeting ?? fallback, vehicle: energyVehicleVIN, fromNavigation: fromNavigation)
+    }
     private func finishObservedTrip(previousCount: Int) {
         guard !demo, state.rows("trips").count > previousCount,
               let trip = state.rows("trips").last, let end = trip.number("end"),
               abs(Date().timeIntervalSince1970 * 1000 - end) <= 120000 else { return }
-        navigation.endGuidance()
+        navigation.endGuidance(announce: false)
         Task { @MainActor in NavigationPictureInPicture.shared.endGuidance() }
         let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
         let body = state.string("lastBrief")

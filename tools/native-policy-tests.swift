@@ -19,7 +19,7 @@ import Foundation
         }
         var brief = NavigationSpeechPolicy(), normal = NavigationSpeechPolicy(), detailed = NavigationSpeechPolicy()
         precondition(!brief.accepts(cue: cue("turn", 1000), detail: 0, now: detailTime))
-        precondition(brief.accepts(cue: cue("turn", 200), detail: 0, now: detailTime))
+        precondition(brief.accepts(cue: cue("turn", 150), detail: 0, now: detailTime))
         precondition(brief.accepts(cue: cue("turn", 40, true), detail: 0, now: detailTime), "A cue dropped before playback must not suppress the final warning")
         brief.markPlayed(cue: cue("turn", 200), detail: 0, now: detailTime)
         precondition(!brief.accepts(cue: cue("turn", 40, true), detail: 0, now: detailTime), "Brief suppresses same-point SDK/final repetition")
@@ -47,7 +47,7 @@ import Foundation
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: true, priority: 3, activePriority: 4))
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 4))
         precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: true, navigationBusy: true, incidental: false, priority: 4, activePriority: 5))
-        precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 5, cannotWait: true))
+        precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 5, activePriority: 5, cannotWait: true), "Equal urgent camera must not cut the active sentence")
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: true, priority: 5, activePriority: 5, cannotWait: true))
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 4, activePriority: 5, cannotWait: true))
         precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: false, incidental: false, priority: 4, activePriority: 3))
@@ -135,6 +135,39 @@ import Foundation
         q.add(item("first"), now: now); q.add(item("second"), now: now)
         precondition(q.next(now: now)?.key == "first")
         precondition(q.next(now: now)?.key == "second")
+        let modes = (0...2).map { level -> Int in
+            var policy = NavigationSpeechPolicy(); var count = 0
+            for sample in [cue("turn", 1500), cue("turn", 500), cue("turn", 40, true), cue("turn", 30, true)] {
+                if policy.accepts(cue: sample, detail: level, now: detailTime) { count += 1; policy.markPlayed(cue: sample, detail: level, now: detailTime) }
+            }
+            return count
+        }
+        precondition(modes == [1, 2, 3], "Same driven route must produce distinct 1/2/3 cue counts")
+        precondition(NavigationSpeechPolicy.priority(cue: cue("turn", 40, true), safety: false) > NavigationSpeechPolicy.priority(cue: cue("camera", 50, true), safety: true))
+        precondition(NavigationSpeechPolicy.priority(cue: cue("camera", 50, true), safety: true) > NavigationSpeechPolicy.priority(cue: cue("hump", 50, true), safety: true))
+        var pending = VoiceQueue()
+        func pendingCue(_ id: String, _ seconds: Double, _ priority: Int) -> VoiceItem { VoiceItem(key: "navigation.safety", text: id, expires: now.addingTimeInterval(seconds), priority: priority, manual: true, navigationID: id) }
+        pending.add(pendingCue("near-camera", 4, 5), now: now)
+        pending.add(pendingCue("far-camera", 10, 5), now: now)
+        pending.add(pendingCue("turn", 5, 6), now: now)
+        precondition(pending.items.count == 3, "Distinct targets cannot erase each other under a shared category")
+        precondition(pending.next(now: now)?.navigationID == "turn")
+        precondition(pending.next(now: now)?.navigationID == "near-camera")
+        precondition(pending.next(now: now)?.navigationID == "far-camera")
+        pending.add(pendingCue("same", 8, 4), now: now); pending.add(pendingCue("same", 4, 5), now: now)
+        precondition(pending.items.count == 1 && pending.items[0].priority == 5)
+        precondition(ArrivalSpeechPolicy.message(homeDistance: 20, workDistance: 1000, hour: 23) == "집에 도착했습니다. 편안한 밤 보내세요.")
+        precondition(ArrivalSpeechPolicy.message(homeDistance: nil, workDistance: 10, hour: 9) == "회사에 도착했습니다. 좋은 하루 보내세요.")
+        precondition(ArrivalSpeechPolicy.message(homeDistance: .nan, workDistance: 300, hour: 9) == nil)
+        precondition(ArrivalSpeechPolicy.message(homeDistance: 0, workDistance: 0, hour: 9) == nil, "Ambiguous same location cannot invent home/work identity")
+        var arrivalPolicy = ArrivalSpeechPolicy()
+        precondition(arrivalPolicy.accepts(vehicle: "car", now: now))
+        precondition(!arrivalPolicy.accepts(vehicle: "car", now: now.addingTimeInterval(2)), "Native arrival and parked trip automation share one event")
+        arrivalPolicy.observe(gear: "D", speed: 4)
+        precondition(!arrivalPolicy.accepts(vehicle: "car", now: now.addingTimeInterval(3)), "Rolling into parking is not another visit")
+        arrivalPolicy.observe(gear: "P", speed: 0); arrivalPolicy.observe(gear: "D", speed: 5)
+        precondition(arrivalPolicy.accepts(vehicle: "car", now: now.addingTimeInterval(20)), "Actual next trip can arrive again")
+        print("PASS: navigation 1/2/3 mode counts, approved priority, distinct-target queue, home/work arrival deduplication")
         let parts = VehicleUnits().displayParts(8.02, suffix: " km/kWh", digits: 2)
         precondition(parts.0 == "8.02" && parts.1 == " km/kWh")
         print("PASS: natural action voice, location read priority, native unit conversions, unknown values, quiet hours, priority, dedupe, TTL and queue bound")
