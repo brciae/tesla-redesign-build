@@ -134,14 +134,14 @@ struct BatteryOverview: View {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("확인된 구간").font(.caption).foregroundStyle(.secondary)
-                    Text("\(Int(parking.number("count") ?? 0))회").font(.system(size: 25, weight: .medium)).monospacedDigit()
+                    Text("\(Int(parking.number("count") ?? 0))회").font(.system(size: 25, weight: .medium)).monospacedDigit().accessibilityIdentifier("battery.parking.count")
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 measure("하루 환산 · 중앙값", parking.number("medianPerDay"), "%p/일")
             }
-            Text("P 관측 구간도 포함. 하루 환산은 2시간·0.5%p 이상인 참고값.").font(.caption).foregroundStyle(.secondary)
+            Text("짧은 주차도 기록함. 1시간 이상은 잔량 변화 0%p도 하루 환산에 포함.").font(.caption).foregroundStyle(.secondary)
             let rows = parking.rows("rows")
             if !rows.isEmpty {
-                DisclosureGroup("주차 기록·보류 사유 \(Int(parking.number("excludedCount") ?? 0))건") {
+                DisclosureGroup("전체 \(rows.count)구간 · 보류 \(Int(parking.number("excludedCount") ?? 0))건") {
                     ForEach(Array(rows.sorted { ($0.number("end") ?? 0) > ($1.number("end") ?? 0) }.prefix(20).enumerated()), id: \.offset) { _, row in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(Self.tripRowDateFormatter.string(from: Date(timeIntervalSince1970: (row.number("start") ?? 0) / 1000))).font(.caption.weight(.medium))

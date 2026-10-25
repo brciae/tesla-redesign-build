@@ -38,7 +38,7 @@ const charge=(id,at=t,extra={})=>({id,at,end:at+3600000,startSOC:30,endSOC:60,ve
  packet(at+120000,'P',60);packet(at+420000,'D',59);const p=e.parkingSummary(now).rows[0];assert.equal(p.classification,'parking');assert.equal(p.hours,.08);assert.equal(p.precisionLimited,true,'short P parking is retained, not discarded');
  e.state.parkingPeriods=[{id:'high',start:now-12*3600000,end:now-3600000,startSOC:90,endSOC:80,deltaSOC:10,classification:'parking'}];e.state.lastPark=null;
  assert.equal(e.parkingSummary(now).count,1);assert.equal(e.parkingSummary(now).rows[0].highLoss,true,'high loss is not silently hidden');
- e.state.charges=[charge('during',now-10*3600000)];assert.equal(e.parkingSummary(now).rows[0].classification,'unclassified');assert.match(e.parkingSummary(now).rows[0].exclusionReason,/충전/);
+ e.state.charges=[charge('during',now-10*3600000)];const mixed=e.parkingSummary(now).rows.find(p=>p.exclusionReason.includes('충전'));assert.ok(mixed,'the actual charge interval remains excluded');assert.equal(mixed.classification,'unclassified');assert.ok(e.parkingSummary(now).count>0,'observed non-charging sections remain usable');
 }
 {
  const e=new Engine();const rows=[];

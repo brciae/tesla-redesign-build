@@ -786,17 +786,6 @@ struct NavigationSetupView: View {
     @State private var nativeKey = ""
     var body: some View {
         PageBody(title: "길안내", briefing: .navigation) {
-            InfoCard {
-                Label("위치 권한과 정확도", systemImage: "location.circle").font(.headline)
-                Text(navigation.locationPermission)
-                Caption("항상 허용은 백그라운드 접근 권한이며 정확도 설정과 별개임. 실행 중인 길안내는 화면을 잠가도 위치 수신을 이어가며, 길안내 종료 시 백그라운드 수신을 중단함.")
-                Button("항상 허용 요청") { navigation.requestAlwaysLocation() }.buttonStyle(.bordered)
-                Button("정확한 위치 요청") { navigation.requestPreciseLocation() }.buttonStyle(.bordered)
-                Button("아이폰 위치 설정 열기") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                }.buttonStyle(.borderless)
-                Caption("처음에는 앱 사용 중 허용을 선택한 뒤 다시 요청할 수 있음. 한 번 허용을 선택했거나 시스템 창이 나오지 않으면 아이폰 설정에서 확인 필요. 앱 강제 종료 후 지속 동작을 보장하지 않음.")
-            }.onAppear { navigation.updateLocationPermission() }
             // v39: an honest route to a licensed celebrity guidance voice. This app cannot synthesise a
             // real person's voice, but Naver Map already ships those voices, so the destination can be
             // handed to it and Naver speaks the turns.
@@ -833,6 +822,17 @@ struct NavigationSetupView: View {
                 .buttonStyle(.plain)
             }
             InfoCard { NavigationDisplaySettings(navigation: navigation) }
+            InfoCard {
+                Label("위치 권한과 정확도", systemImage: "location.circle").font(.headline)
+                Text(navigation.locationPermission)
+                Caption("항상 허용은 백그라운드 접근 권한이며 정확도 설정과 별개임. 실행 중인 길안내는 화면을 잠가도 위치 수신을 이어가며, 길안내 종료 시 백그라운드 수신을 중단함.")
+                Button("항상 허용 요청") { navigation.requestAlwaysLocation() }.buttonStyle(.bordered)
+                Button("정확한 위치 요청") { navigation.requestPreciseLocation() }.buttonStyle(.bordered)
+                Button("아이폰 위치 설정 열기") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }.buttonStyle(.borderless)
+                Caption("처음에는 앱 사용 중 허용을 선택한 뒤 다시 요청할 수 있음. 한 번 허용을 선택했거나 시스템 창이 나오지 않으면 아이폰 설정에서 확인 필요. 앱 강제 종료 후 지속 동작을 보장하지 않음.")
+            }.onAppear { navigation.updateLocationPermission() }
             InfoCard {
                 Text("카카오 SDK 설정").font(.headline)
                 Text(navigation.bundleID).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)

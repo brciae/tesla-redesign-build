@@ -10,7 +10,7 @@ const r=(dt,field,v)=>({at:t+dt,field,number:typeof v==='number'?v:undefined,tex
  assert.equal(e.parkingSummary().count,1);assert.equal(e.batteryUsage().parking.count,1);
  e.state.charges=[{id:'adjacent',at:t-3600000,end:t,startSOC:50,endSOC:80,vehicleReportedKWh:20,complete:true}];
  assert.equal(e.parkingSummary().count,1);assert.equal(e.batteryUsage().parking.count,1,'charge ending at parking start is not overlapping');
- e.state.charges[0].end=t+60000;assert.equal(e.batteryUsage().parking.count,0,'real charging overlap excluded');
+ e.state.charges[0].end=t+60000;const split=e.batteryUsage().parking;assert.equal(split.count,1,'non-charging remainder uses observed charge end');assert(split.rows.some(p=>p.exclusionReason.includes('충전')),'actual charge interval remains excluded');
  const raw=JSON.parse(JSON.stringify(e.state));const restored=new C.Engine();restored.load(raw);
  assert.equal(restored.state.parkingPeriods[0].endSOC,79,'repaired endpoint persists');
 }
@@ -32,7 +32,7 @@ const r=(dt,field,v)=>({at:t+dt,field,number:typeof v==='number'?v:undefined,tex
  const e=new C.Engine();e.state.settings.vin=vin;
  e.state.charges=[{id:'one',at:t,end:t+3600000,startSOC:30,endSOC:60,vehicleReportedKWh:24,complete:true},{id:'small',at:t+7200000,end:t+7300000,startSOC:60,endSOC:65,vehicleReportedKWh:4,complete:true}];
  const h=e.healthIndex();assert.equal(h.qualifiedChargeCount,1);assert.equal(h.capacityMedianKWh,80);assert.equal(h.degradationPercent,null,'one observation is a reference capacity, not a degradation result');
- assert(h.excludedChargeReasons.some(r=>r.reason.includes('20%p')&&r.count===1));
+ assert(h.excludedChargeReasons.some(r=>r.reason.includes('10%p')&&r.count===1));
 }
 {
  const g=new C.EmbeddedRouteGate();g.observe({type:'route',at:1000,receivedAt:1000,latitude:37.5,longitude:127},true,false);

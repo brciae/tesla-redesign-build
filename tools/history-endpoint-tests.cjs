@@ -50,5 +50,6 @@ console.log('PASS: active NAS completion, recorded transition timestamps, stale-
  const e=new C.Engine();e.state.settings.vin=vin;
  e.ingestArchive({vin,rows:[r(-3600000,'ChargeState','Disconnected'),r(0,'ChargeState','Charging'),r(0,'Soc',60),r(0,'ChargeEnergyAdded',15),r(3600000,'ChargeState','Stopped'),r(3600000,'Soc',80),r(3600000,'ChargeEnergyAdded',30)]});
  const c=e.state.charges[0];assert.equal(c.startSOCEstimated,true,'first observation after energy has already accumulated cannot become a measured start SOC');
- assert.equal(e.capacitySamples().length,0,'late start observation must not create false health evidence');
+ assert.equal(e.capacitySamples().length,1,'actual partial observation window is usable');
+ assert.equal(e.capacitySamples()[0].kwh,75,'use 15 kWh counter delta over observed 60 to 80 SOC, never the whole 30 kWh over an inferred start');
 }

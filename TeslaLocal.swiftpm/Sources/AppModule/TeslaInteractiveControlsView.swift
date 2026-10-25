@@ -124,7 +124,7 @@ struct TeslaInteractiveControlsView: View {
     private func openCount(_ keys: [String]) -> Int? {
         guard let s = snapshot else { return nil }
         let values = keys.compactMap { s.number("vehicle_state", $0) }
-        return values.isEmpty ? nil : values.filter { $0 > 0 }.count
+        return values.count != keys.count ? nil : values.filter { $0 > 0 }.count
     }
     /// v1.41: live BLE closure state (what the 3D model shows) wins over a Fleet snapshot without body data.
     private func bleOpenCount(_ parts: [String]) -> Int? {
@@ -155,7 +155,7 @@ struct TeslaInteractiveControlsView: View {
             ("프렁크", closureText(["ft"], ble: ["frunk"], all: false)),
             ("트렁크", closureText(["rt"], ble: ["trunk"], all: false)),
             ("충전구", portText)
-        ]
+        ].filter { $0.1.0 != "미수신" }
         return VStack(spacing: 12) {
             // v1.26: live 3D model (same as home) on a white card; actions swing the camera to the part.
             Vehicle3DPanel(link: link, compact: true, chargingMode: true, isCharging: chargeNow.charging, isPlugged: chargeNow.plugged, focus: focus)
@@ -181,7 +181,7 @@ struct TeslaInteractiveControlsView: View {
         let unlocked = locked == false
         return Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            if locked == false {
+            if locked == false || locked == nil {
                 dispatchHybridAction(title: "차량 잠금", bleAction: "lock", fleetAction: { try await model.fleet.doorLock() })
             } else {
                 dispatchHybridAction(title: "잠금 해제", bleAction: "unlock", fleetAction: { try await model.fleet.doorUnlock() })
@@ -190,8 +190,8 @@ struct TeslaInteractiveControlsView: View {
             HStack(spacing: 14) {
                 Image(systemName: unlocked ? "lock.open.fill" : "lock.fill").font(.system(size: 26, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(locked == nil ? "잠금 상태 미수신" : (unlocked ? "잠금 해제됨" : "잠김")).font(.system(size: 17, weight: .semibold))
-                    Text(unlocked ? "눌러서 잠그기" : "눌러서 잠금 해제").font(.system(size: 13)).opacity(0.75)
+                    Text(locked == nil ? "차량 잠금" : (unlocked ? "잠금 해제됨" : "잠김")).font(.system(size: 17, weight: .semibold))
+                    Text(locked == nil ? "잠금 명령 보내기" : unlocked ? "눌러서 잠그기" : "눌러서 잠금 해제").font(.system(size: 13)).opacity(0.75)
                 }
                 Spacer()
             }

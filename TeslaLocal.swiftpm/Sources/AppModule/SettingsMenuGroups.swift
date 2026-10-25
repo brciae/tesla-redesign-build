@@ -102,14 +102,14 @@ private struct SettingsMenuGroup: Identifiable {
 /// Production menu and its destinations share one catalog; no duplicate links in unrelated groups.
 struct SettingsMenuGroups: View {
     private let groups: [SettingsMenuGroup] = [
-        .init(title: "안내·알림", items: [
+        .init(title: "주행·안내", items: [
+            .init(.navigation, "map", "내비게이션", "", [.blue, .cyan]),
             .init(.liveActivity, "rectangle.topthird.inset.filled", "잠금화면·아일랜드", "길안내 · 충전 카드 · 표시 상태", [.blue, .cyan]),
             .init(.preferences, "speaker.wave.2.fill", "음성·내비 안내", "목소리 · 안내 빈도 · 음량", [.blue, .cyan]),
-            .init(.notifications, "bell.badge.fill", "알림 설정", "충전 알림 · 권한", [.purple, .blue])]),
-        .init(title: "주행·충전", items: [
-            .init(.navigation, "map", "내비게이션", "지도 · 위치 권한 · 하이패스", [.blue, .cyan]),
-            .init(.chargingSettings, "bolt.fill", "충전 계획·요금", "충전 기준 · 전기 단가", [.green, .mint])]),
-        .init(title: "차량 관리", items: [
+            .init(.notifications, "bell.badge.fill", "알림 설정", "", [.purple, .blue]),
+            .init(.automation, "bolt.circle.fill", "자동화", "", [.green, .mint])]),
+        .init(title: "차량·충전", items: [
+            .init(.chargingSettings, "bolt.fill", "충전 계획·요금", "", [.green, .mint]),
             .init(.fleetInsights, "checkmark.shield", "차량 상태·보증", "사양 · 보증 · 경고", [.cyan, .blue]),
             .init(.care, "wrench.and.screwdriver.fill", "타이어·정비", "공기압 · 소모품 주기", [.orange, .yellow]),
             .init(.security, "shield.fill", "보안 및 운전자", "감시 모드 · 운전자", [.blue, .cyan])]),
@@ -117,13 +117,10 @@ struct SettingsMenuGroups: View {
             .init(.connection, "antenna.radiowaves.left.and.right", "차량·NAS 연결", "계정 · 블루투스 · 서버", [.cyan, .blue]),
             .init(.spotify, "music.note", "Spotify 연결", "휴대폰 재생 정보 · 음악 제어", [.green, .mint]),
             .init(.recordSettings, "externaldrive", "기록·백업", "내보내기 · 복원", [.blue, .cyan])]),
-        .init(title: "화면·꾸미기", items: [
+        .init(title: "화면·앱", items: [
             .init(.displaySettings, "textformat.size", "화면·표시 단위", "배경 · 거리 · 온도 단위", [.gray, .secondary]),
             .init(.appearance, "paintbrush.fill", "3D 차꾸미기", "외장 · 휠 · 실내", [.purple, .pink]),
-            .init(.character, "figure.wave", "캐릭터", "3D 캐릭터 선택 · 미리보기", [.pink, .purple])]),
-        .init(title: "자동화", items: [
-            .init(.automation, "bolt.circle.fill", "스마트 자동화", "상황별 안내 · 자동 제어", [.green, .mint])]),
-        .init(title: "앱 정보", items: [
+            .init(.character, "figure.wave", "캐릭터", "", [.pink, .purple]),
             .init(.releaseNotes, "doc.text.fill", "릴리즈 노트", "버전별 변경 내역", [.orange, .pink])])
     ]
     var body: some View {
@@ -134,7 +131,7 @@ struct SettingsMenuGroups: View {
                         .foregroundStyle(Color.primary.opacity(0.6)).padding(.leading, 6)
                     GlassMenuCard {
                         ForEach(group.items) { item in
-                            glassMenuItem(item.page, item.symbol, title: item.title, subtitle: item.subtitle,
+                            glassMenuItem(item.page, item.symbol, title: item.title, subtitle: nil,
                                 colors: item.colors, isLast: group.items.last?.page == item.page)
                         }
                     }

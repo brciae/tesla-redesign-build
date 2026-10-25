@@ -33,6 +33,7 @@ struct PreferencesView: View {
     @AppStorage("overspeed.distance") private var overspeedDistance = 500.0
     @AppStorage("overspeed.sound") private var overspeedSound = 0
     @AppStorage("characterFloat.voice") private var floatVoice = ""
+    @AppStorage("characterChat.enabled") private var characterEnabled = true
     @State private var floatVoicePicker = false
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
@@ -86,7 +87,7 @@ struct PreferencesView: View {
                 InfoRow("안내 빈도", "간단: 회전·위험 지점별 가까운 안내 1회. 보통: 사전·최종 안내와 보호구역 정보. 자세히: 터널·시설 등 추가 정보와 거리별 안내. 경로 변경·도착은 모든 모드에서 안내함.")
             }
             // v1.55: the floating character's own voice sits with the other voices (its look/size is in 캐릭터).
-            Section("떠있는 캐릭터 대화 목소리") {
+            if characterEnabled { Section("캐릭터 목소리") {
                 Button { floatVoicePicker = true } label: {
                     HStack(spacing: 10) {
                         TypecastVoiceThumbnail(voice: floatVoice.isEmpty ? currentVoiceName : floatVoice, size: 30)
@@ -96,16 +97,18 @@ struct PreferencesView: View {
                     }
                 }
                 if !floatVoice.isEmpty { Button("안내 음성과 같게", role: .destructive) { floatVoice = "" } }
+            } }
+            Section("음량") {
+                VoiceVolumeControl(title: "일반 안내 음량", value: $volume)
+                VoiceVolumeControl(title: "길안내 음량", value: $navigationVolume)
+                Toggle("안내 중 음악 소리 줄이기", isOn: $duck)
             }
             Section("고급") {
                 NavigationLink("음성 세부 설정") {
                     Form {
                         Section("음성 조절") {
                             slider("속도", value: $rate, range: 0.3...0.6)
-                            VoiceVolumeControl(title: "일반 안내 음량", value: $volume)
-                            VoiceVolumeControl(title: "길안내 음량", value: $navigationVolume)
                             Caption("100%는 기존 최대 음량, 200%는 음성 신호를 최대 2배 증폭함. 기기·차량 음량은 별도로 적용되며 큰 소리에서는 음질이 달라질 수 있음.").font(.caption).foregroundStyle(.secondary)
-                            Toggle("안내 중 음악 소리 줄이기", isOn: $duck)
                             VoiceAdvancedControls(identifier: $identifier, style: $deliveryStyle)
                         }
                         Section("자동 안내 항목") {

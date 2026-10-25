@@ -27,6 +27,7 @@ struct LiveActivitySettingsPanel: View {
             InfoRow("표시 방식", "잠금화면에 길안내 또는 충전 상태 표시. 카드를 누르면 해당 화면으로 이동함.")
             Caption("처음에는 앱을 연 상태에서 시작해야 함. iPhone 설정에서 이 앱의 실시간 현황 허용 필요함. 백그라운드 수신이 중단되면 마지막 값 대신 갱신 대기를 표시함.")
             DisclosureGroup("설치·활동 상태") {
+                Caption(pip.diagnostics)
                 Caption(manager.installationSummary)
                 Caption(manager.lifecycle)
                 if let at = manager.lastPublishedAt {

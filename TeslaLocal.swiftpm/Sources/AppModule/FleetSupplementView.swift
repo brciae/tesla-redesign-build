@@ -62,7 +62,7 @@ struct FleetSupplementView: View {
         else {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                DisclosureGroup("상세 안내") { Caption(kind.note) }
+                Caption(kind.note)
                 Button(busy ? "조회 중…" : "자료 조회") { Task { await refresh() } }.disabled(busy)
                 if !error.isEmpty { Text(error).font(.subheadline).foregroundStyle(.orange) }
                 if let result, result.vin == fleet.selectedVin {

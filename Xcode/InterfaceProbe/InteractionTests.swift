@@ -16,6 +16,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(frame.waitForExistence(timeout: 8))
         let delivered = NSPredicate(format: "label != %@", "프레임 전달 0")
         expectation(for: delivered, evaluatedWith: frame); waitForExpectations(timeout: 8)
+        XCTAssertTrue(app.staticTexts["navigation.pip.diagnostics"].label.contains("공유 true"), "PiP buffers must be IOSurface backed, not only enqueue successfully")
         captureSystemCard("Floating navigation actual sample buffer inline camera lanes and next turn")
         app.buttons["음성·음악 혼합 확인"].tap()
         XCTAssertTrue(app.staticTexts["음성 종료 후 음악 혼합 유지"].waitForExistence(timeout: 5))
@@ -52,6 +53,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["완충 표시거리"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["기록 시작 대비 거리 변화"].exists)
         captureSystemCard("Full charge range battery card synthetic evidence")
+        let parking = app.staticTexts["battery.parking.count"]
+        for _ in 0..<5 where !parking.isHittable { app.swipeUp() }
+        XCTAssertTrue(parking.isHittable)
+        XCTAssertEqual(parking.label, "1회")
+        captureSystemCard("Parking accepted count and concise record disclosure")
     }
     func testSpotifySettingsValidateClientIDAndShowLocalPhoneConnection() {
         XCUIDevice.shared.orientation = .portrait
@@ -75,13 +81,13 @@ final class InteractionTests: XCTestCase {
     func testProductionSettingsMenuGroupsAndDirectCardSettings() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["settings-menu-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["안내·알림"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["주행·안내"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts.matching(identifier: "잠금화면·아일랜드").count, 1)
         captureSystemCard("Production settings menu guidance and alerts first")
         app.staticTexts["잠금화면·아일랜드"].tap()
         XCTAssertTrue(app.switches["실시간 현황 표시"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.firstMatch.tap()
-        for section in ["주행·충전", "차량 관리", "연결·기록", "화면·꾸미기", "자동화", "앱 정보"] {
+        for section in ["차량·충전", "연결·기록", "화면·앱"] {
             let title = app.staticTexts[section]
             for _ in 0..<7 where !title.isHittable { app.swipeUp() }
             XCTAssertTrue(title.isHittable, "Missing menu group: \(section)")

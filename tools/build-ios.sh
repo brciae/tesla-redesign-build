@@ -29,6 +29,7 @@ Xcode/VoiceCacheTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AppEnergyPolicy.swift tools/energy-policy-tests.swift -o Xcode/EnergyPolicyTests
 Xcode/EnergyPolicyTests
 node tools/energy-battery-regression-tests.cjs
+node tools/collection-regression-tests.cjs
 node tools/navigation-card-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlaybackPolicy.swift tools/spotify-policy-tests.swift -o Xcode/SpotifyPolicyTests
 Xcode/SpotifyPolicyTests

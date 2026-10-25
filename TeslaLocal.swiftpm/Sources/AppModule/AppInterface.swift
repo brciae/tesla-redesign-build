@@ -237,13 +237,11 @@ struct InfoRow: View {
     let text: String
     init(_ title: String, _ text: String) { self.title = title; self.text = text }
     var body: some View {
-        DisclosureGroup(title) {
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

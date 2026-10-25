@@ -40,7 +40,6 @@ struct FleetInsightsView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    NavigationLink { CareView() } label: { destination("타이어·정비", "tirepressure", .cyan) }
                     NavigationLink { WarrantyGuideView(vin: fleet.selectedVin, odometerKm: model.displayOdometerKm, vehicleReference: model.vehicleReference) } label: { destination("보증·관리", "checkmark.shield.fill", .purple) }
                 }.buttonStyle(.plain)
                 if !model.vehicleReference.isEmpty {
