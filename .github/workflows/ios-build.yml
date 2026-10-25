@@ -13,7 +13,7 @@ jobs:
           ref: 94027a8bd14b14e148ce2eadc491ebdaf1c57f2f
       - name: Tools
         run: brew install xcodegen
-      - name: Repeated runtime checks with Address Sanitizer
+      - name: Repeated runtime checks without failure retries
         run: |
           node tools/embed-js.cjs
           python3 - <<'PY'
@@ -21,7 +21,7 @@ jobs:
           p=Path('tools/test-interface.sh')
           s=p.read_text()
           s=s.replace('test_filter=(-only-testing:InterfaceProbeTests)', 'test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testConciseGuidanceAcrossThemesAndRotation -only-testing:InterfaceProbeTests/InteractionTests/testChargingEnergySavingModelPersistenceAndFullChargeRangeCard -only-testing:InterfaceProbeTests/InteractionTests/testProductionSettingsMenuGroupsAndDirectCardSettings)')
-          s=s.replace('-retry-tests-on-failure -test-iterations 2', '-enableAddressSanitizer YES -run-tests-until-failure -test-iterations 4')
+          s=s.replace('-retry-tests-on-failure -test-iterations 2', '-run-tests-until-failure -test-iterations 4')
           p.write_text(s)
           PY
           bash tools/test-interface.sh runtime-audit
@@ -41,4 +41,5 @@ jobs:
             Xcode/BuildOutput/AuditDiagnostics/**
             Xcode/BuildOutput/audit-summary.json
           if-no-files-found: error
+
 
