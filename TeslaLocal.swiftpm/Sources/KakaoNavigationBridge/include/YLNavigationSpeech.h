@@ -1,5 +1,11 @@
 #import <Foundation/Foundation.h>
 #import <math.h>
+static inline NSString *YLNavigationSafetyKind(NSInteger code) {
+    if ([@[@15,@17,@18,@20,@83,@85,@87,@88] containsObject:@(code)]) return @"information";
+    if (code == 6) return @"hump";
+    if ((code >= 80 && code <= 106) || [@[@692,@693,@696,@705,@706] containsObject:@(code)]) return @"camera";
+    return @"safety";
+}
 
 // Estimate only until the cached clip is opened; playback uses its actual duration.
 static inline double YLNavigationSpeechSeconds(NSString *text) {

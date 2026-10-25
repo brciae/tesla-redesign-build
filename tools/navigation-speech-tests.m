@@ -45,6 +45,9 @@ int main(void) { @autoreleasepool {
     check(YLNavigationTargetPassed(100, 1000, 880, 0, 0), @"Fresh matched-route progress proves passage");
     check(!YLNavigationTargetPassed(100, 0, 0, 0, 0), @"Missing route anchor cannot prove passage");
     check([YLNavigationAction(86) isEqualToString:@"분기 후 합류하는 도로입니다."], @"Exact user-approved branch/rejoin description");
+    check([YLNavigationSafetyKind(90) isEqual:@"camera"] && [YLNavigationSafetyKind(98) isEqual:@"camera"] && [YLNavigationSafetyKind(692) isEqual:@"camera"], @"Signal and section cameras share the approved camera priority");
+    check([YLNavigationSafetyKind(26) isEqual:@"safety"], @"Actual accident caution remains enabled in brief mode");
+    check([YLNavigationSafetyKind(83) isEqual:@"information"] && [YLNavigationSafetyKind(6) isEqual:@"hump"], @"Traffic collection camera is not a speed warning; humps stay distinct");
     NSString *brief = YLNavigationSpeechForDetail(2, @"삼거리", @[@"서울",@"수원"], 200, 0);
     NSString *normal = YLNavigationSpeechForDetail(2, @"삼거리", @[@"서울",@"수원"], 200, 1);
     NSString *detail = YLNavigationSpeechForDetail(2, @"삼거리", @[@"서울",@"수원"], 200, 2);

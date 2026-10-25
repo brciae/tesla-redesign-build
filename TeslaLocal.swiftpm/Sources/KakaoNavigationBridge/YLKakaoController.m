@@ -702,14 +702,11 @@ static UIImage *YLArrowIcon(UIColor *fill) {
     message[@"imminent"] = @(self.forceImminent || [text hasPrefix:@"잠시 후"]);
     message[@"kind"] = [object isKindOfClass:KNDirection.class] ? @"turn" : @"safety";
     if ([object isKindOfClass:KNSafety.class]) {
-        NSInteger code = ((KNSafety *)object).code;
-        if ([@[@81,@82,@86,@91,@100,@102,@103] containsObject:@(code)]) message[@"kind"] = @"camera";
-        else if (code == KNSafetyCode_Hump) message[@"kind"] = @"hump";
+        message[@"kind"] = YLNavigationSafetyKind(((KNSafety *)object).code);
     }
     if ([object isKindOfClass:KNDirection.class] && [@[@0,@84,@85,@86] containsObject:@(((KNDirection *)object).rgCode)]) message[@"kind"] = @"information";
     if ([object isKindOfClass:KNDirection.class] && ((KNDirection *)object).rgCode == 86) message[@"kind"] = @"roadShape";
-    if (code == KNVoiceCode_GPSConnected) message[@"kind"] = @"information";
-    if ([object isKindOfClass:KNSafety.class] && [@[@15,@17,@18,@20,@26,@83,@85,@87,@88,@101] containsObject:@(((KNSafety *)object).code)]) message[@"kind"] = @"information";
+    if (code == KNVoiceCode_GPSConnected || code == KNVoiceCode_StrateToNext) message[@"kind"] = @"information";
     if (stateChange) { [self.speechTargets removeAllObjects]; [self.announcedPoints removeAllObjects]; }
     if (target) {
         if (![self locationIsFresh]) return;
