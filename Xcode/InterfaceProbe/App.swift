@@ -6,6 +6,11 @@ import MapKit
 // Compiles the exact production tab container and Form buttons; no vehicle or SDK access.
 @main struct InterfaceProbeApp: App {
     init() {
+        if ProcessInfo.processInfo.arguments.contains("navigation-card-probe") {
+            let legacy = Data(#"{"connected":false,"guiding":true,"destination":"A","instruction":"좌회전","observedAt":0}"#.utf8)
+            let decoded = try! JSONDecoder().decode(VehicleActivityAttributes.ContentState.self, from: legacy)
+            precondition(decoded.nextTurnMetres == nil && decoded.remainingMetres == nil, "Legacy Activity payload must decode")
+        }
         if ProcessInfo.processInfo.arguments.contains("climate-probe") { precondition(UIImage(named: "TeslaYLInterior") != nil, "Cabin fixture must include the production image asset") }
         if ProcessInfo.processInfo.arguments.contains("reset-appearance-fixture") {
             for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("appearance.v1.") {
@@ -15,7 +20,8 @@ import MapKit
     }
     var body: some Scene { WindowGroup {
         Group {
-            if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
+            if ProcessInfo.processInfo.arguments.contains("navigation-card-probe") { NavigationCardProbe() }
+            else if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("settings-menu-probe") {
                 NavigationStack {
                     ScrollView { SettingsMenuGroups().padding(16) }.navigationTitle("메뉴 및 설정")

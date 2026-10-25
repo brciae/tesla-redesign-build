@@ -134,7 +134,11 @@ final class VehicleLiveActivityManager: ObservableObject {
             lastState?.destination != state.destination || lastState?.batteryPercent != state.batteryPercent ||
             lastState?.turnSymbol != state.turnSymbol || lastState?.turnMetres != state.turnMetres ||
             lastState?.exitClock != state.exitClock || lastState?.arrivalAt != state.arrivalAt ||
-            lastState?.chargeStatus != state.chargeStatus || lastState?.chargeLimit != state.chargeLimit ||
+            lastState?.nextInstruction != state.nextInstruction || lastState?.nextTurnMetres != state.nextTurnMetres ||
+            lastState?.nextTurnSymbol != state.nextTurnSymbol || lastState?.remainingMetres != state.remainingMetres ||
+            lastState?.routeProgress != state.routeProgress || lastState?.laneCount != state.laneCount ||
+            lastState?.laneSuggested != state.laneSuggested || lastState?.speedLimit != state.speedLimit ||
+            lastState?.speedLimitMetres != state.speedLimitMetres || lastState?.chargeStatus != state.chargeStatus || lastState?.chargeLimit != state.chargeLimit ||
             lastState?.chargerKW != state.chargerKW || lastState?.chargeRemainingMinutes != state.chargeRemainingMinutes
         guard changed || Date().timeIntervalSince(lastUpdate) >= 20 else { return }
         if let activity { track(activity) }

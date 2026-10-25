@@ -143,10 +143,22 @@ final class AppModel: ObservableObject {
                 turnMetres: navFresh ? nav.number("turnMetres").flatMap { $0.isFinite && (0...1_000_000).contains($0) ? Int($0.rounded()) : nil } : nil,
                 arrivalAt: seconds.flatMap { $0.isFinite && (0...604800).contains($0) ? navAt.addingTimeInterval($0) : nil },
                 exitClock: navFresh ? nav.number("exitClock").flatMap { $0.isFinite && (1...12).contains($0) ? Int($0) : nil } : nil,
+                nextInstruction: navFresh && !nav.string("nextTurn").isEmpty ? GuidanceCardText.label(nav.string("nextTurn"), symbol: nav.string("nextSymbol"), exitClock: nav.number("nextExitClock").flatMap { (1...12).contains($0) ? Int($0) : nil } ?? 0) : nil,
+                nextTurnSymbol: navFresh ? nav.string("nextSymbol") : nil,
+                nextTurnMetres: navFresh ? nav.number("nextMetres").flatMap { (0...1_000_000).contains($0) ? Int($0.rounded()) : nil } : nil,
+                nextExitClock: navFresh ? nav.number("nextExitClock").flatMap { (1...12).contains($0) ? Int($0) : nil } : nil,
+                remainingMetres: navFresh ? nav.number("remainMetres").flatMap { (0...10_000_000).contains($0) ? Int($0.rounded()) : nil } : nil,
+                routeProgress: navFresh ? nav.number("routeTotalMetres").flatMap { total in guard total > 0, let remain = nav.number("remainMetres") else { return nil }; return max(0, min(1, 1 - remain / total)) } : nil,
+                laneCount: navFresh ? nav.number("laneCount").flatMap { (1...8).contains($0) ? Int($0) : nil } : nil,
+                laneSuggested: navFresh ? (nav["laneSuggested"] as? [Int]).map { Array($0.filter { (0..<8).contains($0) }.prefix(8)) } : nil,
+                speedLimit: navFresh ? nav.number("speedLimit").flatMap { (1...200).contains($0) ? Int($0) : nil } : nil,
+                speedLimitMetres: navFresh ? nav.number("speedLimitMetres").flatMap { (0...10_000).contains($0) ? Int($0.rounded()) : nil } : nil,
                 chargeStatus: chargeStatus, chargeObservedAt: chargeAt,
                 chargeLimit: charge.number("limit").flatMap { (1...100).contains($0) ? Int($0.rounded()) : nil },
                 chargerKW: charge.number("chargerKW").flatMap { (0...500).contains($0) ? $0 : nil },
                 chargeRemainingMinutes: charge.number("minutesToLimit").flatMap { (0...10080).contains($0) ? Int(ceil($0)) : nil })
+            NavigationPictureInPicture.shared.update(state, enabled: !self.demo && !self.recoveryLock &&
+                ((UserDefaults.standard.object(forKey: "navigation.floatingCard") as? Bool) ?? true))
             VehicleLiveActivityManager.shared.update(state, enabled: !self.demo && !self.recoveryLock &&
                 ((UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool) ?? true))
     }

@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {EmbeddedRouteGate}=require('../TeslaLocal.swiftpm/Sources/AppModule/Resources/analysis.js');
+const g=new EmbeddedRouteGate();
+const event=at=>({type:'route',name:'회사',latitude:37.5,longitude:127,at,receivedAt:at});
+const first=g.observe(event(1000),true,false);assert.equal(first.type,'start');
+g.cancel(false);g.retry();const resumed=g.observe(event(2000),true,false);
+assert.equal(resumed.type,'start');assert.notEqual(resumed.ticket,first.ticket);assert.equal(g.current(first.ticket),false);
+const swift=fs.readFileSync('TeslaLocal.swiftpm/Sources/AppModule/EmbeddedNavigation.swift','utf8');
+const resume=swift.split('if busy, controller == nil {')[1].split('if busy, let ticket')[0];
+assert(resume.indexOf('gate("cancel", ["block": false])')>=0 && resume.indexOf('gate("cancel"')<resume.indexOf('stopNative('));
+const app=fs.readFileSync('TeslaLocal.swiftpm/Sources/AppModule/App.swift','utf8');
+const charge=app.split('url.host == "charging"')[1].split('else if')[0];
+assert(charge.indexOf('navigation.dismissWorkspace()')>=0&&charge.indexOf('navigation.dismissWorkspace()')<charge.indexOf('model.chargingPresented = true'));
+console.log('PASS: pending vehicle route invalidates stale native ticket and restarts identical destination; charging deep link dismisses driving workspace');

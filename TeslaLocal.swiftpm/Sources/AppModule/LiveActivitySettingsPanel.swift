@@ -5,8 +5,17 @@ import UIKit
 struct LiveActivitySettingsPanel: View {
     var refresh: () -> Void
     @AppStorage("liveActivityEnabled") private var enabled = true
+    @AppStorage("navigation.floatingCard") private var floating = true
+    @ObservedObject private var pip = NavigationPictureInPicture.shared
     @ObservedObject private var manager = VehicleLiveActivityManager.shared
     var body: some View {
+        Section("백그라운드 길안내") {
+            Toggle("플로팅 길안내", isOn: $floating).onChange(of: floating) { _, _ in refresh() }
+                .accessibilityIdentifier("navigation.floating.enabled")
+            Button("플로팅 안내 시작") { refresh(); pip.start() }
+            Text(pip.status).font(.caption).fixedSize(horizontal: false, vertical: true)
+            Caption("다른 앱 위에 회전·차선·도착 요약 표시. 길안내 종료 시 닫힘.")
+        }
         Section("길안내·충전 카드") {
             Toggle("실시간 현황 표시", isOn: $enabled)
                 .onChange(of: enabled) { _, _ in refresh() }

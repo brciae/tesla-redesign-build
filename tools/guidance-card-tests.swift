@@ -21,6 +21,12 @@ import Foundation
         check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: true, observationAge: 0, charging: true), "Guidance ending switches to active charging")
         check(VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: false, previouslyGuiding: false, observationAge: 0, previouslyCharging: true), "Explicit charging end removes a phone-only card immediately")
         check(!VehicleActivitySessionPolicy.shouldEnd(connected: false, guiding: true, previouslyGuiding: false, observationAge: 0, previouslyCharging: true), "Charging end must not remove active navigation")
+        check(NavigationCardFormat.distance(150) == "150 m", "Metres remain precise")
+        check(NavigationCardFormat.distance(1300) == "1.3 km", "Remaining route distance")
+        check(NavigationCardFormat.distance(-1) == "—", "Unknown distance is not zero")
+        let at = Date(timeIntervalSince1970: 1000)
+        check(!NavigationCardFormat.stale(observedAt: at, now: at.addingTimeInterval(29)), "Fresh turn")
+        check(NavigationCardFormat.stale(observedAt: at, now: at.addingTimeInterval(30)), "Old turn must hide")
         print("PASS: concise navigation labels, complete sign names, restrictions and roundabout direction")
     }
 }

@@ -38,3 +38,17 @@ struct GuidanceCardLabel: View {
         }
     }
 }
+
+struct GuidanceCardTwoLineLabel: View {
+    let text: String
+    var symbol = ""
+    var exitClock = 0
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            Text(GuidanceCardText.label(text, symbol: symbol, exitClock: exitClock))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(GuidanceCardText.action(text, symbol: symbol, exitClock: exitClock))
+                .fixedSize(horizontal: false, vertical: true)
+        }.frame(height: 40, alignment: .topLeading)
+    }
+}

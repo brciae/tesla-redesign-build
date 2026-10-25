@@ -575,8 +575,19 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 enum VoiceAudioRouting {
     private static var owners = Set<String>()
     static func release(owner: String = "preview") {
-        owners.remove(owner)
+        guard owners.remove(owner) != nil else { return }
         if owners.isEmpty { try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation]) }
+        else if owners == ["navigation.pip"] { try? configureFloatingAudio() }
+    }
+    private static func configureFloatingAudio() throws {
+        let audio = AVAudioSession.sharedInstance()
+        if audio.category == .playAndRecord { try audio.overrideOutputAudioPort(.none) }
+        try audio.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try audio.setActive(true)
+    }
+    static func activateFloatingGuidance(force: Bool = false) throws {
+        if owners.isEmpty || (force && owners == ["navigation.pip"]) { try configureFloatingAudio() }
+        owners.insert("navigation.pip")
     }
     static func activate(_ defaults: UserDefaults = .standard, owner: String = "preview") throws {
         let audio = AVAudioSession.sharedInstance()

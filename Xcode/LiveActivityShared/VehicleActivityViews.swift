@@ -79,47 +79,60 @@ struct VehicleChargingCard: View {
     }
 }
 
-/// Dedicated Lock Screen presentation. Vehicle connectivity is independent of phone guidance.
+/// Two-step guidance and trip summary; only measured route values are displayed.
 struct VehicleNavigationCard: View {
     let state: VehicleActivityAttributes.ContentState
     var stale = false
-    private func distance(_ metres: Int) -> String {
-        metres >= 1000 ? String(format: "%.1f km", Double(metres) / 1000) : "\(metres) m"
-    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                VehicleActivityIcon()
-                Text("길안내").font(.caption.weight(.semibold))
-                Spacer(minLength: 0)
-                if !stale, let arrival = state.arrivalAt {
-                    HStack(spacing: 3) {
-                        Text(arrival, style: .time).monospacedDigit()
-                        Text("도착")
-                    }.font(.caption).foregroundStyle(.secondary)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("live.navigation.arrival")
-                }
-            }
-            HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 12) {
                 Image(systemName: stale ? "location.slash" : state.turnSymbol ?? "location.fill")
-                    .font(.system(size: 34, weight: .bold)).frame(width: 46)
+                    .font(.system(size: 38, weight: .bold)).frame(width: 48)
                     .accessibilityLabel(stale ? "위치 갱신 대기" : "다음 진행 방향")
                 VStack(alignment: .leading, spacing: 2) {
                     if !stale, let metres = state.turnMetres {
-                        Text(distance(metres)).font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        Text(NavigationCardFormat.distance(metres)).font(.system(size: 30, weight: .bold)).monospacedDigit()
                             .accessibilityIdentifier("live.navigation.distance")
                     }
-                    GuidanceCardLabel(text: stale ? "길안내 업데이트 대기" : state.instruction,
+                    GuidanceCardTwoLineLabel(text: stale ? "길안내 업데이트 대기" : state.instruction,
                                       symbol: state.turnSymbol ?? "", exitClock: state.exitClock ?? 0)
-                        .font(.subheadline.weight(.medium))
+                        .font(.system(size: 16, weight: .semibold))
                         .accessibilityIdentifier("live.navigation.instruction")
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                if !stale, let next = state.nextTurnMetres, let symbol = state.nextTurnSymbol, !symbol.isEmpty {
+                    VStack(spacing: 5) {
+                        Image(systemName: symbol).font(.system(size: 23, weight: .semibold))
+                        Text(NavigationCardFormat.distance(next)).font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                    }.frame(width: 62).padding(.vertical, 8)
+                        .background(Color.black.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityLabel("그다음 \(NavigationCardFormat.distance(next)) \(state.nextInstruction ?? "")")
+                        .accessibilityIdentifier("live.navigation.next")
                 }
-                Spacer(minLength: 0)
             }
-        }
-        .padding(14).foregroundStyle(.black)
-        .accessibilityElement(children: .contain)
+            if !stale, let progress = state.routeProgress, progress.isFinite, (0...1).contains(progress) {
+                ProgressView(value: progress).tint(.blue).accessibilityLabel("경로 진행률")
+            }
+            if !stale, state.arrivalAt != nil || state.remainingMinutes != nil || state.remainingMetres != nil {
+                Divider().overlay(Color.black.opacity(0.06))
+                HStack(spacing: 12) {
+                    if let arrival = state.arrivalAt {
+                        Text(arrival, style: .time).monospacedDigit()
+                            .accessibilityLabel("도착 예상")
+                            .accessibilityIdentifier("live.navigation.arrival")
+                    }
+                    Spacer(minLength: 0)
+                    if let minutes = state.remainingMinutes {
+                        Text("\(minutes)분").monospacedDigit().accessibilityIdentifier("live.navigation.remainingTime")
+                    }
+                    Spacer(minLength: 0)
+                    if let metres = state.remainingMetres {
+                        Text(NavigationCardFormat.distance(metres)).monospacedDigit()
+                            .accessibilityIdentifier("live.navigation.remainingDistance")
+                    }
+                }.font(.system(size: 14, weight: .semibold))
+            }
+        }.padding(14).foregroundStyle(.black)
+            .accessibilityElement(children: .contain)
     }
 }
 

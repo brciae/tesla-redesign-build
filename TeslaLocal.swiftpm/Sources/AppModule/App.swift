@@ -104,6 +104,7 @@ struct MainView: View {
                 if SpotifyPlayback.shared.receive(url) { return }
                 if url.scheme == "ylcompanion", url.host == "charging" {
                     selectedTab = .energy
+                    navigation.dismissWorkspace()
                     model.chargingPresented = true
                 } else if url.scheme == "ylcompanion", url.host == "activity" {
                     selectedTab = .home
@@ -123,6 +124,8 @@ struct MainView: View {
 
     private var mainContent: some View {
         ZStack {
+            NavigationPipSource(manager: .shared).frame(width: 360, height: 210)
+                .allowsHitTesting(false).accessibilityHidden(true)
             Commercial5TabScaffold(selection: tabBinding) {
                 NavigationStack(path: $homePath) { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
             } controls: {

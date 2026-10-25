@@ -552,6 +552,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         if busy, controller == nil {
             // Startup paused by lock/call must reacquire GPS and a fresh route event.
             deadline?.invalidate(); deadline = nil
+            _ = gate("cancel", ["block": false])
             stopNative(keepDisplay: presented)
             retry()
             return

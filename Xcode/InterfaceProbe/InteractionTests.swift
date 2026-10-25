@@ -1,6 +1,39 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testTwoStepNavigationCardsFloatingFramesAndAudioLease() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication(); app.launchArguments = ["navigation-card-probe"]; app.launch()
+        XCTAssertTrue(app.staticTexts["live.navigation.distance"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["live.navigation.distance"].label, "150 m")
+        XCTAssertTrue(app.descendants(matching: .any)["live.navigation.next"].firstMatch.exists)
+        XCTAssertEqual(app.staticTexts["live.navigation.remainingTime"].label, "5분")
+        XCTAssertEqual(app.staticTexts["live.navigation.remainingDistance"].label, "1.3 km")
+        captureSystemCard("Two step navigation lock card next turn arrival and remaining distance")
+        app.segmentedControls.buttons["플로팅"].tap()
+        app.buttons["다음 안내 수신"].tap()
+        let frame = app.staticTexts["navigation.pip.frames"]
+        XCTAssertTrue(frame.waitForExistence(timeout: 8))
+        let delivered = NSPredicate(format: "label != %@", "프레임 전달 0")
+        expectation(for: delivered, evaluatedWith: frame); waitForExpectations(timeout: 8)
+        captureSystemCard("Floating navigation actual sample buffer inline camera lanes and next turn")
+        app.buttons["음성·음악 혼합 확인"].tap()
+        XCTAssertTrue(app.staticTexts["음성 종료 후 음악 혼합 유지"].waitForExistence(timeout: 5))
+        app.buttons["플로팅 안내 시작"].tap()
+        let active = app.staticTexts["플로팅 안내 표시 중"].waitForExistence(timeout: 5)
+        XCUIDevice.shared.press(.home)
+        captureSystemCard(active ? "System floating navigation PiP started before Home" : "System floating navigation request runtime limitation inspect status")
+        app.activate()
+        app.buttons["수신 중단"].tap()
+        captureSystemCard("Floating navigation stale sample buffer hides old guidance")
+        app.segmentedControls.buttons["잠금화면"].tap()
+        XCTAssertFalse(app.staticTexts["live.navigation.distance"].exists)
+        XCTAssertFalse(app.staticTexts["live.navigation.remainingTime"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["live.navigation.next"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["길안내 업데이트 대기"].exists)
+        app.buttons["안내 종료"].tap()
+        XCTAssertTrue(app.staticTexts["안내 종료됨"].exists)
+    }
     func testChargingEnergySavingModelPersistenceAndFullChargeRangeCard() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["charging-energy-probe"]; app.launch()

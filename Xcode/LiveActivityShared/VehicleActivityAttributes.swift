@@ -14,6 +14,16 @@ struct VehicleActivityAttributes: ActivityAttributes {
         var turnMetres: Int? = nil
         var arrivalAt: Date? = nil
         var exitClock: Int? = nil
+        var nextInstruction: String? = nil
+        var nextTurnSymbol: String? = nil
+        var nextTurnMetres: Int? = nil
+        var nextExitClock: Int? = nil
+        var remainingMetres: Int? = nil
+        var routeProgress: Double? = nil
+        var laneCount: Int? = nil
+        var laneSuggested: [Int]? = nil
+        var speedLimit: Int? = nil
+        var speedLimitMetres: Int? = nil
         var chargeStatus: String? = nil
         var chargeObservedAt: Date? = nil
         var chargeLimit: Int? = nil

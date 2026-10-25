@@ -32,9 +32,15 @@ struct VehicleLiveActivity: Widget {
                         .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VehicleActivitySummary(state: context.state, stale: context.isStale)
-                        .foregroundStyle(.white)
-                        .environment(\.colorScheme, .dark)
+                    Group {
+                        if context.state.guiding {
+                            VehicleNavigationCard(state: context.state, stale: context.isStale)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                        } else {
+                            VehicleActivitySummary(state: context.state, stale: context.isStale)
+                                .foregroundStyle(.white).environment(\.colorScheme, .dark)
+                        }
+                    }
                 }
             } compactLeading: {
                 VehicleActivityIcon()
