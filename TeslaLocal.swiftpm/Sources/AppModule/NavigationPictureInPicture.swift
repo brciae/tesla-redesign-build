@@ -33,7 +33,11 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
     @Published private(set) var status = "길안내 중에만 표시"
     @Published private(set) var active = false
     @Published private(set) var renderedFrames = 0
+    private var lastError = ""
     var supported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
+    var diagnostics: String {
+        "지원 \(supported) · 준비 \(controller?.isPictureInPicturePossible == true) · 영상 \(layer.status.rawValue) · \(lastError)"
+    }
     override init() {
         super.init()
         layer.videoGravity = .resizeAspect
@@ -90,7 +94,8 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         if !active { status = controller?.isPictureInPicturePossible == true ? "앱 전환 시 플로팅 안내 대기" : "플로팅 화면 준비 중" }
     }
     func start(automatic: Bool = false) {
-        guard enabled, state?.guiding == true else { status = "길안내 중에만 표시"; return }
+        guard enabled else { status = "플로팅 안내 꺼짐"; return }
+        guard state?.guiding == true else { status = "길안내 중에만 표시"; return }
         requestedAutomatically = automatic
         if !automatic { suppressed = false; refreshReadiness(); render() }
         guard !suppressed, supported, let controller, !controller.isPictureInPictureActive else { return }
@@ -132,7 +137,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         CVPixelBufferLockBaseAddress(pixel, [])
         let bitmap = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
         guard let context = CGContext(data: CVPixelBufferGetBaseAddress(pixel), width: 720, height: 420, bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(pixel), space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: bitmap),
-              let image = NavigationPipFrame.image(state, stale: paused || NavigationCardFormat.stale(observedAt: state.observedAt)).cgImage else {
+              let image = NavigationPipFrame.image(state, stale: NavigationCardFormat.stale(observedAt: state.observedAt), paused: paused).cgImage else {
             CVPixelBufferUnlockBaseAddress(pixel, []); return
         }
         context.draw(image, in: CGRect(x: 0, y: 0, width: 720, height: 420))
@@ -155,8 +160,11 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
             returning = true; pictureInPictureController.stopPictureInPicture(); return
         }
         status = "플로팅 안내 표시 중"
+        print("NAV_PIP_DID_START")
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        let detail = error as NSError; lastError = "\(detail.domain) \(detail.code)"
+        print("NAV_PIP_START_FAILED \(lastError)")
         preparation?.cancel(); preparation = nil
         active = false; timer?.invalidate(); timer = nil; VoiceAudioRouting.release(owner: "navigation.pip"); status = "플로팅 안내 시작 실패 · 기기 설정 확인"
     }
@@ -165,7 +173,8 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         active = false; timer?.invalidate(); timer = nil
         if !returning { suppressed = true }
         returning = false; controller?.canStartPictureInPictureAutomaticallyFromInline = !suppressed && enabled && state?.guiding == true
-        VoiceAudioRouting.release(owner: "navigation.pip"); status = state?.guiding == true ? "플로팅 안내 닫힘 · 앱에서 다시 시작 가능" : "길안내 종료됨"
+        VoiceAudioRouting.release(owner: "navigation.pip")
+        status = !enabled ? "플로팅 안내 꺼짐" : state?.guiding == true ? "플로팅 안내 닫힘 · 앱에서 다시 시작 가능" : "길안내 종료됨"
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         returning = true

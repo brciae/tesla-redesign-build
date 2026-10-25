@@ -22,6 +22,7 @@ struct NavigationCardProbe: View {
                 NavigationPipSource(manager: pip).frame(width: 360, height: 210).accessibilityIdentifier("navigation.pip.source")
                 Text(pip.status).accessibilityIdentifier("navigation.pip.status")
                 Text("프레임 전달 \(pip.renderedFrames)").accessibilityIdentifier("navigation.pip.frames")
+                Text(pip.diagnostics).font(.caption2).accessibilityIdentifier("navigation.pip.diagnostics")
                 Button("플로팅 안내 시작") { pip.start() }
             }
             Button("다음 안내 수신") {
