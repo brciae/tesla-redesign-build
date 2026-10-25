@@ -577,13 +577,30 @@ enum VoiceAudioRouting {
     static func release(owner: String = "preview") {
         guard owners.remove(owner) != nil else { return }
         if owners.isEmpty { try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation]) }
-        else if owners == ["navigation.pip"] { try? configureFloatingAudio() }
+        else if owners == ["navigation.pip"] {
+            let audio = AVAudioSession.sharedInstance()
+            // An explicitly selected HFP announcement interrupts media. Keeping the
+            // PiP lease must not swallow the notification that permits it to resume.
+            if !audio.categoryOptions.contains(.mixWithOthers) {
+                try? audio.setActive(false, options: [.notifyOthersOnDeactivation])
+            }
+            try? configureFloatingAudio()
+        }
     }
     private static func configureFloatingAudio() throws {
         let audio = AVAudioSession.sharedInstance()
         if audio.category == .playAndRecord { try audio.overrideOutputAudioPort(.none) }
-        try audio.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try configureMixedPlayback(audio, duck: false)
         try audio.setActive(true)
+    }
+    private static func configureMixedPlayback(_ audio: AVAudioSession, duck: Bool) throws {
+        var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
+        if duck { options.insert(.duckOthers) }
+        // PiP and speech share one stable mode. Re-entering voicePrompt for every
+        // announcement can renegotiate the Bluetooth media route while PiP owns it.
+        if audio.category != .playback || audio.mode != .default || audio.categoryOptions != options {
+            try audio.setCategory(.playback, mode: .default, options: options)
+        }
     }
     static func activateFloatingGuidance(force: Bool = false) throws {
         if owners.isEmpty || (force && owners == ["navigation.pip"]) { try configureFloatingAudio() }
@@ -592,7 +609,8 @@ enum VoiceAudioRouting {
     static func activate(_ defaults: UserDefaults = .standard, owner: String = "preview") throws {
         let audio = AVAudioSession.sharedInstance()
         let phone = defaults.string(forKey: "voiceOutput") == "speaker"
-        var options: AVAudioSession.CategoryOptions = defaults.bool(forKey: "voiceDuck") ? [.duckOthers] : [.mixWithOthers]
+        var options: AVAudioSession.CategoryOptions = [.mixWithOthers]
+        if defaults.bool(forKey: "voiceDuck") { options.insert(.duckOthers) }
         if defaults.string(forKey: "voiceOutput") == "handsfree" {
             // HFP requests the vehicle's hands-free path without placing a call.
             try audio.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
@@ -610,7 +628,7 @@ enum VoiceAudioRouting {
             try audio.overrideOutputAudioPort(.speaker)
         } else {
             if audio.category == .playAndRecord { try audio.overrideOutputAudioPort(.none) }
-            try audio.setCategory(.playback, mode: .voicePrompt, options: options)
+            try configureMixedPlayback(audio, duck: defaults.bool(forKey: "voiceDuck"))
             try audio.setActive(true)
         }
         owners.insert(owner)

@@ -11,6 +11,7 @@ struct ReleaseNote: Identifiable {
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
         ReleaseNote(version: "1.72 (172)", date: "2026-10-25", items: [
+            "기본 Bluetooth 안내와 플로팅의 오디오 모드 통일, 음악 혼합 유지와 안내 종료 후 음량 복구 보완",
             "안내 종료 시 시작 대기 중인 플로팅까지 취소하고 늦게 도착한 시작 콜백 차단",
             "정적 플로팅 영상을 재생 시계 없이 즉시 표시하도록 전달 방식 변경",
             "주행 후 P 전환·탑승 신호 장기 단절을 재탑승으로 오인하던 인사 로직 수정",

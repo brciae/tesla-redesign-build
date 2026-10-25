@@ -37,10 +37,16 @@ struct NavigationCardProbe: View {
                     try VoiceAudioRouting.activateFloatingGuidance(force: true)
                     let defaults = UserDefaults(suiteName: "YLProbe.AudioLease")!
                     defaults.set("auto", forKey: "voiceOutput"); defaults.set(true, forKey: "voiceDuck")
-                    try VoiceAudioRouting.activate(defaults, owner: "probeSpeech")
-                    VoiceAudioRouting.release(owner: "probeSpeech")
                     let session = AVAudioSession.sharedInstance()
-                    audioStatus = session.category == .playback && session.categoryOptions.contains(.mixWithOthers) && !session.categoryOptions.contains(.duckOthers) ? "음성 종료 후 음악 혼합 유지" : "음성 혼합 상태 확인 필요"
+                    var stable = true
+                    for duck in [true, false, true] {
+                        defaults.set(duck, forKey: "voiceDuck")
+                        try VoiceAudioRouting.activate(defaults, owner: "probeSpeech")
+                        stable = stable && session.category == .playback && session.mode == .default && session.categoryOptions.contains(.mixWithOthers) && session.categoryOptions.contains(.duckOthers) == duck && !session.categoryOptions.contains(.interruptSpokenAudioAndMixWithOthers)
+                        VoiceAudioRouting.release(owner: "probeSpeech")
+                        stable = stable && session.category == .playback && session.mode == .default && session.categoryOptions.contains(.mixWithOthers) && !session.categoryOptions.contains(.duckOthers)
+                    }
+                    audioStatus = stable ? "음성 종료 후 음악 혼합 유지" : "음성 혼합 상태 확인 필요"
                     if !pip.active { VoiceAudioRouting.release(owner: "navigation.pip") }
                     defaults.removePersistentDomain(forName: "YLProbe.AudioLease")
                 } catch { audioStatus = "혼합 검사 실패" }
