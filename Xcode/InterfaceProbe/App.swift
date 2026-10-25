@@ -753,8 +753,8 @@ struct VoicePlaybackProbe: View {
         guard previewDone && TypecastClient.shared.lastStatus == "재생 완료" else { eventResult = "실패 · 타입캐스트 설정 미리듣기"; return }; passed += 1
         let arrival = "집에 도착했습니다. 편안한 시간 보내세요."
         cache(SpeechText.prepare(BriefingStyle.selected.phrase(arrival, category: "voiceAutomations")))
-        let hour = Calendar.current.component(.hour, from: Date()), beforeArrival = voice.playbackStarts
-        d.set(hour, forKey: "voiceQuietStart"); d.set((hour + 1) % 24, forKey: "voiceQuietEnd"); d.set(true, forKey: "voiceQuietEnabled")
+        let arrivalHour = Calendar.current.component(.hour, from: Date()), beforeArrival = voice.playbackStarts
+        d.set(arrivalHour, forKey: "voiceQuietStart"); d.set((arrivalHour + 1) % 24, forKey: "voiceQuietEnd"); d.set(true, forKey: "voiceQuietEnabled")
         voice.announceArrival(arrival, vehicle: "arrival-retry")
         try? await Task.sleep(nanoseconds: 250_000_000)
         guard voice.playbackStarts == beforeArrival else { eventResult = "실패 · 조용시간 도착 안내"; return }
