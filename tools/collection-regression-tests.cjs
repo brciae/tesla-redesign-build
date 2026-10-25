@@ -28,6 +28,19 @@ const park=(id,start,end,a,b)=>({id,start,end,startSOC:a,endSOC:b,deltaSOC:a-b,s
  c.observedStartSOC=54;assert.equal(e.healthIndex(now).sampleCount,0,'one percent SOC is too coarse for capacity');
 }
 {
+ const e=new Engine();const packet=(at,soc,added,charging)=>e.ingest({groups:{charge:{at,receivedAt:at,soc,addedKWh:added,charging}}},at);
+ packet(t,40,14,5);packet(t+H,55,24.5,5);packet(t+H+60000,60,undefined,6);
+ assert.equal(e.state.charges[0].endSOC,60,'keep the actual raw endpoint');assert.equal(e.capacitySamples()[0].kwh,70,'use last joint SOC/counter pair, never mix a later SOC with an old counter');
+ const f=new Engine();f.load(JSON.parse(JSON.stringify(e.state)));assert.equal(f.capacitySamples()[0].kwh,70);
+}
+{
+ const e=new Engine(),vin='5YJYGDEE0LF000001';e.state.settings.vin=vin;
+ const row=(at,field,value)=>({at,field,number:typeof value==='number'?value:null,text:JSON.stringify({value}),invalid:false});
+ e.ingestArchive({vin,rows:[row(t,'ChargeState','Charging'),row(t,'BatteryLevel',40),row(t,'DCChargingEnergyIn',14),row(t+H,'BatteryLevel',55),row(t+H,'DCChargingEnergyIn',24.5),row(t+H+60000,'ChargeState','Stopped'),row(t+H+60000,'BatteryLevel',60)]});
+ assert.equal(e.capacitySamples()[0].kwh,70,'NAS uses actual energy source and latest SOC field timestamps, not cached unpaired endpoints');
+ const f=new Engine();f.load(JSON.parse(JSON.stringify(e.state)));assert.equal(f.capacitySamples()[0].kwh,70);
+}
+{
  const e=new Engine();e.state.trips=[{id:'zero',start:t,end:t+60000,distanceKm:0,startSOC:80,endSOC:80,missing:false},{id:'gap',start:t+H,end:t+2*H,startOdo:100,endOdo:110,distanceKm:10,startSOC:80,endSOC:78,missing:true}];
  const b=e.batteryUsage(now);assert.equal(b.tripRows.length,1,'zero-distance observations remain raw but do not clutter trip energy');assert.equal(e.state.trips.length,2);assert.equal(b.socPer100Km,20,'a reception gap does not discard measured distance and SOC');
 }

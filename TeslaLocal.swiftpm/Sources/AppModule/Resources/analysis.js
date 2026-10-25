@@ -20,6 +20,12 @@
     const last=num(c.end,start+1,now)?c.end:num(c.lastAt,start+1,now)?c.lastAt:start+1;
     return {start,end:last};
   };
+  function observeChargeWindow(c,g){
+    if(!c||g.energySOCAligned===false||!num(g.soc,0,100)||!num(g.addedKWh,0,300))return;
+    const at=g.energySOCAt??g.at;
+    if(!num(c.observedStartSOC,0,100)){c.observedStartSOC=g.soc;c.observedStartAddedKWh=g.addedKWh;c.observedStartTelemetryAt=at;}
+    if(!num(c.observedEndTelemetryAt,at+1,1e14)){c.observedEndSOC=g.soc;c.observedEndAddedKWh=g.addedKWh;c.observedEndTelemetryAt=at;}
+  }
   function initial(){return {schema:1,settings:{name:'Model Y',model:'Model Y L',vin:'',reserveSOC:20,dailyLimit:null,tariff:null,plannedKm:null},batteryBaseline:null,batteryObservations:[],fullChargeRangeObservations:[],groups:{},trips:[],charges:[],maintenance:[],parkingNotes:[],parkingPeriods:[],tires:[],activeTrip:null,activeCharge:null,lastPark:null,navSent:null,weather:null,lastBrief:'차량에 연결하면 최신 상태를 안내함.'};}
   // Two parking records describe the same spot when they are within ~35 m.
   function nearby(a,b,r=35){
@@ -328,6 +334,7 @@
     if(!num(c.at,0,1e14)||!optional(c.startSOC,0,100)||!optional(c.endSOC,0,100)||!optional(c.supplyKWh,0,300)||!optional(c.storedKWh,0,300)||!optional(c.cost,0,10000000))throw Error('충전 기록 수치 오류');
     if(!optional(c.durationMinutes,0,10080))throw Error('충전 소요시간 오류');
     if(!optional(c.observedStartSOC,0,100)||!optional(c.observedStartAddedKWh,0,300)||!optional(c.observedStartTelemetryAt,Math.max(0,c.at-15000),1e14))throw Error('충전 관측 구간 오류');
+    if(!optional(c.observedEndSOC,0,100)||!optional(c.observedEndAddedKWh,0,300)||!optional(c.observedEndTelemetryAt,Math.max(0,c.at-15000),1e14))throw Error('충전 관측 종료 오류');
     if(c.end!=null&&!num(c.end,c.at,Math.min(1e14,c.at+7*DAY)))throw Error('충전 종료 시각은 시작 이후 7일 이내여야 합니다.');
     if(c.startSOC!=null&&c.endSOC!=null&&c.endSOC<c.startSOC)throw Error('충전 종료 잔량이 시작보다 작음');
   }
@@ -530,7 +537,7 @@
           s.activeCharge={id:id(),at:g.at,startTimeObserved:boundary||g.startTransitionObserved===true,startTimeBasis:boundary||g.startTransitionObserved===true?'stateTransition':'firstChargingObservation',initialAddedKWh:g.addedKWh??null,startSOC:num(start,0,100)?start:null,startSOCObserved:boundary&&num(start,0,100),startSOCEstimated:!boundary&&estimate!=null,endSOC:num(g.soc,0,100)?g.soc:null,lastAdded:g.addedKWh,vehicleReportedKWh:g.addedKWh,partial:!boundary,source:g.source??'BLE'};
         }
         const c=s.activeCharge;
-        if(!num(c.observedStartSOC,0,100)&&num(g.soc,0,100)&&num(g.addedKWh,0,300)){c.observedStartSOC=g.soc;c.observedStartAddedKWh=g.addedKWh;c.observedStartTelemetryAt=g.at;}
+        observeChargeWindow(c,g);
         if(g.addedKWh!=null&&c.lastAdded!=null&&g.addedKWh<c.lastAdded)c.partial=true;
         c.endSOC=num(g.soc,0,100)?g.soc:c.endSOC;c.lastAt=g.at;
         if(num(g.addedKWh,0,300)){c.lastAdded=g.addedKWh;c.vehicleReportedKWh=Math.max(c.vehicleReportedKWh??0,g.addedKWh);}
@@ -558,7 +565,8 @@
           this.completedChargeID=s.charges.at(-1).id;
         }
       }
-      applyChargeMetadata(s.activeCharge??s.charges.find(c=>c.id===this.completedChargeID),g);
+      const recorded=s.activeCharge??s.charges.find(c=>c.id===this.completedChargeID);
+      observeChargeWindow(recorded,g);applyChargeMetadata(recorded,g);
       this.lastCharge=g;
     }
     confirmSeparateCharge(v){
@@ -738,13 +746,16 @@
           // A terminal state remains cached for hours. Later SOC drift is not another charge.
           const terminal=[6,7].includes(charging), repeatedEnd=terminal&&[6,7].includes(previousCharge)&&finishedCharge;
           const stateEvent=fields.has(stateFields[0]);
-          if(!repeatedEnd)replay.charge({at,charging,soc,addedKWh:added,limit:scalar('ChargeLimitSoc'),source:'NAS',startTransitionObserved:stateEvent&&charging===5&&previousCharge!=null&&previousCharge!==5,endTransitionObserved:stateEvent&&previousCharge===5&&[2,3,4,6,7].includes(charging)},at);
+          const socAt=latest[socField]?.at,energyAt=latest[energyField]?.at;
+          const aligned=num(socAt,at-120000,at)&&num(energyAt,at-120000,at)&&Math.abs(socAt-energyAt)<=15000;
+          if(!repeatedEnd)replay.charge({at,charging,soc,addedKWh:added,energySOCAligned:aligned,energySOCAt:aligned?Math.max(socAt,energyAt):null,limit:scalar('ChargeLimitSoc'),source:'NAS',startTransitionObserved:stateEvent&&charging===5&&previousCharge!=null&&previousCharge!==5,endTransitionObserved:stateEvent&&previousCharge===5&&[2,3,4,6,7].includes(charging)},at);
           if(!repeatedEnd&&!replay.state.activeCharge&&terminal&&added==null&&supply>0&&num(soc,0,100)&&!replay.state.charges.some(c=>c.end===at)){
             // A completion-only AC packet still proves supplied energy, but not starting SOC.
             const duplicate=replay.state.charges.some(c=>c.supplyKWh===supply&&c.endSOC===soc&&at-c.end<48*3600000);
             if(!duplicate)append(replay.state.charges,{id:id(),at,end:at,startTimeObserved:false,endTimeObserved:false,startSOC:null,endSOC:soc,endSOCObserved:true,supplyKWh:supply,complete:false,partial:true,collectedAfterEnd:true,source:'NAS'});
           }
           const current=replay.state.activeCharge??replay.state.charges.findLast(c=>c.end===at);
+          if(aligned)observeChargeWindow(current??finishedCharge,{at:Math.max(socAt,energyAt),soc,addedKWh:added});
           if(current&&supply!=null)current.supplyKWh=supply;
           const ac=validEnergy('ACChargingEnergyIn')&&supply>0;
           const acPower=latest.ACChargingPower?.at>=(chargeBegan??at)-120000&&num(scalar('ACChargingPower'),0.01,100);
@@ -783,6 +794,7 @@
           if(kind==='charges'){
             // Replaying the archive must not erase receipt/manual additions or earlier evidence.
             const merged={...row,...old};
+            for(const part of ['Start','End'])if(row['observed'+part+'TelemetryAt']!=null&&(old['observed'+part+'TelemetryAt']==null||(part==='End'?row.observedEndTelemetryAt>old.observedEndTelemetryAt:row.observedStartTelemetryAt<old.observedStartTelemetryAt))){for(const suffix of ['SOC','AddedKWh','TelemetryAt'])merged['observed'+part+suffix]=row['observed'+part+suffix];}
             if(row.vehicleReportedKWh!=null)merged.vehicleReportedKWh=Math.max(old.vehicleReportedKWh??0,row.vehicleReportedKWh);
             if(row.supplyKWh!=null)merged.nasSupplyKWh=row.supplyKWh;
             // Earlier pages can close a session before its final counters arrive.
@@ -949,13 +961,14 @@
       // v1.55: verified manual entries plus automatic sessions where the car itself reported the energy added
       // (charge_energy_added) over an observed ≥10 %p SOC window. Before this, auto sessions never qualified, so the
       // degradation card stayed at "collecting" forever.
-      return this.auditedCharges().accepted.filter(c=>!c.active&&!c.endSOCEstimated&&!c.endSOCLastObserved&&num(c.at,from,now)&&num(c.endSOC,0,100))
+      return this.auditedCharges().accepted.filter(c=>!c.active&&num(c.at,from,now))
         .map(c=>{
           const verified=c.complete&&c.storageVerified&&c.comparable&&num(c.storedKWh,1,200);
-          const window=!verified&&num(c.observedStartSOC,0,100)&&num(c.observedStartAddedKWh,0,300)&&num(c.vehicleReportedKWh,c.observedStartAddedKWh,300);
+          const window=!verified&&num(c.observedStartSOC,0,100)&&num(c.observedStartAddedKWh,0,300)&&num(c.observedEndSOC,0,100)&&num(c.observedEndAddedKWh,c.observedStartAddedKWh,300);
           const start=window?c.observedStartSOC:!c.startSOCEstimated?c.startSOC:null;
-          const delta=num(start,0,100)?c.endSOC-start:null;
-          const kwh=verified?c.storedKWh:window?c.vehicleReportedKWh-c.observedStartAddedKWh:num(c.vehicleReportedKWh,1,200)?c.vehicleReportedKWh:null;
+          if(!window&&(c.endSOCEstimated||c.endSOCLastObserved))return null;
+          const end=window?c.observedEndSOC:c.endSOC,delta=num(start,0,100)&&num(end,0,100)?end-start:null;
+          const kwh=verified?c.storedKWh:window?c.observedEndAddedKWh-c.observedStartAddedKWh:num(c.vehicleReportedKWh,1,200)?c.vehicleReportedKWh:null;
           return delta>=10&&num(kwh,1,200)?{id:c.id,at:c.at,kwh:kwh/(delta/100),verified,observedWindow:!!window,deltaSOC:delta}:null;
         })
         .filter(c=>c&&num(c.kwh,20,200)).sort((a,b)=>a.at-b.at);
