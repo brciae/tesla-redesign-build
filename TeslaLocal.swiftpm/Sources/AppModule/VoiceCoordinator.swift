@@ -207,7 +207,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         // Only route invalidation or interruption of non-navigation chatter preempts.
         let remaining = typecastPlayer.map { max(0, $0.duration - $0.currentTime) } ?? 0
-        let cannotWait = cue.targetID.map { navigationTargetCanFinish?($0, remaining + Double(prepared.count) / 5.0) == false } ?? false
+        let cannotWait = cue.targetID.map { navigationTargetIsAhead?($0) == true && navigationTargetCanFinish?($0, remaining + Double(prepared.count) / 5.0) == false } ?? false
         if NavigationSpeechPolicy.shouldInterrupt(stateChange: cue.stateChange == true, navigationBusy: navigationSpeaking, incidental: incidental, priority: priority, activePriority: activePriority, cannotWait: cue.imminent == true && cannotWait) {
             cancelCurrent()
             quietUntil = .distantPast

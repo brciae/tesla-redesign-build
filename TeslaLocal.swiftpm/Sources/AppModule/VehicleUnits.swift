@@ -230,9 +230,12 @@ struct NavigationSpeechPolicy {
     static func shouldInterrupt(stateChange: Bool, navigationBusy: Bool, incidental: Bool, priority: Int, activePriority: Int, cannotWait: Bool = false) -> Bool {
         // Normal cues finish. A route replacement or a point that cannot survive the
         // remaining audio must not wait behind obsolete speech, even on a cache hit.
-        // An imminent point that cannot wait is dropped if it becomes too late;
-        // it does not repeatedly restart a sentence already playing.
-        stateChange || (!incidental && !navigationBusy)
+        if stateChange { return true }
+        if incidental { return false }
+        // Equal priorities never cut each other. Only a genuinely urgent, higher
+        // turn/camera can displace lower guidance when waiting would miss it.
+        if navigationBusy { return cannotWait && priority >= 5 && priority > activePriority }
+        return priority > activePriority
     }
 }
 

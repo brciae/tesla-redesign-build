@@ -51,6 +51,11 @@ import Foundation
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: true, priority: 5, activePriority: 5, cannotWait: true))
         precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: 4, activePriority: 5, cannotWait: true))
         precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: false, incidental: false, priority: 4, activePriority: 3))
+        for incoming in 1...7 { for active in 1...7 {
+            precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: false, incidental: false, priority: incoming, activePriority: active) == (incoming > active), "Low-priority facility/status cannot cut important vehicle speech")
+            precondition(!NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: incoming, activePriority: active), "Nonurgent guidance waits for the active sentence")
+            precondition(NavigationSpeechPolicy.shouldInterrupt(stateChange: false, navigationBusy: true, incidental: false, priority: incoming, activePriority: active, cannotWait: true) == (incoming >= 5 && incoming > active), "Only strictly higher urgent turn/camera may preempt")
+        } }
         precondition(NavigationDistanceWording.normalize("35미터 앞, 좌회전하세요.") == "잠시 후, 좌회전하세요.")
         precondition(NavigationDistanceWording.normalize("약 240 m 앞, 우회전하세요.") == "200미터 앞, 우회전하세요.")
         let expired = Date(timeIntervalSince1970: 10)
