@@ -18,6 +18,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
     static let shared = NavigationPictureInPicture()
     let layer = AVSampleBufferDisplayLayer()
     private var controller: AVPictureInPictureController?
+    private var lifecycle = NavigationPipLifecycle()
     private weak var source: UIView?
     private var state: VehicleActivityAttributes.ContentState?
     private var enabled = false, suppressed = false, returning = false
@@ -36,22 +37,20 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
     @Published private(set) var renderedFrames = 0
     private var lastError = ""
     private var surfaceBacked = false
+    private var immediateFrames = false
     private var frameReady: Bool {
         if #available(iOS 17.4, *) { return layer.isReadyForDisplay }
         return layer.status == .rendering
     }
     var supported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
     var diagnostics: String {
-        "지원 \(supported) · 준비 \(controller?.isPictureInPicturePossible == true) · 영상 \(layer.status.rawValue) · 표시 \(frameReady) · 공유 \(surfaceBacked) · \(lastError)"
+        "지원 \(supported) · 준비 \(controller?.isPictureInPicturePossible == true) · 영상 \(layer.status.rawValue) · 표시 \(frameReady) · 공유 \(surfaceBacked) · 즉시 \(immediateFrames) · \(lastError)"
     }
     override init() {
         super.init()
         layer.videoGravity = .resizeAspect
-        var timebase: CMTimebase?
-        if CMTimebaseCreateWithSourceClock(allocator: kCFAllocatorDefault, sourceClock: CMClockGetHostTimeClock(), timebaseOut: &timebase) == noErr, let timebase {
-            CMTimebaseSetTime(timebase, time: CMClockGetTime(CMClockGetHostTimeClock())); CMTimebaseSetRate(timebase, rate: 1)
-            layer.controlTimebase = timebase
-        }
+        // Static live guidance replaces the current image immediately; no playback clock.
+        layer.controlTimebase = nil
         let attributes: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: 720, kCVPixelBufferHeightKey as String: 420,
             kCVPixelBufferCGImageCompatibilityKey as String: true, kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
@@ -88,6 +87,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         self.state = state; self.enabled = enabled
         if !state.guiding { suppressed = false; paused = false; stop(); return }
         if !wasGuiding { suppressed = false; paused = false; lastError = "" }
+        lifecycle.setWanted(enabled && !suppressed)
         guard enabled else { stop(); return }
         guard !suppressed else { status = lastError.isEmpty ? "플로팅 안내 닫힘 · 앱에서 다시 시작 가능" : "플로팅 영상 표시 실패 · 잠금화면 안내 사용"; return }
         refreshReadiness()
@@ -105,6 +105,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         guard state?.guiding == true else { status = "길안내 중에만 표시"; return }
         requestedAutomatically = automatic
         if !automatic { suppressed = false; lastError = ""; refreshReadiness(); render() }
+        lifecycle.setWanted(enabled && state?.guiding == true && !suppressed)
         guard !suppressed, supported, let controller, !controller.isPictureInPictureActive else { return }
         guard controller.isPictureInPicturePossible else {
             guard preparation == nil else { return }
@@ -122,15 +123,22 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
             }
             return
         }
+        guard lifecycle.requestStart() else { return }
         do { try VoiceAudioRouting.activateFloatingGuidance(force: true); render(force: true); controller.startPictureInPicture() }
-        catch { status = "플로팅 안내 시작 실패"; VoiceAudioRouting.release(owner: "navigation.pip") }
+        catch { lifecycle.didStop(); status = "플로팅 안내 시작 실패"; VoiceAudioRouting.release(owner: "navigation.pip") }
+    }
+    func endGuidance() {
+        state?.guiding = false
+        suppressed = false; paused = false
+        stop()
     }
     private func stop() {
+        let requested = lifecycle.end()
         displayCheck?.cancel(); displayCheck = nil
         preparation?.cancel(); preparation = nil
         controller?.canStartPictureInPictureAutomaticallyFromInline = false
         timer?.invalidate(); timer = nil
-        if controller?.isPictureInPictureActive == true { returning = true; controller?.stopPictureInPicture() }
+        if requested || controller?.isPictureInPictureActive == true { returning = true; controller?.stopPictureInPicture() }
         layer.flushAndRemoveImage(); lastFrameAt = .distantPast; VoiceAudioRouting.release(owner: "navigation.pip")
         status = enabled ? "길안내 중에만 표시" : "플로팅 안내 꺼짐"
     }
@@ -159,15 +167,27 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 1), presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()), decodeTimeStamp: .invalid)
         var sample: CMSampleBuffer?
         guard CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixel, formatDescription: format, sampleTiming: &timing, sampleBufferOut: &sample) == noErr, let sample else { return }
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true), CFArrayGetCount(attachments) > 0 else { lastError = "즉시 표시 영상 구성 실패"; return }
+        let entry = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+        CFDictionarySetValue(entry, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(), Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+        immediateFrames = true
         layer.enqueue(sample); lastFrameAt = Date(); renderedFrames += 1; lastError = ""
     }
     func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        guard controller === pictureInPictureController, enabled, state?.guiding == true, !suppressed, lifecycle.willStart() else {
+            pictureInPictureController.stopPictureInPicture(); return
+        }
+        preparation?.cancel(); preparation = nil
         render(force: true)
         timer?.invalidate()
         let tick = Timer(timeInterval: 1, repeats: true) { [weak self] _ in Task { @MainActor [weak self] in self?.render() } }
         tick.tolerance = 0.25; timer = tick; RunLoop.main.add(tick, forMode: .common)
     }
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        guard controller === pictureInPictureController, enabled, state?.guiding == true, !suppressed, lifecycle.didStart() else {
+            active = false; timer?.invalidate(); timer = nil
+            pictureInPictureController.stopPictureInPicture(); return
+        }
         active = true
         render(force: true)
         if requestedAutomatically, UIApplication.shared.applicationState == .active {
@@ -189,6 +209,9 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         }
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        guard controller === pictureInPictureController else { return }
+        lifecycle.didStop()
+        returning = false
         displayCheck?.cancel(); displayCheck = nil
         let detail = error as NSError; lastError = "\(detail.domain) \(detail.code)"
         print("NAV_PIP_START_FAILED \(lastError)")
@@ -196,10 +219,13 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         active = false; timer?.invalidate(); timer = nil; VoiceAudioRouting.release(owner: "navigation.pip"); status = "플로팅 안내 시작 실패 · 기기 설정 확인"
     }
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        guard controller === pictureInPictureController else { return }
+        lifecycle.didStop()
         displayCheck?.cancel(); displayCheck = nil
         preparation?.cancel(); preparation = nil; requestedAutomatically = true
         active = false; timer?.invalidate(); timer = nil
         if !returning { suppressed = true }
+        lifecycle.setWanted(enabled && state?.guiding == true && !suppressed)
         returning = false; controller?.canStartPictureInPictureAutomaticallyFromInline = !suppressed && enabled && state?.guiding == true
         VoiceAudioRouting.release(owner: "navigation.pip")
         status = !enabled ? "플로팅 안내 꺼짐" : state?.guiding != true ? "길안내 종료됨" : suppressed && !lastError.isEmpty ? "플로팅 영상 표시 실패 · 잠금화면 안내 사용" : "플로팅 안내 닫힘 · 앱에서 다시 시작 가능"

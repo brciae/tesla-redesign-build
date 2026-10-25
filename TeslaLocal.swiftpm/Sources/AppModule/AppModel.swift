@@ -104,6 +104,8 @@ final class AppModel: ObservableObject {
     private var recordRevision: UInt64 = 0
     private var urgentSavePending = false
     private var activityObservedAt = Date.distantPast
+    private var lastVehicleExit: (vin: String, driveAt: Double)?
+    @Published private(set) var vehicleExitRevision = 0
     private let phoneCalls = PhoneCallLifecycle()
     func updateLiveActivity() {
         // Guidance-start and foreground callbacks must request synchronously. A queued Task
@@ -289,6 +291,7 @@ final class AppModel: ObservableObject {
         navigation.willStart = { [weak self] in self?.stopSpeech(); self?.updateLiveActivity() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
         navigation.onGuidanceEnd = { [weak self] arrived in
+            NavigationPictureInPicture.shared.endGuidance()
             if let self {
                 self.updateTripEnergy(force: true)
                 self.tripEnergy.finish(arrived: arrived, vin: self.energyVehicleVIN)
@@ -302,6 +305,17 @@ final class AppModel: ObservableObject {
         voice.navigationTargetCanFinish = { [weak self] identifier, duration in self?.navigation.canFinishSpeech(identifier, duration: duration) == true }
         navigation.onAudioSession = { [weak self] active in self?.voice.nativeSession(active) }
         navigation.onActivityChange = { [weak self] in self?.updateTripEnergy(); self?.updateLiveActivity() }
+        automations.onVehicleExit = { [weak self] vin in
+            guard let self, !self.demo, self.energyVehicleVIN == vin else { return }
+            self.lastVehicleExit = (vin, self.groups.object("drive").number("at") ?? Date().timeIntervalSince1970 * 1000)
+            self.updateTripEnergy(force: true)
+            self.tripEnergy.finish(arrived: false, vin: vin)
+            self.navigation.leaveVehicle()
+            NavigationPictureInPicture.shared.endGuidance()
+            self.link.cancelPendingAutomation(); self.voice.stop()
+            self.vehicleExitRevision += 1
+            self.updateLiveActivity()
+        }
         voice.callStateChanged(phoneCalls.isActive)
         phoneCalls.changed = { [weak self] active in
             guard let self else { return }
@@ -334,7 +348,9 @@ final class AppModel: ObservableObject {
                     let gear = d.string("gear")
                     let speed = d.number("speedKmh") ?? 0
                     // Note: Once userDismissed is set manually by user, it only reopens when manually tapped
-                    if (gear == "D" || gear == "R" || speed > 5), !self.navigation.presented, !self.navigation.userDismissed, UIApplication.shared.applicationState == .active {
+                    let afterExit = self.lastVehicleExit.map { $0.vin != self.energyVehicleVIN || (d.number("at") ?? 0) > $0.driveAt } ?? true
+                    let currentDrive = self.output.object("fresh").flag("drive") && (d.number("at") ?? 0) >= (self.groups.object("drive").number("at") ?? 0)
+                    if afterExit, currentDrive, (gear == "D" || gear == "R" || speed > 5), !self.navigation.presented, !self.navigation.userDismissed, UIApplication.shared.applicationState == .active {
                         if UserDefaults.standard.object(forKey: "autoDrivingDashboard") == nil || UserDefaults.standard.bool(forKey: "autoDrivingDashboard") {
                             self.navigation.activateWorkspace(model: self)
                         }
@@ -719,6 +735,7 @@ final class AppModel: ObservableObject {
               let trip = state.rows("trips").last, let end = trip.number("end"),
               abs(Date().timeIntervalSince1970 * 1000 - end) <= 120000 else { return }
         navigation.endGuidance()
+        NavigationPictureInPicture.shared.endGuidance()
         let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
         let body = state.string("lastBrief")
         let id = trip.string("id")

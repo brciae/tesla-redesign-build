@@ -17,6 +17,7 @@ final class InteractionTests: XCTestCase {
         let delivered = NSPredicate(format: "label != %@", "프레임 전달 0")
         expectation(for: delivered, evaluatedWith: frame); waitForExpectations(timeout: 8)
         XCTAssertTrue(app.staticTexts["navigation.pip.diagnostics"].label.contains("공유 true"), "PiP buffers must be IOSurface backed, not only enqueue successfully")
+        XCTAssertTrue(app.staticTexts["navigation.pip.diagnostics"].label.contains("즉시 true"), "Static guidance uses immediate-display samples without a playback timebase")
         captureSystemCard("Floating navigation actual sample buffer inline camera lanes and next turn")
         app.buttons["음성·음악 혼합 확인"].tap()
         XCTAssertTrue(app.staticTexts["음성 종료 후 음악 혼합 유지"].waitForExistence(timeout: 5))

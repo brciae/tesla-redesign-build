@@ -585,6 +585,12 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         presented = false
         updateStandbyLocationUse()
     }
+    func leaveVehicle() {
+        // A confirmed exit closes the workspace without disabling the next real departure.
+        stop()
+        presented = false
+        updateStandbyLocationUse()
+    }
     private func configureStandbyCallbacks(_ view: YLKakaoController) {
         view.eventHandler = { [weak self, weak view] event, message in
             let handle = {

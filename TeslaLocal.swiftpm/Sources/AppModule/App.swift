@@ -113,6 +113,10 @@ struct MainView: View {
             }
             .task { if phase == .active { model.resume(); consumeNotificationRoute() } }
             .onChange(of: phase) { _, p in handlePhase(p) }
+            .onChange(of: model.vehicleExitRevision) { _, _ in
+                selectedTab = .home
+                homePath = NavigationPath()
+            }
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("YL.openChargingFromNotification"))) { _ in consumeNotificationRoute() }
             .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
             .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }

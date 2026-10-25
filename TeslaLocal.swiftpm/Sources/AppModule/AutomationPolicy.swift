@@ -105,8 +105,9 @@ struct AutomationDocument: Codable, Equatable {
     var vehicle = ""
     var boardingLatched = false
     var boardingVoiceLatched: Bool?
+    var exitLatched: Bool?
     var motionLatched = false
-    /// Last fresh presence receipt, persisted so a long unobserved gap can rearm boarding.
+    /// Last fresh presence receipt for diagnostics; silence does not rearm boarding.
     var lastPresenceSeenAt: Double?
 }
 struct AutomationSample {
@@ -175,6 +176,7 @@ struct AutomationPolicy {
     var document = AutomationDocument()
     private(set) var didBoard = false
     private(set) var didVoiceBoard = false
+    private(set) var didExit = false
     private var previous: AutomationSample?
     private var lastPresenceAt: Double?
     private var occupancySince: Double?
@@ -185,6 +187,7 @@ struct AutomationPolicy {
     private var routeBaseline: Double?
     private var routeStartedAt: Double?
     private var milestones: Set<String> = []
+    private var visitObserved = false
     mutating func reset() {
         previous = nil; lastPresenceAt = nil; occupancySince = nil; absentSince = nil; exitDoorAt = nil; driveSeconds = 0
         parkSince = nil; routeBaseline = nil; routeStartedAt = nil; milestones = []
@@ -242,6 +245,7 @@ struct AutomationPolicy {
     mutating func evaluate(_ input: AutomationSample) -> [AutomationEffect] {
         didBoard = false
         didVoiceBoard = false
+        didExit = false
         var sample = input
         // Reject nonfinite/implausible telemetry before comparisons, interpolation or Int conversion.
         func bounded(_ n: Double?, _ range: ClosedRange<Double>) -> Double? { guard let n, n.isFinite, range.contains(n) else { return nil }; return n }
@@ -256,6 +260,8 @@ struct AutomationPolicy {
         if document.vehicle != sample.vehicle {
             let firstVehicle = document.vehicle.isEmpty
             document.vehicle = sample.vehicle
+            document.exitLatched = false
+            visitObserved = false
             if !firstVehicle { document.boardingLatched = true; document.boardingVoiceLatched = false; document.motionLatched = false }
             reset()
         }
@@ -273,29 +279,33 @@ struct AutomationPolicy {
         }
         let old = previous
         defer { previous = sample }
+        // Driving is an existing visit, including first observation after app restart.
+        // Parking/arrival and silence in the presence stream never establish a new visit.
+        let inDrive = sample.driveFresh && ["D", "R", "N"].contains(sample.gear ?? "")
+        if inDrive || (sample.endedTrip != nil && document.exitLatched != true) {
+            document.boardingLatched = true; document.boardingVoiceLatched = true
+            if inDrive { document.exitLatched = false; visitObserved = true }
+            occupancySince = nil
+        }
         // Only a new closures receipt advances presence debounce; charge/drive polling
         // must not turn one cached false signal into a confirmed exit.
         let presenceAt = sample.closuresAt ?? sample.now
         if sample.closuresFresh && (sample.driveFresh || sample.speechOnly) && presenceAt.isFinite && presenceAt <= sample.now && sample.now - presenceAt <= presenceGap {
             if lastPresenceAt == nil || presenceAt > lastPresenceAt! {
-                // The exit is usually never observed (phone away, app closed, BLE out of range), so the latch
-                // would stay set forever. Ten unobserved minutes while parked counts as a new visit.
-                if let seen = document.lastPresenceSeenAt, presenceAt - seen > 600, !sample.moving {
-                    document.boardingLatched = false; document.boardingVoiceLatched = false
-                    occupancySince = nil; absentSince = nil; exitDoorAt = nil
-                }
                 if document.lastPresenceSeenAt.map({ presenceAt - $0 >= 60 || presenceAt < $0 }) ?? true { document.lastPresenceSeenAt = presenceAt }
                 if let last = lastPresenceAt, presenceAt - last > presenceGap { occupancySince = nil; absentSince = nil; exitDoorAt = nil }
                 lastPresenceAt = presenceAt
                 if sample.parked && sample.driverDoor == true { exitDoorAt = presenceAt }
                 if let at = exitDoorAt, presenceAt - at > 120 { exitDoorAt = nil }
-                if sample.boarded || (sample.speechOnly && sample.present == true && sample.driverDoor == false) {
+                if !inDrive && sample.endedTrip == nil && (sample.boarded || (sample.speechOnly && sample.present == true && sample.driverDoor == false)) {
                     absentSince = nil
                     if occupancySince == nil { occupancySince = presenceAt }
+                    if presenceAt - (occupancySince ?? presenceAt) >= 2 { visitObserved = true; document.exitLatched = false }
                     // Occupancy may stay true briefly after the person closes the door.
                     // Keep that recent door cycle until presence is stable for eight seconds.
                     if presenceAt - (occupancySince ?? presenceAt) >= 8 { exitDoorAt = nil }
                     if presenceAt - (occupancySince ?? presenceAt) >= 2 && document.boardingVoiceLatched != true {
+                        document.exitLatched = false
                         document.boardingVoiceLatched = true; didVoiceBoard = true
                     }
                     if !sample.speechOnly && sample.boardingReady && presenceAt - (occupancySince ?? presenceAt) >= 2 && !document.boardingLatched {
@@ -303,14 +313,18 @@ struct AutomationPolicy {
                     }
                 } else {
                     occupancySince = nil
-                    if (sample.parked || sample.speechOnly) && sample.present == false {
+                    if !inDrive && (sample.parked || sample.speechOnly) && sample.present == false {
                         if absentSince == nil { absentSince = presenceAt }
                         // Fresh locked-and-empty evidence may rearm speech even when the door cycle was missed.
                         // This never rearms physical commands.
-                        if sample.locked == true && presenceAt - (absentSince ?? presenceAt) >= 8 { document.boardingVoiceLatched = false }
+                        if sample.locked == true && presenceAt - (absentSince ?? presenceAt) >= 8 {
+                            document.boardingVoiceLatched = false
+                            if document.exitLatched != true { document.exitLatched = true; didExit = visitObserved; visitObserved = false }
+                        }
                         // Rearm only after a real door-open/close cycle and sustained absence.
                         if !sample.speechOnly && exitDoorAt != nil && sample.driverDoor == false && presenceAt - (absentSince ?? presenceAt) >= 8 {
                             document.boardingLatched = false; document.boardingVoiceLatched = false; exitDoorAt = nil
+                            if document.exitLatched != true { document.exitLatched = true; didExit = visitObserved; visitObserved = false }
                         }
                     } else { absentSince = nil }
                 }

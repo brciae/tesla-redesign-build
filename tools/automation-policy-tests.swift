@@ -165,6 +165,31 @@ import Foundation
         previewSample.hour = 8; previewSample.chargeFresh = true; previewSample.driveFresh = true
         previewSample.soc = 82; previewSample.destination = "예시 목적지"
         precondition(preview == AutomationPolicy.renderedText(for: custom, sample: previewSample))
+        var visit = only(.boarding)
+        var running = sample(5000); running.gear = "D"; running.speed = 30; running.closuresFresh = false
+        precondition(visit.evaluate(running).isEmpty)
+        var parked = sample(5900); parked.endedTrip = "finished"
+        precondition(visit.evaluate(parked).isEmpty)
+        for time in [5903.0, 6800, 6803] { precondition(visit.evaluate(sample(time)).isEmpty, "arrival or fifteen minutes seated is not new boarding") }
+        let visitJSON = try JSONEncoder().encode(visit.document)
+        visit = only(.boarding); visit.document = try JSONDecoder().decode(AutomationDocument.self, from: visitJSON)
+        precondition(visit.evaluate(sample(6810)).isEmpty && visit.evaluate(sample(6813)).isEmpty, "restored visit remains consumed")
+        var leaving = sample(6820); leaving.driverDoor = true; leaving.present = false
+        _ = visit.evaluate(leaving); precondition(!visit.didExit)
+        leaving.now = 6823; leaving.driverDoor = false; _ = visit.evaluate(leaving); precondition(!visit.didExit)
+        leaving.now = 6830; _ = visit.evaluate(leaving); precondition(visit.didExit, "fresh parked door cycle and sustained absence ends the visit")
+        leaving.now = 6833; leaving.endedTrip = "late-history"; _ = visit.evaluate(leaving); precondition(!visit.didExit, "late history after exit cannot end the visit twice")
+        precondition(visit.evaluate(sample(6840)).isEmpty && visit.evaluate(sample(6843)).count == 1, "next actual boarding still greets once")
+        running = sample(6900); running.speechOnly = true; running.gear = "D"; running.speed = 30; running.present = false; running.locked = true
+        _ = visit.evaluate(running); running.now = 6930; _ = visit.evaluate(running)
+        precondition(!visit.didExit && visit.document.boardingVoiceLatched == true, "Fleet moving absence cannot rearm or close workspace")
+        running.present = true; running.driverDoor = false; running.now = 6960
+        precondition(visit.evaluate(running).isEmpty && !visit.didVoiceBoard)
+        var neverAboard = only(.boarding)
+        var empty = sample(7000); empty.present = false; empty.locked = true
+        _ = neverAboard.evaluate(empty); empty.now = 7009; _ = neverAboard.evaluate(empty)
+        precondition(!neverAboard.didExit, "empty first vehicle reads cannot cancel phone-only manual navigation")
+        print("PASS: arrival/long presence gaps/restart do not reboard; confirmed exit once and next boarding retained; moving Fleet cannot rearm")
         print("PASS: boarding once across reconnect/restart, fresh closure receipts, sustained exit door cycle, motion, invalid telemetry, disabled control, strict JSON, and nonce callback")
     }
 }

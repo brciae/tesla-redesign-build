@@ -16,6 +16,7 @@ final class AutomationCoordinator: ObservableObject {
     var settingsDidChange: (() -> Void)?
     var onNotification: ((String, String, String) -> Void)?
     var navigationContext: (() -> NavigationAnnouncementContext)?
+    var onVehicleExit: ((String) -> Void)?
     private func applyNavigation(to sample: inout AutomationSample) {
         guard let context = navigationContext?() else { return }
         sample.destination = context.destination
@@ -310,7 +311,8 @@ final class AutomationCoordinator: ObservableObject {
         s.remainingMinutes = s.driveFresh ? d.number("arrivalMinutes") : nil
         applyNavigation(to: &s)
         s.hour = Calendar.current.component(.hour, from: Date())
-        if state.rows("trips").count > previousTrips, let trip = state.rows("trips").last {
+        if state.rows("trips").count > previousTrips, let trip = state.rows("trips").last,
+           let end = trip.number("end"), abs(now - end / 1000) <= 120 {
             s.endedTrip = trip.string("id")
             let delta = (trip.number("end") ?? 0) - (trip.number("start") ?? 0)
             let duration = delta.isFinite && (0...604800000).contains(delta) ? Int(delta / 60000) : 0
@@ -336,6 +338,7 @@ final class AutomationCoordinator: ObservableObject {
         else { status = policy.document.boardingLatched ? "같은 탑승 조건 처리됨 · 다음 하차·탑승 신호 대기" : "탑승 신호 연속 확인 중" }
         guard policy.document != before else { return }
         do { try persist(); publish() } catch { blocked = true; status = "실행 전 기록 저장 실패 · 모든 동작 중단"; return }
+        if policy.didExit { onVehicleExit?(s.vehicle) }
         // Boarding and its optional battery summary share ONE persisted session event.
         // BLE reconnects and restored cached groups cannot create another announcement.
         if policy.didVoiceBoard || policy.didBoard {

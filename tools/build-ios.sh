@@ -31,6 +31,8 @@ Xcode/EnergyPolicyTests
 node tools/energy-battery-regression-tests.cjs
 node tools/collection-regression-tests.cjs
 node tools/navigation-card-tests.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/NavigationPipLifecycle.swift tools/navigation-pip-lifecycle-tests.swift -o Xcode/NavigationPipLifecycleTests
+Xcode/NavigationPipLifecycleTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlaybackPolicy.swift tools/spotify-policy-tests.swift -o Xcode/SpotifyPolicyTests
 Xcode/SpotifyPolicyTests
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
