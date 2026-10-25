@@ -479,7 +479,8 @@ final class InteractionTests: XCTestCase {
     func testOverlappingSafetySpeechFinishesWithoutWarningLoop() {
         let app = XCUIApplication(); app.launchArguments = ["voice-playback-probe", "voice-overlap-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["중첩 안내 3개 완주 · 중복·GPS 지연 취소 차단"].waitForExistence(timeout: 15))
-        XCTAssertEqual(app.staticTexts["voice.probe.count"].label, "재생 시작 2 / 완료 2")
+        XCTAssertEqual(app.staticTexts["voice.probe.count"].label, "재생 시작 3 / 완료 3")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Navigation priority overlap three completed clips and GPS continuity"; shot.lifetime = .keepAlways; add(shot)
     }
 
     func testCachedSafetySpeechTracksDistanceAndSpeed() {
