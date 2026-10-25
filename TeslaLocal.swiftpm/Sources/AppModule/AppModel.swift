@@ -291,7 +291,7 @@ final class AppModel: ObservableObject {
         navigation.willStart = { [weak self] in self?.stopSpeech(); self?.updateLiveActivity() }
         navigation.onVoiceActivity = { [weak self] active in self?.voice.nativeVoice(active) }
         navigation.onGuidanceEnd = { [weak self] arrived in
-            NavigationPictureInPicture.shared.endGuidance()
+            Task { @MainActor in NavigationPictureInPicture.shared.endGuidance() }
             if let self {
                 self.updateTripEnergy(force: true)
                 self.tripEnergy.finish(arrived: arrived, vin: self.energyVehicleVIN)
@@ -311,7 +311,7 @@ final class AppModel: ObservableObject {
             self.updateTripEnergy(force: true)
             self.tripEnergy.finish(arrived: false, vin: vin)
             self.navigation.leaveVehicle()
-            NavigationPictureInPicture.shared.endGuidance()
+            Task { @MainActor in NavigationPictureInPicture.shared.endGuidance() }
             self.link.cancelPendingAutomation(); self.voice.stop()
             self.vehicleExitRevision += 1
             self.updateLiveActivity()
@@ -735,7 +735,7 @@ final class AppModel: ObservableObject {
               let trip = state.rows("trips").last, let end = trip.number("end"),
               abs(Date().timeIntervalSince1970 * 1000 - end) <= 120000 else { return }
         navigation.endGuidance()
-        NavigationPictureInPicture.shared.endGuidance()
+        Task { @MainActor in NavigationPictureInPicture.shared.endGuidance() }
         let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
         let body = state.string("lastBrief")
         let id = trip.string("id")
