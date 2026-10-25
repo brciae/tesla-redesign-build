@@ -999,7 +999,9 @@
       const ids=new Set(charge.map(c=>c.id)),excluded=new Map();
       for(const c of this.auditedCharges().accepted){
         if(ids.has(c.id))continue;
-        const reason=c.active?'충전 진행 중':!num(c.at,since,now)?'분석 기준일 밖':c.startSOCEstimated||c.endSOCEstimated||c.endSOCLastObserved?'양 끝 SOC 직접 관측 필요':!num(c.startSOC,0,100)||!num(c.endSOC,0,100)?'양 끝 잔량 미확인':c.endSOC-(c.observedStartSOC??c.startSOC)<10?'관측 SOC 변화 10%p 미만':!(c.complete&&c.storageVerified&&c.comparable&&num(c.storedKWh,1,200))&&!num(c.vehicleReportedKWh,1,200)?'차량 보고 배터리 충전량 미확인':'용량 범위 확인 필요';
+        const pair=num(c.observedStartSOC,0,100)&&num(c.observedEndSOC,0,100)&&num(c.observedStartAddedKWh,0,300)&&num(c.observedEndAddedKWh,c.observedStartAddedKWh,300);
+        const start=pair?c.observedStartSOC:c.startSOC,end=pair?c.observedEndSOC:c.endSOC;
+        const reason=c.active?'충전 진행 중':!num(c.at,since,now)?'분석 기준일 밖':!pair&&(c.startSOCEstimated||c.endSOCEstimated||c.endSOCLastObserved)?'관측 구간 양 끝 잔량 필요':!num(start,0,100)||!num(end,0,100)?'양 끝 잔량 미확인':end-start<10?'관측 SOC 변화 10%p 미만':pair&&c.observedEndAddedKWh-c.observedStartAddedKWh<1?'관측 충전량 변화 1kWh 미만':!(c.complete&&c.storageVerified&&c.comparable&&num(c.storedKWh,1,200))&&!num(c.vehicleReportedKWh,1,200)?'차량 보고 배터리 충전량 미확인':'용량 범위 확인 필요';
         excluded.set(reason,(excluded.get(reason)??0)+1);
       }
       if(this.auditedCharges().review.length)excluded.set('중복·무결성 확인 필요',this.auditedCharges().review.length);

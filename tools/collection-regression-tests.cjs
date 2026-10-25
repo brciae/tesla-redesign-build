@@ -26,6 +26,7 @@ const park=(id,start,end,a,b)=>({id,start,end,startSOC:a,endSOC:b,deltaSOC:a-b,s
  const h=e.healthIndex(now);assert.equal(h.sampleCount,1);assert.equal(h.capacityMedianKWh,70,'use observed 15%p and delta kWh, not assumed whole-session SOC');assert.equal(h.degradationPercent,null,'no invented degradation baseline');
  const restored=new Engine();restored.load(JSON.parse(JSON.stringify(e.state)));assert.equal(restored.healthIndex(now).capacityMedianKWh,70);
  c.observedStartSOC=54;assert.equal(e.healthIndex(now).sampleCount,0,'one percent SOC is too coarse for capacity');
+ assert(e.healthIndex(now).excludedChargeReasons.some(x=>x.reason.includes('10%p')),'a valid but small observation window must not be mislabeled missing SOC');
 }
 {
  const e=new Engine();const packet=(at,soc,added,charging)=>e.ingest({groups:{charge:{at,receivedAt:at,soc,addedKWh:added,charging}}},at);
