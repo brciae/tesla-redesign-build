@@ -16,6 +16,8 @@ const park=(id,start,end,a,b)=>({id,start,end,startSOC:a,endSOC:b,deltaSOC:a-b,s
  assert.equal(usable.hours,4);assert.equal(usable.startSOC,100);assert.equal(usable.endSOC,98);assert.equal(usable.perDay,12);
  assert.equal(p.excludedCount,1,'only actual charging segment is excluded');assert.equal(e.state.parkingPeriods.length,1);
  e.state.charges[0].endSOCEstimated=true;assert.equal(e.parkingSummary(now).count,0,'never split using an invented charge endpoint');
+ e.state.charges[0].endSOCEstimated=false;e.state.charges[0].endTimeObserved=false;assert.equal(e.parkingSummary(now).count,0,'a last charging packet is not an observed stop');
+ e.state.activeCharge={...e.state.charges[0],lastAt:t+8*H};delete e.state.activeCharge.end;e.state.charges=[];assert.equal(e.parkingSummary(now).count,0,'ongoing charging cannot create a confirmed non-charging tail');
 }
 {
  const e=new Engine();const packet=(at,soc,added,charging)=>e.ingest({groups:{charge:{at,receivedAt:at,soc,addedKWh:added,charging}}},at);

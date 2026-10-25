@@ -1013,15 +1013,15 @@
         const dx=num(p.odometerKm,0,1e7)&&num(d.odometerKm,0,1e7)?d.odometerKm-p.odometerKm:null;
         periods.push({id:'current-parking',start:p.at,end:c.at,startSOC:p.soc,endSOC:c.soc,deltaSOC:round(p.soc-c.soc),startGear:'P',endGear:'P',startOdo:p.odometerKm??null,endOdo:d.odometerKm??null,classification:dx!=null&&dx>=0&&dx<=.2?'parking':'unclassified',ongoing:true});
       }
-      const charges=this.auditedCharges().accepted.concat(s.activeCharge?[s.activeCharge]:[]),rows=[];let occupied=-1;
+      const charges=this.auditedCharges().accepted.concat(s.activeCharge?[{...s.activeCharge,active:true}]:[]),rows=[];let occupied=-1;
       // Salvage the non-charging part of a long parking period using observed charge endpoints.
       const split=periods.flatMap(p=>{
         const cuts=[{at:p.start,soc:p.startSOC},{at:p.end,soc:p.endSOC}];
         for(const c of charges){
           const w=chargeWindow(c,now);
           if(c.collectedAfterEnd||w.end<=w.start+1||w.end<=p.start||w.start>=p.end)continue;
-          if(w.start>p.start&&w.start<p.end&&!c.startSOCEstimated&&num(c.startSOC,0,100))cuts.push({at:w.start,soc:c.startSOC});
-          if(w.end>p.start&&w.end<p.end&&!c.endSOCEstimated&&!c.endSOCLastObserved&&num(c.endSOC,0,100))cuts.push({at:w.end,soc:c.endSOC});
+          if(w.start>p.start&&w.start<p.end&&c.startTimeObserved!==false&&!c.startSOCEstimated&&num(c.startSOC,0,100))cuts.push({at:w.start,soc:c.startSOC});
+          if(!c.active&&num(c.end,c.at+1,now)&&c.endTimeObserved!==false&&w.end>p.start&&w.end<p.end&&!c.endSOCEstimated&&!c.endSOCLastObserved&&num(c.endSOC,0,100))cuts.push({at:w.end,soc:c.endSOC});
         }
         const ordered=[...new Map(cuts.sort((a,b)=>a.at-b.at).map(x=>[x.at,x])).values()];
         return ordered.length===2?[p]:ordered.slice(1).map((end,i)=>({...p,id:p.id+':segment:'+i,parentID:p.id,start:ordered[i].at,end:end.at,startSOC:ordered[i].soc,endSOC:end.soc,deltaSOC:num(ordered[i].soc,0,100)&&num(end.soc,0,100)?round(ordered[i].soc-end.soc):null}));

@@ -26,6 +26,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
     private var paused: Bool { get { playback.paused } set { playback.paused = newValue } }
     private var timer: Timer?
     private var preparation: Task<Void, Never>?
+    private var displayCheck: Task<Void, Never>?
     private var pool: CVPixelBufferPool?
     private var lastFrameAt = Date.distantPast
     private var observers: [NSObjectProtocol] = []
@@ -82,9 +83,9 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         let wasGuiding = self.state?.guiding == true
         self.state = state; self.enabled = enabled
         if !state.guiding { suppressed = false; paused = false; stop(); return }
-        if !wasGuiding { suppressed = false; paused = false }
+        if !wasGuiding { suppressed = false; paused = false; lastError = "" }
         guard enabled else { stop(); return }
-        guard !suppressed else { status = "플로팅 안내 닫힘 · 앱에서 다시 시작 가능"; return }
+        guard !suppressed else { status = lastError.isEmpty ? "플로팅 안내 닫힘 · 앱에서 다시 시작 가능" : "플로팅 영상 표시 실패 · 잠금화면 안내 사용"; return }
         refreshReadiness()
         render()
     }
@@ -99,7 +100,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         guard enabled else { status = "플로팅 안내 꺼짐"; return }
         guard state?.guiding == true else { status = "길안내 중에만 표시"; return }
         requestedAutomatically = automatic
-        if !automatic { suppressed = false; refreshReadiness(); render() }
+        if !automatic { suppressed = false; lastError = ""; refreshReadiness(); render() }
         guard !suppressed, supported, let controller, !controller.isPictureInPictureActive else { return }
         guard controller.isPictureInPicturePossible else {
             guard preparation == nil else { return }
@@ -121,6 +122,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         catch { status = "플로팅 안내 시작 실패"; VoiceAudioRouting.release(owner: "navigation.pip") }
     }
     private func stop() {
+        displayCheck?.cancel(); displayCheck = nil
         preparation?.cancel(); preparation = nil
         controller?.canStartPictureInPictureAutomaticallyFromInline = false
         timer?.invalidate(); timer = nil
@@ -169,9 +171,10 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         }
         status = "플로팅 안내 표시 중"
         print("NAV_PIP_DID_START")
-        Task { @MainActor [weak self] in
+        displayCheck?.cancel()
+        displayCheck = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
-            guard let self, self.active else { return }
+            guard !Task.isCancelled, let self, self.active else { return }
             if !self.layer.isReadyForDisplay || self.layer.status == .failed {
                 self.lastError = self.layer.error.map { ($0 as NSError).domain + " \(($0 as NSError).code)" } ?? "영상 표시 준비 실패"
                 self.returning = true; self.suppressed = true
@@ -182,12 +185,14 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         }
     }
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
+        displayCheck?.cancel(); displayCheck = nil
         let detail = error as NSError; lastError = "\(detail.domain) \(detail.code)"
         print("NAV_PIP_START_FAILED \(lastError)")
         preparation?.cancel(); preparation = nil
         active = false; timer?.invalidate(); timer = nil; VoiceAudioRouting.release(owner: "navigation.pip"); status = "플로팅 안내 시작 실패 · 기기 설정 확인"
     }
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        displayCheck?.cancel(); displayCheck = nil
         preparation?.cancel(); preparation = nil; requestedAutomatically = true
         active = false; timer?.invalidate(); timer = nil
         if !returning { suppressed = true }
