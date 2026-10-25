@@ -552,9 +552,9 @@ final class InteractionTests: XCTestCase {
     func testAudioSettingsInterruptionsPreemptionAndRecovery() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["voice-lifecycle-probe"]; app.launch()
-        let result = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "음성 상태 18/18 검증 완료", "실패 ·")).firstMatch
+        let result = app.staticTexts.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "음성 상태 19/19 검증 완료", "실패 ·")).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 90))
-        XCTAssertEqual(result.label, "음성 상태 18/18 검증 완료")
+        XCTAssertEqual(result.label, "음성 상태 19/19 검증 완료")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Voice settings interruption expiry preemption recovery and Typecast preview"; shot.lifetime = .keepAlways; add(shot)
     }
     func testAllAutomationEventsReachPlayback() {

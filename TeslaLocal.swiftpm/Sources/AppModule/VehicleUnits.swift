@@ -247,6 +247,7 @@ struct VoiceItem {
     var voice: String? = nil
     var navigationCue: NavigationSpeechCue? = nil
     var navigationDetail: Int? = nil
+    var arrivalVehicle: String? = nil
     // Manual reports may finish synthesis after their queue deadline. Maneuvers
     // and automatic events retain their strict real-time playback deadline.
     func canStartPlayback(at now: Date) -> Bool {
@@ -265,9 +266,12 @@ struct ArrivalSpeechPolicy {
             lastAt = nil; parkedSinceArrival = false
         }
     }
-    mutating func accepts(vehicle: String, now: Date) -> Bool {
+    func canPlay(vehicle: String, now: Date) -> Bool {
         if lastVehicle == vehicle, let lastAt, now.timeIntervalSince(lastAt) < 90 { return false }
-        lastVehicle = vehicle; lastAt = now; parkedSinceArrival = false; return true
+        return true
+    }
+    mutating func markPlayed(vehicle: String, now: Date) {
+        lastVehicle = vehicle; lastAt = now; parkedSinceArrival = false
     }
     static func message(homeDistance: Double?, workDistance: Double?, hour: Int) -> String? {
         let home = homeDistance.flatMap { $0.isFinite && (0...250).contains($0) ? $0 : nil }
@@ -288,11 +292,14 @@ struct VoiceQueue {
     private var last: [String: Date] = [:]
     mutating func add(_ item: VoiceItem, now: Date, cooldown: TimeInterval = 20) {
         guard !item.text.isEmpty, item.expires > now else { return }
+        if let id = item.navigationID, let existing = items.first(where: { $0.navigationID == id && $0.expires > now }), existing.priority > item.priority { return }
+        if let vehicle = item.arrivalVehicle, items.contains(where: { $0.arrivalVehicle == vehicle && $0.manual && !item.manual && $0.expires > now }) { return }
         if !item.manual, let date = last[item.key], now.timeIntervalSince(date) < cooldown { return }
         last[item.key] = now
         last = last.filter { now.timeIntervalSince($0.value) < 600 }
         items.removeAll {
             if $0.expires <= now { return true }
+            if let vehicle = item.arrivalVehicle, $0.arrivalVehicle == vehicle { return true }
             if item.key.hasPrefix("navigation."), let target = item.navigationID { return $0.navigationID == target }
             return $0.key == item.key
         }

@@ -55,8 +55,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     func announceArrival(_ text: String, vehicle: String, fromNavigation: Bool = false) {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: "voiceEnabled"), defaults.bool(forKey: fromNavigation ? "navVoiceEnabled" : "voiceAutomations") else { return }
-        guard arrivalPolicy.accepts(vehicle: vehicle, now: Date()) else { return }
-        say(text, key: fromNavigation ? "navigation.arrival" : "arrival:" + vehicle, category: "voiceAutomations", priority: 3, ttl: 20, manual: fromNavigation)
+        guard arrivalPolicy.canPlay(vehicle: vehicle, now: Date()) else { return }
+        say(text, key: fromNavigation ? "navigation.arrival" : "arrival:" + vehicle, category: "voiceAutomations", priority: 3, ttl: 20, manual: fromNavigation, arrivalVehicle: vehicle)
     }
 
     private var preparedAutomatic = Set<String>()
@@ -245,7 +245,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     }
 
     /// Speaks an announcement with instant button preemption (cancels previous speech immediately with 0ms delay).
-    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true, voice: String? = nil, contextualized: Bool = false) {
+    func say(_ text: String, key: String = "", category: String = "voiceControl", priority: Int = 3, ttl: TimeInterval = 10, manual: Bool = true, voice: String? = nil, contextualized: Bool = false, arrivalVehicle: String? = nil) {
         let actualKey = key.isEmpty ? "spoken.\(UUID().uuidString)" : key
         let d = UserDefaults.standard
         if category == "voiceControl" && (!d.bool(forKey: "voiceEnabled") || !d.bool(forKey: "voiceControl")) {
@@ -265,7 +265,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                 let resolved = d.bool(forKey: "automationSpeech.aiEnabled") ? selected : text
                 guard !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                 self.say(resolved, key: actualKey, category: category, priority: priority,
-                    ttl: max(1, ttl - Date().timeIntervalSince(now)), manual: false, voice: voice, contextualized: true)
+                    ttl: max(1, ttl - Date().timeIntervalSince(now)), manual: false, voice: voice, contextualized: true, arrivalVehicle: arrivalVehicle)
             }
             return
         }
@@ -281,7 +281,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             quietUntil = .distantPast
         }
 
-        queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual, voice: voice?.isEmpty == false ? voice : nil), now: now)
+        queue.add(VoiceItem(key: actualKey, text: prepared, expires: now.addingTimeInterval(ttl), priority: priority, manual: manual, voice: voice?.isEmpty == false ? voice : nil, arrivalVehicle: arrivalVehicle), now: now)
         drain()
     }
 
@@ -428,6 +428,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private func playTypecastAudio(_ url: URL, ticket: UUID, item: VoiceItem, defaults: UserDefaults) {
         guard activeTicket == ticket else { return }
+        if let vehicle = item.arrivalVehicle, !arrivalPolicy.canPlay(vehicle: vehicle, now: Date()) { cancelCurrent(); drain(); return }
         // Network synthesis can finish after the maneuver has already expired.
         // Keep the generated cache, but never play an out-of-date instruction.
         guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
@@ -463,6 +464,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             p.volume = Float(min(1, gain))
             p.prepareToPlay()
             guard p.play() else { throw LocalError.message("오디오 출력을 시작하지 못했습니다.") }
+            if let vehicle = item.arrivalVehicle { arrivalPolicy.markPlayed(vehicle: vehicle, now: Date()) }
             if let cue = item.navigationCue, let detail = item.navigationDetail { navigationPolicy.markPlayed(cue: cue, detail: detail, now: Date()) }
             playbackStarts += 1
             if !item.manual || item.key.hasPrefix("navigation.") {
