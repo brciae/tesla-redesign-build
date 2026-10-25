@@ -36,9 +36,13 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
     @Published private(set) var renderedFrames = 0
     private var lastError = ""
     private var surfaceBacked = false
+    private var frameReady: Bool {
+        if #available(iOS 17.4, *) { return layer.isReadyForDisplay }
+        return layer.status == .rendering
+    }
     var supported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
     var diagnostics: String {
-        "지원 \(supported) · 준비 \(controller?.isPictureInPicturePossible == true) · 영상 \(layer.status.rawValue) · 표시 \(layer.isReadyForDisplay) · 공유 \(surfaceBacked) · \(lastError)"
+        "지원 \(supported) · 준비 \(controller?.isPictureInPicturePossible == true) · 영상 \(layer.status.rawValue) · 표시 \(frameReady) · 공유 \(surfaceBacked) · \(lastError)"
     }
     override init() {
         super.init()
@@ -175,7 +179,7 @@ private final class NavigationPipPlaybackState: @unchecked Sendable {
         displayCheck = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled, let self, self.active else { return }
-            if !self.layer.isReadyForDisplay || self.layer.status == .failed {
+            if !self.frameReady || self.layer.status == .failed {
                 self.lastError = self.layer.error.map { ($0 as NSError).domain + " \(($0 as NSError).code)" } ?? "영상 표시 준비 실패"
                 self.returning = true; self.suppressed = true
                 self.controller?.stopPictureInPicture()
