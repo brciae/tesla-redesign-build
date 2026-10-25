@@ -1,36 +1,43 @@
-name: CI crash evidence
+name: Build169 bounded runtime audit
 on:
   workflow_dispatch:
-    inputs:
-      evidence_run:
-        required: true
-        type: string
 permissions:
-  actions: read
   contents: read
 jobs:
-  diagnose:
+  runtime:
     runs-on: macos-15
-    timeout-minutes: 12
+    timeout-minutes: 30
     steps:
-      - name: Extract existing test diagnostics
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVIDENCE_RUN: ${{ inputs.evidence_run }}
+      - uses: actions/checkout@v4
+        with:
+          ref: 94027a8bd14b14e148ce2eadc491ebdaf1c57f2f
+      - name: Tools
+        run: brew install xcodegen
+      - name: Repeated runtime checks with Address Sanitizer
         run: |
-          mkdir -p Evidence Diagnostics
-          gh run download "$EVIDENCE_RUN" --repo "$GITHUB_REPOSITORY" -n interface-screens -D Evidence
-          xcrun xcresulttool help export diagnostics
-          n=0
-          while IFS= read -r -d '' result; do
-            n=$((n+1))
-            xcrun xcresulttool export diagnostics --path "$result" --output-path "Diagnostics/result$n"
-            xcrun xcresulttool get test-results summary --path "$result" > "Diagnostics/summary$n.json"
-          done < <(find Evidence -type d -name '*.xcresult' -print0)
-          find Diagnostics -type f -maxdepth 5
+          node tools/embed-js.cjs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('tools/test-interface.sh')
+          s=p.read_text()
+          s=s.replace('test_filter=(-only-testing:InterfaceProbeTests)', 'test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testConciseGuidanceAcrossThemesAndRotation -only-testing:InterfaceProbeTests/InteractionTests/testChargingEnergySavingModelPersistenceAndFullChargeRangeCard -only-testing:InterfaceProbeTests/InteractionTests/testProductionSettingsMenuGroupsAndDirectCardSettings)')
+          s=s.replace('-retry-tests-on-failure -test-iterations 2', '-enableAddressSanitizer YES -repeat-tests-until-failure -test-iterations 4')
+          p.write_text(s)
+          PY
+          bash tools/test-interface.sh runtime-audit
+      - name: Export original diagnostics
+        if: always()
+        run: |
+          if [ -d Xcode/InterfaceResults.xcresult ]; then
+            xcrun xcresulttool export diagnostics --path Xcode/InterfaceResults.xcresult --output-path Xcode/BuildOutput/AuditDiagnostics || true
+            xcrun xcresulttool get test-results summary --path Xcode/InterfaceResults.xcresult > Xcode/BuildOutput/audit-summary.json
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: build169 crash diagnostics
-          path: Diagnostics/**
+          name: Build169 runtime audit evidence
+          path: |
+            Xcode/BuildOutput/InterfaceScreens/**
+            Xcode/BuildOutput/AuditDiagnostics/**
+            Xcode/BuildOutput/audit-summary.json
           if-no-files-found: error
