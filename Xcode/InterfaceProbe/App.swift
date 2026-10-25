@@ -23,15 +23,7 @@ import MapKit
             if ProcessInfo.processInfo.arguments.contains("navigation-card-probe") { NavigationCardProbe() }
             else if ProcessInfo.processInfo.arguments.contains("copy-readability-probe") { CopyReadabilityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("settings-menu-probe") {
-                NavigationStack {
-                    ScrollView { SettingsMenuGroups().padding(16) }.navigationTitle("메뉴 및 설정")
-                        .navigationDestination(for: Page.self) { page in
-                            if page == .spotify { SpotifySettingsView() }
-                            else if page == .liveActivity {
-                                Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle(page.rawValue)
-                            } else { Text(page.rawValue) }
-                        }
-                }
+                SettingsMenuProbe()
             }
             else if ProcessInfo.processInfo.arguments.contains("live-activity-settings-probe") {
                 NavigationStack { Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle("잠금화면·아일랜드") }
@@ -936,6 +928,21 @@ struct ChargeAuditCalendarProbe: View {
         _model = StateObject(wrappedValue: m)
     }
     var body: some View { NavigationStack { EnergyCalendarView().environmentObject(model) } }
+}
+struct SettingsMenuProbe: View {
+    @StateObject private var model = AppModel()
+    var body: some View {
+        NavigationStack {
+            ScrollView { SettingsMenuGroups().padding(16) }.navigationTitle("메뉴 및 설정")
+                .navigationDestination(for: Page.self) { page in
+                    if page == .spotify { SpotifySettingsView() }
+                    else if page == .care { CareView() }
+                    else if page == .liveActivity {
+                        Form { LiveActivitySettingsPanel(refresh: {}) }.navigationTitle(page.rawValue)
+                    } else { Text(page.rawValue) }
+                }
+        }.environmentObject(model)
+    }
 }
 struct ClimateFleetProbe: View {
     @StateObject private var model = AppModel()

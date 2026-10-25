@@ -639,7 +639,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["fleet-probe"]; app.launch()
         XCTAssertTrue(app.staticTexts["내 차량"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["최근 충전"].exists)
-        XCTAssertTrue(app.buttons["타이어·정비"].exists)
+        XCTAssertFalse(app.buttons["타이어·정비"].exists, "Duplicate shortcut removed from vehicle overview; retained in main menu")
         var shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet visual charge overview"; shot.lifetime = .keepAlways; add(shot)
         shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Fleet consolidated menu"; shot.lifetime = .keepAlways; add(shot)
         let warranty = app.buttons["보증·관리"]
@@ -647,9 +647,10 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(warranty.waitForExistence(timeout: 5)); warranty.tap()
         XCTAssertTrue(app.staticTexts["남은 거리"].firstMatch.waitForExistence(timeout: 5))
         shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Warranty remaining bars"; shot.lifetime = .keepAlways; add(shot)
-        app.navigationBars.buttons.firstMatch.tap()
-        let tires = app.buttons["타이어·정비"]
-        XCTAssertTrue(tires.waitForExistence(timeout: 5)); tires.tap()
+        app.terminate(); app.launchArguments = ["settings-menu-probe"]; app.launch()
+        let tires = app.staticTexts["타이어·정비"]
+        for _ in 0..<5 where !tires.isHittable { app.swipeUp() }
+        XCTAssertTrue(tires.isHittable); tires.tap()
         for label in ["앞 왼쪽", "앞 오른쪽", "뒤 왼쪽", "뒤 오른쪽"] { XCTAssertTrue(app.staticTexts[label].waitForExistence(timeout: 5)) }
         shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Unified tire readings"; shot.lifetime = .keepAlways; add(shot)
 
