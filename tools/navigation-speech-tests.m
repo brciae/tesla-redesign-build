@@ -53,6 +53,11 @@ int main(void) { @autoreleasepool {
     NSString *detail = YLNavigationSpeechForDetail(2, @"삼거리", @[@"서울",@"수원"], 200, 2);
     check(![brief containsString:@"서울"] && ![brief containsString:@"수원"], @"Brief omits sign list");
     check([normal containsString:@"서울"] && ![normal containsString:@"수원"], @"Normal reads one sign");
+    check([YLNavigationSpeechForDetail(2, @"삼거리", @[@"분기점", @" ", @"서울 방면", @"수원"], 300, 1) isEqual:@"300미터 앞, 서울 방면, 우회전하세요."], @"Filter invalid labels before selecting one sign");
+    check([YLNavigationSpeechForDetail(2, @"삼거리", @[@"서울", @"수원"], 40, 2) isEqual:@"잠시 후, 우회전하세요."], @"Imminent simple turn prioritizes the action");
+    check([YLNavigationSpeechForDetail(63, nil, @[@"서울"], 40, 2) containsString:@"반대편 차량과 신호"], @"Short imminent cue retains unprotected-turn warning");
+    check([YLNavigationSpeechForDetail(9, nil, @[@"서울", @"수원"], 40, 2) isEqual:@"잠시 후, 서울 방면, 오른쪽 출구로 나가세요."], @"Imminent exit retains one identifying sign and side");
+    check([YLNavigationSpeechForDetail(2, nil, @[@"서울 방면 방향", @"서울"], 300, 2) isEqual:@"300미터 앞, 서울 방면, 우회전하세요."], @"Repeated suffixes collapse before deduplication");
     check([detail containsString:@"서울"] && [detail containsString:@"수원"], @"Detailed reads at most two signs");
     check(![YLNavigationSpeechForDetail(86, @"분기후 합류", @[@"서울"], 200, 2) containsString:@"서울"], @"Road shape description does not invent a direction command");
     check(YLNavigationCanFinish(20, 0, 0, 10), @"Stopped vehicle does not consume route distance");
