@@ -153,9 +153,16 @@ static inline NSString *YLNavigationSignName(NSString *raw) {
     if (![raw isKindOfClass:NSString.class]) return @"";
     NSString *name = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     // Sign metadata may already contain this suffix; say it exactly once.
-    for (NSString *suffix in @[@"방면", @"방향"]) {
-        if ([name hasSuffix:suffix]) name = [[name substringToIndex:name.length-suffix.length] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    }
+    BOOL removed;
+    do {
+        removed = NO;
+        for (NSString *suffix in @[@"방면", @"방향"]) {
+            if ([name hasSuffix:suffix]) {
+                name = [[name substringToIndex:name.length-suffix.length] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+                removed = YES;
+            }
+        }
+    } while (removed);
     return YLNavigationIsPlaceName(name) ? name : @"";
 }
 
@@ -188,6 +195,18 @@ static inline NSString *YLNavigationSpeech(NSInteger code, NSString *node, NSArr
 }
 static inline NSString *YLNavigationSpeechForDetail(NSInteger code, NSString *node, NSArray<NSString *> *towards, NSInteger metres, NSInteger detail) {
     if (detail == 0) return YLNavigationSpeech(code, @"", @[], metres);
-    NSArray *signs = detail == 1 && towards.count > 1 ? [towards subarrayWithRange:NSMakeRange(0, 1)] : towards;
+    // Filter before applying the detail budget: a generic/empty first SDK label
+    // must not hide a real direction sign farther down the same list.
+    NSMutableArray<NSString *> *signs = [NSMutableArray array];
+    NSInteger budget = detail == 1 || (metres >= 0 && metres < 80) ? 1 : 2;
+    for (NSString *raw in towards) {
+        NSString *name = YLNavigationSignName(raw);
+        if (name.length && ![signs containsObject:name]) [signs addObject:name];
+        if (signs.count == budget) break;
+    }
+    // At a simple imminent turn the maneuver is the actionable information.
+    // Keep signs at forks/ramps, and never remove unprotected-turn restrictions.
+    if (metres >= 0 && metres < 80 && (code == 1 || code == 2 || code == 3 || code == 63))
+        return YLNavigationSpeech(code, @"", @[], metres);
     return YLNavigationSpeech(code, node, signs, metres);
 }

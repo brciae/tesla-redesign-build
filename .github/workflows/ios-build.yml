@@ -27,6 +27,8 @@ jobs:
         run: brew install xcodegen
       - name: Node route-gate / freshness tests
         run: node tools/js-logic-tests.cjs
+      - name: Offline guidance quality review tests (no AI calls)
+        run: python3 -m unittest discover -s tools -p test_navigation_quality_review.py
       - name: Build (parse, policy tests, interface probe, unsigned IPA)
         env:
           UI_SCREENS_ONLY: ${{ inputs.ui_screens_only }}
