@@ -178,7 +178,11 @@
       "UIInterfaceOrientationLandscapeRight"
      ],
      "NSSupportsLiveActivities": true,
-     "UILaunchStoryboardName": "LaunchScreen"
+     "UILaunchStoryboardName": "LaunchScreen",
+     "CFBundleDevelopmentRegion": "ko",
+     "CFBundleLocalizations": [
+      "ko"
+     ]
     }
    }
   },
@@ -212,7 +216,11 @@
      "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
      "NSExtension": {
       "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
-     }
+     },
+     "CFBundleDevelopmentRegion": "ko",
+     "CFBundleLocalizations": [
+      "ko"
+     ]
     }
    }
   },

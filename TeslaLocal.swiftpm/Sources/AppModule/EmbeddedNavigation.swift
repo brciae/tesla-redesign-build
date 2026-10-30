@@ -49,7 +49,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     @Published var presented = false
     @Published var userDismissed = false
     @Published var enabled: Bool = (UserDefaults.standard.object(forKey: "embeddedNavigationEnabled") as? Bool) ?? true
-    @Published var consent: Bool = (UserDefaults.standard.object(forKey: "embeddedNavigationConsent") as? Bool) ?? true
+    @Published var consent: Bool = (UserDefaults.standard.object(forKey: "embeddedNavigationConsent") as? Bool) ?? false
     @Published var hipass = UserDefaults.standard.bool(forKey: "navigationHipass")
     @Published var orientation = NavigationDirection(rawValue: UserDefaults.standard.string(forKey: "navigationOrientation") ?? "auto") ?? .auto
     var canPresent: () -> Bool = { UIApplication.shared.applicationState == .active }
@@ -195,10 +195,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
             UserDefaults.standard.set(true, forKey: "embeddedNavigationEnabled")
         }
         if UserDefaults.standard.object(forKey: "embeddedNavigationConsent") == nil {
-            UserDefaults.standard.set(true, forKey: "embeddedNavigationConsent")
-        }
-        if locator.authorizationStatus == .notDetermined {
-            locator.requestWhenInUseAuthorization()
+            UserDefaults.standard.set(false, forKey: "embeddedNavigationConsent")
         }
         NavigationOrientation.failure = { [weak self] message in self?.directionNotice = message }
         do { hasKey = !(try NavigationKey.read()).isEmpty; if hasKey { status = "최신 차량 목적지 대기" } }
@@ -651,14 +648,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
 
     func activateWorkspace(model: AppModel? = nil) {
         userDismissed = false
-        if !consent {
-            consent = true
-            UserDefaults.standard.set(true, forKey: "embeddedNavigationConsent")
-        }
-        if !enabled {
-            enabled = true
-            UserDefaults.standard.set(true, forKey: "embeddedNavigationEnabled")
-        }
+        // Showing the dashboard must preserve the explicit data-sharing and automatic-guidance choices.
         requestLocationPermission()
         if !guiding && !busy {
             retry()
@@ -855,7 +845,6 @@ struct NavigationSetupView: View {
                 Button("설정 저장") { navigation.saveSetup(key: nativeKey); nativeKey = ""; model.refreshVehicle() }
             }
         }
-        .onAppear { navigation.requestLocationPermission() }
         .onChange(of: navigation.consent) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationConsent") } }
         .onChange(of: navigation.enabled) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationEnabled") } }
     }
