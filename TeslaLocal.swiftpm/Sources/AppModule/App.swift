@@ -47,7 +47,6 @@ enum Theme {
 /// segments (위치, 운행 기록, 주행 정보, 일정 예약, 차량 3D) are no longer Pages,
 /// so a screen cannot be entered from two places at once.
 func valueText(_ value: Double?, digits: Int = 0, suffix: String = "") -> String { guard let value, value.isFinite else { return "—" }; return String(format: "%.*f", digits, value) + suffix }
-func dateText(_ ms: Double?, time: Bool = true) -> String { guard let ms else { return "미수신" }; let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = time ? "M월 d일 HH:mm" : "yyyy.MM.dd"; return f.string(from: Date(timeIntervalSince1970: ms/1000)) }
 func jsonNumber(_ s: String) throws -> Any {
     if s.trimmingCharacters(in: .whitespaces).isEmpty { return NSNull() }
     guard let value = Double(s.replacingOccurrences(of: ",", with: "")), value.isFinite else { throw LocalError.message("숫자 입력 확인 필요") }; return value
