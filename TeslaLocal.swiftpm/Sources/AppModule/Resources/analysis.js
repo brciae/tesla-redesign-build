@@ -635,7 +635,7 @@
     importCharges(v){
       if(!Array.isArray(v.rows)||!v.rows.length||v.rows.length>2000)throw Error('가져올 충전 자료는 1~2000건이어야 함');
       if(v.vin&&v.vin!==this.state.settings.vin)throw Error('선택한 차량과 가져올 자료의 VIN이 다름');
-      const before=this.state.charges;this.state.charges=before.map(c=>({...c}));let added=0,updated=0,skipped=0;
+      const before=this.state.charges;this.state.charges=before.map(c=>({...c}));let added=0,updated=0,skipped=0,preservedCosts=0;
       try{
         // Validate the entire batch before any replacement. Empty/invalid files never remove records.
         for(const row of v.rows){const test={id:'import-validation',at:row.at,startSOC:row.startSOC??null,endSOC:row.endSOC??null,supplyKWh:row.supplyKWh??null,storedKWh:row.storedKWh??null,cost:row.cost??null,source:'수동',place:text(row.place,120),note:text(row.note),storageVerified:row.storageVerified===true};if('end'in row)test.end=row.end;validateCharge(test);if(test.storedKWh!=null&&!test.storageVerified)throw Error('가져올 배터리 충전량의 근거 확인 필요');}
@@ -644,10 +644,17 @@
           const old=this.state.charges.find(c=>same(c)&&c.note==='Tesla 요청 자료');
           const existing=this.state.charges.find(c=>same(c)&&c!==old);
           if(existing){skipped++;continue;}
-          if(old){this.state.charges=this.state.charges.filter(c=>c.id!==old.id);this.addCharge({...row,note:'Tesla 요청 자료'});updated++;}
+          if(old){
+            const incoming=Object.fromEntries(Object.entries(row).filter(([,value])=>value!=null));
+            const merged={...old,...incoming,note:'Tesla 요청 자료'};
+            if(old.cost!=null){if(row.cost!==old.cost)preservedCosts++;merged.cost=old.cost;}
+            this.state.charges=this.state.charges.filter(c=>c.id!==old.id);
+            const next=this.addCharge(merged);
+            Object.assign(next,{...old,...next,id:old.id,source:old.source});updated++;
+          }
           else {this.addCharge(row);added++;}
         }
-        return {added,updated,skipped};
+        return {added,updated,skipped,preservedCosts};
       }catch(error){this.state.charges=before;throw error;}
     }
     addCharge(v){

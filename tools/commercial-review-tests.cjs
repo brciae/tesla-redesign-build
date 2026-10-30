@@ -43,4 +43,15 @@ const band = (fromMinute,toMinute,rate,extra={}) => ({ id:Math.random().toString
  assert.equal(restored.state.charges.length,2);
 }
 { const e=new Engine(); assert.throws(()=>e.settings({chargeTariffSchedules:[band(0,1440,100,{scope:'operator',match:'플러그링크'}),band(0,1440,200,{scope:'operator',match:'pluglink'})]}),/겹침/); }
+{
+ const e=new Engine();e.addCharge(charge({cost:6000}));const old=e.state.charges[0];old.photoName='receipt.jpg';old.receiptText='confirmed receipt';const id=old.id;
+ const outcome=e.importCharges({rows:[charge({cost:null,supplyKWh:25})]});
+ assert.equal(outcome.preservedCosts,1);assert.equal(e.state.charges[0].id,id);assert.equal(e.state.charges[0].cost,6000);assert.equal(e.state.charges[0].photoName,'receipt.jpg');assert.equal(e.state.charges[0].receiptText,'confirmed receipt');assert.equal(e.state.charges[0].supplyKWh,25);
+ e.importCharges({rows:[charge({cost:9999})]});assert.equal(e.state.charges[0].cost,6000,'reimport cannot replace a confirmed amount');
+ const zero=new Engine();zero.addCharge(charge({cost:0}));zero.importCharges({rows:[charge({cost:1234})]});assert.equal(zero.state.charges[0].cost,0,'free confirmed payment is preserved');
+}
+{
+ const e=new Engine();e.addCharge(charge());const seed=e.state.charges[0];e.state.charges=Array.from({length:10000},(_,i)=>({...seed,id:'record-'+i,at:start+i*60000}));const before=e.state.charges;
+ assert.throws(()=>e.importCharges({rows:[charge({at:start+10001*60000,end:start+10002*60000})]}),/10,000/);assert.equal(e.state.charges,before,'capacity failure preserves the original collection');
+}
 console.log('PASS: atomic import rollback, preserved old records, unclassified units/currency, timezone/weekday/version tariffs, gaps and paid amounts');

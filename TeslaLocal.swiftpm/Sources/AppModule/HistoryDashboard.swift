@@ -377,7 +377,7 @@ struct TeslaExportImportView: View {
                         .disabled(preview.rows.isEmpty || preview.rejected > 0 || model.demo)
                         .accessibilityIdentifier("import.preview.apply")
                     if preview.rejected > 0 { Text("확인이 필요한 행을 수정한 파일을 다시 선택해야 함. 부분 적용하지 않음.").font(.caption) }
-                    Text("기존 BLE·NAS 기록과 같은 시각·장소는 건너뛰며, 같은 가져오기 기록만 갱신함. 파일에 없는 과거 기록은 삭제하지 않음.").font(.caption).foregroundStyle(.secondary)
+                    Caption("기존 BLE·NAS 기록과 같은 시각·장소는 건너뛰며, 같은 가져오기 기록만 갱신함. 파일에 없는 과거 기록은 삭제하지 않음. 기존 확인 결제액·첨부 정보·기록 ID는 보존함.").font(.caption).foregroundStyle(.secondary)
                 }
             }
             if !result.isEmpty { Text(result).font(.subheadline).accessibilityIdentifier("import.result") }
@@ -396,9 +396,9 @@ struct TeslaExportImportView: View {
     private func apply(_ preview: ChargeImportPreview) {
         guard !preview.rows.isEmpty, preview.rejected == 0 else { return }
         model.errorMessage = nil
-        model.mutate("importCharges", ["rows": preview.rows, "vin": model.settings.string("vin")])
+        let summary = model.importChargeRecords(preview.rows) ?? [:]
         if let error = model.errorMessage { result = error; return }
-        result = "검사한 \(preview.rows.count)건 반영 완료 · 같은 기록은 중복 추가하지 않음"
+        result = "추가 \(Int(summary.number("added") ?? 0)) · 갱신 \(Int(summary.number("updated") ?? 0)) · 건너뜀 \(Int(summary.number("skipped") ?? 0))건 · 기존 결제액 보존 \(Int(summary.number("preservedCosts") ?? 0))건"
         self.preview = nil
     }
 }

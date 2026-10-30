@@ -648,6 +648,15 @@ final class AppModel: ObservableObject {
         }
         catch { errorMessage = error.localizedDescription }
     }
+    func importChargeRecords(_ rows: [Object]) -> Object? {
+        guard !recoveryLock, !demo else { errorMessage = "기록 보호 또는 예시 모드에서는 가져올 수 없음"; return nil }
+        do {
+            let summary = try runtime.call("importCharges", ["rows": rows, "vin": settings.string("vin")]) as? Object
+            refresh(detailed: true)
+            saveRecordsWhenAvailable(force: true)
+            return summary
+        } catch { errorMessage = error.localizedDescription; return nil }
+    }
     func enterDemo() {
         guard !demo else { return }; navigation.reset(); automations.resetObservation(); link.disconnect()
         do { liveState = try runtime.call("export") as? Object; demo = true; output = try runtime.call("demo") as? Object ?? [:] }
