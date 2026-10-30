@@ -43,7 +43,7 @@ def snapshot(archive, vin, now):
             seen += 1
             payload = json.loads(raw)
             at = timestamp(payload)
-            if at is None or at <= 0:
+            if at is None or at <= 0 or at > now + 5:
                 continue
             for item in payload.get("data", []):
                 if not isinstance(item, dict) or item.get("key") not in FIELDS:

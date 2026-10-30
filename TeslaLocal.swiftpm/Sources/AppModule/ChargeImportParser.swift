@@ -87,7 +87,7 @@ enum ChargeImportParser {
         guard depth < 8 else { return [] }
         if let list = value as? [Any] { return list.prefix(2001).flatMap { flatten($0, depth: depth + 1) } }
         guard let object = value as? [String: Any] else { return [] }
-        if object.keys.contains(where: { ["at", "date", "start", "starttime", "startedat", "chargestarttime", "chargestarttimeutc", "chargestartdatetime", "시작"].contains(normalize($0)) }) { return [object] }
+        if object.keys.contains(where: { ["at", "date", "start", "starttime", "startedat", "startdate", "시작시각", "chargestarttime", "chargestarttimeutc", "chargestartdatetime", "시작"].contains(normalize($0)) }) { return [object] }
         return object.keys.sorted().prefix(30).flatMap { flatten(object[$0]!, depth: depth + 1) }
     }
     /// RFC 4180 quoted commas, escaped quotes and quoted line breaks. Malformed quoting is rejected.
@@ -102,7 +102,7 @@ enum ChargeImportParser {
                     else { quoted = false; closed = true }
                 } else { cell.append(ch) }
             } else if ch == "," { row.append(cell); cell = ""; closed = false }
-            else if ch == "\n" || ch == "\r" {
+            else if ch == "\n" || ch == "\r" || ch == "\r\n" {
                 if ch == "\r", index + 1 < chars.count, chars[index + 1] == "\n" { index += 1 }
                 row.append(cell); if row.contains(where: { !$0.isEmpty }) { records.append(row) }; row = []; cell = ""; closed = false
             } else if ch == "\"", cell.isEmpty, !closed { quoted = true }

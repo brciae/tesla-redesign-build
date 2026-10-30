@@ -212,6 +212,27 @@
      }
     }
    }
+  },
+  "ProductionReviewTests": {
+   "type": "bundle.ui-testing",
+   "platform": "iOS",
+   "sources": [
+    {
+     "path": "ProductionReviewTests"
+    }
+   ],
+   "dependencies": [
+    {
+     "target": "YLCompanion"
+    }
+   ],
+   "settings": {
+    "base": {
+     "PRODUCT_BUNDLE_IDENTIFIER": "local.ylcompanion.productionreview",
+     "GENERATE_INFOPLIST_FILE": "YES",
+     "TEST_TARGET_NAME": "YLCompanion"
+    }
+   }
   }
  },
  "schemes": {
@@ -226,6 +247,14 @@
    },
    "archive": {
     "config": "Release"
+   },
+   "test": {
+    "config": "Debug",
+    "targets": [
+     {
+      "name": "ProductionReviewTests"
+     }
+    ]
    }
   }
  }

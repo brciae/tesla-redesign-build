@@ -83,7 +83,7 @@ final class AutomationCoordinator: ObservableObject {
     func readiness(for rule: AutomationRule, now: Date = Date()) -> String {
         if !rule.enabled { return "규칙 꺼짐" }
         if blocked { return "저장자료 확인 필요 · 실행 중단" }
-        guard let sample, now.timeIntervalSince1970 - sample.now <= 120 else { return "새 차량 데이터 대기" }
+        guard let sample, sample.active, (0...120).contains(now.timeIntervalSince1970 - sample.now) else { return "새 차량 데이터 대기" }
         guard AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: now)) else { return "설정한 시간대가 아님" }
         if rule.action != .speech && (sample.vehicle != rule.vehicle || !sample.boarded) { return "등록 차량·새 탑승 확인 대기 · 명령 미전송" }
         if rule.cabinCondition != "always" {

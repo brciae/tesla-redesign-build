@@ -113,6 +113,7 @@ xcodebuild -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
   -disableAutomaticPackageResolution \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
 
+bash tools/test-production-ui.sh
 bash tools/test-interface.sh
 
 app_path="$repo_root/Xcode/DerivedData/Build/Products/Release-iphoneos/YLCompanion.app"

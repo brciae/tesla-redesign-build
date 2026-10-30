@@ -10,9 +10,20 @@ struct YLCompanionApp: App {
     @AppStorage("appearance") private var appearance = "dark"
     private var colorScheme: ColorScheme? { appearance == "light" ? .light : (appearance == "system" ? nil : .dark) }
     init() { CharacterHooks.floatingVoicePicker = { AnyView(TypecastCharacterPickerSheet(target: .floatingCharacter)) } }
+    @ViewBuilder private func appContent(_ model: AppModel) -> some View {
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-review-fixture") {
+            ProductionReviewRoot(model: model)
+        } else {
+            MainView(model: model, link: model.link, navigation: model.navigation)
+        }
+#else
+        MainView(model: model, link: model.link, navigation: model.navigation)
+#endif
+    }
     var body: some Scene {
         WindowGroup {
-            if let model = owner.model { MainView(model: model, link: model.link, navigation: model.navigation).environmentObject(model).preferredColorScheme(colorScheme) }
+            if let model = owner.model { appContent(model).environmentObject(model).preferredColorScheme(colorScheme) }
             else { ContentUnavailableView("앱 준비 실패", systemImage: "exclamationmark.triangle", description: Text(owner.failure)).preferredColorScheme(colorScheme) }
         }
     }
@@ -20,7 +31,11 @@ struct YLCompanionApp: App {
 final class AppOwner: ObservableObject {
     let model: AppModel?
     let failure: String
-    init() { do { let current = try AppModel.shared ?? AppModel(); model = current; AppModel.shared = current; failure = "" } catch { model = nil; failure = error.localizedDescription } }
+    init() { do { let current = try AppModel.shared ?? AppModel(); model = current; AppModel.shared = current; failure = ""
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-review-fixture") { current.enterDemo() }
+#endif
+ } catch { model = nil; failure = error.localizedDescription } }
 }
 enum Theme {
     static let bg = adaptive(dark: UIColor(red: 23/255, green: 24/255, blue: 26/255, alpha: 1), light: UIColor(red: 242/255, green: 242/255, blue: 247/255, alpha: 1))
