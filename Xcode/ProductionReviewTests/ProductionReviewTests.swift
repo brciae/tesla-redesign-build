@@ -2,9 +2,9 @@ import XCTest
 final class ProductionReviewTests: XCTestCase {
     func testProductionScreensAndHomeNavigation() {
         continueAfterFailure = false
-        for screen in ["launch", "home", "health", "tariffs", "month", "battery", "coverage", "automation", "navigation"] {
+        for screen in ["launch", "home", "health", "tariffs", "month", "battery", "coverage", "automation", "navigation", "driving", "focus"] {
             let app = XCUIApplication()
-            app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", screen, "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR"]
+            app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", screen, "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-navigation.focusMode", screen == "focus" ? "YES" : "NO"]
             app.launch()
             XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), screen)
             if screen == "home" {

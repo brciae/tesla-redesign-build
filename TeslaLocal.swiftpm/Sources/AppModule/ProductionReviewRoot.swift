@@ -7,6 +7,7 @@ struct ProductionReviewRoot: View {
     var body: some View {
         Group {
             if screen == "home" { MainView(model: model, link: model.link, navigation: model.navigation) }
+            else if screen == "driving" || screen == "focus" { DrivingWorkspace(navigation: model.navigation, link: model.link).environment(\.colorScheme, .dark) }
             else { NavigationStack {
                 switch screen {
                 case "automation": AutomationView()
