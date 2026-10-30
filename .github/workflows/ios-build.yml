@@ -2,6 +2,10 @@ name: iOS Build
 on:
   workflow_dispatch:
     inputs:
+      artifact_run_id:
+        description: Export review attachments from a previous production UI artifact only
+        type: string
+        required: false
       ui_screens_only:
         description: Verify fullscreen captures only (no IPA)
         type: boolean
@@ -15,7 +19,7 @@ on:
     branches: [main]
 jobs:
   build:
-    if: inputs.ui_screens_only != true
+    if: inputs.ui_screens_only != true && !inputs.artifact_run_id
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -106,3 +110,27 @@ jobs:
             Xcode/InterfaceResults.xcresult
             Xcode/BuildOutput/InterfaceScreens/**
           if-no-files-found: ignore
+  extract-production-artifacts:
+    if: inputs.artifact_run_id != ''
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export existing production UI screenshots
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ inputs.artifact_run_id }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          gh run download "$RUN_ID" --name production-screens --dir Xcode/ReviewBundle
+          result="$(python3 -c 'from pathlib import Path; print(next(Path("Xcode/ReviewBundle").rglob("*.xcresult")))')"
+          mkdir -p Xcode/BuildOutput/ProductionReviewArtifacts
+          xcrun xcresulttool export attachments --path "$result" --output-path Xcode/BuildOutput/ProductionReviewArtifacts
+          xcrun xcresulttool get test-results summary --path "$result" > Xcode/BuildOutput/ProductionReviewArtifacts/summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-review-attachments
+          path: Xcode/BuildOutput/ProductionReviewArtifacts/**
