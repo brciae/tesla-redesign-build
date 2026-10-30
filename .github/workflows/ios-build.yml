@@ -2,6 +2,10 @@ name: iOS Build
 on:
   workflow_dispatch:
     inputs:
+      skip_shared_interface:
+        description: Reuse a completed interface run only when Probe sources are unchanged
+        type: boolean
+        default: false
       production_ui_only:
         description: Test production screens only without creating another IPA
         type: boolean
@@ -84,7 +88,7 @@ jobs:
           if-no-files-found: ignore
   interface:
     needs: build
-    if: always() && (inputs.ui_screens_only == true || needs.build.result == 'success')
+    if: always() && inputs.skip_shared_interface != true && (inputs.ui_screens_only == true || needs.build.result == 'success')
     runs-on: macos-15
     timeout-minutes: 60
     steps:

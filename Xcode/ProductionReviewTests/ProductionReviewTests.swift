@@ -55,6 +55,12 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertEqual(enabled.value as? String, "0")
                 let draft = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); draft.name = "production-manual-automation-draft"; draft.lifetime = .keepAlways; add(draft)
                 app.buttons["취소"].tap()
+            } else if screen == "driving" || screen == "focus" {
+                let setup = app.buttons["키 설정"]
+                XCTAssertTrue(setup.waitForExistence(timeout: 10)); XCTAssertTrue(setup.isHittable)
+                setup.tap()
+                XCTAssertTrue(app.navigationBars["운전 화면 설정"].waitForExistence(timeout: 5))
+                app.buttons["완료"].tap()
             } else if screen == "navigation" { XCTAssertTrue(app.switches["주행 집중 모드"].waitForExistence(timeout: 10)) }
             else if screen == "month" { XCTAssertTrue(app.navigationBars["월간 결산"].waitForExistence(timeout: 10)) }
             let portrait = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); portrait.name = "production-" + screen + "-portrait"; portrait.lifetime = .keepAlways; add(portrait)

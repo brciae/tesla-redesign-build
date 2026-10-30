@@ -16,15 +16,14 @@ struct DrivingWorkspace: View {
     @State private var destinationSearch = false
     @State private var carError: String?
     var body: some View {
+        VStack(spacing: 0) {
         GeometryReader { proxy in
             NavigationWorkspaceChrome(endGuidance: endGuidanceAction) {
                     NavigationDashboard(theme: navigation.theme, data: readout) {
                         if preferredMapEngine == "kakao", let controller = navigation.controller {
                             KakaoMapSurface(controller: controller, theme: navigation.theme, anchorX: 0.50, anchorY: 0.72)
                         } else {
-                            LiveStandbyMapView(navigation: navigation, readout: readout) {
-                                settings = true
-                            }
+                            LiveStandbyMapView(navigation: navigation)
                         }
                     } car: {
                         ZStack {
@@ -63,6 +62,13 @@ struct DrivingWorkspace: View {
                 }
             }
             .background(navigation.theme.canvas)
+        }
+        if preferredMapEngine != "kakao" || navigation.controller == nil {
+            NavigationStandbyStatus(navigation: navigation, readout: readout) { settings = true }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .frame(maxWidth: .infinity).background(.black)
+                .accessibilityIdentifier("navigation.standby.status")
+        }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -353,23 +359,17 @@ enum SunClock {
 
 struct LiveStandbyMapView: View {
     @ObservedObject var navigation: EmbeddedNavigation
+    var body: some View { StandbyMKMapView(recenterRequest: navigation.recenterRequest) }
+}
+
+/// Keep setup and recovery actions outside the map masks and dashboard overlays.
+private struct NavigationStandbyStatus: View {
+    @ObservedObject var navigation: EmbeddedNavigation
     let readout: NavigationReadout
     var onSettings: () -> Void = {}
 
-    var body: some View {
-        ZStack {
-            StandbyMKMapView(recenterRequest: navigation.recenterRequest)
-
-            VStack {
-                Spacer()
-                statusPill
-                    .padding(.bottom, 28)
-            }
-        }
-    }
-
     @ViewBuilder
-    private var statusPill: some View {
+    var body: some View {
         HStack(spacing: 8) {
             if !navigation.hasKey {
                 Image(systemName: "key.fill")
