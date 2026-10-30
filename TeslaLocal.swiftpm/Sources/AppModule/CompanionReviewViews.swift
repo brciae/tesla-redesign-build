@@ -44,6 +44,12 @@ struct CompanionHealthView: View {
     @ObservedObject var link: VehicleLink
     @ObservedObject var voice: VoiceCoordinator
     @ObservedObject private var archive = FleetArchiveClient.shared
+    private func receptionStatus(_ group: Object, recent: Bool) -> String {
+        guard let at = group.number("at"), at > 0,
+              !["missing", "invalid"].contains(group.string("mode")) else { return "미수신" }
+        if model.demo { return "예시 데이터" }
+        return group.string("mode") == "recent" || recent ? "최근 수신" : "저장값"
+    }
     var body: some View {
         let presentation = homePresentation(model, link)
         ScrollView {
@@ -52,17 +58,19 @@ struct CompanionHealthView: View {
                     ForEach(["drive", "charge", "climate", "tire", "location", "closures"], id: \.self) { key in
                         let display = presentation.object(key)
                         let group = display.isEmpty ? model.groups.object(key) : display
+                        let status = receptionStatus(group, recent: display.isEmpty && model.output.object("fresh").flag(key))
                         HStack(alignment: .top) {
                             Text(["drive":"주행", "charge":"충전", "climate":"공조", "tire":"타이어", "location":"위치", "closures":"개폐"][key] ?? key)
                             Spacer()
                             VStack(alignment: .trailing) {
-                                Text(group.string("mode") == "recent" || (display.isEmpty && model.output.object("fresh").flag(key)) ? "최근 수신" : group.isEmpty ? "미수신" : "저장값")
-                                if !group.string("label").isEmpty { Text(group.string("label")).font(.caption).foregroundStyle(.secondary) }
-                                Text(dateText(group.number("at"))).font(.caption).foregroundStyle(.secondary)
+                                Text(status)
+                                if !group.string("label").isEmpty && group.string("label") != status { Text(group.string("label")).font(.caption).foregroundStyle(.secondary) }
+                                if let at = group.number("at"), at > 0 { Text(dateText(at)).font(.caption).foregroundStyle(.secondary) }
                             }
                         }.font(.subheadline)
                     }
                     Text("해당 항목의 관측 시각 기준임. 저장된 주차 위치는 현재 위치 측정과 구분됨.").font(.caption).foregroundStyle(.secondary)
+                    if model.demo { Text("예시 데이터 · 실제 차량 수신 상태가 아님").font(.caption).foregroundStyle(.orange) }
                     Button("지금 최신화") { model.refreshVehicle() }.disabled(model.demo || link.controlBusy)
                 }
                 CompanionSection(title: "안내·연결 복구", symbol: "speaker.wave.2") {

@@ -26,7 +26,7 @@ struct ChargeTimeOfUseView: View {
             }
             Section("시간대 · 한국 표준시") {
                 HStack { TextField("시작 HH:mm", text: $from); Text("~"); TextField("종료 HH:mm", text: $to) }.keyboardType(.numbersAndPunctuation)
-                Text("예: 09:00~23:00. 자정을 넘는 요금은 22:00~24:00과 00:00~07:00 두 구간으로 나누어 등록함.").font(.caption).foregroundStyle(.secondary)
+                Text(verbatim: "예: 09:00~23:00. 자정을 넘는 요금은 22:00~24:00과 00:00~07:00 두 구간으로 나누어 등록함.").font(.caption).foregroundStyle(.secondary)
                 selection(Array(0...6), values: $days, labels: ["일", "월", "화", "수", "목", "금", "토"])
             }
             Section("적용 월") { selection(Array(1...12), values: $months, labels: (1...12).map { "\($0)월" }) }

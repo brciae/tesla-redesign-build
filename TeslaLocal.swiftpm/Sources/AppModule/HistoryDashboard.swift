@@ -346,6 +346,10 @@ struct VisitedPlacesView: View {
 
 /// Imports are previewed and committed by one engine transaction; no delete-before-parse path.
 struct TeslaExportImportView: View {
+#if DEBUG
+    private var reviewText: String?
+    init(reviewText: String? = nil) { self.reviewText = reviewText }
+#endif
     @EnvironmentObject private var model: AppModel
     @State private var picking = false
     @State private var result = ""
@@ -357,6 +361,7 @@ struct TeslaExportImportView: View {
                 Text("Tesla 요청 자료와 표준 충전 CSV·JSON을 먼저 검사한 뒤 가져옴. 파일을 고르는 것만으로 기존 기록이 바뀌지 않음.")
                 Text("시간대가 없는 시각은 UTC로 읽음. 원화가 확인되지 않은 금액과 의미가 불명확한 kWh는 계산에서 제외하고 원문 값을 보관함.").font(.caption).foregroundStyle(.secondary)
             }
+            if model.demo { Caption("예시 모드에서는 미리보기만 확인 가능함. 실제 기록에는 반영하지 않음.") }
             Button { picking = true } label: { Label("파일 선택·미리보기", systemImage: "doc.badge.plus") }
             if let preview {
                 Section("가져오기 미리보기") {
@@ -367,10 +372,10 @@ struct TeslaExportImportView: View {
                         Text(dateText(first) + " ~ " + dateText(last)).font(.caption)
                     }
                     ForEach(preview.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
-                    ForEach(Array(preview.rows.prefix(5).enumerated()), id: \.offset) { _, row in
-                        VStack(alignment: .leading) {
-                            Text(row["place"] as? String ?? "장소 미확인")
-                            Text(dateText(row["at"] as? Double)).font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(preview.rows.prefix(5).enumerated()), id: \.offset) { _, row in previewRow(row) }
+                    if preview.rows.count > 5 {
+                        DisclosureGroup("나머지 \(preview.rows.count - 5)건 검토") {
+                            ForEach(Array(preview.rows.dropFirst(5).enumerated()), id: \.offset) { _, row in previewRow(row) }
                         }
                     }
                     Button("검사한 기록 가져오기") { apply(preview) }
@@ -381,7 +386,7 @@ struct TeslaExportImportView: View {
                 }
             }
             if !result.isEmpty { Text(result).font(.subheadline).accessibilityIdentifier("import.result") }
-        }.navigationTitle("충전 자료 가져오기")
+        }.navigationTitle("충전 자료 가져오기").onAppear { loadReviewPreview() }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.commaSeparatedText, .json, .plainText]) { outcome in
             guard case .success(let url) = outcome else { return }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -392,6 +397,24 @@ struct TeslaExportImportView: View {
             preview = parsed
             result = parsed.rows.isEmpty ? "가져올 충전 기록을 찾지 못했음. 기존 기록 변경 없음." : "미리보기 확인 후 가져오기를 누르면 반영됨."
         }
+    }
+    private func previewRow(_ row: Object) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(row.string("place").isEmpty ? "장소 미확인" : row.string("place")).font(.subheadline.bold())
+            Text(dateText(row.number("at"))).font(.caption).foregroundStyle(.secondary)
+            if let value = row.number("storedKWh") { Text("저장량 열 · \(valueText(value, digits: 2)) kWh").font(.caption) }
+            if let value = row.number("supplyKWh") { Text("공급량 열 · \(valueText(value, digits: 2)) kWh").font(.caption) }
+            if let value = row.number("importedEnergyKWh") { Caption("에너지 종류 미확인 · \(valueText(value, digits: 2)) kWh · 계산 제외") }
+            if let value = row.number("cost") { Text("결제액 열 · \(valueText(value))원").font(.caption) }
+            if let value = row.number("importedAmount") { Caption("외부 금액 · \(valueText(value, digits: 2)) \(row.string("importedCurrency")) · 원화 합계 제외") }
+        }
+    }
+    private func loadReviewPreview() {
+#if DEBUG
+        guard let reviewText, preview == nil else { return }
+        filename = "검증용 예시.csv"
+        preview = ChargeImportParser.parse(reviewText)
+#endif
     }
     private func apply(_ preview: ChargeImportPreview) {
         guard !preview.rows.isEmpty, preview.rejected == 0 else { return }

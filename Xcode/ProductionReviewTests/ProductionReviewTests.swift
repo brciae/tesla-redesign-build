@@ -2,7 +2,7 @@ import XCTest
 final class ProductionReviewTests: XCTestCase {
     func testProductionScreensAndHomeNavigation() {
         continueAfterFailure = false
-        for screen in ["launch", "home", "health", "tariffs", "month", "battery", "coverage", "automation", "navigation", "driving", "focus"] {
+        for screen in ["launch", "home", "health", "tariffs", "month", "battery", "coverage", "import", "importInvalid", "automation", "navigation", "driving", "focus"] {
             let app = XCUIApplication()
             app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", screen, "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-navigation.focusMode", screen == "focus" ? "YES" : "NO"]
             XCUIDevice.shared.orientation = .portrait
@@ -17,8 +17,23 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(app.descendants(matching: .any)["home.readiness"].waitForExistence(timeout: 10))
                 XCUIDevice.shared.press(.home); app.activate()
                 XCTAssertFalse(app.descendants(matching: .any)["app.launch.brand"].exists)
+            } else if screen == "import" {
+                XCTAssertTrue(app.staticTexts["검증용 예시.csv"].waitForExistence(timeout: 10))
+                let overview = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); overview.name = "production-import-preview-overview"; overview.lifetime = .keepAlways; add(overview)
+                let stored = app.staticTexts["저장량 열 · 20.00 kWh"]
+                for _ in 0..<2 where !stored.exists || !stored.isHittable { app.swipeUp() }
+                XCTAssertTrue(stored.waitForExistence(timeout: 5))
+                XCTAssertTrue(app.staticTexts["결제액 열 · 1200원"].exists)
+                let apply = app.buttons["import.preview.apply"]
+                for _ in 0..<2 where !apply.exists { app.swipeUp() }
+                XCTAssertTrue(apply.waitForExistence(timeout: 5))
+                XCTAssertFalse(apply.isEnabled)
+            } else if screen == "importInvalid" {
+                XCTAssertTrue(app.staticTexts["0건"].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.staticTexts["1건"].exists)
+                XCTAssertFalse(app.buttons["import.preview.apply"].isEnabled)
             } else if screen == "automation" {
-                let create = app.buttons["자동화 만들기"]
+                let create = app.buttons["automation.create"]
                 XCTAssertTrue(create.waitForExistence(timeout: 10)); create.tap()
                 let manual = app.buttons["직접 만들기"]
                 XCTAssertTrue(manual.waitForExistence(timeout: 5)); manual.tap()

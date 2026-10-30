@@ -44,7 +44,7 @@ enum ChargeImportParser {
             }
             let currency = (value(fields, ["currency", "통화"]) as? String ?? "").uppercased()
             if let cost = number(value(fields, ["totalcost", "totalamount", "amount", "cost", "금액"])) {
-                if cost < 0 || cost > 10_000_000 { result.rejected += 1; continue }
+                if !cost.isFinite || cost < 0 || cost > 10_000_000 { result.rejected += 1; continue }
                 if currency == "KRW" || currency == "원" { output["cost"] = cost }
                 else { output["importedAmount"] = cost; output["importedCurrency"] = currency.isEmpty ? "미확인" : String(currency.prefix(8)); result.warnings.append("원화가 확인되지 않은 금액은 원 단위 합계에서 제외") }
             }
@@ -66,10 +66,13 @@ enum ChargeImportParser {
         for key in aliases { if let value = row[key], !(value is NSNull) { return value } }; return nil
     }
     private static func number(_ value: Any?) -> Double? {
-        if let n = value as? NSNumber { return CFGetTypeID(n) == CFBooleanGetTypeID() ? nil : n.doubleValue }
+        if let n = value as? NSNumber { return CFGetTypeID(n) == CFBooleanGetTypeID() ? Double.nan : n.doubleValue }
         guard let raw = value as? String else { return nil }
-        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
-        return Double(clean)
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        let pattern = #"^[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]+)?)(?:[eE][+-]?[0-9]+)?$"#
+        guard clean.range(of: pattern, options: .regularExpression) != nil else { return Double.nan }
+        return Double(clean.replacingOccurrences(of: ",", with: "")) ?? Double.nan
     }
     private static func date(_ value: Any?) -> Date? {
         if let n = value as? NSNumber, n.doubleValue.isFinite, n.doubleValue > 946684800 {

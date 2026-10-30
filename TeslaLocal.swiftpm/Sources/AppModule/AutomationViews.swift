@@ -35,8 +35,11 @@ private struct AutomationDashboard: View {
                 }
                 Button("AI로 초안 만들기", systemImage: "sparkles") { model.aiRules.draft = nil; model.aiRules.presented = true }
             } label: {
-                Image(systemName: "plus.circle.fill").font(.title).accessibilityLabel("자동화 만들기")
+                Label("자동화 만들기", systemImage: "plus.circle.fill").labelStyle(.iconOnly).font(.system(size: 22, weight: .semibold)).frame(width: 44, height: 44)
             }
+            .frame(width: 44, height: 44)
+            .accessibilityLabel("자동화 만들기")
+            .accessibilityIdentifier("automation.create")
         } }
         .sheet(item: $editor) { r in AutomationRuleEditor(store: store, initial: r) { editor = nil } }
         .onChange(of: voiceEnabled) { _, value in if !value { model.voice.stopAutomatic() } }
