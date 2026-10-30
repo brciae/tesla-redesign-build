@@ -23,7 +23,7 @@ struct YLCompanionApp: App {
     }
     var body: some Scene {
         WindowGroup {
-            if let model = owner.model { appContent(model).environmentObject(model).preferredColorScheme(colorScheme) }
+            if let model = owner.model { BrandLaunchContainer { appContent(model).environmentObject(model) }.preferredColorScheme(colorScheme) }
             else { ContentUnavailableView("앱 준비 실패", systemImage: "exclamationmark.triangle", description: Text(owner.failure)).preferredColorScheme(colorScheme) }
         }
     }

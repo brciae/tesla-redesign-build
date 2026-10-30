@@ -99,6 +99,9 @@
     },
     {
      "path": "LiveActivityShared"
+    },
+    {
+     "path": "LaunchScreen.storyboard"
     }
    ],
    "dependencies": [
@@ -136,7 +139,6 @@
      "CFBundleDisplayName": "YL Companion",
      "CFBundleShortVersionString": "$(MARKETING_VERSION)",
      "CFBundleVersion": "$(CURRENT_PROJECT_VERSION)",
-     "UILaunchScreen": {},
      "NSBluetoothAlwaysUsageDescription": "차량 상태를 조회하고, 직접 누른 제어 또는 직접 활성화한 탑승 공조 규칙의 명령을 근거리에서 전송합니다.",
      "CFBundleURLTypes": [
       {
@@ -175,7 +177,8 @@
       "UIInterfaceOrientationLandscapeLeft",
       "UIInterfaceOrientationLandscapeRight"
      ],
-     "NSSupportsLiveActivities": true
+     "NSSupportsLiveActivities": true,
+     "UILaunchStoryboardName": "LaunchScreen"
     }
    }
   },

@@ -10,6 +10,8 @@ struct ProductionReviewRoot: View {
             else { NavigationStack {
                 switch screen {
                 case "tariffs": ChargeTimeOfUseView()
+                case "launch": BrandLaunchArtwork()
+                case "coverage": RecordCoverageView()
                 case "month": MonthClosingView()
                 case "battery": BatteryEvidenceView()
                 case "health": CompanionHealthView(link: model.link, voice: model.voice)

@@ -16,6 +16,7 @@ struct SharedDestinationInput {
         var lat = item(["dlat", "lat", "latitude", "y"]).flatMap(Double.init)
         var lon = item(["dlng", "lng", "longitude", "x"]).flatMap(Double.init)
         if let ll = item(["ll"]), lat == nil { let values = ll.split(separator: ",").compactMap { Double($0) }; if values.count == 2 { lat = values[0]; lon = values[1] } }
+        if (item(["dlat", "lat", "latitude", "y"]) != nil && lat == nil) || (item(["dlng", "lng", "longitude", "x"]) != nil && lon == nil) { throw InputError.invalid }
         let name = item(["dname", "name", "query", "q"]) ?? ""
         if lat == nil, url.host == "map.kakao.com", url.path.hasPrefix("/link/map/") {
             let values = url.path.split(separator: ","); if values.count >= 3 { lat = Double(values[values.count - 2]); lon = Double(values[values.count - 1]) }

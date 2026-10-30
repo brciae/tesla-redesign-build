@@ -35,7 +35,12 @@ struct TripEnergyHistoryView: View {
                 let meanAbsolute = errors.map { abs($0) }.reduce(0, +) / Double(errors.count)
                 let bias = errors.reduce(0, +) / Double(errors.count)
                 Text(String(format: "도착 비교 %d회 · 평균 절대오차 %.1f%%p · 실제−예측 %+.1f%%p", errors.count, meanAbsolute, bias)).font(.subheadline).monospacedDigit()
-                Text("출발 시 저장한 예측 기준임. 도착 미수신·취소·충전량 미확인은 제외하며 다른 앱과의 정확도 우위를 뜻하지 않음.").font(.caption).foregroundStyle(.secondary)
+                Caption("출발 예측 기준이며 중간 충전은 관측 SOC 증가로 보정함. 도착 미수신·취소·충전량 미확인은 제외함. 다른 앱과의 정확도 우위를 뜻하지 않음.").font(.caption).foregroundStyle(.secondary)
+            }
+            let intervalRows = rows.filter { $0.errorSOC != nil && !$0.chargingObserved && $0.actualArrivalSOC != nil }
+            if !intervalRows.isEmpty {
+                let included = intervalRows.filter { ($0.initial.lowSOC...$0.initial.highSOC).contains($0.actualArrivalSOC!) }.count
+                Text("충전 없는 도착 \(intervalRows.count)회 · 출발 예측 범위 안 \(included)회").font(.caption).monospacedDigit()
             }
             if rows.isEmpty { Text("길안내 시작 시 예측을 저장하고, 도착 후 실제 잔량과 비교함.").font(.caption).foregroundStyle(.secondary) }
             else {

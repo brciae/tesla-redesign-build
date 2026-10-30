@@ -39,6 +39,12 @@ class DashboardTests(unittest.TestCase):
         self.assertIsNone(current["Soc"]["value"])
         self.assertEqual(current["Soc"]["status"], "invalid")
 
+    def test_future_timestamp_cannot_mask_valid_observation(self):
+        now = time.time()
+        self.ingest(0, now - 10, {"Soc": {"doubleValue": 60}})
+        self.ingest(1, now + 3600, {"Soc": {"doubleValue": 99}})
+        self.assertEqual(snapshot(self.archive, VIN, now)["fields"][0]["value"], 60)
+
     def test_old_values_are_not_current(self):
         now = time.time()
         self.ingest(0, now - 121, {"Soc": {"doubleValue": 60}})

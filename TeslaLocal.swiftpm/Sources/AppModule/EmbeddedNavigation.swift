@@ -147,6 +147,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     private var manualRouteToken: String?
     private var manualCoordinate: CLLocationCoordinate2D?
     @Published private(set) var manualDestination = ""
+    var routeSourceSummary: String { !guiding && !busy ? "안내 중인 경로 없음" : manualRouteToken != nil ? "앱에서 선택한 목적지 기준" : "차량에서 받은 목적지 기준" }
     var energyDestination: String { manualDestination.isEmpty ? candidate?.string("name", "목적지") ?? "목적지" : manualDestination }
     private(set) var arrivalCoordinate: CLLocationCoordinate2D?
     var energyRouteKey: String {

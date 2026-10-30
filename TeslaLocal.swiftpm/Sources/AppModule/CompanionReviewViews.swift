@@ -6,7 +6,7 @@ struct CompanionReadinessCard: View {
     @ObservedObject var voice: VoiceCoordinator
     @ObservedObject private var notifications = ChargeNotificationManager.shared
     @State private var expanded = false
-    private var ready: Bool { !model.demo && model.output.object("fresh").flag("drive") && model.output.object("fresh").flag("charge") }
+    private var ready: Bool { let display = homePresentation(model, link); return !model.demo && display.object("drive").string("mode") == "recent" && display.object("charge").string("mode") == "recent" }
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 12) {
@@ -36,16 +36,19 @@ struct CompanionHealthView: View {
     @ObservedObject var voice: VoiceCoordinator
     @ObservedObject private var archive = FleetArchiveClient.shared
     var body: some View {
+        let presentation = homePresentation(model, link)
         ScrollView {
             VStack(spacing: 16) {
                 CompanionSection(title: "차량 데이터", symbol: "antenna.radiowaves.left.and.right") {
                     ForEach(["drive", "charge", "climate", "tire", "location", "closures"], id: \.self) { key in
-                        let group = model.groups.object(key)
+                        let display = presentation.object(key)
+                        let group = display.isEmpty ? model.groups.object(key) : display
                         HStack(alignment: .top) {
                             Text(["drive":"주행", "charge":"충전", "climate":"공조", "tire":"타이어", "location":"위치", "closures":"개폐"][key] ?? key)
                             Spacer()
                             VStack(alignment: .trailing) {
-                                Text(model.output.object("fresh").flag(key) ? "최근 수신" : group.isEmpty ? "미수신" : "저장값")
+                                Text(group.string("mode") == "recent" || (display.isEmpty && model.output.object("fresh").flag(key)) ? "최근 수신" : group.isEmpty ? "미수신" : "저장값")
+                                if !group.string("label").isEmpty { Text(group.string("label")).font(.caption).foregroundStyle(.secondary) }
                                 Text(dateText(group.number("at"))).font(.caption).foregroundStyle(.secondary)
                             }
                         }.font(.subheadline)
@@ -56,6 +59,7 @@ struct CompanionHealthView: View {
                 CompanionSection(title: "안내·연결 복구", symbol: "speaker.wave.2") {
                     Text(voice.notice.isEmpty ? voice.playbackState : voice.notice).font(.subheadline)
                     VoiceStatus(voice: voice)
+                    NavigationSourceStatus(navigation: model.navigation)
                     NavigationLink(value: Page.preferences) { Text("출력 경로·음량 시험") }
                     NavigationLink(value: Page.connection) { Text("Bluetooth·계정 연결 확인") }
                     NavigationLink(value: Page.notifications) { Text("알림 권한·시험 알림") }
@@ -67,7 +71,12 @@ struct CompanionHealthView: View {
                     LabeledContent("저장된 충전", value: "\(model.state.rows("charges").count)회")
                     if let status = model.storageStatus { Text(status).font(.caption).foregroundStyle(.orange) }
                     Text("앱이 받지 못한 구간은 NAS 수집 상태에 따라 보완됨. 연결됨 표시는 과거 모든 구간의 수집 완료를 뜻하지 않음.").font(.caption).foregroundStyle(.secondary)
+                    NavigationLink { RecordCoverageView() } label: { Text("최근 24시간 수집 관측") }
                     NavigationLink(value: Page.recordSettings) { Text("백업·기록 관리") }
+                }
+                CompanionSection(title: "데이터 지원 범위", symbol: "sensor") {
+                    Text("BLE·Fleet API·NAS는 실제 받은 항목만 표시함. 저장값과 최근 수신을 구분하며, 값이 없는 항목은 정상이나 0으로 가정하지 않음.").font(.caption).foregroundStyle(.secondary)
+                    Text("모터·브레이크 온도 등 추가 장치 데이터는 현재 별도 공급원과 호환성이 확인되지 않아 표시하지 않음.").font(.caption).foregroundStyle(.secondary)
                 }
                 CompanionSection(title: "자동 시작 설정", symbol: "bolt.circle") {
                     Text("단축어 → 자동화 → Bluetooth → 차량 연결 시 → 즉시 실행 → YL Companion 조회 재개").font(.subheadline)
@@ -76,5 +85,16 @@ struct CompanionHealthView: View {
                 }
             }.padding(16).frame(maxWidth: 640).frame(maxWidth: .infinity)
         }.background(Theme.bg).navigationTitle("수신 상태·문제 해결")
+    }
+}
+
+private struct NavigationSourceStatus: View {
+    @ObservedObject var navigation: EmbeddedNavigation
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(navigation.routeSourceSummary).font(.subheadline)
+            if navigation.guiding || navigation.busy { Text(navigation.energyDestination).font(.subheadline.bold()) }
+            Caption("차량 경로와 앱에서 선택한 경로의 기준을 구분함. 최신 차량 목적지가 바뀌면 현재 경로 정책에 따라 갱신되며, 오래된 경로 패킷은 새 목적지로 취급하지 않음.")
+        }
     }
 }
