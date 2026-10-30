@@ -212,7 +212,8 @@ final class AppModel: ObservableObject {
             return NavigationAnnouncementContext(guiding: self.navigation.guiding, destination: self.navigation.energyDestination,
                 routeKey: self.navigation.energyRouteKey, at: self.navigation.telemetry.number("at"),
                 seconds: self.navigation.telemetry.number("remainSeconds"), arrivalSOC: self.tripEnergy.estimate?.arrivalSOC,
-                now: Date().timeIntervalSince1970)
+                now: Date().timeIntervalSince1970, arrivalLowSOC: self.tripEnergy.estimate?.lowSOC,
+                reserveSOC: self.settings.number("reserveSOC") ?? 20)
         }
         refresh(detailed: true)
         fleet.commandAllowed = { [weak self] in

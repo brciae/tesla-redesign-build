@@ -79,6 +79,20 @@ final class AutomationCoordinator: ObservableObject {
         catch { policy.document = old; throw error }
     }
     func resetObservation() { sample = nil; physicalExpiresAt = 0; policy.reset(); presence = "탑승 신호 미수신" }
+    /// Explains gates without evaluating events or modifying last-fired state.
+    func readiness(for rule: AutomationRule, now: Date = Date()) -> String {
+        if !rule.enabled { return "규칙 꺼짐" }
+        if blocked { return "저장자료 확인 필요 · 실행 중단" }
+        guard let sample, now.timeIntervalSince1970 - sample.now <= 120 else { return "새 차량 데이터 대기" }
+        guard AutomationPolicy.allowsHour(rule, hour: Calendar.current.component(.hour, from: now)) else { return "설정한 시간대가 아님" }
+        if rule.action != .speech && (sample.vehicle != rule.vehicle || !sample.boarded) { return "등록 차량·새 탑승 확인 대기 · 명령 미전송" }
+        if rule.cabinCondition != "always" {
+            guard sample.climateFresh, let temperature = sample.insideC else { return "최근 실내 온도 대기" }
+            if rule.cabinCondition == "above" ? temperature < rule.cabinThresholdC : temperature > rule.cabinThresholdC { return "실내 온도 조건 미충족" }
+        }
+        if let last = policy.document.lastFired[sample.vehicle + ":" + rule.id], now.timeIntervalSince1970 - last < Double(rule.cooldownMinutes * 60) { return "반복 간격 대기 · 다음 새 이벤트 필요" }
+        return "기본 조건 준비 · 다음 새 \(rule.trigger.title) 이벤트 대기"
+    }
     /// Only the app's current route forecast may produce an arrival-energy warning.
     @MainActor private func checkArrivalEnergy(_ snapshot: FleetVehicleSnapshot, voice: VoiceCoordinator) {
         let key = "automation.arrivalLow." + snapshot.vin
@@ -88,9 +102,13 @@ final class AutomationCoordinator: ObservableObject {
         }
         guard !context.routeKey.isEmpty, let arrival = context.arrivalSOC, !context.destination.isEmpty else { return }
         let destination = context.destination
-        guard arrival < 15, defaults.string(forKey: key) != context.routeKey else { return }
-        defaults.set(context.routeKey, forKey: key)
-        let text = String(format: "%@ 도착 예상 배터리가 %.0f퍼센트로 낮습니다. 경로 중 충전을 계획하세요.", destination, arrival)
+        let level = ArrivalEnergyWarningPolicy.level(arrival: arrival, low: context.arrivalLowSOC, reserve: context.reserveSOC)
+        guard level > 0 else { return }
+        let marker = context.routeKey + ":" + String(level)
+        let previous = defaults.string(forKey: key) ?? ""
+        guard previous != marker, !(level == 1 && previous == context.routeKey + ":2") else { return }
+        defaults.set(marker, forKey: key)
+        let text = String(format: "%@ 도착 예상 배터리는 %.0f퍼센트입니다. 예측 범위가 설정한 예비 잔량 %.0f퍼센트보다 낮습니다. 경로 중 충전을 검토하세요.", destination, arrival, context.reserveSOC)
         onNotification?(UUID().uuidString, "도착 배터리 부족 예상", text)
         voice.say(text, key: "arrivalLow:" + snapshot.vin, category: "voiceAutomations", priority: 3, ttl: 60, manual: false)
     }

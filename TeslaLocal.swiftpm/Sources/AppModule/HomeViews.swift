@@ -86,6 +86,7 @@ struct HomeView: View {
                     ScreenBriefingControls(scope: .home, compact: true)
                 }
                 if !model.demo, model.fleet.isAuthenticated, !model.fleet.isReadingVehicle, model.fleet.vehicleSnapshot == nil { fleetStatusCard }
+                CompanionReadinessCard(link: link, voice: model.voice)
                 vehicleCard(p)
                 batteryCard(c, charging: isCharging)
                 HStack(spacing: 12) {
@@ -94,6 +95,10 @@ struct HomeView: View {
                          climateSubtitle(climate), tint: climate.flag("isOn") ? .cyan : .secondary)
                 }
                 weekCard
+                NavigationLink(value: Page.parking) {
+                    Label("주차 위치·메모·사진", systemImage: "parkingsign.circle").font(.subheadline.bold())
+                        .frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+                }.buttonStyle(.plain)
                 driveButton
                 VStack(spacing: 4) {
                     Caption("YL COMPANION · v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")

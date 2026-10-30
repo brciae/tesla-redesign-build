@@ -194,6 +194,8 @@ struct TripDetailView: View {
         self.init(id: row.string("id", String(row.number("start") ?? 0)), start: HistoryData.date(row, "start"), end: HistoryData.date(row, "end"),
             distanceKm: row.number("distanceKm"), energyKWh: used, startSOC: row.number("startSOC"), endSOC: row.number("endSOC"), partial: row.flag("missing"),
             startPoint: route.first.map { .init(latitude: $0.latitude, longitude: $0.longitude) }, endPoint: route.last.map { .init(latitude: $0.latitude, longitude: $0.longitude) })
+        routePoints = route.map { .init(latitude: $0.latitude, longitude: $0.longitude) }
+        outsideC = row.number("outsideC") ?? row.number("outsideTempC")
     }
 }
 
@@ -342,110 +344,67 @@ struct VisitedPlacesView: View {
     }
 }
 
-/// Imports Tesla's account data export (Supercharging history CSV/JSON) as charge records. Duplicates are skipped by the engine.
+/// Imports are previewed and committed by one engine transaction; no delete-before-parse path.
 struct TeslaExportImportView: View {
     @EnvironmentObject private var model: AppModel
     @State private var picking = false
     @State private var result = ""
+    @State private var preview: ChargeImportPreview?
+    @State private var filename = ""
     var body: some View {
         List {
             Section {
-                Text("1. Tesla 계정의 설정 → 개인정보 → 데이터 요청에서 충전 데이터를 요청하세요.")
-                Text("2. 받은 파일을 선택하면 충전 기록에 합칩니다. 앱이 이미 기록한 같은 충전은 건너뛰고, 예전에 가져온 자료는 새로 바꿉니다.")
-            }.font(.subheadline)
-            Button { picking = true } label: { Label("파일 선택", systemImage: "doc.badge.plus") }
-            if !result.isEmpty { Text(result).font(.subheadline).foregroundStyle(.secondary) }
-        }
-        .navigationTitle("Tesla 자료 가져오기")
+                Text("Tesla 요청 자료와 표준 충전 CSV·JSON을 먼저 검사한 뒤 가져옴. 파일을 고르는 것만으로 기존 기록이 바뀌지 않음.")
+                Text("시간대가 없는 시각은 UTC로 읽음. 원화가 확인되지 않은 금액과 의미가 불명확한 kWh는 계산에서 제외하고 원문 값을 보관함.").font(.caption).foregroundStyle(.secondary)
+            }
+            Button { picking = true } label: { Label("파일 선택·미리보기", systemImage: "doc.badge.plus") }
+            if let preview {
+                Section("가져오기 미리보기") {
+                    Text(filename).font(.subheadline.bold())
+                    LabeledContent("변환 가능한 기록", value: "\(preview.rows.count)건")
+                    LabeledContent("확인이 필요한 행", value: "\(preview.rejected)건")
+                    if let first = preview.rows.compactMap({ $0["at"] as? Double }).min(), let last = preview.rows.compactMap({ $0["at"] as? Double }).max() {
+                        Text(dateText(first) + " ~ " + dateText(last)).font(.caption)
+                    }
+                    ForEach(preview.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+                    ForEach(Array(preview.rows.prefix(5).enumerated()), id: \.offset) { _, row in
+                        VStack(alignment: .leading) {
+                            Text(row["place"] as? String ?? "장소 미확인")
+                            Text(dateText(row["at"] as? Double)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("검사한 기록 가져오기") { apply(preview) }
+                        .disabled(preview.rows.isEmpty || preview.rejected > 0 || model.demo)
+                        .accessibilityIdentifier("import.preview.apply")
+                    if preview.rejected > 0 { Text("확인이 필요한 행을 수정한 파일을 다시 선택해야 함. 부분 적용하지 않음.").font(.caption) }
+                    Text("기존 BLE·NAS 기록과 같은 시각·장소는 건너뛰며, 같은 가져오기 기록만 갱신함. 파일에 없는 과거 기록은 삭제하지 않음.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if !result.isEmpty { Text(result).font(.subheadline).accessibilityIdentifier("import.result") }
+        }.navigationTitle("충전 자료 가져오기")
         .fileImporter(isPresented: $picking, allowedContentTypes: [.commaSeparatedText, .json, .plainText]) { outcome in
             guard case .success(let url) = outcome else { return }
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { result = "파일을 읽지 못했습니다."; return }
-            let rows = TeslaExportParser.rows(text)
-            var added = 0, skipped = 0
-            // Re-import replaces what an earlier import added, so fixes to the importer apply to old rows too.
-            for old in model.state.rows("charges") where old.string("note") == "Tesla 요청 자료" { model.mutate("deleteCharge", ["id": old.selfID]) }
-            for row in rows {
-                let at = row.number("at") ?? 0, end = row.number("end") ?? at + 600_000
-                // Same session already recorded by BLE/NAS/Fleet: its start or its (late) collection time falls in this session.
-                if model.state.rows("charges").contains(where: { c in
-                    guard c.string("note") != "Tesla 요청 자료" else { return false }
-                    let s = c.number("at") ?? 0, e = c.number("end") ?? s
-                    return (s < end + 7_200_000 && e > at - 600_000)
-                }) { skipped += 1; continue }
-                let before = model.state.rows("charges").count
-                model.mutate("addCharge", row)
-                if model.state.rows("charges").count > before { added += 1 } else { skipped += 1 }
-            }
-            model.errorMessage = nil
-            result = rows.isEmpty ? "충전 이력 형식을 찾지 못했습니다. 슈퍼차저 이력 파일인지 확인해 주세요." : "충전 \(added)건 추가 · 중복·오류 \(skipped)건 제외"
+            preview = nil; filename = url.lastPathComponent
+            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 10_000_000,
+                  let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else { result = "10 MB 이하의 읽을 수 있는 CSV·JSON 파일 필요함. 기존 기록 변경 없음."; return }
+            let parsed = ChargeImportParser.parse(text, expectedVIN: model.settings.string("vin"))
+            preview = parsed
+            result = parsed.rows.isEmpty ? "가져올 충전 기록을 찾지 못했음. 기존 기록 변경 없음." : "미리보기 확인 후 가져오기를 누르면 반영됨."
         }
+    }
+    private func apply(_ preview: ChargeImportPreview) {
+        guard !preview.rows.isEmpty, preview.rejected == 0 else { return }
+        model.errorMessage = nil
+        model.mutate("importCharges", ["rows": preview.rows, "vin": model.settings.string("vin")])
+        if let error = model.errorMessage { result = error; return }
+        result = "검사한 \(preview.rows.count)건 반영 완료 · 같은 기록은 중복 추가하지 않음"
+        self.preview = nil
     }
 }
 
 enum TeslaExportParser {
-    static func rows(_ text: String) -> [Object] {
-        let body = text.trimmingCharacters(in: CharacterSet(charactersIn: "\u{FEFF}").union(.whitespacesAndNewlines))
-        if body.hasPrefix("[") || body.hasPrefix("{"), let data = body.data(using: .utf8), let json = try? JSONSerialization.jsonObject(with: data) {
-            return flatten(json).compactMap(record)
-        }
-        let lines = body.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        guard let header = lines.first.map(split) else { return [] }
-        return lines.dropFirst().compactMap { line in
-            let values = split(line)
-            var row: [String: Any] = [:]
-            for (i, key) in header.enumerated() where i < values.count { row[key] = values[i] }
-            return record(row)
-        }
-    }
-    private static func flatten(_ value: Any) -> [[String: Any]] {
-        if let list = value as? [Any] { return list.flatMap(flatten) }
-        guard let object = value as? [String: Any] else { return [] }
-        let nested = object.values.flatMap { ($0 is [Any] || $0 is [String: Any]) ? flatten($0) : [] }
-        return [object] + nested
-    }
-    private static func split(_ line: String) -> [String] {
-        var out: [String] = [], cur = "", quoted = false
-        for ch in line {
-            if ch == "\"" { quoted.toggle() } else if ch == ",", !quoted { out.append(cur); cur = "" } else { cur.append(ch) }
-        }
-        out.append(cur)
-        return out.map { $0.trimmingCharacters(in: .whitespaces) }
-    }
-    private static func find(_ row: [String: Any], _ words: [String]) -> Any? {
-        for (k, v) in row { let key = k.lowercased(); if words.contains(where: { key.contains($0) }) { return v } }
-        return nil
-    }
-    private static func number(_ v: Any?) -> Double? {
-        if let n = v as? NSNumber { return n.doubleValue }
-        guard let s = v as? String else { return nil }
-        return Double(s.filter { "0123456789.-".contains($0) })
-    }
-    private static func date(_ v: Any?) -> Date? {
-        guard let s = v as? String, !s.isEmpty else { return nil }
-        if let d = ISO8601DateFormatter().date(from: s) { return d }
-        // Tesla's export labels its times "(UTC)"; without a zone they must not be read as local time.
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "UTC")
-        for fmt in ["yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ss", "MM/dd/yyyy HH:mm", "yyyy.MM.dd HH:mm", "yyyy-MM-dd"] {
-            f.dateFormat = fmt; if let d = f.date(from: s) { return d }
-        }
-        return nil
-    }
-    private static func record(_ row: [String: Any]) -> Object? {
-        guard let at = date(find(row, ["charge start time", "start time", "chargestartdatetime", "start_time", "starttime", "start date", "date", "시작"])),
-              let kwh = number(find(row, ["energy", "kwh", "usage", "충전량"])), kwh > 0.1, kwh < 300 else { return nil }
-        var out: Object = ["at": at.timeIntervalSince1970 * 1000, "storedKWh": (kwh * 100).rounded() / 100, "storageVerified": true,
-                           "note": "Tesla 요청 자료"]
-        // "Europe Supercharger" / "General - AC power" (Tesla Charging Data export).
-        let kind = (find(row, ["charger type", "charger_type", "chargertype", "type"]) as? String ?? "Supercharger").lowercased()
-        out["chargeType"] = kind.contains("supercharger") ? "supercharger" : (kind.contains("dc") || kind.contains("fast") ? "dc" : "ac")
-        if let end = date(find(row, ["charge end time", "end time", "chargestopdatetime", "end_time", "endtime", "stop", "종료"])), end > at { out["end"] = end.timeIntervalSince1970 * 1000 }
-        if let cost = number(find(row, ["totalcost", "total_cost", "amount", "cost", "금액"])), cost >= 0 { out["cost"] = cost }
-        if let place = find(row, ["sitelocationname", "site_name", "location", "site", "장소"]) as? String, !place.isEmpty {
-            out["place"] = place == "Home" ? "집" : place == "Away" ? "외부" : String(place.prefix(120))
-        }
-        return out
-    }
+    static func rows(_ text: String) -> [Object] { ChargeImportParser.parse(text).rows }
 }
 
 /// One home for every record/analysis screen, TeslaMate-style: pick a sub-tab, drill into details.

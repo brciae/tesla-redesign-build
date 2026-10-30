@@ -11,6 +11,7 @@ struct DrivingWorkspace: View {
     @ObservedObject private var tripEnergy = TripEnergyStore.shared
     @ObservedObject private var spotify = SpotifyPlayback.shared
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
+    @AppStorage("navigation.focusMode") private var focusMode = false
     @State private var settings = false
     @State private var destinationSearch = false
     @State private var carError: String?
@@ -27,7 +28,7 @@ struct DrivingWorkspace: View {
                         }
                     } car: {
                         ZStack {
-                            if let camera = navigation.theme.carCamera {
+                            if !focusMode, let camera = navigation.theme.carCamera {
                                 RealityVehicleView(runtime: model.runtime, presentation: readout.scenePresentation(theme: navigation.theme),
                                     command: VehicleCameraCommand(serial: NavigationTheme.allCases.firstIndex(of: navigation.theme) ?? 0, action: "angle", yaw: camera.yaw, pitch: camera.pitch, zoom: navigation.theme.carZoom),
                                     reducedMotion: true, appearance: appearance.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)),
@@ -475,12 +476,14 @@ struct StandbyMKMapView: UIViewRepresentable {
 
 
 struct NavigationDisplaySettings: View {
+    @AppStorage("navigation.routePriority") private var routePriority = 0
     @ObservedObject var navigation: EmbeddedNavigation
     @AppStorage("preferredMapEngine") private var preferredMapEngine = "kakao"
     @AppStorage("navigation.mapAppearance") private var mapAppearance = "day"
     @AppStorage("navigation.markerStyle") private var markerStyle = "arrow.blue"
     @AppStorage("navigation.markerScale") private var markerScale = 2.0
     @AppStorage("navigation.autoTrafficReroute") private var autoTrafficReroute = true
+    @AppStorage("navigation.focusMode") private var focusMode = false
     var body: some View { Group {
                     Section("지도 표시") {
                         Picker("기본 지도", selection: $preferredMapEngine) {
@@ -513,7 +516,19 @@ struct NavigationDisplaySettings: View {
                         }
                         Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
                     }
+                    Section("경로 탐색") {
+                        Picker("카카오 탐색 기준", selection: $routePriority) {
+                            Text("추천").tag(0)
+                            Text("시간 우선").tag(1)
+                            Text("거리 우선").tag(2)
+                            Text("고속도로 우선").tag(3)
+                            Text("큰길 우선").tag(4)
+                        }
+                        Caption("다음 길안내 시작부터 적용됨. 안내 중 교통 재탐색은 시작할 때 선택한 기준을 유지함. Apple 지도 미리보기와 실제 카카오 경로는 다를 수 있음.").font(.caption).foregroundStyle(.secondary)
+                    }
                     Section("내비 화면") {
+                        Toggle("주행 집중 모드", isOn: $focusMode)
+                        Text("3D 차량 표시를 줄이고 지도·회전·차선·경고를 우선 표시함. 길안내와 차량 데이터 수신은 계속됨.").font(.caption).foregroundStyle(.secondary)
                         DashboardShadeControl()
                         Toggle("교통 변화 시 자동 재탐색", isOn: $autoTrafficReroute)
                             .onChange(of: autoTrafficReroute) { _, _ in navigation.applyTrafficPreferences() }

@@ -11,8 +11,8 @@
    "CODE_SIGNING_ALLOWED": "NO",
    "TARGETED_DEVICE_FAMILY": "1,2",
    "GENERATE_INFOPLIST_FILE": "YES",
-   "MARKETING_VERSION": "1.74",
-   "CURRENT_PROJECT_VERSION": "174",
+   "MARKETING_VERSION": "1.76",
+   "CURRENT_PROJECT_VERSION": "176",
    "OTHER_LDFLAGS": "$(inherited) -ObjC"
   }
  },
@@ -117,7 +117,15 @@
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationPictureInPicture.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationPipLifecycle.swift",
     "../TeslaLocal.swiftpm/Sources/AppModule/NavigationPipFrame.swift",
-    "InterfaceProbe/NavigationCardProbe.swift"
+    "InterfaceProbe/NavigationCardProbe.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/CompanionSection.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/RecordReviewViews.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeTimeOfUseView.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeImportParser.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/SharedDestinationInput.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargingAvailabilityPolicy.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargingWatchStore.swift",
+    "../TeslaLocal.swiftpm/Sources/AppModule/ChargeNotificationManager.swift"
    ],
    "settings": {
     "base": {

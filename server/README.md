@@ -74,3 +74,11 @@ Only a disposable synthetic CI project uses `docker compose down -v`.
 Sources: [Tesla receiver](https://github.com/teslamotors/fleet-telemetry/tree/v0.9.4),
 [Kafka Docker](https://kafka.apache.org/39/getting-started/docker/),
 [Synology projects](https://kb.synology.com/en-us/DSM/help/ContainerManager/docker_project?version=7).
+# 선택 기능: 차량 브라우저 현황
+
+`/dashboard`는 SOC·속도·기어·충전 전력만 표시하는 읽기 전용 화면임. 기존 NAS 배포를 자동 변경하지 않으며 기본 상태에서는 데이터 접근이 비활성임.
+
+관리자가 별도로 준비한 32자 이상 전용 키 파일 경로를 `DASHBOARD_TOKEN_FILE`, 해당 차량 VIN을 `DASHBOARD_VIN`에 지정해야 함. 기존 archive 키와 같은 키는 거부함. 이 키는 `/v1/dashboard`와 지정 차량에만 사용할 수 있고 전체 원자료 API에는 사용할 수 없음. 키 생성·접근권한·포트 공개는 이 코드 변경으로 수행하지 않음.
+
+차량에서는 기존에 설정한 HTTPS NAS 주소의 `/dashboard`를 열고 VIN과 전용 키를 입력함. 외부 HTTP에서는 연결을 차단함. 키는 URL·브라우저 저장소에 남기지 않고 화면을 벗어나면 메모리에서 해제함. 120초 이내의 각 필드 관측만 표시하며 위치·차량 명령·과거 기록을 전달하지 않음. 실제 NAS 배포·TLS·차량 브라우저 호환성은 해당 환경에서 확인해야 함.
+

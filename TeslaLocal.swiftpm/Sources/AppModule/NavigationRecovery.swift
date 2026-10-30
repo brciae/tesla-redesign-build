@@ -19,12 +19,28 @@ struct NavigationAnnouncementContext {
     var routeKey = ""
     var remainingMinutes: Double?
     var arrivalSOC: Double?
-    init(guiding: Bool, destination: String, routeKey: String, at: Double?, seconds: Double?, arrivalSOC: Double?, now: Double) {
+    var arrivalLowSOC: Double?
+    var reserveSOC = 20.0
+    init(guiding: Bool, destination: String, routeKey: String, at: Double?, seconds: Double?, arrivalSOC: Double?, now: Double,
+         arrivalLowSOC: Double? = nil, reserveSOC: Double = 20) {
         active = guiding && !routeKey.isEmpty
         guard guiding, !routeKey.isEmpty, let at, at.isFinite, (-5...10).contains(now - at) else { return }
         self.destination = String(destination.prefix(120)); self.routeKey = routeKey
         if let seconds, seconds.isFinite, (0...604800).contains(seconds) { remainingMinutes = seconds / 60 }
         if let arrivalSOC, arrivalSOC.isFinite, (0...100).contains(arrivalSOC) { self.arrivalSOC = arrivalSOC }
+        if let low = arrivalLowSOC, low.isFinite, (0...100).contains(low) { self.arrivalLowSOC = low }
+        self.reserveSOC = reserveSOC.isFinite ? min(100, max(0, reserveSOC)) : 20
+    }
+}
+
+enum ArrivalEnergyWarningPolicy {
+    /// Both the screen and speech compare the forecast's lower bound with the user's reserve.
+    /// The central estimate only determines escalation; it never overrides the configured reserve.
+    static func level(arrival: Double?, low: Double?, reserve: Double) -> Int {
+        guard let arrival, arrival.isFinite, (0...100).contains(arrival), reserve.isFinite, (0...100).contains(reserve) else { return 0 }
+        let bound = low.flatMap { $0.isFinite && (0...arrival).contains($0) ? $0 : nil } ?? arrival
+        guard bound < reserve else { return 0 }
+        return arrival < min(10, reserve) ? 2 : 1
     }
 }
 

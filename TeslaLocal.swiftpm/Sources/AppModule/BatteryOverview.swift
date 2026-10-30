@@ -57,6 +57,7 @@ struct BatteryOverview: View {
         let full = index.object("fullChargeRange")
         let rangeOnly = index.number("capacityMedianKWh") == nil && full.number("latestKm") != nil
         return VStack(alignment: .leading, spacing: 9) {
+            NavigationLink { BatteryEvidenceView() } label: { Label("충전량·계산 근거 확인", systemImage: "doc.text.magnifyingglass") }.font(.subheadline)
             HStack {
                 Text("배터리 용량·열화 추정").font(.headline)
                 InfoNote("열화율 추정", "차량 보고 완충 용량을 우선 사용. 충전 기반 참고 용량은 저장 에너지와 관측 SOC로 계산하며, 두 종류를 섞지 않음. 신차 기준이 없으면 기록 시작 대비 변화만 표시.")

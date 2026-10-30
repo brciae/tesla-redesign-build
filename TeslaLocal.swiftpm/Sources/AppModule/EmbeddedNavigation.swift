@@ -479,6 +479,7 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
                 if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
             }
             deadline = Timer.scheduledTimer(withTimeInterval: 35, repeats: false) { [weak self] _ in self?.failed("카카오 길안내 시작 응답 지연 · 자동 재시도 중단됨", ticket: ticket) }
+            view.configureRoutePriority(UserDefaults.standard.integer(forKey: "navigation.routePriority"))
             view.prepare(appKey: key, latitude: point.coordinate.latitude, longitude: point.coordinate.longitude,
                          destinationLatitude: lat, destinationLongitude: lng, name: candidate.string("name"), hipass: hipass, validUntil: Date().timeIntervalSince1970 + 60)
         } catch { failed("내비 보안 키 읽기 실패", ticket: ticket) }

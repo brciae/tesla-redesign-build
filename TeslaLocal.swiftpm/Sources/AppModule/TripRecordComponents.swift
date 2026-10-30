@@ -47,17 +47,22 @@ struct TripComparisonScreen: View {
     let current: TripRecordMetrics
     let candidates: [TripRecordMetrics]
     @State private var selected = ""
+    @State private var similarOnly = true
+    private var similar: [TripRecordMetrics] { available.filter { current.comparable(as: $0) } }
+    private var choices: [TripRecordMetrics] { similarOnly && !similar.isEmpty ? similar : available }
     private var available: [TripRecordMetrics] { Array(candidates.filter { $0.id != current.id }.sorted { ($0.start ?? .distantPast) > ($1.start ?? .distantPast) }.prefix(100)) }
-    private var comparison: TripRecordMetrics? { available.first { $0.id == selected } ?? available.first { current.sameEndpoints(as: $0) == true } ?? available.first }
+    private var comparison: TripRecordMetrics? { choices.first { $0.id == selected } ?? choices.first { current.comparable(as: $0) } ?? choices.first }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 TripRecordSummaryCard(metrics: current, startName: "이번 주행 출발", endName: "이번 주행 도착")
+                Toggle("비슷한 경로·조건 우선", isOn: $similarOnly)
+                Text("비교 가능한 관측 경로 \(similar.count)회 · 전체 후보 \(available.count)회").font(.caption).foregroundStyle(.secondary)
                 if let other = comparison {
                     Picker("비교할 주행", selection: $selected) {
-                        ForEach(available) { item in Text((item.start?.formatted(date: .abbreviated, time: .shortened) ?? "시각 미확인") + String(format: " · %.1f km", item.distanceKm ?? 0)).tag(item.id) }
+                        ForEach(choices) { item in Text((item.start?.formatted(date: .abbreviated, time: .shortened) ?? "시각 미확인") + String(format: " · %.1f km", item.distanceKm ?? 0)).tag(item.id) }
                     }.pickerStyle(.menu).accessibilityIdentifier("trip.compare.selection")
-                    Text(current.sameEndpoints(as: other) == true ? "출발·도착 위치가 각각 500m 이내인 기록 · 실제 경로는 다를 수 있음" : current.sameEndpoints(as: other) == false ? "출발·도착 위치가 다른 주행 · 효율 차이를 같은 경로의 효과로 해석하지 않음" : "위치 기록 부족 · 같은 경로 여부 미확인")
+                    Text(current.comparisonReason(as: other))
                         .font(.caption).foregroundStyle(.secondary)
                     if let a = current.minutes, let b = other.minutes { Text(String(format: "소요 시간 %+.0f분", a - b)).font(.headline).accessibilityIdentifier("trip.compare.time") }
                     if let change = current.efficiencyChange(from: other) { Text(String(format: "전비 %+.1f%%", change)).font(.headline).accessibilityIdentifier("trip.compare.efficiency") }
@@ -69,6 +74,7 @@ struct TripComparisonScreen: View {
                 } else { Text("비교할 다른 주행 기록 없음").foregroundStyle(.secondary) }
             }.padding(16)
         }.navigationTitle("주행 비교").onAppear { if selected.isEmpty { selected = comparison?.id ?? "" } }
+            .onChange(of: similarOnly) { _, _ in selected = comparison?.id ?? "" }
     }
     private func bars(_ title: String, _ unit: String, _ a: Double?, _ b: Double?) -> some View {
         VStack(alignment: .leading, spacing: 6) {

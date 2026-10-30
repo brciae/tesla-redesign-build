@@ -231,6 +231,7 @@
   const canonicalOperator=value=>{const clean=v=>rateKey(v).replace(/주식회사|\(주\)/g,'');const key=clean(value);return tariffCatalog.find(r=>[r.operator,...r.aliases].some(n=>clean(n)===key))?.operator??String(value??'').trim();};
   const memberPricing=(c,s)=>typeof c.memberPricing==='boolean'?c.memberPricing:(s.chargeMemberOperators??[]).some(x=>rateKey(canonicalOperator(x))===chargeIdentity(c,s).operator);
   function validateRates(s){
+    validateTariffSchedules(s.chargeTariffSchedules);
     if(s.chargeMemberOperators!=null&&(!Array.isArray(s.chargeMemberOperators)||s.chargeMemberOperators.length>100||s.chargeMemberOperators.some(x=>typeof x!=='string'||x.length>120)))throw Error('회원가 사업자 설정 오류');
     for(const k of ['fastTariff','superchargerTariff'])if(!optional(s[k],0,10000))throw Error('충전 단가 범위 오류');
     if(s.homePoint!=null&&!validCoordinates(s.homePoint.latitude,s.homePoint.longitude))throw Error('집 좌표 오류');
@@ -254,6 +255,43 @@
     const operator=provider||(/채비|chaevi/.test(place)?'채비':/환경부|기후부/.test(place)?'환경부':/한전|한국전력/.test(place)?'한국전력':/에버온/.test(place)?'에버온':/파워큐브/.test(place)?'파워큐브':/차지비/.test(place)?'차지비':/플러그링크/.test(place)?'플러그링크':supercharger?'tesla':'');
     return {place,operator:rateKey(canonicalOperator(operator)),kind,home};
   }
+  function validateTariffSchedules(rows){
+    if(rows==null)return;
+    if(!Array.isArray(rows)||rows.length>100)throw Error('시간대 요금은 최대 100구간');
+    const validSet=(a,lo,hi)=>Array.isArray(a)&&a.length>0&&a.length<=hi-lo+1&&new Set(a).size===a.length&&a.every(n=>Number.isInteger(n)&&n>=lo&&n<=hi);
+    for(const r of rows){
+      if(!r||!['home','place','operator'].includes(r.scope)||typeof r.match!=='string'||r.match.length>120||(r.scope!=='home'&&!r.match.trim())||!['any','ac','dc','supercharger'].includes(r.kind)||r.timezone!=='Asia/Seoul'||!validSet(r.months,1,12)||!validSet(r.days,0,6)||!Number.isInteger(r.fromMinute)||!Number.isInteger(r.toMinute)||r.fromMinute<0||r.toMinute>1440||r.fromMinute>=r.toMinute||!num(r.rate,0,10000)||!num(r.effectiveFrom,0,1e14)||!optional(r.effectiveTo,r.effectiveFrom+1,1e14))throw Error('시간대 요금의 대상·요일·월·시각·기간·단가 확인 필요');
+    }
+    for(let i=0;i<rows.length;i++)for(let j=i+1;j<rows.length;j++){
+      const a=rows[i],b=rows[j];
+      if(a.scope===b.scope&&rateKey(a.match)===rateKey(b.match)&&(a.kind===b.kind||a.kind==='any'||b.kind==='any')&&a.months.some(m=>b.months.includes(m))&&a.days.some(d=>b.days.includes(d))&&a.fromMinute<b.toMinute&&b.fromMinute<a.toMinute&&a.effectiveFrom<(b.effectiveTo??1e14)&&b.effectiveFrom<(a.effectiveTo??1e14))throw Error('같은 대상의 시간대 요금이 겹침 · 적용 기간 또는 시각을 나누어야 함');
+    }
+  }
+  function scheduledTariff(c,s,identity,kwh){
+    const candidates=(s.chargeTariffSchedules??[]).filter(r=>(r.kind==='any'||r.kind===identity.kind)&&(r.scope==='home'?identity.home:r.scope==='place'?rateKey(r.match)===identity.place:rateKey(canonicalOperator(r.match))===identity.operator));
+    if(!candidates.length)return null;
+    const start=c.at,end=c.end;
+    const activeAt=t=>{
+      const local=new Date(t+9*3600000), minute=local.getUTCHours()*60+local.getUTCMinutes();
+      return candidates.filter(r=>t>=r.effectiveFrom&&t<(r.effectiveTo??1e14)&&r.months.includes(local.getUTCMonth()+1)&&r.days.includes(local.getUTCDay())&&minute>=r.fromMinute&&minute<r.toMinute)
+        .sort((a,b)=>({place:0,operator:1,home:2}[a.scope]-{place:0,operator:1,home:2}[b.scope])||(a.kind==='any'?1:0)-(b.kind==='any'?1:0))[0];
+    };
+    if(!num(start,0,1e14))return null;
+    if(!num(end,start+1,start+2*DAY))return activeAt(start)?{estimatedUnitPrice:null,estimatedCost:null,costRateSource:'시간대 요금 · 충전 종료 시각 미확인'}:null;
+    if(!candidates.some(r=>start<(r.effectiveTo??1e14)&&end>r.effectiveFrom))return null;
+    const cuts=new Set([start,end]);
+    const midnight=Math.floor((start+9*3600000)/DAY)*DAY-9*3600000;
+    for(let day=midnight;day<=end;day+=DAY)for(const r of candidates)for(const minute of [0,r.fromMinute,r.toMinute]){const t=day+minute*60000;if(t>start&&t<end)cuts.add(t);}
+    for(const r of candidates)for(const t of [r.effectiveFrom,r.effectiveTo])if(t>start&&t<end)cuts.add(t);
+    const times=[...cuts].sort((a,b)=>a-b);let weighted=0,rate=null,varying=false,covered=false;
+    for(let i=1;i<times.length;i++){
+      const rule=activeAt((times[i-1]+times[i])/2);
+      if(!rule){if(covered||times.slice(i).some(t=>activeAt(t-1)))return{estimatedUnitPrice:null,estimatedCost:null,costRateSource:'시간대 요금 미설정 구간 포함 · 금액 미확인'};return null;}
+      covered=true;if(rate!=null&&rate!==rule.rate)varying=true;rate=rule.rate;weighted+=(times[i]-times[i-1])*rule.rate;
+    }
+    const average=weighted/(end-start);
+    return{estimatedUnitPrice:round(average,2),estimatedCost:num(kwh,0,300)?round(kwh*average,0):null,costRateSource:varying?'시간대·요일·계절 요금 · 구간 전력량 미관측, 시간 비례 추정':'등록 시간대 요금 · Asia/Seoul'};
+  }
   function costEstimate(c,s,history){
     const identity=chargeIdentity(c,s), {place,operator,kind,home}=identity;
     const kwh=c.supplyKWh??c.nasSupplyKWh??c.vehicleReportedKWh??c.estimatedStoredKWh;
@@ -262,6 +300,8 @@
     const catalog=tariffCatalog.find(r=>rateKey(r.operator)===operator&&r.kind===kind);
     const result={estimatedCost:null,estimatedUnitPrice:null,costBasis:basis,costRateSource:'',memberPricingApplied:isMember,chargeOperator:c.chargeOperator||c.siteMatch?.operator||'',place:c.place||c.siteMatch?.name||'',tariffURL:catalog?.url??'',tariffChecked:catalog?.checked??'',tariffCondition:catalog?.condition??'',chargeTypeLabel:home?'집 완속':({ac:'완속 AC',dc:'급속 DC',supercharger:'슈퍼차저'})[kind]??'충전 방식 미확인'};
     if(num(c.cost,0,1e7)){result.costRateSource='확인 결제액';return result;}
+    const scheduled=scheduledTariff(c,s,identity,kwh);
+    if(scheduled)return {...result,...scheduled};
     let rate=null,source='';
     const rules=(s.chargeRates??[]).filter(r=>(r.kind==='any'||r.kind===kind)&&(r.scope==='place'?rateKey(r.match)===place:rateKey(canonicalOperator(r.match))===operator));
     const rule=rules.sort((a,b)=>(a.scope==='place'?0:1)-(b.scope==='place'?0:1)||(a.kind==='any'?1:0)-(b.kind==='any'?1:0))[0];
@@ -406,7 +446,7 @@
       for(const k of ['name','model'])if(k in v)s[k]=text(v[k],80);
       if('vin'in v){if(typeof v.vin!=='string')throw Error('VIN 형식 오류');const vin=v.vin.trim().toUpperCase();if(vin&&!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin))throw Error('VIN은 I/O/Q를 제외한 영문·숫자 17자리임');const recorded=['trips','charges','maintenance','parkingNotes','parkingPeriods','tires'].some(k=>this.state[k].length)||Object.keys(this.state.groups).length;if(this.state.settings.vin&&vin!==this.state.settings.vin&&recorded)throw Error('기존 기록의 차량과 VIN이 다름. 먼저 백업하고 새 프로필이 필요함.');s.vin=vin;}
       for(const [k,lo,hi]of [['assumedCapacityKWh',20,200],['reserveSOC',0,80],['dailyLimit',1,100],['tariff',0,10000],['plannedKm',0,3000]])if(k in v){if(!optional(v[k],lo,hi)||(k==='reserveSOC'&&v[k]==null))throw Error('설정 범위를 확인해야 함: '+k);s[k]=v[k]??null;}
-      for(const k of ['fastTariff','superchargerTariff','chargeRates','chargeMemberOperators','homePoint','homeRadiusM','homeRegions','healthReferenceMethod','healthReferenceKWh','healthBatteryStartAt'])if(k in v)s[k]=v[k];
+      for(const k of ['fastTariff','superchargerTariff','chargeRates','chargeTariffSchedules','chargeMemberOperators','homePoint','homeRadiusM','homeRegions','healthReferenceMethod','healthReferenceKWh','healthBatteryStartAt'])if(k in v)s[k]=v[k];
       if(v.homePoint&&!('homeRegions'in v)&&(!this.state.settings.homePoint||!nearby(v.homePoint,this.state.settings.homePoint,1))){
         const previous=this.state.settings.homePoint,now=Date.now();
         const history=(this.state.settings.homeRegions??(previous?[{...previous,radius:this.state.settings.homeRadiusM??600,start:0}]:[])).map(h=>h.end==null?{...h,end:now}:h);
@@ -592,10 +632,30 @@
       }
       return this.view();
     }
+    importCharges(v){
+      if(!Array.isArray(v.rows)||!v.rows.length||v.rows.length>2000)throw Error('가져올 충전 자료는 1~2000건이어야 함');
+      if(v.vin&&v.vin!==this.state.settings.vin)throw Error('선택한 차량과 가져올 자료의 VIN이 다름');
+      const before=this.state.charges;this.state.charges=before.map(c=>({...c}));let added=0,updated=0,skipped=0;
+      try{
+        // Validate the entire batch before any replacement. Empty/invalid files never remove records.
+        for(const row of v.rows){const test={id:'import-validation',at:row.at,startSOC:row.startSOC??null,endSOC:row.endSOC??null,supplyKWh:row.supplyKWh??null,storedKWh:row.storedKWh??null,cost:row.cost??null,source:'수동',place:text(row.place,120),note:text(row.note),storageVerified:row.storageVerified===true};if('end'in row)test.end=row.end;validateCharge(test);if(test.storedKWh!=null&&!test.storageVerified)throw Error('가져올 배터리 충전량의 근거 확인 필요');}
+        for(const row of v.rows){
+          const same=c=>Math.abs(c.at-row.at)<60000&&rateKey(c.place)===rateKey(row.place);
+          const old=this.state.charges.find(c=>same(c)&&c.note==='Tesla 요청 자료');
+          const existing=this.state.charges.find(c=>same(c)&&c!==old);
+          if(existing){skipped++;continue;}
+          if(old){this.state.charges=this.state.charges.filter(c=>c.id!==old.id);this.addCharge({...row,note:'Tesla 요청 자료'});updated++;}
+          else {this.addCharge(row);added++;}
+        }
+        return {added,updated,skipped};
+      }catch(error){this.state.charges=before;throw error;}
+    }
     addCharge(v){
       const c={id:id(),at:v.at??Date.now(),startSOC:v.startSOC??null,endSOC:v.endSOC??null,supplyKWh:v.supplyKWh??null,storedKWh:v.storedKWh??null,cost:v.cost??null,source:v.source==='OCR'?'OCR 확인':'수동',place:text(v.place,120),note:text(v.note),complete:v.complete===true,storageVerified:v.storageVerified===true,comparable:v.comparable===true};
       if('end'in v)c.end=v.end;if('timeBasis'in v)c.timeBasis=v.timeBasis;if('durationMinutes'in v)c.durationMinutes=v.durationMinutes;
       validateCharge(c);if(c.storedKWh!=null&&!c.storageVerified)throw Error('저장 에너지로 확인된 자료만 입력해야 함. 영수증은 공급량 칸 사용.');
+      if(num(v.importedEnergyKWh,0,300))c.importedEnergyKWh=v.importedEnergyKWh;
+      if(num(v.importedAmount,0,1e7)){c.importedAmount=v.importedAmount;c.importedCurrency=text(v.importedCurrency,8);}
       c.chargeType=['ac','dc','supercharger'].includes(v.chargeType)?v.chargeType:null;c.chargeTypeManual=!!c.chargeType;c.chargeOperator=text(v.chargeOperator,120);
       if(typeof v.memberPricing==='boolean')c.memberPricing=v.memberPricing;
       if(typeof v.roamingPricing==='boolean')c.roamingPricing=v.roamingPricing;

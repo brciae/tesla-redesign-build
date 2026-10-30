@@ -25,6 +25,7 @@ struct EnergyCalendarView: View {
                         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 }
                 monthHeader
+                NavigationLink { MonthClosingView(month: month) } label: { Label("월간 결산 · 확인액·추정액 구분", systemImage: "chart.bar.doc.horizontal") }.font(.subheadline)
                 modePickers
                 calendarLegend
                 chartStrip

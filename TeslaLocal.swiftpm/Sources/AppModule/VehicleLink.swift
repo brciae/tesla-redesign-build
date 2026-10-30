@@ -358,6 +358,27 @@ final class VehicleLink: NSObject, ObservableObject, CBCentralManagerDelegate, C
         guard foreground else { return }
         beginConnection()
     }
+    /// Shortcuts may resume read-only BLE while locked. Never enables foreground command gates.
+    func resumeReadOnlyInBackground(vin: String) -> String {
+        guard supportsBackgroundRead, UserDefaults.standard.object(forKey: "backgroundBLERead") == nil || UserDefaults.standard.bool(forKey: "backgroundBLERead") else {
+            return "백그라운드 차량 조회가 꺼져 있음 · 앱의 연결 설정에서 확인 필요"
+        }
+        guard vin.range(of: "^[A-HJ-NPR-Z0-9]{17}$", options: .regularExpression) != nil else { return "앱에서 차량을 먼저 등록해야 함" }
+        guard !controlBusy, !commandInFlight else { return "차량 명령 처리 중 · 조회 재개 대기" }
+        if UIApplication.shared.applicationState == .active { resume(vin: vin); return status }
+        if wantedVIN != vin { selectVehicle(vin); resetTransport() }
+        foreground = false; userDisconnected = false; backgroundWanted = true
+        cancelConfirmation()
+        _ = try? runtime.call("controlContext", ["foreground": false, "enabled": controlEnabled])
+        UserDefaults.standard.set(vin, forKey: "ble.restoreVIN")
+        if central == nil {
+            central = CBCentralManager(delegate: self, queue: .main, options: [CBCentralManagerOptionRestoreIdentifierKey: "YLCompanion.vehicle.read"])
+            status = "Bluetooth 준비 중 · 조회만 재개"; return status
+        }
+        if connected { backgroundRead = true; if authentic { refreshNow() }; return "연결된 차량 조회 재개 · iOS 허용 범위" }
+        if central?.state == .poweredOn, let saved = knownPeripheral() { backgroundReconnect(saved); return status }
+        return "이전에 연결한 차량 대기 · 처음 연결은 앱에서 진행 필요"
+    }
     func resume(vin: String) {
         let alreadyActive = foreground
         foreground = true

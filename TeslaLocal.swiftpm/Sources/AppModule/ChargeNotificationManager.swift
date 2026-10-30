@@ -46,6 +46,11 @@ import Combine
         guard UserDefaults.standard.bool(forKey: "notify.automation") else { return }
         notifyOnce(id: "YL.automation." + id, title: title, body: body, destination: "automation")
     }
+    func notifyAvailability(id: String, name: String, available: Int, at: Date) {
+        guard allowed, available > 0 else { return }
+        notifyOnce(id: "YL.availability.\(id).\(Int(at.timeIntervalSince1970))", title: "충전 가능 상태로 변경",
+                   body: "\(name) · \(available)대 충전 가능. 조회 시점 상태이며 실제 주차면 공실은 별도 확인이 필요합니다.", destination: "chargingSites")
+    }
     private func notifyOnce(id: String, title: String, body: String, destination: String) {
         let key = "YL.notification.events"
         var sent = UserDefaults.standard.stringArray(forKey: key) ?? []
@@ -81,7 +86,7 @@ import Combine
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         Task { @MainActor in
             if let destination = response.notification.request.content.userInfo["destination"] as? String,
-               ["charging", "trips", "automation"].contains(destination) {
+               ["charging", "trips", "automation", "chargingSites"].contains(destination) {
                 UserDefaults.standard.set(destination, forKey: "YL.notificationDestination")
                 NotificationCenter.default.post(name: Notification.Name("YL.openChargingFromNotification"), object: nil)
             }

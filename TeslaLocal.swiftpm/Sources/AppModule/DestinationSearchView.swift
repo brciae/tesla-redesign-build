@@ -39,6 +39,7 @@ struct DestinationSearchView: View {
     @ObservedObject var navigation: EmbeddedNavigation
     var canEdit: Bool = true
     var initialPlace: SavedNavigationPlace?
+    var initialQuery = ""
     @State private var query = ""
     @State private var results: [SavedNavigationPlace] = []
     @State private var recent: [SavedNavigationPlace] = []
@@ -93,6 +94,13 @@ struct DestinationSearchView: View {
             home = load(SavedNavigationPlace.self, "navigation.home")
             work = load(SavedNavigationPlace.self, "navigation.work")
             if let initialPlace { select(initialPlace) }
+            else if !initialQuery.isEmpty {
+                do {
+                    let input = try SharedDestinationInput.parse(initialQuery)
+                    if let lat = input.latitude, let lon = input.longitude { select(SavedNavigationPlace(name: input.query, address: "공유 위치 · 전송 전 지점 확인 필요", latitude: lat, longitude: lon)) }
+                    else { query = input.query; suggestions.update(input.query) }
+                } catch { message = error.localizedDescription }
+            }
         }.onDisappear { task?.cancel(); suggestions.update("") }
             .onChange(of: query) { _, value in
                 task?.cancel(); busy = false; results = []; selected = nil; route = nil; message = ""

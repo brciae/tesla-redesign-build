@@ -22,6 +22,8 @@ NS_ASSUME_NONNULL_BEGIN
     NS_SWIFT_NAME(configureVoice(enabled:safety:volume:duck:));
 /// Official SDK frequency: 0 = Rare, 1 = Often, 2 = Always.
 - (void)configureVoiceDetail:(NSInteger)level NS_SWIFT_NAME(configureVoiceDetail(_:));
+/// Next trip only: 0 recommended, 1 time, 2 distance, 3 highway, 4 wide roads.
+- (void)configureRoutePriority:(NSInteger)priority NS_SWIFT_NAME(configureRoutePriority(_:));
 - (void)prepareWithAppKey:(NSString *)key latitude:(double)latitude longitude:(double)longitude
      destinationLatitude:(double)destinationLatitude destinationLongitude:(double)destinationLongitude
                     name:(NSString *)name hipass:(BOOL)hipass validUntil:(NSTimeInterval)validUntil

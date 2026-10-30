@@ -28,6 +28,9 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/VoiceDiskCache.swift tools/voice-cac
 Xcode/VoiceCacheTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/AppEnergyPolicy.swift tools/energy-policy-tests.swift -o Xcode/EnergyPolicyTests
 Xcode/EnergyPolicyTests
+node tools/commercial-review-tests.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/NavigationRecovery.swift TeslaLocal.swiftpm/Sources/AppModule/TripComparisonPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/ChargingAvailabilityPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeImportParser.swift TeslaLocal.swiftpm/Sources/AppModule/SharedDestinationInput.swift tools/commercial-review-policy-tests.swift -o Xcode/CommercialReviewTests
+Xcode/CommercialReviewTests
 node tools/energy-battery-regression-tests.cjs
 node tools/collection-regression-tests.cjs
 node tools/navigation-card-tests.cjs

@@ -20,7 +20,7 @@ struct YLCompanionApp: App {
 final class AppOwner: ObservableObject {
     let model: AppModel?
     let failure: String
-    init() { do { model = try AppModel(); failure = "" } catch { model = nil; failure = error.localizedDescription } }
+    init() { do { let current = try AppModel.shared ?? AppModel(); model = current; AppModel.shared = current; failure = "" } catch { model = nil; failure = error.localizedDescription } }
 }
 enum Theme {
     static let bg = adaptive(dark: UIColor(red: 23/255, green: 24/255, blue: 26/255, alpha: 1), light: UIColor(red: 242/255, green: 242/255, blue: 247/255, alpha: 1))
@@ -67,6 +67,9 @@ struct MainView: View {
     @State private var energyPath = NavigationPath()
     @State private var drivePath = NavigationPath()
     @State private var menuPath = NavigationPath()
+    @State private var showChargingSites = false
+    @State private var showSharedDestination = false
+    @State private var sharedDestinationQuery = ""
 
     private var tabBinding: Binding<AppTab> {
         Binding(
@@ -102,7 +105,9 @@ struct MainView: View {
             .modifier(AutomationAIHost(ai: model.aiRules, store: model.automations))
             .onOpenURL { url in
                 if SpotifyPlayback.shared.receive(url) { return }
-                if url.scheme == "ylcompanion", url.host == "charging" {
+                if url.scheme == "ylcompanion", url.host == "destination", let input = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "query" })?.value {
+                    UserDefaults.standard.set(String(input.prefix(2000)), forKey: "navigation.sharedQuery"); consumeSharedDestination()
+                } else if url.scheme == "ylcompanion", url.host == "charging" {
                     selectedTab = .energy
                     navigation.dismissWorkspace()
                     model.chargingPresented = true
@@ -111,8 +116,11 @@ struct MainView: View {
                     if navigation.guiding { navigation.presented = true }
                 } else { model.aiRules.receive(url, vehicle: model.settings.string("vin")) }
             }
-            .task { if phase == .active { model.resume(); consumeNotificationRoute() } }
-            .onChange(of: phase) { _, p in handlePhase(p) }
+            .task { if phase == .active { model.resume(); consumeNotificationRoute(); consumeSharedDestination() } }
+            .sheet(isPresented: $showChargingSites) { NavigationStack { FleetSupplementView(fleet: model.fleet, kind: .nearbyCharging).environmentObject(model) } }
+            .sheet(isPresented: $showSharedDestination) { DestinationSearchView(navigation: model.navigation, initialQuery: sharedDestinationQuery).environmentObject(model) }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("YL.sharedDestination"))) { _ in consumeSharedDestination() }
+            .onChange(of: phase) { _, p in handlePhase(p); if p == .active { consumeSharedDestination() } }
             .onChange(of: model.vehicleExitRevision) { _, _ in
                 selectedTab = .home
                 homePath = NavigationPath()
@@ -160,6 +168,11 @@ struct MainView: View {
         else if p == .background { model.pause() }
         else { model.resignActive() }
     }
+    private func consumeSharedDestination() {
+        guard phase == .active, let value = UserDefaults.standard.string(forKey: "navigation.sharedQuery"), !value.isEmpty else { return }
+        UserDefaults.standard.removeObject(forKey: "navigation.sharedQuery")
+        sharedDestinationQuery = value; showSharedDestination = true
+    }
     private func consumeNotificationRoute() {
         let defaults = UserDefaults.standard
         let destination = defaults.string(forKey: "YL.notificationDestination") ?? (defaults.bool(forKey: "YL.openChargingPending") ? "charging" : "")
@@ -167,6 +180,7 @@ struct MainView: View {
         defaults.removeObject(forKey: "YL.notificationDestination"); defaults.removeObject(forKey: "YL.openChargingPending")
         navigation.dismissWorkspace(); model.chargingPresented = false
         switch destination {
+        case "chargingSites": showChargingSites = true
         case "trips":
             // Trip records live in TeslaMate › 주행.
             defaults.set(1, forKey: "energy.section"); defaults.set("주행", forKey: "teslamate.section")

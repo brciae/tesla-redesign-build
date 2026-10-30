@@ -30,6 +30,13 @@ struct TripEnergyHistoryView: View {
         let rows = store.history(vin: vin)
         VStack(alignment: .leading, spacing: 12) {
             Text("경로별 에너지 예측 비교").font(.headline)
+            let errors = rows.compactMap(\.errorSOC).filter(\.isFinite)
+            if !errors.isEmpty {
+                let meanAbsolute = errors.map { abs($0) }.reduce(0, +) / Double(errors.count)
+                let bias = errors.reduce(0, +) / Double(errors.count)
+                Text(String(format: "도착 비교 %d회 · 평균 절대오차 %.1f%%p · 실제−예측 %+.1f%%p", errors.count, meanAbsolute, bias)).font(.subheadline).monospacedDigit()
+                Text("출발 시 저장한 예측 기준임. 도착 미수신·취소·충전량 미확인은 제외하며 다른 앱과의 정확도 우위를 뜻하지 않음.").font(.caption).foregroundStyle(.secondary)
+            }
             if rows.isEmpty { Text("길안내 시작 시 예측을 저장하고, 도착 후 실제 잔량과 비교함.").font(.caption).foregroundStyle(.secondary) }
             else {
                 ForEach(Array(rows.prefix(5))) { row in TripEnergyRecordView(record: row) }

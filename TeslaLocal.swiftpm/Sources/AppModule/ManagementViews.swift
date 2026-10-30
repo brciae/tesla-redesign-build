@@ -493,7 +493,35 @@ struct OpenVehicleAppIntent: AppIntent {
 }
 struct VehicleShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(intent: ResumeVehicleReadIntent(), phrases: ["\(.applicationName) 재개"], shortTitle: "차량 조회 재개", systemImageName: "antenna.radiowaves.left.and.right")
         AppShortcut(intent: OpenVehicleAppIntent(), phrases: ["\(.applicationName) 열기"], shortTitle: "차량 앱 열기", systemImageName: "car.side")
+        AppShortcut(intent: PreviewDestinationIntent(), phrases: ["\(.applicationName) 목적지 확인"], shortTitle: "공유 목적지 확인", systemImageName: "mappin.and.ellipse")
+    }
+}
+
+struct ResumeVehicleReadIntent: AppIntent {
+    static var title: LocalizedStringResource = "YL Companion 조회 재개"
+    static var description = IntentDescription("잠금 해제 없이 이미 등록한 차량의 읽기 전용 연결을 재개합니다. 차량 명령은 실행하지 않습니다.")
+    static var openAppWhenRun: Bool = false
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+        let model = try AppModel.shared ?? AppModel()
+        AppModel.shared = model
+        guard !model.demo else { return .result(dialog: "예시 모드에서는 차량 조회를 시작하지 않습니다.") }
+        let message = model.link.resumeReadOnlyInBackground(vin: model.settings.string("vin"))
+        return .result(dialog: IntentDialog(stringLiteral: message))
+    }
+}
+
+struct PreviewDestinationIntent: AppIntent {
+    static var title: LocalizedStringResource = "YL Companion 목적지 확인"
+    static var description = IntentDescription("지도에서 공유한 주소·위치 링크를 받아 미리 봅니다. 차량 전송과 안내 시작은 앱에서 확인한 뒤 실행합니다.")
+    static var openAppWhenRun: Bool = true
+    @Parameter(title: "장소·주소·지도 URL") var destination: String
+    @MainActor func perform() async throws -> some IntentResult {
+        _ = try SharedDestinationInput.parse(destination)
+        UserDefaults.standard.set(destination, forKey: "navigation.sharedQuery")
+        NotificationCenter.default.post(name: Notification.Name("YL.sharedDestination"), object: nil)
+        return .result()
     }
 }
 

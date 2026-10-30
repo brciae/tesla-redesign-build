@@ -42,6 +42,7 @@ function hostCallObject(op,json){
       case 'ingestFleetChargeLive':case 'ingestFleetCharge':value=engine.ingestFleetCharge(a,now);break;
       case 'finish':value=engine.finish(now,true);break;
       case 'addCharge':value=engine.addCharge(a);break;
+      case 'importCharges':value=engine.importCharges(a);break;
       case 'maintenance':value=engine.addMaintenance(a);break;
       case 'parking':value=engine.addParking(a);break;
       case 'updateCharge':value=engine.updateCharge(a);break;

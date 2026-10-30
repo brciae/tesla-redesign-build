@@ -128,6 +128,8 @@ static NSArray *YLLifecycleObservers;
 @property(nonatomic, strong) KNGuide_Safety *safetyGuide;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *speechTargets;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDate *> *preparedSpeechPoints;
+@property(nonatomic) NSInteger requestedRoutePriority;
+@property(nonatomic) KNRoutePriority activeRoutePriority;
 @property(nonatomic) BOOL forceImminent;
 @property(nonatomic, strong) NSMutableSet<NSString *> *announcedPoints;
 @property(nonatomic, strong) KNLocation *imminentTarget;
@@ -243,7 +245,7 @@ static NSArray *YLLifecycleObservers;
     if (!self.guiding || !self.trafficRerouting || ![self locationIsFresh]) return;
     self.trafficWaitingForLocation = NO;
     [self emit:@"trafficRequestStarted" message:@"경로 재탐색 중"];
-    [(KNDriveGuidance *)self.guidance reRouteWithPriority:KNRoutePriority_Recommand avoidOptions:KNRouteAvoidOption_None];
+    [(KNDriveGuidance *)self.guidance reRouteWithPriority:self.activeRoutePriority avoidOptions:KNRouteAvoidOption_None];
 }
 - (void)pauseOfflineMapDownload { [[[KNSDK sharedInstance] sharedMapDownLoader] downLoadPause]; }
 - (void)useOfflineMap:(BOOL)enabled {
@@ -323,11 +325,15 @@ static NSArray *YLLifecycleObservers;
     [self stopNavigation];
     [self emit:@"error" message:message];
 }
+- (void)configureRoutePriority:(NSInteger)priority {
+    self.requestedRoutePriority = (priority >= 0 && priority <= 4) ? priority : 0;
+}
 - (void)prepareWithAppKey:(NSString *)key latitude:(double)latitude longitude:(double)longitude
      destinationLatitude:(double)destinationLatitude destinationLongitude:(double)destinationLongitude
                     name:(NSString *)name hipass:(BOOL)hipass validUntil:(NSTimeInterval)validUntil {
     NSAssert(NSThread.isMainThread, @"Main queue required");
     [self stopNavigation];
+    self.activeRoutePriority = (KNRoutePriority)self.requestedRoutePriority;
     self.validUntil = validUntil;
     NSUInteger generation = self.generation;
     if (![self isCurrent:generation]) return;
@@ -356,7 +362,7 @@ static NSArray *YLLifecycleObservers;
                 if (!self || ![self isCurrent:generation]) return;
                 if (error || !trip) { [self fail:@"카카오 목적지 요청 실패 · 키·등록 Bundle ID·네트워크·쿼터 확인" generation:generation]; return; }
                 trip.routeConfig = [[KNRouteConfiguration alloc] initWithCarType:KNCarType_1 fuel:KNCarFuel_Electric useHipass:hipass];
-                [trip routeWithPriority:KNRoutePriority_Recommand avoidOptions:KNRouteAvoidOption_None completion:^(KNError *error, NSArray<KNRoute *> *routes) {
+                [trip routeWithPriority:self.activeRoutePriority avoidOptions:KNRouteAvoidOption_None completion:^(KNError *error, NSArray<KNRoute *> *routes) {
                     dispatch_async(dispatch_get_main_queue(), ^{
                         typeof(self) self = weakSelf;
                         if (!self || ![self isCurrent:generation]) return;
@@ -481,7 +487,7 @@ static NSArray *YLLifecycleObservers;
         [weakSelf publishTelemetry];
     }];
     // Raw map is presentation only. Start the engine exactly once, after delegates are ready.
-    [self.guidance startWithTrip:trip priority:KNRoutePriority_Recommand avoidOptions:KNRouteAvoidOption_None];
+    [self.guidance startWithTrip:trip priority:self.activeRoutePriority avoidOptions:KNRouteAvoidOption_None];
     [self emit:@"ready" message:@"지도 준비 · 안내 시작 응답 대기"];
 }
 - (void)resumeRendering {

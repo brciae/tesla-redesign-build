@@ -26,6 +26,8 @@ struct FleetSupplementView: View {
     @State private var viewedArea: MKCoordinateRegion?
     @State private var userMovedMap = false
     @State private var areaTooWide = false
+    @ObservedObject private var watch = ChargingWatchStore.shared
+    @State private var favoritesOnly = false
     private var effectiveRegion: String { region.isEmpty ? autoRegion : region }
     private var origin: CLLocation? {
         let location = homePresentation(model, model.link).object("location")
@@ -35,7 +37,7 @@ struct FleetSupplementView: View {
     }
     private var carHeading: Double? { homePresentation(model, model.link).object("location").number("heading") }
     private var visibleSites: [NearbyChargingSite] {
-        let filtered = sites.filter { $0.matches(category) }
+        let filtered = sites.filter { $0.matches(category) && (!favoritesOnly || watch.contains($0.id)) }
         let focus = viewedArea.map { CLLocation(latitude: $0.center.latitude, longitude: $0.center.longitude) } ?? origin
         guard let origin = focus else { return Array(filtered.prefix(300)) }
         return Array(filtered.sorted { a, b in
@@ -103,9 +105,11 @@ struct FleetSupplementView: View {
                         let values = try await PublicChargingAPI.shared.sites(regions: requestedRegion)
                         guard !Task.isCancelled, requestedRegion == effectiveRegion else { return }
                         publicSites = values
+                        watch.observe(values, demo: model.demo)
                         self.error = ""
                     } catch {
                         if !Task.isCancelled {
+                            watch.observe([], demo: model.demo)
                             publicSites = publicSites.map { site in
                                 var stale = site; stale.available = nil; stale.categoryAvailability = [:]; stale.chargingDetail = "상태 갱신 대기"
                                 return stale
@@ -198,6 +202,7 @@ struct FleetSupplementView: View {
             Picker("충전소 종류", selection: $category) {
                 ForEach(["전체", "슈퍼차저", "급속", "완속"], id: \.self) { Text($0).tag($0) }
             }.pickerStyle(.segmented)
+            Toggle("즐겨찾는 충전소만", isOn: $favoritesOnly).font(.subheadline)
             }.padding(10).background(.regularMaterial)
     }
     private var stationPanel: some View {
@@ -207,6 +212,15 @@ struct FleetSupplementView: View {
                 if !error.isEmpty { Text(error).font(.subheadline).foregroundStyle(.orange) }
                 if let site = visibleSites.first(where: { $0.id == selectedSite }) {
                     Text(site.name).font(.headline)
+                    HStack {
+                        Button { watch.toggleFavorite(site) } label: { Label(watch.contains(site.id) ? "즐겨찾기 해제" : "즐겨찾기", systemImage: watch.contains(site.id) ? "star.fill" : "star") }
+                        if site.source == "한국환경공단" {
+                            Button { watch.toggleWatch(site) } label: { Label(watch.watches(site.id) ? "알림 해제" : "사용 가능 알림", systemImage: watch.watches(site.id) ? "bell.fill" : "bell") }
+                        }
+                    }.font(.subheadline).buttonStyle(.bordered)
+                    if watch.watches(site.id) {
+                        Text("이 화면에서 새 상태를 받는 동안 0대→사용 가능 전환을 알림. 앱 중단·종료 중 감시는 지원하지 않음. 실제 주차면 공실과 다를 수 있음.").font(.caption).foregroundStyle(.secondary)
+                    }
                     if !site.address.isEmpty, site.address != site.name { Text(site.address).font(.caption).foregroundStyle(.secondary) }
                     if let origin { Text(String(format: "차량 위치에서 %.1f km", origin.distance(from: CLLocation(latitude: site.latitude, longitude: site.longitude)) / 1000)).font(.caption).foregroundStyle(.secondary) }
                     HStack {
@@ -251,8 +265,9 @@ struct FleetSupplementView: View {
                 let values = try await PublicChargingAPI.shared.sites(regions: effectiveRegion)
                 guard requestID == request, !Task.isCancelled else { return }
                 publicSites = values
+                watch.observe(values, demo: model.demo)
                 if selectedSite == nil { selectedSite = visibleSites.first?.id }
-            } catch { if requestID == request && !Task.isCancelled { self.error = error.localizedDescription } }
+            } catch { if requestID == request && !Task.isCancelled { watch.observe([], demo: model.demo); self.error = error.localizedDescription } }
         }
     }
 }

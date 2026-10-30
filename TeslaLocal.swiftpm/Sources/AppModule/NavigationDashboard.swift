@@ -189,6 +189,7 @@ private struct NavMetrics {
 // MARK: - Dashboard
 
 struct NavigationDashboard<MapContent: View, CarContent: View>: View {
+    @AppStorage("navigation.focusMode") private var focusMode = false
     @AppStorage("navigation.dashboardShade") private var shadeAmount = 0.45
     private var shade: Double { shadeAmount.isFinite ? min(1, max(0, shadeAmount)) : 0.45 }
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
@@ -211,7 +212,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     @ViewBuilder
     private func layout(_ m: NavMetrics) -> some View {
         // Keep all six original theme compositions; navigation data updates never select a different layout.
-        modelingLayout(m)
+        if focusMode { navigationLayout(m) } else { modelingLayout(m) }
     }
 
     private func modelingLayout(_ m: NavMetrics) -> some View {
@@ -264,7 +265,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
     }
 
     private func navigationLayout(_ m: NavMetrics) -> some View {
-        let mediaHeight: CGFloat = data.showsMedia ? 48 : 0
+        let mediaHeight: CGFloat = data.showsMedia && !focusMode ? 48 : 0
         let footerHeight: CGFloat = 54 + mediaHeight
         let headerHeight: CGFloat = m.wide ? 0 : (data.laneCount > 0 ? 164 : 124)
         let sidebar: CGFloat = m.wide ? min(280, m.w * 0.30) : 0
@@ -292,7 +293,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
                     Spacer(minLength: 0)
                     Text(data.battery + " · " + data.range).font(.caption).lineLimit(1).minimumScaleFactor(0.5)
                 }.padding(.horizontal, 12).frame(height: 54).background(theme.canvas)
-                if data.showsMedia {
+                if data.showsMedia && !focusMode {
                     NavigationMediaHeader(data: data, action: onMedia)
                         .frame(height: mediaHeight).accessibilityIdentifier("navigation.mediaDock")
                 }

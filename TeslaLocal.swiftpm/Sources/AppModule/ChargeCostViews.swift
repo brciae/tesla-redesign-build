@@ -46,6 +46,12 @@ struct ChargeCostDetails: View {
     let charge: Object
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let imported = charge.number("importedEnergyKWh") {
+                Caption("외부 자료 \(valueText(imported, digits: 2)) kWh · 에너지 종류 미확인, 배터리 충전량·비용 계산 제외")
+            }
+            if let amount = charge.number("importedAmount") {
+                Caption("외부 금액 \(valueText(amount, digits: 2)) \(charge.string("importedCurrency")) · 원화 합계 제외")
+            }
             if !charge.string("place").isEmpty { Text(charge.string("place")).font(.subheadline) }
             Caption(charge.string("chargeTypeLabel") + (charge.string("chargeOperator").isEmpty ? "" : " · " + charge.string("chargeOperator")))
             if charge.number("cost") == nil {
@@ -81,6 +87,7 @@ struct ChargeRateSettingsView: View {
         Form {
             LocalBriefingControls(title: "충전 단가") { ["등록한 단가와 과거 결제 내역으로 예상 충전 금액을 계산합니다.", "직접 입력한 결제액이 우선합니다."] }
             Section("기본 예상 단가 · 원/kWh") {
+                NavigationLink("시간대·요일·계절 요금") { ChargeTimeOfUseView() }
                 NavigationLink("사업자 공식 단가·회원가 적용") { PublishedChargeRateSettings() }
                 NavigationLink("집 충전 범위·주소 변경") { HomeChargingSettingsView() }
                 TextField("집·완속 기준", text: $slow).keyboardType(.decimalPad)

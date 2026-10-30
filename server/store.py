@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+from dashboard import ASSETS as DASHBOARD_ASSETS, asset as dashboard_asset, snapshot as dashboard_snapshot
 
 VIN = re.compile(r"^[A-HJ-NPR-Z0-9]{17}$")
 TOPICS = ("tesla_V", "tesla_connectivity", "tesla_alerts", "tesla_errors")
@@ -107,7 +108,9 @@ class Archive:
                 "more": len(rows) > len(selected)}
 
 
-def handler_for(archive, token, health):
+def handler_for(archive, token, health, dashboard_token=None, dashboard_vin=None):
+    if dashboard_token and (len(dashboard_token) < 32 or hmac.compare_digest(dashboard_token, token) or not VIN.fullmatch(dashboard_vin or "")):
+        raise ValueError("dashboard requires a separate key and one scoped VIN")
     class Handler(BaseHTTPRequestHandler):
         def setup(self):
             super().setup()
@@ -128,10 +131,34 @@ def handler_for(archive, token, health):
 
         def do_GET(self):
             route = urlsplit(self.path)
+            if route.path in DASHBOARD_ASSETS:
+                raw, content_type = dashboard_asset(route.path)
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
             if route.path == "/health":
                 return self.reply(200 if health["ready"] else 503,
                                   {"ready": health["ready"], "service": "yl-fleet-archive"})
             auth = self.headers.get("Authorization", "")
+            if route.path == "/v1/dashboard":
+                if not dashboard_token or not hmac.compare_digest(auth.encode(), ("Bearer " + dashboard_token).encode()):
+                    return self.reply(401, {"error": "dashboard_authentication_required"})
+                try:
+                    args = parse_qs(route.query, max_num_fields=1)
+                    selected = args.get("vin", [""])[0]
+                    if selected != dashboard_vin:
+                        return self.reply(403, {"error": "vehicle_scope_mismatch"})
+                    return self.reply(200, dashboard_snapshot(archive, selected, time.time()))
+                except (ValueError, TypeError):
+                    return self.reply(400, {"error": "invalid_request"})
+                except sqlite3.Error:
+                    return self.reply(503, {"error": "storage_unavailable"})
             if not hmac.compare_digest(auth.encode(), ("Bearer " + token).encode()):
                 return self.reply(401, {"error": "authentication_required"})
             if route.path not in ("/v1/telemetry", "/v1/status"):
@@ -204,7 +231,9 @@ def main():
                 print("archive consumer retry:", type(error).__name__, code, flush=True)
                 time.sleep(10)
     threading.Thread(target=worker, daemon=True).start()
-    HTTPServer(("0.0.0.0", 8787), handler_for(archive, token, health)).serve_forever()
+    dashboard_file = os.getenv("DASHBOARD_TOKEN_FILE")
+    dashboard_token = Path(dashboard_file).read_text().strip() if dashboard_file else None
+    HTTPServer(("0.0.0.0", 8787), handler_for(archive, token, health, dashboard_token, os.getenv("DASHBOARD_VIN"))).serve_forever()
 
 
 if __name__ == "__main__":
