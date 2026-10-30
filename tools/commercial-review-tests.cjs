@@ -42,4 +42,5 @@ const band = (fromMinute,toMinute,rate,extra={}) => ({ id:Math.random().toString
  const saved=JSON.parse(JSON.stringify(e.state));const restored=new Engine();restored.load(saved);
  assert.equal(restored.state.charges.length,2);
 }
+{ const e=new Engine(); assert.throws(()=>e.settings({chargeTariffSchedules:[band(0,1440,100,{scope:'operator',match:'플러그링크'}),band(0,1440,200,{scope:'operator',match:'pluglink'})]}),/겹침/); }
 console.log('PASS: atomic import rollback, preserved old records, unclassified units/currency, timezone/weekday/version tariffs, gaps and paid amounts');

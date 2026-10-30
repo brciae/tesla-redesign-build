@@ -27,7 +27,14 @@ private struct AutomationDashboard: View {
             }
         }
         .toolbar { ToolbarItem(placement: .topBarTrailing) {
-            Button { model.aiRules.draft = nil; model.aiRules.presented = true } label: {
+            Menu {
+                Button("직접 만들기", systemImage: "slider.horizontal.3") {
+                    var draft = AutomationRule(name: "새 자동화", trigger: .boarding)
+                    draft.enabled = false
+                    editor = draft
+                }
+                Button("AI로 초안 만들기", systemImage: "sparkles") { model.aiRules.draft = nil; model.aiRules.presented = true }
+            } label: {
                 Image(systemName: "plus.circle.fill").font(.title).accessibilityLabel("자동화 만들기")
             }
         } }
@@ -63,7 +70,7 @@ private struct AutomationDashboard: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("\(title) (\(rules.count))").font(.headline).foregroundStyle(Theme.muted)
             InfoCard {
-                if rules.isEmpty { Caption("＋에서 원하는 자동화를 입력하면 앱 안에서 규칙을 생성합니다.") }
+                if rules.isEmpty { Caption("＋에서 직접 만들거나 AI 초안을 선택할 수 있음. 새 규칙은 꺼진 상태로 시작함.") }
                 ForEach(rules) { r in
                     HStack(spacing: 12) {
                         Button {

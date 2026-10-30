@@ -9,6 +9,7 @@ struct ProductionReviewRoot: View {
             if screen == "home" { MainView(model: model, link: model.link, navigation: model.navigation) }
             else { NavigationStack {
                 switch screen {
+                case "automation": AutomationView()
                 case "tariffs": ChargeTimeOfUseView()
                 case "launch": BrandLaunchArtwork()
                 case "coverage": RecordCoverageView()

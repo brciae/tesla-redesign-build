@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Storage regression tests
         working-directory: server
-        run: python -m unittest -v test_store.py
+        run: python -m unittest discover -v -p 'test_*.py'
       - name: Start isolated NAS stack
         working-directory: server
         run: docker compose up --build --wait --wait-timeout 240

@@ -264,7 +264,7 @@
     }
     for(let i=0;i<rows.length;i++)for(let j=i+1;j<rows.length;j++){
       const a=rows[i],b=rows[j];
-      if(a.scope===b.scope&&rateKey(a.match)===rateKey(b.match)&&(a.kind===b.kind||a.kind==='any'||b.kind==='any')&&a.months.some(m=>b.months.includes(m))&&a.days.some(d=>b.days.includes(d))&&a.fromMinute<b.toMinute&&b.fromMinute<a.toMinute&&a.effectiveFrom<(b.effectiveTo??1e14)&&b.effectiveFrom<(a.effectiveTo??1e14))throw Error('같은 대상의 시간대 요금이 겹침 · 적용 기간 또는 시각을 나누어야 함');
+      if(a.scope===b.scope&&rateKey(a.scope==='operator'?canonicalOperator(a.match):a.match)===rateKey(b.scope==='operator'?canonicalOperator(b.match):b.match)&&(a.kind===b.kind||a.kind==='any'||b.kind==='any')&&a.months.some(m=>b.months.includes(m))&&a.days.some(d=>b.days.includes(d))&&a.fromMinute<b.toMinute&&b.fromMinute<a.toMinute&&a.effectiveFrom<(b.effectiveTo??1e14)&&b.effectiveFrom<(a.effectiveTo??1e14))throw Error('같은 대상의 시간대 요금이 겹침 · 적용 기간 또는 시각을 나누어야 함');
     }
   }
   function scheduledTariff(c,s,identity,kwh){
