@@ -2,6 +2,10 @@ name: iOS Build
 on:
   workflow_dispatch:
     inputs:
+      production_ui_only:
+        description: Test production screens only without creating another IPA
+        type: boolean
+        default: false
       artifact_run_id:
         description: Export review attachments from a previous production UI artifact only
         type: string
@@ -19,7 +23,7 @@ on:
     branches: [main]
 jobs:
   build:
-    if: inputs.ui_screens_only != true && !inputs.artifact_run_id
+    if: inputs.ui_screens_only != true && !inputs.artifact_run_id && inputs.production_ui_only != true
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -52,6 +56,7 @@ jobs:
           path: Xcode/BuildOutput/*.ipa
   production-ui:
     needs: build
+    if: always() && !cancelled() && !inputs.artifact_run_id && inputs.ui_screens_only != true && (inputs.production_ui_only == true || needs.build.result == 'success')
     runs-on: macos-15
     timeout-minutes: 45
     steps:

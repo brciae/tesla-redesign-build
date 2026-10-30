@@ -1,9 +1,22 @@
 import XCTest
 final class ProductionReviewTests: XCTestCase {
-    func testProductionScreensAndHomeNavigation() {
+    func testLaunch() { review("launch") }
+    func testHomeNavigation() { review("home") }
+    func testHealth() { review("health") }
+    func testTariffs() { review("tariffs") }
+    func testMonthClosing() { review("month") }
+    func testBatteryEvidence() { review("battery") }
+    func testCoverage() { review("coverage") }
+    func testImportPreview() { review("import") }
+    func testInvalidImportBlocked() { review("importInvalid") }
+    func testManualAutomationDraft() { review("automation") }
+    func testNavigationSettings() { review("navigation") }
+    func testDriving() { review("driving") }
+    func testDrivingFocus() { review("focus") }
+    private func review(_ screen: String) {
         continueAfterFailure = false
-        for screen in ["launch", "home", "health", "tariffs", "month", "battery", "coverage", "import", "importInvalid", "automation", "navigation", "driving", "focus"] {
             let app = XCUIApplication()
+            defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
             app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", screen, "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-navigation.focusMode", screen == "focus" ? "YES" : "NO"]
             XCUIDevice.shared.orientation = .portrait
             app.launch()
@@ -29,8 +42,8 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(apply.waitForExistence(timeout: 5))
                 XCTAssertFalse(apply.isEnabled)
             } else if screen == "importInvalid" {
-                XCTAssertTrue(app.staticTexts["0건"].waitForExistence(timeout: 10))
-                XCTAssertTrue(app.staticTexts["1건"].exists)
+                XCTAssertTrue(app.staticTexts["변환 가능한 기록, 0건"].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.staticTexts["확인이 필요한 행, 1건"].exists)
                 XCTAssertFalse(app.buttons["import.preview.apply"].isEnabled)
             } else if screen == "automation" {
                 let create = app.buttons["automation.create"]
@@ -52,8 +65,6 @@ final class ProductionReviewTests: XCTestCase {
             XCUIDevice.shared.orientation = .portrait
             let reset = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in let size = XCUIScreen.main.screenshot().image.size; return size.height > size.width }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [reset], timeout: 10), .completed, screen)
-            app.terminate()
-        }
     }
     private func allowLocationIfRequested() {
         let alert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
