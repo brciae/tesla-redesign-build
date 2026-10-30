@@ -15,6 +15,7 @@ on:
     branches: [main]
 jobs:
   build:
+    if: inputs.ui_screens_only != true
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -29,8 +30,9 @@ jobs:
         run: node tools/js-logic-tests.cjs
       - name: Offline guidance quality review tests (no AI calls)
         run: python3 -m unittest discover -s tools -p test_navigation_quality_review.py
-      - name: Build (parse, policy tests, interface probe, unsigned IPA)
+      - name: Native build and policy tests
         env:
+          RUN_INTERFACE_TESTS: "0"
           UI_SCREENS_ONLY: ${{ inputs.ui_screens_only }}
           PROBE_FOCUS: ${{ inputs.probe_focus }}
         run: |
@@ -44,11 +46,63 @@ jobs:
         with:
           name: App-Tesla ${{ steps.version.outputs.version }} Build${{ steps.version.outputs.build }} v01 Review
           path: Xcode/BuildOutput/*.ipa
+  production-ui:
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare production simulator project
+        run: |
+          brew install xcodegen
+          for part in part*.zip; do
+            [ -e "$part" ] || continue
+            unzip -oq "$part"
+          done
+          node tools/embed-js.cjs
+          swift tools/prepare-icon.swift
+          xcodegen generate --spec Xcode/project.json --project Xcode
+          xcodebuild -resolvePackageDependencies -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion -clonedSourcePackagesDirPath Xcode/SourcePackages
+      - name: Test actual production screens
+        run: bash tools/test-production-ui.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-screens
+          path: |
+            Xcode/ProductionResults.xcresult
+            Xcode/BuildOutput/InterfaceScreens/**
+          if-no-files-found: ignore
+  interface:
+    needs: build
+    if: always() && (inputs.ui_screens_only == true || needs.build.result == 'success')
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare tools and resources
+        run: |
+          brew install xcodegen
+          for part in part*.zip; do
+            [ -e "$part" ] || continue
+            unzip -oq "$part"
+          done
+          node tools/embed-js.cjs
+      - name: Test shared interface and lifecycle
+        env:
+          UI_SCREENS_ONLY: ${{ inputs.ui_screens_only }}
+          PROBE_FOCUS: ${{ inputs.probe_focus }}
+        run: |
+          if [[ "$UI_SCREENS_ONLY" == true ]]; then
+            bash tools/test-interface.sh "${PROBE_FOCUS:-fullscreen}"
+          else
+            bash tools/test-interface.sh
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: interface-screens
           path: |
-            Xcode/**/*.xcresult
+            Xcode/InterfaceResults.xcresult
             Xcode/BuildOutput/InterfaceScreens/**
           if-no-files-found: ignore
