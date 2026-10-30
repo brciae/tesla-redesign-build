@@ -6,12 +6,21 @@ struct CompanionReadinessCard: View {
     @ObservedObject var voice: VoiceCoordinator
     @ObservedObject private var notifications = ChargeNotificationManager.shared
     @State private var expanded = false
+    private var voiceIssue: String? {
+        let d = UserDefaults.standard
+        if !d.bool(forKey: "voiceEnabled") { return "음성 안내 꺼짐" }
+        if !TypecastClient.shared.isEnabled { return "AI 음성 꺼짐" }
+        if d.double(forKey: "voiceVolume") <= 0 { return "브리핑 음량 0 · 음성 설정 확인" }
+        if d.bool(forKey: "navVoiceEnabled") && d.double(forKey: "navVoiceVolume") <= 0 { return "길안내 음량 0 · 음성 설정 확인" }
+        if TypecastClient.shared.activeApiKey.isEmpty { return "새 음성 생성용 키 미등록" }
+        return nil
+    }
     private var ready: Bool { let display = homePresentation(model, link); return !model.demo && display.object("drive").string("mode") == "recent" && display.object("charge").string("mode") == "recent" }
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 12) {
                 Label(link.status, systemImage: "antenna.radiowaves.left.and.right")
-                Label(voice.notice.isEmpty ? voice.playbackState : voice.notice, systemImage: "speaker.wave.2")
+                Label(voiceIssue ?? (voice.notice.isEmpty ? voice.playbackState : voice.notice), systemImage: "speaker.wave.2")
                 Label(notifications.status, systemImage: notifications.allowed ? "bell" : "bell.slash")
                 if model.demo { Text("예시 데이터 · 실제 차량 상태가 아님").foregroundStyle(.orange) }
                 NavigationLink { CompanionHealthView(link: link, voice: voice) } label: {
@@ -23,7 +32,7 @@ struct CompanionReadinessCard: View {
                 Image(systemName: ready ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(ready ? Theme.green : Color.orange)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(ready ? "차량 정보 수신 중" : "출발 전 상태 확인").font(.subheadline.bold())
-                    Text(voice.notice.isEmpty ? "연결 · 안내 소리 · 알림" : voice.notice).font(.caption).foregroundStyle(.secondary)
+                    Text(voiceIssue ?? (voice.notice.isEmpty ? "연결 · 안내 소리 · 알림" : voice.notice)).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16)).accessibilityIdentifier("home.readiness")
