@@ -63,7 +63,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["씬 생성 1회 · 갱신 100회"].waitForExistence(timeout: 5))
         captureSystemCard("Energy saving charging renderer foreground return")
         app.segmentedControls.buttons["배터리"].tap()
-        let evidence = app.buttons["battery.health.exclusions"]
+        let evidence = app.buttons["계산 근거와 관측 기록"]
         for _ in 0..<8 where !evidence.exists || !evidence.isHittable { app.swipeUp() }
         XCTAssertTrue(evidence.waitForExistence(timeout: 5)); evidence.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "완충 표시거리, 480.0 km")).firstMatch.waitForExistence(timeout: 5))
@@ -727,9 +727,9 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["battery.health.reason"].label.contains("기준 용량 미등록"))
         XCTAssertFalse(app.staticTexts["현재 지수 100%"].exists)
         let top = XCTAttachment(screenshot: app.screenshot()); top.name = "Battery summary and missing same-method reference"; top.lifetime = .keepAlways; add(top)
-        let exclusions = app.buttons["battery.health.exclusions"]
-        XCTAssertEqual(app.buttons.matching(identifier: "battery.health.exclusions").count, 1, "Disclosure control must not share its identifier with its evidence link"); XCTAssertTrue(exclusions.exists); exclusions.tap()
-        XCTAssertEqual(app.buttons.matching(identifier: "battery.health.exclusions").count, 1, "Expanded evidence link must remain separately identified"); XCTAssertTrue(app.staticTexts["SOC 변화 20%p 미만"].exists)
+        let exclusions = app.buttons["계산 근거와 관측 기록"]
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "계산 근거와 관측 기록")).count, 1, "Disclosure control must not share its identifier with its evidence link"); XCTAssertTrue(exclusions.exists); exclusions.tap()
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "계산 근거와 관측 기록")).count, 1, "Expanded evidence link must remain separately identified"); XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "SOC 변화 20%p 미만")).firstMatch.waitForExistence(timeout: 5))
         captureSystemCard("Battery degradation qualifying charges and exclusion reasons")
         exclusions.tap()
         app.buttons["같은 종류 기준 등록 예시"].tap()

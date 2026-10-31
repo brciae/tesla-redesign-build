@@ -133,12 +133,7 @@ struct BatteryOverview: View {
             if let baseline = index.number("baselineCapacityKWh") {
                 HStack { Text(registered ? "등록한 기준 용량" : "초기 3회 기준 용량"); Spacer(); Text(String(format: "%.1f kWh", baseline)).bold().monospacedDigit() }.font(.subheadline)
             }
-            Button { healthEvidenceExpanded.toggle() } label: {
-                HStack { Text("계산 근거와 관측 기록"); Spacer(); Image(systemName: healthEvidenceExpanded ? "chevron.down" : "chevron.right").font(.caption) }
-            }.buttonStyle(.plain).font(.subheadline)
-                .accessibilityIdentifier("battery.health.exclusions")
-                .accessibilityValue(healthEvidenceExpanded ? "펼쳐짐" : "접힘")
-            if healthEvidenceExpanded {
+            DisclosureGroup("계산 근거와 관측 기록") {
                 VStack(alignment: .leading, spacing: 12) {
                     NavigationLink { BatteryEvidenceView() } label: { Label("충전량·계산 근거 확인", systemImage: "doc.text.magnifyingglass") }.accessibilityIdentifier("battery.health.evidence")
                     Text("전체 충전 \(Int(index.number("totalChargeCount") ?? 0))회 · 용량 계산 가능 \(Int(index.number("qualifiedChargeCount") ?? index.number("sampleCount") ?? 0))회")
