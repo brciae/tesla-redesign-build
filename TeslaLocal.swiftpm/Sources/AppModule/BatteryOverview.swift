@@ -134,7 +134,7 @@ struct BatteryOverview: View {
             }
             DisclosureGroup("계산 근거와 관측 기록") {
                 VStack(alignment: .leading, spacing: 12) {
-                    NavigationLink { BatteryEvidenceView() } label: { Label("충전량·계산 근거 확인", systemImage: "doc.text.magnifyingglass") }
+                    NavigationLink { BatteryEvidenceView() } label: { Label("충전량·계산 근거 확인", systemImage: "doc.text.magnifyingglass") }.accessibilityIdentifier("battery.health.evidence")
                     Text("전체 충전 \(Int(index.number("totalChargeCount") ?? 0))회 · 용량 계산 가능 \(Int(index.number("qualifiedChargeCount") ?? index.number("sampleCount") ?? 0))회")
                     ForEach(Array(index.rows("excludedChargeReasons").enumerated()), id: \.offset) { _, row in
                         HStack { Text(row.string("reason")); Spacer(); Text("\(Int(row.number("count") ?? 0))회") }
