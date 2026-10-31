@@ -131,7 +131,8 @@ struct BatteryOverview: View {
                                 .foregroundStyle(p.string("kind") == "충전" ? Color.green : Color.blue).symbolSize(22)
                         }
                     }
-                }.chartYScale(domain: 0...100)
+                }.chartXScale(range: .plotDimension(padding: 40))
+                    .chartYScale(domain: 0...100)
                     .chartYAxis { AxisMarks(position: .leading, values: [0, 20, 40, 60, 80, 100]) { _ in AxisGridLine(); AxisValueLabel() } }
                     .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { value in
                         AxisValueLabel { if let date = value.as(Date.self) { Text(Self.batteryChartDateFormatter.string(from: date)).font(.caption2) } }
