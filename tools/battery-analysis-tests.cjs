@@ -48,6 +48,14 @@ const charge=(id,at=t,extra={})=>({id,at,end:at+3600000,startSOC:30,endSOC:60,ve
   const restored=new Engine();restored.load(JSON.parse(JSON.stringify(e.state)));
   assert.deepEqual(restored.healthIndex(now),h,'comparison progress and history survive backup restoration');
  }
+ // Provisional display must not replace the robust planning capacity with one or two noisy observations.
+ for(const n of [4,5]) {
+  const e=new Engine();e.state.charges=[80,80,80,150,150].slice(0,n).map((kwh,i)=>charge('planning-'+i,t+i*DAY,{vehicleReportedKWh:kwh*.3}));
+  const display=e.healthIndex(now),planning=e.health(now);
+  assert.equal(display.provisionalComparison,true);assert.equal(display.capacityMedianKWh,150);
+  assert.equal(display.capacityRatioPercent,187.5);assert.equal(display.planningCapacityKWh,80);
+  assert.equal(planning.capacity,80);assert.equal(planning.baseline,null);assert.equal(planning.changePercent,null);
+ }
  const e=new Engine();e.state.charges=capacities.slice(0,5).map((kwh,i)=>charge('reference-'+i,t+i*DAY,{vehicleReportedKWh:kwh*.3}));
  e.settings({healthReferenceMethod:'bmsNominal',healthReferenceKWh:87});
  let h=e.healthIndex(now);assert.equal(h.referenceMismatch,true);assert.equal(h.configuredReferenceMethod,'bmsNominal');assert.equal(h.configuredReferenceKWh,87);

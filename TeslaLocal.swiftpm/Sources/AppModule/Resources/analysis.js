@@ -1114,7 +1114,7 @@
         baselineSampleCount:configured!=null?0:first.length,comparisonSampleCount:configured!=null?compareSet.length:Math.max(0,compareSet.length-(personal==null?first.length:0)),comparisonTargetCount:3,
         provisionalComparison,referenceMismatch,configuredReferenceKWh,configuredReferenceMethod,
         referenceLabel:configured!=null?'등록한 동일 종류 기준':'기록 시작 관측 기준',capacityHistory:samples.slice(-60).map(p=>({at:p.at,kwh:round(p.kwh,2)})),
-        capacityMedianKWh:round(current??recent,1),recentCapacityKWh:round(current??recent,1),baselineCapacityKWh:round(baseline,1),capacityMinKWh:recentSet.length?round(Math.min(...recentSet.map(c=>c.kwh)),1):null,capacityMaxKWh:recentSet.length?round(Math.max(...recentSet.map(c=>c.kwh)),1):null,
+        planningCapacityKWh:round(provisionalComparison?recent:current??recent,1),capacityMedianKWh:round(current??recent,1),recentCapacityKWh:round(current??recent,1),baselineCapacityKWh:round(baseline,1),capacityMinKWh:recentSet.length?round(Math.min(...recentSet.map(c=>c.kwh)),1):null,capacityMaxKWh:recentSet.length?round(Math.max(...recentSet.map(c=>c.kwh)),1):null,
         initial:!comparable,estimated:comparable,provisional:!configured,soh:ratio==null?null:round(Math.min(100,ratio),1),capacityRatioPercent:round(ratio,1),degradationPercent:ratio==null?null:round(Math.max(0,100-ratio),1),relativeChangePercent:ratio==null?null:round(ratio-100,1),statusReason:reason,
         latestAt:samples.at(-1)?.at??null,baselineSource:configured?'userSameMethod':'initialObservations',forecastSOH180:null,forecastDegradation180:null,uncertaintyPercent:null,
         note:direct?'Tesla가 보고한 NominalFullPackEnergyKwh의 일별 관측 중앙값. 사용 가능 용량·Tesla 상태검사 결과와 같은 값으로 간주하지 않음.':'배터리 충전량 ÷ 직접 확인한 SOC 변화의 참고값. 충전 손실·보조 소비·SOC 비선형·온도 영향이 남아 Tesla BMS 진단과 동일하지 않음.',
@@ -1122,7 +1122,7 @@
     }
     health(now=Date.now()){
       const index=this.healthIndex(now,'chargeUsable');
-      return {count:index.sampleCount,capacity:index.capacityMedianKWh,baseline:index.baselineCapacityKWh,changePercent:index.relativeChangePercent,minimum:index.capacityMinKWh,maximum:index.capacityMaxKWh,method:'chargeUsable',provisional:index.provisionalCapacity,note:index.note};
+      return {count:index.sampleCount,capacity:index.planningCapacityKWh,baseline:index.provisionalComparison?null:index.baselineCapacityKWh,changePercent:index.provisionalComparison?null:index.relativeChangePercent,minimum:index.capacityMinKWh,maximum:index.capacityMaxKWh,method:'chargeUsable',provisional:index.provisionalCapacity,note:index.note};
     }
     parkingSummary(now=Date.now()){
       const s=this.state,periods=s.parkingPeriods.map(p=>({...p}));
