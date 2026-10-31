@@ -76,6 +76,7 @@ struct MainView: View {
     @AppStorage("unitPressure") private var pressure = "bar"
     @State private var selectedTab: AppTab = .home
     @StateObject private var characterChat = CharacterChat()
+    @AppStorage("characterChat.floatingCharacter") private var floatingCharacter = false
     @State private var homePath = NavigationPath()
     @State private var controlsPath = NavigationPath()
     @State private var energyPath = NavigationPath()
@@ -153,7 +154,7 @@ struct MainView: View {
             NavigationPipSource(manager: .shared).frame(width: 360, height: 210)
                 .allowsHitTesting(false).accessibilityHidden(true)
             Commercial5TabScaffold(selection: tabBinding) {
-                NavigationStack(path: $homePath) { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .home && !navigation.presented && !model.chargingPresented)
+                NavigationStack(path: $homePath) { HomeView(link: link, openChat: { characterChat.presented = true }).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .home && !navigation.presented && !model.chargingPresented)
             } controls: {
                 NavigationStack(path: $controlsPath) { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .controls && !navigation.presented && !model.chargingPresented)
             } energy: {
@@ -166,7 +167,7 @@ struct MainView: View {
             .environment(\.vehicleRenderingActive, !navigation.presented && !model.chargingPresented)
             .opacity(navigation.presented || model.chargingPresented ? 0 : 1).allowsHitTesting(!navigation.presented && !model.chargingPresented).accessibilityHidden(navigation.presented || model.chargingPresented)
             .overlay(alignment: .bottomTrailing) {
-                if !navigation.presented && !model.chargingPresented {
+                if floatingCharacter && !navigation.presented && !model.chargingPresented {
                     CharacterChatButton(chat: characterChat).padding(.trailing, 16).padding(.bottom, 96)
                 }
             }

@@ -6,6 +6,10 @@ on:
         description: Reuse a completed interface run only when Probe sources are unchanged
         type: boolean
         default: false
+      skip_production_ui:
+        description: Use a separate same-source production UI run
+        type: boolean
+        default: false
       production_ui_only:
         description: Test production screens only without creating another IPA
         type: boolean
@@ -60,7 +64,7 @@ jobs:
           path: Xcode/BuildOutput/*.ipa
   production-ui:
     needs: build
-    if: always() && !cancelled() && !inputs.artifact_run_id && inputs.ui_screens_only != true && (inputs.production_ui_only == true || needs.build.result == 'success')
+    if: always() && !cancelled() && inputs.skip_production_ui != true && !inputs.artifact_run_id && inputs.ui_screens_only != true && (inputs.production_ui_only == true || needs.build.result == 'success')
     runs-on: macos-15
     timeout-minutes: 45
     steps:

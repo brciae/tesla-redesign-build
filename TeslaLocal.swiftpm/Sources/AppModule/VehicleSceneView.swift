@@ -105,10 +105,14 @@ struct RealityVehicleView: UIViewRepresentable {
         func beginBuild(in view: ARView, onReady: (() -> Void)?) {
             buildTask = Task { @MainActor [weak self, weak view] in
                 guard let self, let view else { return }
+                let started = CACurrentMediaTime()
                 do {
                     try await self.build(in: view)
                     try Task.checkCancellation()
                     self.ready = true
+#if DEBUG
+                    print("PERF vehicle scene build seconds: \(CACurrentMediaTime() - started)")
+#endif
                     if let p = self.pending { self.update(p.0, command: p.1, reduced: p.2, appearance: p.3) }
                     onReady?()
                 } catch is CancellationError { }
@@ -431,11 +435,16 @@ struct RealityVehicleView: UIViewRepresentable {
             guard allow else { return false }
             if let pan = gesture as? UIPanGestureRecognizer {
                 let velocity = pan.velocity(in: pan.view)
-                return abs(velocity.x) > abs(velocity.y)
+                let translation = pan.translation(in: pan.view)
+                let direction = abs(velocity.x) + abs(velocity.y) > 1 ? velocity : translation
+                return abs(direction.x) >= abs(direction.y)
             }
             return true
         }
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { gestureRecognizer is UIPinchGestureRecognizer || otherGestureRecognizer is UIPinchGestureRecognizer }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            gestureRecognizer is UIPinchGestureRecognizer || otherGestureRecognizer is UIPinchGestureRecognizer ||
+                (gestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer is UIPanGestureRecognizer)
+        }
         func stop() {
             buildTask?.cancel(); buildTask = nil; ready = false; pending = nil
             lifecycleObservers.forEach(NotificationCenter.default.removeObserver); lifecycleObservers = []

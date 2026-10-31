@@ -41,7 +41,18 @@ final class ProductionReviewTests: XCTestCase {
                 let beforeRotation = scene.value as? String
                 scene.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).press(forDuration: 0.1, thenDragTo: scene.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)))
                 XCTAssertNotEqual(scene.value as? String, beforeRotation, "Home car must respond to horizontal rotation")
-                for tab in ["에너지", "운행", "메뉴", "홈"] { app.tabBars.buttons[tab].tap(); allowLocationIfRequested() }
+                for tab in ["에너지", "운행", "메뉴", "홈"] {
+                    app.tabBars.buttons[tab].tap(); allowLocationIfRequested()
+                    if tab == "메뉴" && appearance == "light" {
+                        let menu = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); menu.name = "production-main-menu-portrait"; menu.lifetime = .keepAlways; add(menu)
+                        app.buttons["주행·안내"].tap()
+                        app.buttons["음성·내비 안내"].tap()
+                        XCTAssertTrue(app.navigationBars["음성·내비 안내"].waitForExistence(timeout: 5))
+                        app.navigationBars["음성·내비 안내"].buttons.element(boundBy: 0).tap()
+                        app.navigationBars["주행·안내"].buttons.element(boundBy: 0).tap()
+                    }
+                }
+                XCTAssertTrue(app.buttons["home.chat"].exists)
                 XCTAssertTrue(app.descendants(matching: .any)["home.readiness"].waitForExistence(timeout: 10))
                 XCUIDevice.shared.press(.home); app.activate()
                 XCTAssertTrue(app.descendants(matching: .any)["app.launch.brand"].waitForNonExistence(timeout: 5))
@@ -113,7 +124,7 @@ final class ProductionReviewTests: XCTestCase {
                 for _ in 0..<3 where !focus.exists || !focus.isHittable { app.swipeUp() }
                 XCTAssertTrue(focus.waitForExistence(timeout: 10))
             } else if screen == "batterySummary" {
-                XCTAssertTrue(app.descendants(matching: .any)["battery.overview.compact"].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.segmentedControls["battery.period"].waitForExistence(timeout: 10))
                 XCTAssertFalse(app.descendants(matching: .any)["battery.parking.count"].exists)
                 let capacity = app.buttons["battery.capacity.detail"]
                 for _ in 0..<3 where !capacity.exists || !capacity.isHittable { app.swipeUp() }

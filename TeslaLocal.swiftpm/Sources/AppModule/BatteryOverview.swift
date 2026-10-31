@@ -79,7 +79,6 @@ struct BatteryOverview: View {
             } label: { Label("사용량·주차·계산 근거", systemImage: "chart.bar.xaxis").frame(minHeight: 44) }
                 .accessibilityIdentifier("battery.usage.detail")
         }.padding(18).background(Theme.surface, in: RoundedRectangle(cornerRadius: 20))
-            .accessibilityIdentifier("battery.overview.compact")
     }
     private var healthCard: some View {
         let full = index.object("fullChargeRange")

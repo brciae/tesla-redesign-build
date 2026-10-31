@@ -528,6 +528,7 @@ struct CharacterSelectView: View {
     @AppStorage("characterFloat.id") private var floatID = ""
     @AppStorage("characterFloat.finish") private var floatFinish = ""
     @AppStorage("characterChat.enabled") private var floatEnabled = true
+    @AppStorage("characterChat.floatingCharacter") private var floatingCharacter = false
     @AppStorage("characterFloat.scale") private var floatScale = 1.0
     private var characterID: String {
         get { CharacterOption.selectedID(slot) }
@@ -566,7 +567,8 @@ struct CharacterSelectView: View {
                 .disabled(characterID == previewID)
                 // v1.55: this page is only about how characters look; every voice lives in 음성·내비 안내.
                 if slot == .floating {
-                    Toggle("화면에 떠있는 캐릭터 표시", isOn: $floatEnabled)
+                    Toggle("캐릭터 대화", isOn: $floatEnabled)
+                    Toggle("화면 위 3D 캐릭터 표시", isOn: $floatingCharacter)
                     HStack {
                         Text("크기")
                         Slider(value: $floatScale, in: 0.6...2.2, step: 0.1)
