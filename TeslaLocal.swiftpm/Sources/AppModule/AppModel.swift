@@ -279,9 +279,9 @@ final class AppModel: ObservableObject {
             FleetTelemetryStore.shared.historySaved(vin: vin)
         }
         }
-        archiveObservation = FleetTelemetryStore.shared.$records.dropFirst().sink { [weak self] records in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = records; self.observeParkingTelemetry(); self.updateLiveActivity() } }
         Task { @MainActor [weak self] in
             guard let self else { return }
+            self.archiveObservation = FleetTelemetryStore.shared.$records.dropFirst().sink { [weak self] records in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = records; self.observeParkingTelemetry(); self.updateLiveActivity() } }
             self.archiveReadings = FleetTelemetryStore.shared.records
             self.observeParkingTelemetry()
             self.repairSavedHistoryIfNeeded()
