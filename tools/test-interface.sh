@@ -28,6 +28,7 @@ elif [[ "${1:-}" == menu ]]; then
   )
 elif [[ "${1:-}" == regression ]]; then
   test_filter=(
+    -only-testing:InterfaceProbeTests/InteractionTests/testLiveActivityViewsAndBackgroundReturn
     -only-testing:InterfaceProbeTests/InteractionTests/testBatteryBaselineAndPeriods
     -only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit
     -only-testing:InterfaceProbeTests/InteractionTests/testNoVehicleRouteStopVisibleWithoutOpeningChromeAndSurvivesRelaunch
