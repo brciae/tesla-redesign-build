@@ -92,9 +92,7 @@ private struct AutomationDashboard: View {
                         Button { editor = r } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(r.name).font(.headline)
-                                Text(r.trigger.detail).font(.caption).foregroundStyle(Theme.muted)
-                                Text(store.readiness(for: r)).font(.caption).foregroundStyle(.secondary)
-                                if r.action != .speech { Text(r.action.title).font(.caption).foregroundStyle(.cyan) }
+                                Text(r.trigger.title + " · " + r.action.title).font(.caption).foregroundStyle(Theme.muted)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -141,6 +139,7 @@ struct AutomationRuleEditor: View {
                     Text("언제 → 조건 → 동작 순서로 설정함. 미리보기는 차량 명령을 실행하지 않음.").font(.caption).foregroundStyle(.secondary)
                     TextField("규칙 이름", text: $rule.name)
                     Toggle("이 규칙 활성화", isOn: $rule.enabled)
+                    LabeledContent("실행 준비", value: store.readiness(for: rule)).font(.caption).foregroundStyle(.secondary)
                     Picker("언제", selection: $rule.trigger) { ForEach(AutomationTrigger.allCases) { Text($0.title).tag($0) } }
                     Caption(rule.trigger.detail)
                     if rule.trigger == .batteryLow { Stepper("잔량 \(Int(rule.threshold))% 이하", value: $rule.threshold, in: 1...100, step: 1) }

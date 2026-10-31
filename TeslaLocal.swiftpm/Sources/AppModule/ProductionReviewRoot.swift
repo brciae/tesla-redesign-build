@@ -3,6 +3,7 @@ import SwiftUI
 /// Simulator-only entry points use the production model and production views, with demo data.
 struct ProductionReviewRoot: View {
     @ObservedObject var model: AppModel
+    @State private var healthPrepared = false
     private var screen: String { let args = ProcessInfo.processInfo.arguments; guard let i = args.firstIndex(of: "--ui-review-screen"), i + 1 < args.count else { return "home" }; return args[i + 1] }
     var body: some View {
         Group {
@@ -30,6 +31,20 @@ struct ProductionReviewRoot: View {
             } }
         }.environmentObject(model)
         .onAppear {
+            if screen == "batterySummary", !healthPrepared {
+                healthPrepared = true
+                do {
+                    var state = try model.runtime.call("export") as? Object ?? [:]
+                    let now = Date().timeIntervalSince1970 * 1000
+                    state["charges"] = [84.9, 84.8, 84.7, 84.7, 84.7].enumerated().map { i, capacity -> Object in
+                        let at = now - Double(6 - i) * 86400000
+                        return ["id": "review-capacity-\(i)", "at": at, "end": at + 3600000, "startSOC": 30, "endSOC": 80,
+                                "vehicleReportedKWh": capacity * 0.5, "complete": true, "startSOCObserved": true,
+                                "endSOCObserved": true, "source": "manual", "chargeReviewConfirmed": true]
+                    }
+                    model.output = try model.runtime.call("load", ["state": state]) as? Object ?? [:]
+                } catch { model.errorMessage = error.localizedDescription }
+            }
             if screen == "parking" {
                 var record = SmartParkingRecord()
                 record.timestamp = Date().addingTimeInterval(-3600)

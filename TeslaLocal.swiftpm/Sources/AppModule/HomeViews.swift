@@ -37,7 +37,7 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
         }
     }
     if !model.demo {
-        for (name, raw) in FleetTelemetryData.homeOverlay(model.archiveReadings, vin: model.fleet.selectedVin) {
+        for (name, raw) in FleetTelemetryData.homeOverlay(index: model.telemetryDisplayIndex, vin: model.fleet.selectedVin) {
             guard let group = raw as? Object else { continue }
             let existing = result.object(name)
             // v91: this used to swap the whole group. FleetTelemetryData.homeOverlay

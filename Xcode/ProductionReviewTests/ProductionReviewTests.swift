@@ -72,6 +72,13 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["확인이 필요한 행, 1건"].exists)
                 XCTAssertFalse(app.buttons["import.preview.apply"].isEnabled)
             } else if screen == "voice" {
+                let navigationVoice = app.buttons["preferences.navigationVoice"]
+                for _ in 0..<5 where !navigationVoice.exists || !navigationVoice.isHittable { app.swipeUp() }
+                XCTAssertTrue(navigationVoice.waitForExistence(timeout: 5)); navigationVoice.tap()
+                XCTAssertTrue(app.switches["길안내 음성"].waitForExistence(timeout: 5))
+                let voiceDetail = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); voiceDetail.name = "production-navigation-voice-detail"; voiceDetail.lifetime = .keepAlways; add(voiceDetail)
+                app.navigationBars["길안내·안전 경고"].buttons.element(boundBy: 0).tap()
+                for _ in 0..<5 { app.swipeDown() }
                 let link = app.buttons["preferences.automationVoice"]
                 for _ in 0..<5 where !link.exists || !link.isHittable { app.swipeUp() }
                 XCTAssertTrue(link.waitForExistence(timeout: 5)); link.tap()
@@ -130,6 +137,16 @@ final class ProductionReviewTests: XCTestCase {
                 for _ in 0..<3 where !capacity.exists || !capacity.isHittable { app.swipeUp() }
                 XCTAssertTrue(capacity.waitForExistence(timeout: 5)); capacity.tap()
                 XCTAssertTrue(app.descendants(matching: .any)["battery.health.reason"].waitForExistence(timeout: 5))
+                let ratio = app.staticTexts["battery.health.ratio"]
+                XCTAssertTrue(ratio.waitForExistence(timeout: 5)); XCTAssertEqual(ratio.label, "99.9%")
+                let detail = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); detail.name = "production-battery-health-five-observations"; detail.lifetime = .keepAlways; add(detail)
+                let reference = app.buttons["battery.health.reference"]
+                for _ in 0..<3 where !reference.isHittable { app.swipeUp() }
+                reference.tap()
+                XCTAssertTrue(app.navigationBars["용량 비교 기준"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.staticTexts["충전 기반 참고 용량"].exists)
+                let referenceScreen = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); referenceScreen.name = "production-battery-reference"; referenceScreen.lifetime = .keepAlways; add(referenceScreen)
+                app.navigationBars["용량 비교 기준"].buttons.element(boundBy: 0).tap()
                 app.navigationBars["배터리 용량"].buttons.element(boundBy: 0).tap()
                 let usage = app.buttons["battery.usage.detail"]
                 for _ in 0..<3 where !usage.exists || !usage.isHittable { app.swipeUp() }

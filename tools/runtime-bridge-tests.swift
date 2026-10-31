@@ -28,6 +28,32 @@ import Foundation
         _ = try runtime.call("settings", ["chargeMemberOperators": ["플러그링크"]])
         let member = try runtime.call("chargeTariffQuote", request) as! Object
         precondition(member.number("estimatedCost") == 2920 && member.flag("memberPricingApplied"))
-        print("PASS: native JS object bridge, bounded live callbacks, full history retention and checkpoint roundtrip")
+        let liveRestore = try runtime.call("loadLive", ["state": restored, "resume": true]) as! Object
+        precondition(liveRestore.flag("liveDelta"), "Startup restore must not calculate period analysis on the UI thread")
+        let before = try runtime.call("view") as! Object
+        let worker = BackgroundAnalysis()
+        var completed = false, ticks = 0
+        var background: Object = [:]
+        let heartbeat = Timer.scheduledTimer(withTimeInterval: 0.001, repeats: true) { _ in ticks += 1 }
+        worker.calculate(try runtime.exportData()) { result in
+            precondition(Thread.isMainThread)
+            switch result { case .success(let value): background = value
+            case .failure(let error): preconditionFailure(error.localizedDescription) }
+            completed = true
+        }
+        let deadline = Date().addingTimeInterval(20)
+        while !completed && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+        heartbeat.invalidate()
+        precondition(completed && ticks > 0, "Main run loop must remain responsive while analysis runs")
+        precondition(background["state"] == nil && background["fresh"] == nil, "Analysis cannot overwrite live/authentication state")
+        for key in ["health", "healthIndex", "totals"] {
+            let a = try JSONSerialization.data(withJSONObject: before.object(key), options: [.sortedKeys])
+            let b = try JSONSerialization.data(withJSONObject: background.object(key), options: [.sortedKeys])
+            precondition(a == b, "Background analysis differs for \(key)")
+        }
+        _ = try runtime.call("deleteTripLive", ["id": "bridge-test-0"])
+        let edited = try runtime.call("export") as! Object
+        precondition(!edited.rows("trips").contains { $0.string("id") == "bridge-test-0" })
+        print("PASS: background analysis equivalence, main-run-loop heartbeat \(ticks), live restore/edit and retained history")
     }
 }

@@ -70,6 +70,8 @@ node tools/data-consistency-tests.cjs
 node tools/stability-runtime-tests.cjs
 swiftc TeslaLocal.swiftpm/Sources/AppModule/LocalRuntime.swift TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift tools/runtime-bridge-tests.swift -o Xcode/RuntimeBridgeTests
 Xcode/RuntimeBridgeTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift tools/telemetry-display-index-tests.swift -o Xcode/TelemetryDisplayIndexTests
+Xcode/TelemetryDisplayIndexTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryJournal.swift tools/telemetry-journal-tests.swift -o Xcode/TelemetryJournalTests
 Xcode/TelemetryJournalTests
 node tools/gps-loss-tests.cjs

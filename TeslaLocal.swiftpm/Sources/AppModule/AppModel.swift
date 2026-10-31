@@ -20,7 +20,23 @@ final class AppModel: ObservableObject {
     let aiRules = AutomationAI()
     let voice = VoiceCoordinator()
     @Published var output: Object = [:]
-    @Published private(set) var archiveReadings: [FleetTelemetryReading] = []
+    @Published private(set) var archiveReadings: [FleetTelemetryReading] = [] {
+        didSet { rebuildTelemetryDisplayIndex() }
+    }
+    @Published private(set) var telemetryDisplayIndex = FleetTelemetryDisplayIndex([])
+    private let telemetryIndexQueue = DispatchQueue(label: "YLCompanion.displayIndex", qos: .userInitiated)
+    private var telemetryIndexRevision: UInt64 = 0
+    private func rebuildTelemetryDisplayIndex() {
+        telemetryIndexRevision &+= 1
+        let revision = telemetryIndexRevision, records = archiveReadings
+        telemetryIndexQueue.async { [weak self] in
+            let index = FleetTelemetryDisplayIndex(records)
+            DispatchQueue.main.async {
+                guard let self, self.telemetryIndexRevision == revision else { return }
+                self.telemetryDisplayIndex = index
+            }
+        }
+    }
     @Published var errorMessage: String?
     @Published private(set) var storageStatus: String?
     @Published var demo = false
@@ -34,7 +50,7 @@ final class AppModel: ObservableObject {
         var values = [vehicleReference.number("odometerKm")]
         if settings.string("vin") == vin { values.append(groups.object("drive").number("odometerKm")) }
         if let snapshot = fleet.vehicleSnapshot, snapshot.vin == vin { values.append(snapshot.number("vehicle_state", "odometer").map { $0 * 1.609344 }) }
-        if !demo, let reading = FleetTelemetryData.latest(archiveReadings, vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
+        if !demo, let reading = telemetryDisplayIndex.latest(vin: vin)["Odometer"], !reading.invalid { values.append(reading.number.map { $0 * 1.609344 }) }
         return values.compactMap { $0 }.filter { $0.isFinite && $0 >= 0 }.max()
     }
     /// v92: the 주차 중 / 정차 중 badge flickered to 상태 미수신 between polls.
@@ -101,6 +117,12 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
     private var analyticsVisible = false
     private var lastAnalytics = Date.distantPast
+    private let backgroundAnalysis = BackgroundAnalysis()
+    private var analysisBusy = false
+    private var analysisPending = false
+    private var analysisRevision: UInt64 = 0
+    private var fleetDisplayQueued = false
+    private var fleetDataSignature = ""
     private var lastEnergyRefresh = Date.distantPast
     private var tripAddressBusy = false
     private var tripAddressAttempt = Date.distantPast
@@ -202,7 +224,7 @@ final class AppModel: ObservableObject {
         if FileManager.default.fileExists(atPath: recordFile.path) {
             let lockedReadable = ((try? FileManager.default.attributesOfItem(atPath: recordFile.path)[.protectionKey]) as? FileProtectionType) == .completeUntilFirstUserAuthentication
             if UIApplication.shared.isProtectedDataAvailable || lockedReadable {
-                do { _ = try runtime.call("load", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true]) }
+                do { _ = try runtime.call("loadLive", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true]) }
                 catch { recoveryLock = true; errorMessage = "저장 자료를 읽지 못함. 원본 보호를 위해 저장을 잠금. 백업 복원 필요. \(error.localizedDescription)" }
             } else {
                 protectedLoadPending = true; recoveryLock = true
@@ -266,9 +288,15 @@ final class AppModel: ObservableObject {
             catch { self.storageStatus = "Fleet 충전 기록 저장: " + error.localizedDescription }
         }
         fleetObservation = fleet.objectWillChange.sink { [weak self] _ in
+            guard let self, !self.fleetDisplayQueued else { return }
+            self.fleetDisplayQueued = true
             DispatchQueue.main.async {
-                self?.objectWillChange.send(); self?.considerNavigation(); self?.observeParkingTelemetry()
-                self?.updateLiveActivity()
+                self.fleetDisplayQueued = false
+                self.objectWillChange.send()
+                let signature = "\(self.fleet.selectedVin)|\(self.fleet.isAuthenticated)|\(self.fleet.vehicleSnapshot?.receivedAt.timeIntervalSince1970 ?? 0)"
+                guard signature != self.fleetDataSignature else { return }
+                self.fleetDataSignature = signature
+                self.considerNavigation(); self.observeParkingTelemetry(); self.updateLiveActivity()
             }
         }
         Task { @MainActor [weak self] in
@@ -481,6 +509,7 @@ final class AppModel: ObservableObject {
         if visible && UIApplication.shared.applicationState == .active && Date().timeIntervalSince(lastAnalytics) >= 30 { refresh(detailed: true) }
     }
     func refresh(detailed: Bool = false) {
+        if detailed { analysisRevision &+= 1 }
         defer {
             if detailed { tripEnergy.invalidateProfile() }
             updateTripEnergy(); updateLiveActivity()
@@ -489,8 +518,8 @@ final class AppModel: ObservableObject {
         }
         do {
             // Read loaded settings before migrating the older standalone preference.
-            if detailed || output.isEmpty { output = try runtime.call("view") as? Object ?? [:]; lastAnalytics = Date() }
-            else { applyLiveOutput(try runtime.call("liveView") as? Object ?? [:]) }
+            if output.isEmpty { output = ["state": try runtime.call("export")] }
+            applyLiveOutput(try runtime.call("liveView") as? Object ?? [:])
             if !demo && !recoveryLock {
                 let defaults = UserDefaults.standard
                 var rates: Object = [:]
@@ -503,14 +532,39 @@ final class AppModel: ObservableObject {
                     rates["homePoint"] = ["latitude": lat, "longitude": lon, "name": home.string("name"), "address": home.string("address")]
                 }
                 if !rates.isEmpty {
-                    _ = try runtime.call("settings", rates)
+                    _ = try runtime.call("settingsLive", rates)
                     if rates["tariff"] != nil { defaults.set(true, forKey: "cost.legacyTariffMigrated") }
-                    if detailed || output.isEmpty { output = try runtime.call("view") as? Object ?? [:]; lastAnalytics = Date() }
-            else { applyLiveOutput(try runtime.call("liveView") as? Object ?? [:]) }
+                    applyLiveOutput(try runtime.call("liveView") as? Object ?? [:])
                 }
             }
             if !link.connected || !link.authentic { output["fresh"] = Object() }
+            if detailed { scheduleDetailedAnalysis() }
         } catch { output["fresh"] = Object(); errorMessage = error.localizedDescription }
+    }
+    private func scheduleDetailedAnalysis() {
+        guard !analysisBusy else { analysisPending = true; return }
+        do {
+            let snapshot = try runtime.exportData(), revision = analysisRevision
+            let vin = settings.string("vin"), wasDemo = demo
+            analysisBusy = true; analysisPending = false; lastAnalytics = Date()
+            backgroundAnalysis.calculate(snapshot) { [weak self] result in
+                guard let self else { return }
+                self.analysisBusy = false
+                let current = self.analysisRevision == revision && self.settings.string("vin") == vin && self.demo == wasDemo
+                if current {
+                    switch result {
+                    case .success(let analysis):
+                        // Live/authentication state stays in its owning BLE context.
+                        var next = self.output
+                        for (key, value) in analysis { next[key] = value }
+                        self.output = next; self.lastAnalytics = Date()
+                        self.tripEnergy.invalidateProfile(); self.updateTripEnergy()
+                    case .failure(let error): self.errorMessage = error.localizedDescription
+                    }
+                }
+                if self.analysisPending || !current { self.scheduleDetailedAnalysis() }
+            }
+        } catch { errorMessage = error.localizedDescription }
     }
     private var chargeSiteLookupKey = ""
     private var chargeSiteLookupAt = Date.distantPast
@@ -646,8 +700,12 @@ final class AppModel: ObservableObject {
         guard !recoveryLock || demo else { errorMessage = "원본 기록 보호 중. 백업 복원 필요."; return }
         do {
             let previousVIN = settings.string("vin")
-            _ = try runtime.call(operation, value); refresh(detailed: true)
+            _ = try runtime.call(operation + "Live", value)
+            // Explicit edits may remove history rows; a bounded live tail cannot
+            // represent deletions. Refresh the stored state once per user edit.
+            output["state"] = try runtime.call("export")
             if ["addCharge", "updateCharge"].contains(operation) { try enrichLocalChargeSOC() }
+            refresh(detailed: true)
             if settings.string("vin") != previousVIN { navigation.reset(); automations.resetObservation(); link.cancelPendingAutomation() }
             saveRecordsWhenAvailable(force: true)
         }

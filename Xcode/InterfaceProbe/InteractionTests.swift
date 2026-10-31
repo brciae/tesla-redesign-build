@@ -1,6 +1,18 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testRepeatedVehicleSceneStartup() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["charging-energy-probe"]
+        for attempt in 1...3 {
+            app.launch()
+            XCTAssertTrue(app.staticTexts["씬 생성 1회 · 갱신 0회"].waitForExistence(timeout: 20), "Cold scene startup \(attempt)")
+            XCTAssertFalse(app.staticTexts["charging.energy.error"].exists)
+            XCTAssertEqual(app.state, .runningForeground)
+            app.terminate()
+        }
+    }
     func testTwoStepNavigationCardsFloatingFramesAndAudioLease() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["navigation-card-probe"]; app.launch()
@@ -51,6 +63,9 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["씬 생성 1회 · 갱신 100회"].waitForExistence(timeout: 5))
         captureSystemCard("Energy saving charging renderer foreground return")
         app.segmentedControls.buttons["배터리"].tap()
+        let evidence = app.buttons["battery.health.exclusions"]
+        for _ in 0..<8 where !evidence.exists || !evidence.isHittable { app.swipeUp() }
+        XCTAssertTrue(evidence.waitForExistence(timeout: 5)); evidence.tap()
         XCTAssertTrue(app.staticTexts["완충 표시거리"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["기록 시작 대비 거리 변화"].exists)
         captureSystemCard("Full charge range battery card synthetic evidence")

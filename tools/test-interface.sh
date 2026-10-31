@@ -15,6 +15,11 @@ elif [[ "${1:-}" == junction ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit)
 elif [[ "${1:-}" == island ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testActualLiveActivityExtensionOnHomeScreen)
+elif [[ "${1:-}" == performance ]]; then
+  test_filter=(
+    -only-testing:InterfaceProbeTests/InteractionTests/testRepeatedVehicleSceneStartup
+    -only-testing:InterfaceProbeTests/InteractionTests/testChargingEnergySavingModelPersistenceAndFullChargeRangeCard
+  )
 elif [[ "${1:-}" == menu ]]; then
   test_filter=(
     -only-testing:InterfaceProbeTests/InteractionTests/testProductionSettingsMenuGroupsAndDirectCardSettings

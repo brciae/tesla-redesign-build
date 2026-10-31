@@ -108,18 +108,38 @@ struct HomeChargingSettingsView: View {
 
 struct BatteryHealthReferenceSettingsView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var method = "bmsNominal"
+    @State private var method = "chargeUsable"
     @State private var capacity = ""
     @State private var replaced = false
     @State private var installed = Date()
+    private var health: Object { model.output.object("healthIndex") }
+    private var currentMethod: String { health.string("method").isEmpty ? "chargeUsable" : health.string("method") }
+    private func methodTitle(_ value: String) -> String { value == "bmsNominal" ? "차량 보고 완충 용량" : "충전 기반 참고 용량" }
     var body: some View {
         Form {
+            Section("현재 비교 상태") {
+                LabeledContent("현재 관측", value: methodTitle(currentMethod))
+                if let saved = model.settings.number("healthReferenceKWh") {
+                    LabeledContent("저장된 기준", value: String(format: "%.1f kWh", saved))
+                    LabeledContent("기준 종류", value: methodTitle(model.settings.string("healthReferenceMethod")))
+                    Text(health.flag("referenceMismatch") ? "기준 종류가 달라 적용되지 않음. 현재 관측과 같은 종류의 확인된 기준을 등록해야 함." : health.number("capacityMedianKWh") == nil ? "같은 종류의 기준 등록됨 · 용량 관측 대기" : "같은 종류의 등록 기준으로 비교 중")
+                        .font(.caption).foregroundStyle(health.flag("referenceMismatch") ? Color.orange : Color.secondary)
+                        .accessibilityIdentifier("battery.reference.status")
+                } else {
+                    Text("등록 기준 없음 · 초기 관측을 기준으로 기록 시작 대비 변화를 비교함.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Section("같은 종류의 기준 용량") {
                 Picker("비교 종류", selection: $method) {
                     Text("차량 보고 완충 용량").tag("bmsNominal")
                     Text("충전 기반 참고 용량").tag("chargeUsable")
                 }
                 TextField("확인한 기준 용량 kWh · 미등록 가능", text: $capacity).keyboardType(.decimalPad)
+                if method != currentMethod {
+                    Text("선택한 종류가 현재 관측과 다름. 저장해도 현재 용량 비교에는 적용되지 않음.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 Caption("팩 총용량·사용 가능 용량·충전기 공급량은 서로 다름. 현재 계산 종류와 같은 기준을 확인한 경우에만 등록. 일반 소비량 계산의 기본 75kWh는 열화율 기준으로 사용하지 않음.")
             }
             Section("배터리 교체 이력") {
@@ -137,7 +157,8 @@ struct BatteryHealthReferenceSettingsView: View {
             if let error = model.errorMessage { Text(error).foregroundStyle(.orange) }
         }.navigationTitle("용량 비교 기준")
             .onAppear {
-                method = model.settings.string("healthReferenceMethod").isEmpty ? "bmsNominal" : model.settings.string("healthReferenceMethod")
+                let savedMethod = model.settings.string("healthReferenceMethod")
+                method = model.settings.number("healthReferenceKWh") != nil && !savedMethod.isEmpty ? savedMethod : currentMethod
                 capacity = model.settings.number("healthReferenceKWh").map { String($0) } ?? ""
                 if let at = model.settings.number("healthBatteryStartAt"), at > 0 { replaced = true; installed = Date(timeIntervalSince1970: at / 1000) }
             }

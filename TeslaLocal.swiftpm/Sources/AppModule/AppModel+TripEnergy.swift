@@ -41,7 +41,7 @@ extension AppModel {
         if let snapshot = fleet.vehicleSnapshot, snapshot.vin == energyVehicleVIN {
             accept(snapshot.soc, at: snapshot.number("charge_state", "timestamp"))
         }
-        let archive = FleetTelemetryData.latest(archiveReadings, vin: energyVehicleVIN)
+        let archive = telemetryDisplayIndex.latest(vin: energyVehicleVIN)
         for key in ["Soc", "BatteryLevel"] {
             if let reading = archive[key], !reading.invalid { accept(reading.number, at: reading.at.timeIntervalSince1970 * 1000) }
         }

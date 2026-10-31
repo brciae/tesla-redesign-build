@@ -32,6 +32,38 @@ const charge=(id,at=t,extra={})=>({id,at,end:at+3600000,startSOC:30,endSOC:60,ve
  e.ingestArchive({vin,rows:[{at:now,field:'NominalFullPackEnergyKwh',number:0,invalid:true}]});assert.equal(e.healthIndex(now).capacityMedianKWh,76);
 }
 {
+ const capacities=[85,84.8,84.7,84.7,84.7,84.6];
+ for(const n of [3,4,5,6]) {
+  const e=new Engine();e.state.charges=capacities.slice(0,n).map((kwh,i)=>charge('progress-'+i,t+i*DAY,{vehicleReportedKWh:kwh*.3}));
+  const h=e.healthIndex(now);
+  assert.equal(h.baselineSampleCount,3);assert.equal(h.comparisonSampleCount,n-3);assert.equal(h.comparisonTargetCount,3);
+  assert.equal(h.provisionalComparison,n===4||n===5);assert.equal(h.referenceMismatch,false);
+  assert.equal(h.capacityHistory.length,n);assert.equal(h.referenceLabel,'기록 시작 관측 기준');
+  if(n===3) { assert.equal(h.degradationPercent,null);assert.equal(h.baselineCapacityKWh,null);assert.equal(h.initial,true); }
+  else {
+   assert.equal(h.baselineCapacityKWh,84.8);assert.equal(h.capacityMedianKWh,84.7);
+   assert.equal(h.degradationPercent,.1);assert.equal(h.relativeChangePercent,-.1);assert.equal(h.initial,false);
+   assert.equal(h.baselineSource,'initialObservations');assert.ok(h.statusReason.includes(n<6?'잠정':'신차 대비 열화율 아님'));
+  }
+  const restored=new Engine();restored.load(JSON.parse(JSON.stringify(e.state)));
+  assert.deepEqual(restored.healthIndex(now),h,'comparison progress and history survive backup restoration');
+ }
+ const e=new Engine();e.state.charges=capacities.slice(0,5).map((kwh,i)=>charge('reference-'+i,t+i*DAY,{vehicleReportedKWh:kwh*.3}));
+ e.settings({healthReferenceMethod:'bmsNominal',healthReferenceKWh:87});
+ let h=e.healthIndex(now);assert.equal(h.referenceMismatch,true);assert.equal(h.configuredReferenceMethod,'bmsNominal');assert.equal(h.configuredReferenceKWh,87);
+ assert.equal(h.baselineCapacityKWh,84.8,'incompatible reference is visible but never mixed with charge capacity');assert.equal(h.provisionalComparison,true);
+ e.settings({healthReferenceMethod:'chargeUsable',healthReferenceKWh:87});
+ h=e.healthIndex(now);assert.equal(h.referenceMismatch,false);assert.equal(h.provisionalComparison,false);assert.equal(h.baselineSampleCount,0);
+ assert.equal(h.comparisonSampleCount,5);assert.equal(h.degradationPercent,2.6);assert.equal(h.soh,97.4);assert.equal(h.baselineSource,'userSameMethod');
+ const before=h;
+ e.state.charges.push(charge('future-capacity',now+DAY,{vehicleReportedKWh:30}));
+ e.state.batteryObservations.push({id:'future-bms',at:now+DAY,value:100,method:'bmsNominal'});
+ h=e.healthIndex(now);assert.equal(h.method,'chargeUsable');assert.equal(h.capacityMedianKWh,before.capacityMedianKWh);assert.deepEqual(h.capacityHistory,before.capacityHistory,'future observations cannot affect the estimate or history');
+ const restored=new Engine();restored.load(JSON.parse(JSON.stringify(e.state)));assert.equal(restored.healthIndex(now).degradationPercent,h.degradationPercent);
+ const many=new Engine();many.state.charges=Array.from({length:70},(_,i)=>charge('history-'+i,now-(75-i)*DAY));
+ const history=many.healthIndex(now).capacityHistory;assert.equal(history.length,60);assert.equal(history[0].at,now-65*DAY);assert.ok(history.every((p,i)=>!i||p.at>history[i-1].at));
+}
+{
  const e=new Engine(),at=now-3600000;
  const packet=(time,gear,soc,odo=100)=>e.ingest({groups:{drive:{at:time,receivedAt:time,gear,speedKmh:0,odometerKm:odo},charge:{at:time,receivedAt:time,soc,charging:2}}},time);
  packet(at,'D',60);packet(at+60000,'D',60);assert.equal(e.state.parkingPeriods.length,0,'stopped in D is not parking');
@@ -48,4 +80,4 @@ const charge=(id,at=t,extra={})=>({id,at,end:at+3600000,startSOC:30,endSOC:60,ve
  e.ingestArchive({vin,rows});assert.ok(e.state.parkingPeriods.length>0,'archive parking reconstruction must be merged');
  const count=e.state.parkingPeriods.length;e.ingestArchive({vin,rows});assert.equal(e.state.parkingPeriods.length,count,'archive parking replay is idempotent');
 }
-console.log('PASS: dated home geofence, source-separated battery health, measured SOC only, P versus stopped D, short/high-loss parking and NAS replay');
+console.log('PASS: dated home geofence, source-separated battery health, 3/4/5/6 observation progress, reference mismatch, future exclusion, restored history, measured SOC only, P versus stopped D, short/high-loss parking and NAS replay');

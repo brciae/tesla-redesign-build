@@ -1079,16 +1079,23 @@
       const stable=rows=>{if(rows.length<5)return rows;const m=median(rows.map(c=>c.kwh)),mad=median(rows.map(c=>Math.abs(c.kwh-m)));const kept=rows.filter(c=>Math.abs(c.kwh-m)<=Math.max(m*.05,3*mad));return kept.length>=Math.ceil(rows.length*.7)?kept:rows;};
       const first=stable(samples.slice(0,3)),recentSet=stable(samples.slice(-10));
       const recent=recentSet.length?median(recentSet.map(c=>c.kwh)):null;
-      const configured=s.settings.healthReferenceMethod===method&&num(s.settings.healthReferenceKWh,20,200)?s.settings.healthReferenceKWh:null;
-      const personal=!configured&&samples.length>=6?median(first.map(c=>c.kwh)):null;
+      const configuredReferenceKWh=num(s.settings.healthReferenceKWh,20,200)?s.settings.healthReferenceKWh:null;
+      const configuredReferenceMethod=s.settings.healthReferenceMethod??null;
+      const referenceMismatch=configuredReferenceKWh!=null&&configuredReferenceMethod!==method;
+      const configured=!referenceMismatch?configuredReferenceKWh:null;
+      // Keep the first three observations separate from the comparison observations.
+      // One or two later observations can show a provisional recorded change, never a new-battery diagnosis.
+      const personal=configured==null&&samples.length>=4?median(first.map(c=>c.kwh)):null;
       const baseline=configured??personal;
       // Reference and current values must be the same energy definition. Never use the generic75kWh consumption assumption as SOH.
       const compareSet=personal?stable(samples.slice(3).slice(-10)):recentSet;
-      const current=compareSet.length>=(configured?1:3)?median(compareSet.map(c=>c.kwh)):null;
+      const provisionalComparison=personal!=null&&samples.length<6;
+      const current=compareSet.length>=(configured!=null||provisionalComparison?1:3)?median(compareSet.map(c=>c.kwh)):null;
       const spread=compareSet.length?Math.max(...compareSet.map(c=>c.kwh))-Math.min(...compareSet.map(c=>c.kwh)):null;
       const comparable=baseline!=null&&current!=null&&spread/current<=.2;
       const ratio=comparable?current/baseline*100:null;
-      const reason=!samples.length?'배터리 용량 자료 미수신 · 완충 표시거리도 별도 확인':!baseline?'관측 용량 표시 · 초기 3회와 이후 3회부터 변화 비교':!current?'비교용 관측 자료 3회 필요':!comparable?'관측 용량 편차가 큼 · 변화율 계산 보류':ratio>100?'기준보다 높은 관측 용량 · 온도·BMS 보정 영향 확인':configured?(samples.length<3?'등록 기준 대비 단일 관측 참고값':'등록한 동일 종류 기준 용량 대비 감소 추정'):'기록 시작 용량 대비 감소 · 신차 대비 열화율 아님';
+      const comparisonReason=!samples.length?'배터리 용량 자료 미수신 · 완충 표시거리도 별도 확인':!baseline?'초기 관측 3회 이후 다음 관측부터 변화 비교':!current?'비교용 관측 자료 필요':!comparable?'관측 용량 편차가 큼 · 변화율 계산 보류':ratio>100?'기준보다 높은 관측 용량 · 온도·BMS 보정 영향 확인':configured?(samples.length<3?'등록 기준 대비 단일 관측 참고값':'등록한 동일 종류 기준 용량 대비 감소 추정'):provisionalComparison?'기록 시작 대비 잠정 변화 · 비교 관측 3회 전':'기록 시작 용량 대비 감소 · 신차 대비 열화율 아님';
+      const reason=referenceMismatch?'등록 기준 종류 불일치 · 현재 관측에는 미적용. '+comparisonReason:comparisonReason;
       const full=(s.fullChargeRangeObservations??[]).filter(p=>p.method==='fullRatedRange'&&num(p.at,since,now)&&num(p.value,100,1200)).sort((a,b)=>a.at-b.at);
       const fullFirst=full[0]?.value??null,fullRecent=full.length>1?median(full.slice(1).slice(-3).map(p=>p.value)):fullFirst;
       const fullChange=full.length>=2?(fullRecent/fullFirst-1)*100:null;
@@ -1104,6 +1111,9 @@
       return {method,qualifiedChargeCount:charge.length,excludedChargeReasons:[...excluded].map(([reason,count])=>({reason,count})),provisionalCapacity:samples.length<3,capacityLabel:direct?'차량 보고 완충 용량':'충전 기반 참고 용량',comparisonLabel:configured?'등록 기준 대비 감소':'기록 시작 대비 감소',
         fullChargeRange:{count:full.length,latestKm:round(fullRecent,1),initialKm:round(fullFirst,1),changePercent:round(fullChange,1),latestAt:full.at(-1)?.at??null},
         sampleCount:samples.length,stableSampleCount:compareSet.length,samplesNeeded:configured?1:6,totalChargeCount:s.charges.length,
+        baselineSampleCount:configured!=null?0:first.length,comparisonSampleCount:configured!=null?compareSet.length:Math.max(0,compareSet.length-(personal==null?first.length:0)),comparisonTargetCount:3,
+        provisionalComparison,referenceMismatch,configuredReferenceKWh,configuredReferenceMethod,
+        referenceLabel:configured!=null?'등록한 동일 종류 기준':'기록 시작 관측 기준',capacityHistory:samples.slice(-60).map(p=>({at:p.at,kwh:round(p.kwh,2)})),
         capacityMedianKWh:round(current??recent,1),recentCapacityKWh:round(current??recent,1),baselineCapacityKWh:round(baseline,1),capacityMinKWh:recentSet.length?round(Math.min(...recentSet.map(c=>c.kwh)),1):null,capacityMaxKWh:recentSet.length?round(Math.max(...recentSet.map(c=>c.kwh)),1):null,
         initial:!comparable,estimated:comparable,provisional:!configured,soh:ratio==null?null:round(Math.min(100,ratio),1),capacityRatioPercent:round(ratio,1),degradationPercent:ratio==null?null:round(Math.max(0,100-ratio),1),relativeChangePercent:ratio==null?null:round(ratio-100,1),statusReason:reason,
         latestAt:samples.at(-1)?.at??null,baselineSource:configured?'userSameMethod':'initialObservations',forecastSOH180:null,forecastDegradation180:null,uncertaintyPercent:null,

@@ -13,6 +13,64 @@ struct FleetTelemetryReading: Codable, Identifiable, Sendable {
     var id: String { vin + ":" + field + ":" + String(at.timeIntervalSince1970) }
 }
 
+/// Immutable display lookup, rebuilt only when archive records change. It does not provide
+/// command evidence. Source timestamps stay intact; freshness is evaluated at lookup time.
+struct FleetTelemetryDisplayIndex: Sendable {
+    struct Coordinate: Sendable { let latitude: Double; let longitude: Double }
+    struct Location: Sendable {
+        let reading: FleetTelemetryReading
+        let coordinate: Coordinate?
+    }
+    private let fieldsByVIN: [String: [String: FleetTelemetryReading]]
+    private let locationsByVIN: [String: [Location]]
+    private let validLocationsByVIN: [String: [Location]]
+    let sourceRecordCount: Int
+    let locationDecodeCount: Int
+
+    init(_ records: [FleetTelemetryReading]) {
+        var fields: [String: [String: FleetTelemetryReading]] = [:]
+        var locations: [String: [Date: Location]] = [:]
+        var validLocations: [String: [Date: Location]] = [:]
+        var decoded = 0
+        for reading in records {
+            let previous = fields[reading.vin]?[reading.field]
+            if previous == nil || previous!.at <= reading.at {
+                fields[reading.vin, default: [:]][reading.field] = reading
+            }
+            guard reading.field == "Location" else { continue }
+            let coordinate: Coordinate?
+            if !reading.invalid {
+                decoded += 1
+                coordinate = FleetTelemetryData.coordinate(reading).map { Coordinate(latitude: $0.latitude, longitude: $0.longitude) }
+            } else { coordinate = nil }
+            let location = Location(reading: reading, coordinate: coordinate)
+            // max(by: <) in the original location selection retains the first equal-date
+            // event. Latest field selection above deliberately retains the last instead.
+            if locations[reading.vin]?[reading.at] == nil { locations[reading.vin, default: [:]][reading.at] = location }
+            if coordinate != nil, validLocations[reading.vin]?[reading.at] == nil {
+                validLocations[reading.vin, default: [:]][reading.at] = location
+            }
+        }
+        fieldsByVIN = fields
+        locationsByVIN = locations.mapValues { $0.values.sorted { $0.reading.at < $1.reading.at } }
+        validLocationsByVIN = validLocations.mapValues { $0.values.sorted { $0.reading.at < $1.reading.at } }
+        sourceRecordCount = records.count; locationDecodeCount = decoded
+    }
+    func latest(vin: String) -> [String: FleetTelemetryReading] { fieldsByVIN[vin] ?? [:] }
+    func locations(vin: String, now: Date) -> (valid: Location?, last: Location?) {
+        let ceiling = now.addingTimeInterval(5)
+        func lastEligible(_ locations: [Location]) -> Location? {
+            var low = 0, high = locations.count
+            while low < high {
+                let middle = low + (high - low) / 2
+                if locations[middle].reading.at <= ceiling { low = middle + 1 } else { high = middle }
+            }
+            return low > 0 ? locations[low - 1] : nil
+        }
+        return (lastEligible(validLocationsByVIN[vin] ?? []), lastEligible(locationsByVIN[vin] ?? []))
+    }
+}
+
 enum FleetTelemetryData {
     /// A displayed/cached gear is a historical observation, never a new live packet.
     static func mainMotionPayload(_ drive: [String: Any], vin: String, now: Date = Date()) -> Data? {
@@ -186,7 +244,11 @@ enum FleetTelemetryData {
     }
     /// Display-only projection: never supplies evidence for vehicle commands.
     static func homeOverlay(_ records: [FleetTelemetryReading], vin: String, now: Date = Date()) -> [String: Any] {
-        let latest = latest(records, vin: vin)
+        homeOverlay(index: FleetTelemetryDisplayIndex(records), vin: vin, now: now)
+    }
+    /// Reuses decoded location history and latest-field selection without visiting raw records.
+    static func homeOverlay(index: FleetTelemetryDisplayIndex, vin: String, now: Date = Date()) -> [String: Any] {
+        let latest = index.latest(vin: vin)
         var result: [String: Any] = [:]
         let maps: [(String, [(String, String, Double)])] = [
             // v91: ChargerVoltage and ChargeAmps were ingested and then had no
@@ -233,11 +295,11 @@ enum FleetTelemetryData {
         // That is why the NAS could know exactly where the car parked while the
         // app said 위치 미수신. A parked car's fix is old by definition, so age
         // marks it cached rather than discarding it.
-        if let r = records.filter({ $0.vin == vin && $0.field == "Location" && !$0.invalid && now.timeIntervalSince($0.at) >= -5 && coordinate($0) != nil }).max(by: { $0.at < $1.at }),
-           let point = coordinate(r) {
+        let locations = index.locations(vin: vin, now: now)
+        if let location = locations.valid, let point = location.coordinate {
+            let r = location.reading
             let stamp = r.at.timeIntervalSince1970 * 1000
-            let lastLocation = records.filter { $0.vin == vin && $0.field == "Location" && now.timeIntervalSince($0.at) >= -5 }.max { $0.at < $1.at }
-            let unavailable = lastLocation.map { $0.at >= r.at && ($0.invalid || coordinate($0) == nil) } ?? false
+            let unavailable = locations.last.map { $0.reading.at >= r.at && ($0.reading.invalid || $0.coordinate == nil) } ?? false
             let fresh = now.timeIntervalSince(r.at) <= 120 && !unavailable
             result["location"] = [
                 "latitude": point.latitude, "longitude": point.longitude, "hasCoordinates": true,

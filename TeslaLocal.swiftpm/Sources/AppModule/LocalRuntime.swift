@@ -103,6 +103,42 @@ final class CryptoService {
     }
 }
 
+/// Owns a separate JSContext on one serial queue. The BLE/control context never
+/// crosses threads; only an immutable JSON snapshot enters this analysis worker.
+final class BackgroundAnalysis {
+    private let queue = DispatchQueue(label: "YLCompanion.analysis", qos: .userInitiated)
+    private var context: JSContext?
+    func calculate(_ snapshot: Data, completion: @escaping (Result<Object, Error>) -> Void) {
+        queue.async { [self] in
+            let result: Result<Object, Error> = Result {
+                if context == nil {
+                    guard let next = JSContext() else { throw LocalError.message("분석 엔진 생성 실패") }
+                    next.evaluateScript(try EmbeddedAppResources.text(named: "analysis.js"))
+                    next.evaluateScript("""
+                    const backgroundEngine = new YLCore.Engine();
+                    function analyzeSnapshot(raw) {
+                      const value = backgroundEngine.load(JSON.parse(raw), {resumeActive:true});
+                      delete value.state; delete value.fresh; delete value.briefing;
+                      const serialized = JSON.stringify(value);
+                      backgroundEngine.state = null;
+                      return serialized;
+                    }
+                    """)
+                    if let error = next.exception { throw LocalError.message(error.toString()) }
+                    context = next
+                }
+                guard let context else { throw LocalError.message("분석 엔진 생성 실패") }
+                context.exception = nil
+                let value = context.objectForKeyedSubscript("analyzeSnapshot")?.call(withArguments: [String(decoding: snapshot, as: UTF8.self)])
+                if let error = context.exception { throw LocalError.message(error.toString()) }
+                guard let text = value?.toString(), let parsed = try decodeJSON(text) as? Object else { throw LocalError.message("상세 분석 응답 오류") }
+                return parsed
+            }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+}
+
 final class LocalRuntime {
     let crypto = CryptoService()
     let controlCrypto = CryptoService(service: "YLCompanion.BLE.P256.Control")

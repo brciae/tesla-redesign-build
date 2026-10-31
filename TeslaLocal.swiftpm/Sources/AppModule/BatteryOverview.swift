@@ -26,6 +26,9 @@ struct BatteryOverview: View {
         if compact { overview } else { detailed }
     }
     private var detailed: some View {
+        VStack(spacing: 20) { healthCard; usageDetail }
+    }
+    private var usageDetail: some View {
         VStack(alignment: .leading, spacing: 20) {
             Picker("분석 기간", selection: $days) {
                 Text("7일").tag(7); Text("30일").tag(30); Text("90일").tag(90)
@@ -34,7 +37,6 @@ struct BatteryOverview: View {
             HStack { measure("주행 전비", usage.object("energy").number("drivingKmPerKWh"), "km/kWh"); measure("주행 거리", usage.number("distanceKm"), "km") }
             HStack { measure("주행 소비 · 추정", usage.object("energy").number("drivingKWh"), "kWh"); measure("주차 감소 · 관측", usage.number("unexplainedParkingSOC"), "%p") }
             Text("주행 \(Int(usage.number("tripCount") ?? 0))회 · 충전 \(Int(usage.number("chargeCount") ?? 0))회").font(.caption).foregroundStyle(.secondary)
-            healthCard
             socChart
             tripChart
             parkingCard
@@ -48,14 +50,12 @@ struct BatteryOverview: View {
             }
             DisclosureGroup("계산 근거·상세 수치") {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(index.string("statusReason")).font(.caption)
-                    Text(index.string("note")).font(.caption).foregroundStyle(.secondary)
                     HStack { measure("종합 전비 · 추정", usage.object("energy").number("overallKmPerKWh"), "km/kWh"); measure("전력 관측률", usage.number("powerCoverage"), "%") }
                     HStack { measure("관측 사용 전력", usage.number("observedUsedKWh"), "kWh"); measure("관측 회생", usage.number("observedRecoveredKWh"), "kWh") }
                     Text("전비·kWh는 관측 SOC 또는 구동계 전력으로 계산한 추정값. 공조·감시 모드별 소비를 임의로 배분하지 않음.").font(.caption).foregroundStyle(.secondary)
                 }.padding(.top, 8)
             }
-        }.padding(18).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
+        }.padding(18).background(Theme.surface, in: RoundedRectangle(cornerRadius: 22))
     }
     private var overview: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -75,44 +75,103 @@ struct BatteryOverview: View {
                 }.font(.subheadline).frame(minHeight: 44)
             }.accessibilityIdentifier("battery.capacity.detail")
             NavigationLink {
-                ScrollView { detailed.padding() }.navigationTitle("사용량·주차 분석").navigationBarTitleDisplayMode(.inline)
+                ScrollView { usageDetail.padding() }.navigationTitle("사용량·주차 분석").navigationBarTitleDisplayMode(.inline)
             } label: { Label("사용량·주차·계산 근거", systemImage: "chart.bar.xaxis").frame(minHeight: 44) }
                 .accessibilityIdentifier("battery.usage.detail")
         }.padding(18).background(Theme.surface, in: RoundedRectangle(cornerRadius: 20))
     }
     private var healthCard: some View {
         let full = index.object("fullChargeRange")
-        let rangeOnly = index.number("capacityMedianKWh") == nil && full.number("latestKm") != nil
-        return VStack(alignment: .leading, spacing: 9) {
-            NavigationLink { BatteryEvidenceView() } label: { Label("충전량·계산 근거 확인", systemImage: "doc.text.magnifyingglass") }.font(.subheadline)
+        let capacity = index.number("capacityMedianKWh") ?? index.number("recentCapacityKWh")
+        let registered = index.string("baselineSource") == "userSameMethod"
+        let ratio = index.number("capacityRatioPercent")
+        let provisional = index.flag("provisionalComparison")
+        return VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text("배터리 용량·열화 추정").font(.headline)
-                InfoNote("열화율 추정", "차량 보고 완충 용량을 우선 사용. 충전 기반 참고 용량은 저장 에너지와 관측 SOC로 계산하며, 두 종류를 섞지 않음. 신차 기준이 없으면 기록 시작 대비 변화만 표시.")
+                Label("배터리 컨디션", systemImage: "battery.100percent").font(.headline)
+                Spacer()
+                Text(index.flag("referenceMismatch") ? "기준 확인" : provisional ? "잠정 비교" : registered ? "등록 기준" : "관측 기준")
+                    .font(.caption.weight(.semibold)).padding(.horizontal, 10).padding(.vertical, 5)
+                    .foregroundStyle(index.flag("referenceMismatch") || provisional ? Color.orange : Color.blue)
+                    .background(Color.blue.opacity(0.08), in: Capsule())
             }
-            HStack {
-                measure(rangeOnly ? "완충 표시거리" : index.string("capacityLabel").isEmpty ? "관측 용량" : index.string("capacityLabel"), rangeOnly ? full.number("latestKm") : index.number("capacityMedianKWh") ?? index.number("recentCapacityKWh"), rangeOnly ? "km" : "kWh")
-                measure(rangeOnly ? "기록 시작 대비 거리 변화" : index.string("comparisonLabel").isEmpty ? "기준 대비 감소" : index.string("comparisonLabel"), rangeOnly ? full.number("changePercent") : index.flag("initial") ? nil : index.number("degradationPercent"), "%")
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("현재 참고 용량").font(.subheadline).foregroundStyle(.secondary)
+                    if let capacity {
+                        (Text(String(format: "%.1f", capacity)).font(.system(size: 38, weight: .bold, design: .rounded)) + Text(" kWh").font(.subheadline)).monospacedDigit()
+                    } else { Text("관측 대기").font(.title2.bold()) }
+                    Text(index.string("method") == "bmsNominal" ? "BMS 보고량" : "충전량·SOC 관측 기반").font(.caption).foregroundStyle(.secondary)
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(registered ? "등록 기준 대비 유지율" : "기록 시작 대비 유지율").font(.subheadline).foregroundStyle(.secondary)
+                    if let ratio {
+                        Text(String(format: "%.1f%%", ratio)).font(.system(size: 32, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(.blue)
+                            .accessibilityIdentifier("battery.health.ratio")
+                        if let change = index.number("relativeChangePercent") { Text(String(format: "%+.1f%% 변화", change)).font(.caption).foregroundStyle(.secondary) }
+                    } else { Text("비교 관측 대기").font(.headline) }
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            if (full.number("count") ?? 0) > 0 {
-                Text("100% 완료 관측 \(Int(full.number("count") ?? 0))회 · 표시거리 변화는 열화율과 별도 참고값").font(.caption).foregroundStyle(.secondary)
-            }
-            Text(index.string("statusReason").isEmpty ? "계산 가능한 충전 \(Int(index.number("sampleCount") ?? 0))회 · 최소 3회 필요" : index.string("statusReason"))
-                .font(.caption).foregroundStyle(index.flag("initial") ? Color.orange : accent)
+            Text(index.string("statusReason").isEmpty ? "용량을 계산할 수 있는 충전 기록이 필요함" : index.string("statusReason"))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("battery.health.reason")
-            Text(index.string("method") == "bmsNominal" ? "BMS 관측 \(Int(index.number("sampleCount") ?? 0))일" : "계산 가능 충전 \(Int(index.number("sampleCount") ?? 0))회")
-                .font(.caption).foregroundStyle(.secondary)
-            DisclosureGroup("충전 기록 집계·제외 사유") {
-                Text("전체 \(Int(index.number("totalChargeCount") ?? 0))회 · 용량 계산 가능 \(Int(index.number("qualifiedChargeCount") ?? index.number("sampleCount") ?? 0))회")
-                ForEach(Array(index.rows("excludedChargeReasons").enumerated()), id: \.offset) { _, row in
-                    HStack { Text(row.string("reason")); Spacer(); Text("\(Int(row.number("count") ?? 0))회") }
-                }
-            }.font(.caption).accessibilityIdentifier("battery.health.exclusions")
-            if index.flag("provisionalCapacity") { Text("소수 관측 참고 용량 · 열화율 확정 전").font(.caption).foregroundStyle(.secondary) }
-            if let low = index.number("capacityMinKWh"), let high = index.number("capacityMaxKWh") {
-                Text(String(format: "최근 관측 범위 %.1f~%.1f kWh", low, high)).font(.caption).foregroundStyle(.secondary)
+            if !registered {
+                VStack(alignment: .leading, spacing: 8) {
+                    let baselineCount = min(3, Int(index.number("baselineSampleCount") ?? index.number("sampleCount") ?? 0))
+                    let comparisonCount = min(3, Int(index.number("comparisonSampleCount") ?? 0))
+                    HStack { Text("기준 \(baselineCount)/3"); Spacer(); Text("비교 \(comparisonCount)/3") }.font(.caption.weight(.medium))
+                    ProgressView(value: Double(baselineCount + comparisonCount), total: 6).tint(.blue)
+                    Text("신차 대비 열화율은 확인된 동일 종류의 신차 기준이 있어야 비교 가능함.").font(.caption).foregroundStyle(.secondary)
+                }.accessibilityIdentifier("battery.health.progress")
             }
-            if index.flag("provisional") { Text("신차 기준이 없으면 기록 시작 대비 변화만 제공. Tesla 배터리 상태검사와 동일한 진단이 아님.").font(.caption).foregroundStyle(.secondary) }
-        }.padding(14).background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+            NavigationLink { BatteryHealthReferenceSettingsView() } label: {
+                HStack { Label("비교 기준 관리", systemImage: "slider.horizontal.3"); Spacer(); Image(systemName: "chevron.right").font(.caption) }
+                    .font(.subheadline.weight(.medium)).padding(14).background(Color.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+            }.accessibilityIdentifier("battery.health.reference")
+            capacityTimeline
+            if let baseline = index.number("baselineCapacityKWh") {
+                HStack { Text(registered ? "등록한 기준 용량" : "초기 3회 기준 용량"); Spacer(); Text(String(format: "%.1f kWh", baseline)).bold().monospacedDigit() }.font(.subheadline)
+            }
+            DisclosureGroup("계산 근거와 관측 기록") {
+                VStack(alignment: .leading, spacing: 12) {
+                    NavigationLink { BatteryEvidenceView() } label: { Label("충전량·계산 근거 확인", systemImage: "doc.text.magnifyingglass") }
+                    Text("전체 충전 \(Int(index.number("totalChargeCount") ?? 0))회 · 용량 계산 가능 \(Int(index.number("qualifiedChargeCount") ?? index.number("sampleCount") ?? 0))회")
+                    ForEach(Array(index.rows("excludedChargeReasons").enumerated()), id: \.offset) { _, row in
+                        HStack { Text(row.string("reason")); Spacer(); Text("\(Int(row.number("count") ?? 0))회") }
+                    }
+                    if let low = index.number("capacityMinKWh"), let high = index.number("capacityMaxKWh") { Text(String(format: "최근 관측 %.1f–%.1f kWh", low, high)) }
+                    if let range = full.number("latestKm") {
+                        LabeledContent("완충 표시거리", value: String(format: "%.1f km", range))
+                        if let change = full.number("changePercent") { LabeledContent("기록 시작 대비 거리 변화", value: String(format: "%+.1f%%", change)) }
+                        Text("100% 완료 관측 \(Int(full.number("count") ?? 0))회 · 표시거리 변화는 용량 열화와 구분됨.")
+                    }
+                    Text(index.string("note")).foregroundStyle(.secondary)
+                    Text("온도·BMS 보정에 따라 변동하는 참고값이며 Tesla 배터리 상태검사와 동일한 진단이 아님.").foregroundStyle(.secondary)
+                }.font(.caption).padding(.top, 12)
+            }.font(.subheadline).accessibilityIdentifier("battery.health.exclusions")
+        }.padding(20).background(Theme.surface, in: RoundedRectangle(cornerRadius: 22))
+    }
+    private var capacityTimeline: some View {
+        let rows = index.rows("capacityHistory")
+        let dates = rows.compactMap { $0.number("at").map { Date(timeIntervalSince1970: $0 / 1000) } }
+        let ticks = Array(Set([dates.first, dates.last].compactMap { $0 })).sorted()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("용량 추세").font(.subheadline.bold()); Spacer(); Text("\(Int(index.number("sampleCount") ?? 0))개 관측").font(.caption).foregroundStyle(.secondary) }
+            if rows.isEmpty { Text("충전 관측이 쌓이면 추세를 표시함").font(.caption).foregroundStyle(.secondary) }
+            else {
+                Chart {
+                    ForEach(rows.indices, id: \.self) { i in
+                        if let at = rows[i].number("at"), let kwh = rows[i].number("kwh") {
+                            LineMark(x: .value("시각", Date(timeIntervalSince1970: at / 1000)), y: .value("kWh", kwh)).foregroundStyle(.blue)
+                            PointMark(x: .value("시각", Date(timeIntervalSince1970: at / 1000)), y: .value("kWh", kwh)).foregroundStyle(.blue).symbolSize(30)
+                        }
+                    }
+                }.chartYScale(domain: .automatic(includesZero: false)).chartXScale(range: .plotDimension(padding: 4))
+                    .chartXAxis { AxisMarks(values: ticks) { v in
+                        AxisValueLabel(anchor: v.index == 0 ? .topLeading : .topTrailing) { if let d = v.as(Date.self) { Text(Self.tripRowDateFormatter.string(from: d)).font(.caption2) } }
+                    } }.frame(height: 140).accessibilityIdentifier("battery.capacity.trend")
+                }
+        }
     }
     private var socChart: some View {
         let trend = usage.rows("trend").sorted { ($0.number("at") ?? 0) < ($1.number("at") ?? 0) }
@@ -224,7 +283,8 @@ struct BatteryOverview: View {
             Text(title).font(.caption).foregroundStyle(.secondary)
             (Text(number(value)).font(.system(size: 25, weight: .medium)) + Text(" " + unit).font(.system(size: 12)))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            .padding(12).background(Color.blue.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 

@@ -20,14 +20,14 @@ function hostCallObject(op,json){
   engine._liveOnly=op.endsWith('Live');
   try{
     const a=JSON.parse(json),now=Date.now();let value;
-    switch(op){
+    switch(op.endsWith('Live') ? op.slice(0,-4) : op){
       case 'view':value=engine.view(now);break;
       case 'liveView':value=engine.liveView(now);break;
       case 'vehicle3D':value=YL3D.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
       case 'vehicleCamera':value=YL3D.fitCamera(a);break;
       case 'homeMotion':value=YLHome.motion(a);break;
       case 'home':value=YLHome.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
-      case 'load':value=engine.load(a.state??a,{resumeActive:a.resume===true});clearLive();navigationGate.reset();break;
+      case 'loadLive':case 'load':value=engine.load(a.state??a,{resumeActive:a.resume===true});clearLive();navigationGate.reset();break;
       case 'validate':value=YLCore.validateState(a);break;
       case 'weather':engine.state.weather=a;value=a;break;
       case 'export':value=engine.state;break;

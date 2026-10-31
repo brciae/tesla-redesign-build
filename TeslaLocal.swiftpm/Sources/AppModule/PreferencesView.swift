@@ -79,10 +79,15 @@ struct PreferencesView: View {
 
             // MARK: - Typecast AI High-Quality Voice Section
             Section("타입캐스트 (Typecast) AI 고품질 음성") {
-                TypecastSettingsSection()
+                NavigationLink {
+                    Form { Section { TypecastSettingsSection() } }.navigationTitle("음성 서비스 연결").navigationBarTitleDisplayMode(.inline)
+                } label: { Label("음성 서비스 연결", systemImage: "waveform.badge.mic") }
+                    .accessibilityIdentifier("preferences.voiceService")
             }
 
-            Section("내비 안내") {
+            Section("길안내") {
+                NavigationLink {
+                    Form { Section("내비 안내") {
                 Toggle("길안내 음성", isOn: $navVoice)
                 Toggle("안전운행·과속 경고", isOn: $navSafety)
                 // v1.34: overspeed chime level (dashboard alert at ≥10 km/h over the limit).
@@ -106,6 +111,9 @@ struct PreferencesView: View {
                     Text("간단").tag(0); Text("보통").tag(1); Text("자세히").tag(2)
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
                 InfoRow("안내 빈도", "간단: 가까운 회전·위험 안내 1회, 지명·부연 생략. 보통: 사전·최종 최대 2회, 방면 1개. 자세히: 먼 거리 포함 최대 3회, 방면 2개·시설·추가 주의사항. 경로 변경·도착은 공통 안내함.")
+                    } }.navigationTitle("길안내·안전 경고").navigationBarTitleDisplayMode(.inline)
+                } label: { Label("길안내·안전 경고", systemImage: "arrow.triangle.turn.up.right.diamond") }
+                    .accessibilityIdentifier("preferences.navigationVoice")
             }
             // v1.55: the floating character's own voice sits with the other voices (its look/size is in 캐릭터).
             if characterEnabled { Section("캐릭터 목소리") {
