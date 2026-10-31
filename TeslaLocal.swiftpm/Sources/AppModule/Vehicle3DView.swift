@@ -21,6 +21,7 @@ struct Vehicle3DPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduced
     @Environment(\.vehicleRenderingActive) private var renderingActive
     @AppStorage("energy.saving") private var energySaving = true
+    @AppStorage("diagnostics.suspend3D") private var renderingSuspended = false
     var compact = false
     var chargingMode = false
     var isCharging = false
@@ -67,7 +68,7 @@ struct Vehicle3DPanel: View {
                         .padding(8).background(Theme.bg.opacity(0.92), in: Capsule()).padding(.top, 6)
                 }
                 if let sceneError { Text("3D 장면을 열지 못함\n\(sceneError)").font(.caption).foregroundStyle(.orange).padding().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.bg) }
-                else if !sceneReady { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false) }
+                else if !sceneReady && !renderingSuspended { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false) }
             }.clipped()
             if !compact {
                 NavigationLink(value: Page.appearance) { Label("차꾸미기", systemImage: "paintpalette") }.buttonStyle(.bordered)
