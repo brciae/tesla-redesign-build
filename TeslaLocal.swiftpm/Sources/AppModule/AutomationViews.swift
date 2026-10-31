@@ -92,7 +92,8 @@ private struct AutomationDashboard: View {
                         Button { editor = r } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(r.name).font(.headline)
-                                Text(r.trigger.title + " · " + r.action.title).font(.caption).foregroundStyle(Theme.muted)
+                                if r.action != .speech { Text(r.action.title).font(.caption).foregroundStyle(Theme.muted) }
+                                else if r.name != r.trigger.title { Text(r.trigger.title).font(.caption).foregroundStyle(Theme.muted) }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }

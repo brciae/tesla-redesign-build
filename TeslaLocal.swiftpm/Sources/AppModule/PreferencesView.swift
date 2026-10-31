@@ -110,7 +110,9 @@ struct PreferencesView: View {
                 Picker("안내 빈도", selection: $navDetail) {
                     Text("간단").tag(0); Text("보통").tag(1); Text("자세히").tag(2)
                 }.pickerStyle(.segmented).accessibilityIdentifier("nav.voice.detail")
-                InfoRow("안내 빈도", "간단: 가까운 회전·위험 안내 1회, 지명·부연 생략. 보통: 사전·최종 최대 2회, 방면 1개. 자세히: 먼 거리 포함 최대 3회, 방면 2개·시설·추가 주의사항. 경로 변경·도착은 공통 안내함.")
+                DisclosureGroup("안내 빈도 설명") {
+                    Text("간단: 가까운 회전·위험 안내 1회, 지명·부연 생략. 보통: 사전·최종 최대 2회, 방면 1개. 자세히: 먼 거리 포함 최대 3회, 방면 2개·시설·추가 주의사항. 경로 변경·도착은 공통 안내함.").font(.caption).foregroundStyle(.secondary)
+                }
                     } }.navigationTitle("길안내·안전 경고").navigationBarTitleDisplayMode(.inline)
                 } label: { Label("길안내·안전 경고", systemImage: "arrow.triangle.turn.up.right.diamond") }
                     .accessibilityIdentifier("preferences.navigationVoice")

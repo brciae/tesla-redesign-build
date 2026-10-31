@@ -66,8 +66,8 @@ final class InteractionTests: XCTestCase {
         let evidence = app.buttons["battery.health.exclusions"]
         for _ in 0..<8 where !evidence.exists || !evidence.isHittable { app.swipeUp() }
         XCTAssertTrue(evidence.waitForExistence(timeout: 5)); evidence.tap()
-        XCTAssertTrue(app.staticTexts["완충 표시거리"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["기록 시작 대비 거리 변화"].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "완충 표시거리, 480.0 km")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", "기록 시작 대비 거리 변화, -4.0%")).firstMatch.exists)
         captureSystemCard("Full charge range battery card synthetic evidence")
         let parking = app.staticTexts["battery.parking.count"]
         for _ in 0..<5 where !parking.isHittable { app.swipeUp() }
