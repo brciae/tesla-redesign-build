@@ -93,6 +93,8 @@ private struct SettingsMenuEntry: Identifiable {
         self.page = page; self.symbol = symbol; self.title = title; self.subtitle = subtitle; self.colors = colors
     }
 }
+private struct SettingsMenuRoute: Hashable { let title: String }
+
 private struct SettingsMenuGroup: Identifiable {
     let title: String
     let items: [SettingsMenuEntry]
@@ -126,13 +128,7 @@ struct SettingsMenuGroups: View {
     var body: some View {
         VStack(spacing: 12) {
             ForEach(groups) { group in
-                NavigationLink {
-                    List {
-                        ForEach(group.items) { item in
-                            NavigationLink(value: item.page) { Label(item.title, systemImage: item.symbol) }
-                        }
-                    }.navigationTitle(group.title).navigationBarTitleDisplayMode(.inline)
-                } label: {
+                NavigationLink(value: SettingsMenuRoute(title: group.title)) {
                     HStack(spacing: 14) {
                         Image(systemName: group.items.first?.symbol ?? "gearshape").font(.title3)
                             .foregroundStyle(.blue).frame(width: 42, height: 42)
@@ -143,6 +139,15 @@ struct SettingsMenuGroups: View {
                     }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 18))
                 }.buttonStyle(.plain).accessibilityLabel(group.title)
             }
-        }.accessibilityIdentifier("menu.groups")
+        }
+        .navigationDestination(for: SettingsMenuRoute.self) { route in
+            if let group = groups.first(where: { $0.title == route.title }) {
+                List {
+                    ForEach(group.items) { item in
+                        NavigationLink(value: item.page) { Label(item.title, systemImage: item.symbol) }
+                    }
+                }.navigationTitle(group.title).navigationBarTitleDisplayMode(.inline)
+            }
+        }
     }
 }
