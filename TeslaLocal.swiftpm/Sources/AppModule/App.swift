@@ -571,7 +571,7 @@ struct BatteryView: View {
         PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }, briefingAtBottom: true) {
             BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days, compact: true)
             InfoCard {
-                NavigationLink { PageBody(title: "도착 잔량 예측") { TripEnergyHistoryView(vin: model.energyVehicleVIN) } } label: {
+                NavigationLink { PageBody(title: "도착 잔량 예측", briefing: .batteryAndCharging) { TripEnergyHistoryView(vin: model.energyVehicleVIN) } } label: {
                     Label("도착 잔량 예측 비교", systemImage: "chart.xyaxis.line").frame(minHeight: 44)
                 }.accessibilityIdentifier("battery.predictions.detail")
             }

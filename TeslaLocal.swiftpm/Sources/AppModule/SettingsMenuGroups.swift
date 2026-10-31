@@ -141,7 +141,7 @@ struct SettingsMenuGroups: View {
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 18))
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).accessibilityLabel(group.title)
             }
         }.accessibilityIdentifier("menu.groups")
     }
