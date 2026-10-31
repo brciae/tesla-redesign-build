@@ -24,7 +24,7 @@ struct ProductionReviewRoot: View {
                 case "batterySummary": BatteryView()
                 case "climate": TeslaInteractiveClimateView(link: model.link).navigationTitle("실내 공조").navigationBarTitleDisplayMode(.inline)
                 case "parking": ScrollView { SmartParkingCard(link: model.link).padding() }.navigationTitle("주차 기록").navigationBarTitleDisplayMode(.inline)
-                case "menu": MenuTabRootView(link: model.link, navigation: model.navigation).modifier(AppDestinations(link: model.link, navigation: model.navigation))
+                case "menu": MenuTabRootView(link: model.link, navigation: model.navigation)
                 default: Text("Unknown review screen")
                 }
             } }
