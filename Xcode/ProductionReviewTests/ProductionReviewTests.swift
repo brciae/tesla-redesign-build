@@ -4,7 +4,7 @@ final class ProductionReviewTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
-        app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", "home", "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-appearance", "light", "-diagnostics.suspend3D", "NO"]
+        app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", "home", "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-appearance", "light"]
         XCUIDevice.shared.orientation = .portrait; app.launch()
         XCTAssertTrue(app.tabBars.buttons["메뉴"].waitForExistence(timeout: 20))
         func openDiagnostics() {
