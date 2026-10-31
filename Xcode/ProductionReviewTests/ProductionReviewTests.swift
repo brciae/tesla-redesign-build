@@ -26,11 +26,11 @@ final class ProductionReviewTests: XCTestCase {
             else { XCTAssertFalse(XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch.exists, "Unexpected permission on " + screen) }
             if screen == "home" {
                 XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
-                XCTAssertFalse(app.descendants(matching: .any)["app.launch.brand"].exists)
+                XCTAssertTrue(app.descendants(matching: .any)["app.launch.brand"].waitForNonExistence(timeout: 5))
                 for tab in ["에너지", "운행", "메뉴", "홈"] { app.tabBars.buttons[tab].tap(); allowLocationIfRequested() }
                 XCTAssertTrue(app.descendants(matching: .any)["home.readiness"].waitForExistence(timeout: 10))
                 XCUIDevice.shared.press(.home); app.activate()
-                XCTAssertFalse(app.descendants(matching: .any)["app.launch.brand"].exists)
+                XCTAssertTrue(app.descendants(matching: .any)["app.launch.brand"].waitForNonExistence(timeout: 5))
             } else if screen == "import" {
                 XCTAssertTrue(app.staticTexts["검증용 예시.csv"].waitForExistence(timeout: 10))
                 let overview = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); overview.name = "production-import-preview-overview"; overview.lifetime = .keepAlways; add(overview)
@@ -53,12 +53,16 @@ final class ProductionReviewTests: XCTestCase {
                 let master = app.switches["automation.voice.enabled"]
                 XCTAssertTrue(master.waitForExistence(timeout: 5))
                 let original = master.value as? String
-                master.tap(); XCTAssertNotEqual(master.value as? String, original)
+                master.switches.firstMatch.tap()
+                let updated = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in master.value as? String != original }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 5), .completed)
                 let changed = master.value as? String
                 app.navigationBars["자동화 음성 설정"].buttons.element(boundBy: 0).tap()
                 XCTAssertTrue(link.waitForExistence(timeout: 5)); link.tap()
                 XCTAssertEqual(master.value as? String, changed)
-                master.tap(); XCTAssertEqual(master.value as? String, original)
+                master.switches.firstMatch.tap()
+                let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in master.value as? String == original }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 5), .completed)
                 XCTAssertEqual(app.switches.matching(identifier: "automation.ai.speech").count, 1)
             } else if screen == "automation" {
                 let create = app.buttons["automation.create"]
