@@ -14,6 +14,22 @@ extension EnvironmentValues {
     var vehicleUnits: VehicleUnits { get { self[VehicleUnitsKey.self] } set { self[VehicleUnitsKey.self] = newValue } }
 }
 
+struct AutomationSpeechPreferencesView: View {
+    @EnvironmentObject private var model: AppModel
+    @AppStorage("voiceAutomations") private var enabled = true
+    var body: some View {
+        Form {
+            Section("자동화 안내") {
+                Toggle("자동화 규칙의 음성 안내", isOn: $enabled)
+                    .accessibilityIdentifier("automation.voice.enabled")
+                Caption("음성을 꺼도 활성화한 자동화 규칙의 실행 조건과 동작은 유지됨. 규칙별 멘트는 자동화 편집에서 변경할 수 있음.")
+            }
+            Section("상황별 멘트") { ContextSpeechSettings() }
+        }.navigationTitle("자동화 음성 설정").navigationBarTitleDisplayMode(.inline)
+            .onChange(of: enabled) { _, value in if !value { model.voice.stopAutomatic() } }
+    }
+}
+
 struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("voiceEnabled") private var enabled = true
@@ -54,6 +70,11 @@ struct PreferencesView: View {
                     model.voice.preview("\(name) 목소리입니다. 300미터 앞에서 우회전하세요.")
                 }, stop: { model.stopSpeech() })
                 VoiceStatus(voice: model.voice)
+            }
+
+            Section("자동화 음성") {
+                NavigationLink { AutomationSpeechPreferencesView() } label: { Text("자동화 음성 설정") }
+                    .accessibilityIdentifier("preferences.automationVoice")
             }
 
             // MARK: - Typecast AI High-Quality Voice Section

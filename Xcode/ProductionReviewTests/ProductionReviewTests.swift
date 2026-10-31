@@ -11,6 +11,7 @@ final class ProductionReviewTests: XCTestCase {
     func testInvalidImportBlocked() { review("importInvalid") }
     func testManualAutomationDraft() { review("automation") }
     func testNavigationSettings() { review("navigation") }
+    func testUnifiedAutomationVoiceSettings() { review("voice") }
     func testDriving() { review("driving") }
     func testDrivingFocus() { review("focus") }
     private func review(_ screen: String) {
@@ -45,6 +46,20 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["변환 가능한 기록, 0건"].waitForExistence(timeout: 10))
                 XCTAssertTrue(app.staticTexts["확인이 필요한 행, 1건"].exists)
                 XCTAssertFalse(app.buttons["import.preview.apply"].isEnabled)
+            } else if screen == "voice" {
+                let link = app.buttons["preferences.automationVoice"]
+                for _ in 0..<5 where !link.exists || !link.isHittable { app.swipeUp() }
+                XCTAssertTrue(link.waitForExistence(timeout: 5)); link.tap()
+                let master = app.switches["automation.voice.enabled"]
+                XCTAssertTrue(master.waitForExistence(timeout: 5))
+                let original = master.value as? String
+                master.tap(); XCTAssertNotEqual(master.value as? String, original)
+                let changed = master.value as? String
+                app.navigationBars["자동화 음성 설정"].buttons.element(boundBy: 0).tap()
+                XCTAssertTrue(link.waitForExistence(timeout: 5)); link.tap()
+                XCTAssertEqual(master.value as? String, changed)
+                master.tap(); XCTAssertEqual(master.value as? String, original)
+                XCTAssertEqual(app.switches.matching(identifier: "automation.ai.speech").count, 1)
             } else if screen == "automation" {
                 let create = app.buttons["automation.create"]
                 XCTAssertTrue(create.waitForExistence(timeout: 10)); create.tap()
@@ -55,6 +70,15 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertEqual(enabled.value as? String, "0")
                 let draft = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); draft.name = "production-manual-automation-draft"; draft.lifetime = .keepAlways; add(draft)
                 app.buttons["취소"].tap()
+                let voiceSettings = app.buttons["automation.voice.settings"]
+                for _ in 0..<6 where !voiceSettings.exists || !voiceSettings.isHittable { app.swipeUp() }
+                XCTAssertTrue(voiceSettings.waitForExistence(timeout: 5))
+                XCTAssertTrue(app.descendants(matching: .any)["automation.voice.summary"].exists)
+                XCTAssertFalse(app.switches["automation.voice.enabled"].exists)
+                XCTAssertFalse(app.switches["automation.ai.speech"].exists)
+                voiceSettings.tap()
+                XCTAssertTrue(app.switches["automation.voice.enabled"].waitForExistence(timeout: 5))
+                app.navigationBars["자동화 음성 설정"].buttons.element(boundBy: 0).tap()
             } else if screen == "driving" || screen == "focus" {
                 let setup = app.buttons["키 설정"]
                 XCTAssertTrue(setup.waitForExistence(timeout: 10)); XCTAssertTrue(setup.isHittable)

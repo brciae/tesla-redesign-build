@@ -9,6 +9,7 @@ private struct AutomationDashboard: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.selectAppTab) private var selectTab
     @AppStorage("voiceAutomations") private var voiceEnabled = true
+    @AppStorage("automationSpeech.aiEnabled") private var contextVoiceEnabled = false
     @ObservedObject var store: AutomationCoordinator
     @State private var editor: AutomationRule?
     var body: some View {
@@ -19,10 +20,11 @@ private struct AutomationDashboard: View {
             InfoCard {
                 CardTitle(title: "자동화 설정", systemImage: "gearshape",
                           info: "한 번 탑승 시 한 규칙의 명령 한 개만 전송함. 중복 제어는 건너뛰며 수신 불가·앱 종료·백그라운드에서는 실행하지 않음. 공조는 활성 규칙만 탑승당 1회 실행하고, 카메라·과속 안내는 카카오 내비 설정에서 변경함.")
-                Toggle("자동화 규칙의 음성 안내", isOn: $voiceEnabled)
-                ContextSpeechSettings()
+                Caption("자동화 음성 \(voiceEnabled ? "켜짐" : "꺼짐") · 상황별 AI 멘트 \(contextVoiceEnabled ? "켜짐" : "꺼짐")")
+                    .accessibilityIdentifier("automation.voice.summary")
+                NavigationLink { AutomationSpeechPreferencesView() } label: { Text("자동화 음성 설정") }
+                    .accessibilityIdentifier("automation.voice.settings")
                 Button("AI 연결 설정") { model.aiRules.draft = nil; model.aiRules.presented = true }
-                NavigationLink("안내 음성 설정", value: Page.preferences)
                 NavigationLink("알림 설정", value: Page.notifications)
             }
         }
@@ -42,7 +44,6 @@ private struct AutomationDashboard: View {
             .accessibilityIdentifier("automation.create")
         } }
         .sheet(item: $editor) { r in AutomationRuleEditor(store: store, initial: r) { editor = nil } }
-        .onChange(of: voiceEnabled) { _, value in if !value { model.voice.stopAutomatic() } }
     }
     /// v34: counts first, history one tap away — no log dump on the page.
     private var summary: some View {

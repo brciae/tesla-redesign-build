@@ -13,6 +13,7 @@ struct ProductionReviewRoot: View {
                 case "import": TeslaExportImportView(reviewText: "StartTime,StoredKWh,Energy,Amount,Currency,Location\n2026-10-30T12:00:00Z,20,,1200,KRW,검증 충전소 A\n2026-10-30T14:00:00Z,,25,9.99,USD,검증 충전소 B")
                 case "importInvalid": TeslaExportImportView(reviewText: "StartTime,StoredKWh,Amount,Currency\n2026-10-30T12:00:00Z,\"12,5\",1000,KRW")
                 case "automation": AutomationView()
+                case "voice": PreferencesView()
                 case "tariffs": ChargeTimeOfUseView()
                 case "launch": BrandLaunchArtwork()
                 case "coverage": RecordCoverageView()
