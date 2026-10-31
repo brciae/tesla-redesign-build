@@ -25,7 +25,7 @@ on:
       probe_focus:
         description: Focus for screenshot-only diagnostic runs (full builds always run all tests)
         type: choice
-        options: [fullscreen, junction, new, island, regression]
+        options: [fullscreen, junction, new, island, regression, menu]
         default: fullscreen
   push:
     branches: [main]

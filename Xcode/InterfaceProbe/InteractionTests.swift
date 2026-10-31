@@ -63,6 +63,7 @@ final class InteractionTests: XCTestCase {
     func testSpotifySettingsValidateClientIDAndShowLocalPhoneConnection() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["settings-menu-probe"]; app.launch()
+        app.buttons["연결·기록"].tap()
         let entry = app.staticTexts["Spotify 연결"]
         for _ in 0..<8 where !entry.isHittable { app.swipeUp() }
         XCTAssertTrue(entry.isHittable); entry.tap()
@@ -82,14 +83,18 @@ final class InteractionTests: XCTestCase {
     func testProductionSettingsMenuGroupsAndDirectCardSettings() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(); app.launchArguments = ["settings-menu-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["주행·안내"].waitForExistence(timeout: 8))
-        XCTAssertEqual(app.staticTexts.matching(identifier: "잠금화면·아일랜드").count, 1)
-        captureSystemCard("Production settings menu guidance and alerts first")
-        app.staticTexts["잠금화면·아일랜드"].tap()
+        XCTAssertTrue(app.buttons["주행·안내"].waitForExistence(timeout: 8))
+        for title in ["주행·안내", "차량·충전", "연결·기록", "화면·앱"] { XCTAssertTrue(app.buttons[title].exists) }
+        XCTAssertFalse(app.buttons["잠금화면·아일랜드"].exists)
+        captureSystemCard("Production settings menu four concise groups")
+        app.buttons["주행·안내"].tap()
+        XCTAssertEqual(app.buttons.matching(identifier: "잠금화면·아일랜드").count, 1)
+        app.buttons["잠금화면·아일랜드"].tap()
         XCTAssertTrue(app.switches["실시간 현황 표시"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
         for section in ["차량·충전", "연결·기록", "화면·앱"] {
-            let title = app.staticTexts[section]
+            let title = app.buttons[section]
             for _ in 0..<7 where !title.isHittable { app.swipeUp() }
             XCTAssertTrue(title.isHittable, "Missing menu group: \(section)")
             captureSystemCard("Production settings menu \(section)")
@@ -657,6 +662,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["남은 거리"].firstMatch.waitForExistence(timeout: 5))
         shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Warranty remaining bars"; shot.lifetime = .keepAlways; add(shot)
         app.terminate(); app.launchArguments = ["settings-menu-probe"]; app.launch()
+        app.buttons["차량·충전"].tap()
         let tires = app.staticTexts["타이어·정비"]
         for _ in 0..<5 where !tires.isHittable { app.swipeUp() }
         XCTAssertTrue(tires.isHittable); tires.tap()
