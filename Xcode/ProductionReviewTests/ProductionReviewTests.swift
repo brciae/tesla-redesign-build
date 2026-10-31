@@ -1,5 +1,33 @@
 import XCTest
 final class ProductionReviewTests: XCTestCase {
+    func testPerformanceDiagnostics() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
+        app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", "home", "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-appearance", "light", "-diagnostics.suspend3D", "NO"]
+        XCUIDevice.shared.orientation = .portrait; app.launch()
+        XCTAssertTrue(app.tabBars.buttons["메뉴"].waitForExistence(timeout: 20))
+        func openDiagnostics() {
+            app.tabBars.buttons["메뉴"].tap()
+            let group = app.buttons["화면·앱"]
+            for _ in 0..<3 where !group.isHittable { app.swipeUp() }
+            group.tap(); app.buttons["성능 진단"].tap()
+            XCTAssertTrue(app.switches["performance.suspend3D"].waitForExistence(timeout: 5))
+        }
+        openDiagnostics()
+        app.switches["performance.suspend3D"].tap()
+        XCTAssertEqual(app.switches["performance.suspend3D"].value as? String, "1")
+        app.tabBars.buttons["홈"].tap()
+        XCTAssertTrue(app.staticTexts["3D 일시 중지"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "vehicle.scene").firstMatch.waitForNonExistence(timeout: 5))
+        let suspended = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); suspended.name = "performance-home-3D-suspended"; suspended.lifetime = .keepAlways; add(suspended)
+        openDiagnostics(); app.switches["performance.suspend3D"].tap()
+        XCTAssertEqual(app.switches["performance.suspend3D"].value as? String, "0")
+        let settings = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); settings.name = "performance-diagnostics-settings"; settings.lifetime = .keepAlways; add(settings)
+        app.buttons["performance.export"].tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "performance.share").firstMatch.waitForExistence(timeout: 10))
+        let shared = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shared.name = "performance-diagnostics-share"; shared.lifetime = .keepAlways; add(shared)
+    }
     func testLaunch() { review("launch") }
     func testHomeNavigation() { review("home") }
     func testHomeDark() { review("home", appearance: "dark") }

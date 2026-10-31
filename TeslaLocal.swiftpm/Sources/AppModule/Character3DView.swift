@@ -309,7 +309,22 @@ final class CharacterRig {
 }
 
 @MainActor
-struct Character3DView: UIViewRepresentable {
+struct Character3DView: View {
+    var speedKmh: Double
+    var clipOverride: String? = nil
+    var interactive = true
+    var yaw: Float = 0.35
+    var ambient = false
+    var slot: CharacterSlot = .dashboard
+    @AppStorage("diagnostics.suspend3D") private var suspended = false
+    var body: some View {
+        if suspended { Color.clear }
+        else { CharacterRealityRenderer(speedKmh: speedKmh, clipOverride: clipOverride, interactive: interactive, yaw: yaw, ambient: ambient, slot: slot) }
+    }
+}
+
+@MainActor
+private struct CharacterRealityRenderer: UIViewRepresentable {
     var speedKmh: Double
     var clipOverride: String? = nil
     var interactive = true

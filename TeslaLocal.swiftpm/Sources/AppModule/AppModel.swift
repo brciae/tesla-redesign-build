@@ -24,18 +24,14 @@ final class AppModel: ObservableObject {
         didSet { rebuildTelemetryDisplayIndex() }
     }
     @Published private(set) var telemetryDisplayIndex = FleetTelemetryDisplayIndex([])
-    private let telemetryIndexQueue = DispatchQueue(label: "YLCompanion.displayIndex", qos: .userInitiated)
-    private var telemetryIndexRevision: UInt64 = 0
+    private let telemetryIndexWorker = LatestTelemetryIndexWorker { rows in
+        AppPerformanceRecorder.shared.measure("telemetry.index.build") { FleetTelemetryDisplayIndex(rows) }
+    }
     private func rebuildTelemetryDisplayIndex() {
-        telemetryIndexRevision &+= 1
-        let revision = telemetryIndexRevision, records = archiveReadings
-        telemetryIndexQueue.async { [weak self] in
-            let index = FleetTelemetryDisplayIndex(records)
-            DispatchQueue.main.async {
-                guard let self, self.telemetryIndexRevision == revision else { return }
-                self.telemetryDisplayIndex = index
-                self.observeParkingTelemetry(); self.updateTripEnergy(); self.updateLiveActivity()
-            }
+        telemetryIndexWorker.submit(archiveReadings) { [weak self] index in
+            guard let self else { return }
+            self.telemetryDisplayIndex = index
+            self.observeParkingTelemetry(); self.updateTripEnergy(); self.updateLiveActivity()
         }
     }
     @Published var errorMessage: String?
@@ -463,6 +459,8 @@ final class AppModel: ObservableObject {
         }
     }
     @MainActor private func mergeArchiveHistory(vin: String) throws {
+        let token = AppPerformanceRecorder.shared.begin("history.merge")
+        defer { AppPerformanceRecorder.shared.end(token) }
         let store = FleetTelemetryStore.shared
         guard let since = store.pendingHistoryStart(vin: vin) else { return }
         let window = FleetTelemetryData.historyWindow(store.records, vin: vin, since: since)
@@ -475,7 +473,6 @@ final class AppModel: ObservableObject {
         output["state"] = try runtime.call("export")
         applyLiveOutput(try runtime.call("liveView") as? Object ?? [:])
         analysisRevision &+= 1
-        archiveReadings = store.records
         try enrichLocalChargeSOC()
         scheduleDetailedAnalysis()
     }
@@ -686,15 +683,12 @@ final class AppModel: ObservableObject {
         SmartParkingManager.shared.observeVehicleTelemetry(homePresentation(self, link), vin: vin)
     }
     private func enrichLocalChargeSOC() throws {
+        let token = AppPerformanceRecorder.shared.begin("history.enrichSOC")
+        defer { AppPerformanceRecorder.shared.end(token) }
         guard !demo else { return }
         let vin = settings.string("vin")
-        let intervals = state.rows("charges").filter { $0.number("end") != nil }
-        let rows: [Object] = archiveReadings.filter { r in
-            r.vin == vin && ["Soc", "BatteryLevel"].contains(r.field) && intervals.contains { c in
-                let stamp = r.at.timeIntervalSince1970 * 1000
-                return abs(stamp - (c.number("at") ?? 0)) <= 120000 || abs(stamp - (c.number("end") ?? 0)) <= 120000
-            }
-        }.map { r in
+        // Read the authoritative just-ingested records; display-index publication is asynchronous.
+        let rows: [Object] = FleetTelemetryData.chargeSOCReadings(FleetTelemetryStore.shared.records, vin: vin, charges: state.rows("charges")).map { r in
             var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "invalid": r.invalid]
             if let soc = r.number { value["soc"] = soc }; return value
         }

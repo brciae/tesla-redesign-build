@@ -1,4 +1,35 @@
 import Foundation
+
+/// Main-thread submission; one running snapshot and one replaceable latest snapshot only.
+final class LatestTelemetryIndexWorker: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "YLCompanion.displayIndex", qos: .userInitiated)
+    private let build: @Sendable ([FleetTelemetryReading]) -> FleetTelemetryDisplayIndex
+    private var running = false
+    private var pending: ([FleetTelemetryReading], (FleetTelemetryDisplayIndex) -> Void)?
+    private(set) var buildCount = 0
+    private(set) var replacedPendingCount = 0
+    init(build: @escaping @Sendable ([FleetTelemetryReading]) -> FleetTelemetryDisplayIndex = { FleetTelemetryDisplayIndex($0) }) { self.build = build }
+    func submit(_ records: [FleetTelemetryReading], completion: @escaping (FleetTelemetryDisplayIndex) -> Void) {
+        precondition(Thread.isMainThread)
+        if running {
+            if pending != nil { replacedPendingCount += 1 }
+            pending = (records, completion); return
+        }
+        run(records, completion: completion)
+    }
+    private func run(_ records: [FleetTelemetryReading], completion: @escaping (FleetTelemetryDisplayIndex) -> Void) {
+        running = true; buildCount += 1
+        queue.async { [self] in
+            let index = build(records)
+            DispatchQueue.main.async { [self] in
+                running = false
+                if let next = pending {
+                    pending = nil; run(next.0, completion: next.1)
+                } else { completion(index) }
+            }
+        }
+    }
+}
 import CoreFoundation
 
 /// The wire value and timestamp are retained; invalid values explicitly supersede earlier data.
@@ -24,6 +55,7 @@ struct FleetTelemetryDisplayIndex: Sendable {
     private let fieldsByVIN: [String: [String: FleetTelemetryReading]]
     private let locationsByVIN: [String: [Location]]
     private let validLocationsByVIN: [String: [Location]]
+    private let chargeCountersByVIN: [String: [String: [FleetTelemetryReading]]]
     let sourceRecordCount: Int
     let locationDecodeCount: Int
 
@@ -32,7 +64,12 @@ struct FleetTelemetryDisplayIndex: Sendable {
         var locations: [String: [Date: Location]] = [:]
         var validLocations: [String: [Date: Location]] = [:]
         var decoded = 0
+        var counters: [String: [String: [FleetTelemetryReading]]] = [:]
         for reading in records {
+            if ["ACChargingEnergyIn", "DCChargingEnergyIn"].contains(reading.field), !reading.invalid,
+               let value = reading.number, value.isFinite, value >= 0 {
+                counters[reading.vin, default: [:]][reading.field, default: []].append(reading)
+            }
             let previous = fields[reading.vin]?[reading.field]
             if previous == nil || previous!.at <= reading.at {
                 fields[reading.vin, default: [:]][reading.field] = reading
@@ -54,9 +91,26 @@ struct FleetTelemetryDisplayIndex: Sendable {
         fieldsByVIN = fields
         locationsByVIN = locations.mapValues { $0.values.sorted { $0.reading.at < $1.reading.at } }
         validLocationsByVIN = validLocations.mapValues { $0.values.sorted { $0.reading.at < $1.reading.at } }
+        chargeCountersByVIN = counters.mapValues { $0.mapValues { $0.sorted { $0.at > $1.at } } }
         sourceRecordCount = records.count; locationDecodeCount = decoded
     }
     func latest(vin: String) -> [String: FleetTelemetryReading] { fieldsByVIN[vin] ?? [:] }
+    func counterPair(vin: String, field: String, since: Date, through: Date) -> (FleetTelemetryReading, FleetTelemetryReading)? {
+        guard let rows = chargeCountersByVIN[vin]?[field], !rows.isEmpty else { return nil }
+        func first(before date: Date, strict: Bool) -> Int {
+            var low = 0, high = rows.count
+            while low < high {
+                let middle = (low + high) / 2
+                if strict ? rows[middle].at >= date : rows[middle].at > date { low = middle + 1 } else { high = middle }
+            }
+            return low
+        }
+        let latest = first(before: through, strict: false)
+        guard latest < rows.count, rows[latest].at >= since else { return nil }
+        let previous = first(before: rows[latest].at, strict: true)
+        guard previous < rows.count, rows[previous].at >= since else { return nil }
+        return (rows[latest], rows[previous])
+    }
     func locations(vin: String, now: Date) -> (valid: Location?, last: Location?) {
         let ceiling = now.addingTimeInterval(5)
         func lastEligible(_ locations: [Location]) -> Location? {
@@ -198,7 +252,10 @@ enum FleetTelemetryData {
     /// Telemetry is change-based: a stable Charging enum is not a polling heartbeat.
     /// Only fresh positive power or a measured energy-counter increase renews an old Charging state.
     static func liveActivityCharge(_ records: [FleetTelemetryReading], vin: String, now: Date = Date()) -> [String: Any]? {
-        let fields = latest(records, vin: vin)
+        liveActivityCharge(index: FleetTelemetryDisplayIndex(records), vin: vin, now: now)
+    }
+    static func liveActivityCharge(index: FleetTelemetryDisplayIndex, vin: String, now: Date = Date()) -> [String: Any]? {
+        let fields = index.latest(vin: vin)
         guard let state = [fields["DetailedChargeState"], fields["ChargeState"]].compactMap({ $0 })
             .filter({ !$0.invalid && $0.at <= now.addingTimeInterval(5) }).max(by: { $0.at < $1.at }),
             let raw = firstStringValue(state) else { return nil }
@@ -222,11 +279,7 @@ enum FleetTelemetryData {
         }
         if status == "Charging" {
             for field in ["ACChargingEnergyIn", "DCChargingEnergyIn"] {
-                let counters = records.filter { $0.vin == vin && $0.field == field && !$0.invalid &&
-                    $0.at >= state.at && $0.at <= now.addingTimeInterval(5) &&
-                    $0.number.map { $0.isFinite && $0 >= 0 } == true }.sorted { $0.at > $1.at }
-                guard let last = counters.first, fresh(last),
-                      let before = counters.dropFirst().first(where: { $0.at < last.at }),
+                guard let (last, before) = index.counterPair(vin: vin, field: field, since: state.at, through: now.addingTimeInterval(5)), fresh(last),
                       last.at.timeIntervalSince(before.at) <= 600,
                       last.number! > before.number! + 0.001 else { continue }
                 at = max(at, last.at)
@@ -235,6 +288,25 @@ enum FleetTelemetryData {
         row["at"] = at.timeIntervalSince1970 * 1000
         row["mode"] = (-5...120).contains(now.timeIntervalSince(at)) ? "recent" : "cached"
         return row
+    }
+    /// Same +/-120s endpoint evidence as the original nested scan, with bounded date lookup.
+    static func chargeSOCReadings(_ records: [FleetTelemetryReading], vin: String, charges: [[String: Any]]) -> [FleetTelemetryReading] {
+        func number(_ value: Any?) -> Double? {
+            guard let value = (value as? NSNumber)?.doubleValue, value.isFinite else { return nil }; return value
+        }
+        let endpoints = charges.flatMap { charge -> [Double] in
+            guard let end = number(charge["end"]) else { return [] }
+            return [number(charge["at"]) ?? 0, end]
+        }.sorted()
+        guard !endpoints.isEmpty else { return [] }
+        return records.filter { reading in
+            guard reading.vin == vin, reading.field == "Soc" || reading.field == "BatteryLevel" else { return false }
+            let stamp = reading.at.timeIntervalSince1970 * 1000
+            guard stamp.isFinite else { return false }
+            var low = 0, high = endpoints.count
+            while low < high { let middle = (low + high) / 2; if endpoints[middle] < stamp { low = middle + 1 } else { high = middle } }
+            return (low < endpoints.count && abs(stamp - endpoints[low]) <= 120000) || (low > 0 && abs(stamp - endpoints[low - 1]) <= 120000)
+        }
     }
     static func pairedDifference(_ first: FleetTelemetryReading?, _ second: FleetTelemetryReading?, maximumSkew: TimeInterval = 2) -> Double? {
         guard let first, let second, first.vin == second.vin, !first.invalid, !second.invalid,

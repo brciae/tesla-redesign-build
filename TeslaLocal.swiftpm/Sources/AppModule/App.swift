@@ -31,7 +31,7 @@ struct YLCompanionApp: App {
 final class AppOwner: ObservableObject {
     let model: AppModel?
     let failure: String
-    init() { do { let current = try AppModel.shared ?? AppModel(); model = current; AppModel.shared = current; failure = ""
+    init() { AppPerformanceRecorder.shared.setGraphicsSuspended(UserDefaults.standard.bool(forKey: "diagnostics.suspend3D")); AppPerformanceWatchdog.shared.start(); do { let current = try AppModel.shared ?? AppModel(); model = current; AppModel.shared = current; failure = ""
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-review-fixture") { current.enterDemo() }
 #endif
@@ -233,6 +233,7 @@ private struct AppDestinations: ViewModifier {
         case .liveActivity: LiveActivitySettingsView()
         case .spotify: SpotifySettingsView()
         case .releaseNotes: ReleaseNotesView()
+        case .performance: PerformanceDiagnosticsView()
         case .character: CharacterSelectView()
         case .appearance: VehicleAppearanceView()
         case .fleetInsights: FleetInsightsView(fleet: model.fleet)

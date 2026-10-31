@@ -16,7 +16,7 @@ extension AppModel {
             var row = snapshot.homeOverlay(now: now).object("charge")
             row["status"] = status; row["at"] = at; candidates.append(row)
         }
-        if let archive = FleetTelemetryData.liveActivityCharge(archiveReadings, vin: energyVehicleVIN, now: now) { candidates.append(archive) }
+        if let archive = FleetTelemetryData.liveActivityCharge(index: telemetryDisplayIndex, vin: energyVehicleVIN, now: now) { candidates.append(archive) }
         let states = ["Charging", "Stopped", "Complete", "Disconnected", "NoPower", "Starting", "Calibrating"]
         guard var row = candidates.filter({ states.contains($0.string("status")) &&
             ($0.number("at") ?? .infinity) <= now.timeIntervalSince1970 * 1000 + 5000 })

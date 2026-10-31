@@ -52,7 +52,28 @@ final class VehicleARView: ARView {
 }
 
 @MainActor
-struct RealityVehicleView: UIViewRepresentable {
+struct RealityVehicleView: View {
+    let runtime: LocalRuntime
+    let presentation: Object
+    let command: VehicleCameraCommand
+    let reducedMotion: Bool
+    var appearance: VehicleAppearance = .original
+    var backgroundColor = UIColor.clear
+    var onSceneReady: (() -> Void)? = nil
+    let onError: (String?) -> Void
+    @AppStorage("diagnostics.suspend3D") private var suspended = false
+    var body: some View {
+        if suspended {
+            Color.clear.overlay { Label("3D 일시 중지", systemImage: "car.fill").font(.caption).foregroundStyle(.secondary) }
+        } else {
+            RealityVehicleRenderer(runtime: runtime, presentation: presentation, command: command, reducedMotion: reducedMotion,
+                appearance: appearance, backgroundColor: backgroundColor, onSceneReady: onSceneReady, onError: onError)
+        }
+    }
+}
+
+@MainActor
+private struct RealityVehicleRenderer: UIViewRepresentable {
     let runtime: LocalRuntime
     let presentation: Object
     let command: VehicleCameraCommand

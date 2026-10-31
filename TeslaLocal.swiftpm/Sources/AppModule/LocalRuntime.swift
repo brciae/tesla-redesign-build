@@ -144,6 +144,8 @@ final class LocalRuntime {
     let controlCrypto = CryptoService(service: "YLCompanion.BLE.P256.Control")
     private let context: JSContext
     init() throws {
+        let performanceToken = AppPerformanceRecorder.shared.begin("JS.initialize")
+        defer { AppPerformanceRecorder.shared.end(performanceToken) }
         guard let context = JSContext() else { throw LocalError.message("분석 엔진 생성 실패") }
         self.context = context
         let bridge: @convention(block) (String, String) -> String = { [crypto = self.crypto] op, body in crypto.perform(op, body) }
@@ -156,6 +158,8 @@ final class LocalRuntime {
         }
     }
     func call(_ operation: String, _ argument: Any = [:]) throws -> Any {
+        let token = AppPerformanceRecorder.shared.begin("JS." + operation)
+        defer { AppPerformanceRecorder.shared.end(token) }
         context.exception = nil
         let result = context.objectForKeyedSubscript("hostCallObject")?.call(withArguments: [operation, try encodeJSON(argument)])
         if let error = context.exception { throw LocalError.message(error.toString()) }
@@ -164,6 +168,8 @@ final class LocalRuntime {
         return response["value"] ?? NSNull()
     }
     func exportData() throws -> Data {
+        let token = AppPerformanceRecorder.shared.begin("JS.exportData")
+        defer { AppPerformanceRecorder.shared.end(token) }
         context.exception = nil
         let result = context.objectForKeyedSubscript("hostExportJSON")?.call(withArguments: [])
         if let error = context.exception { throw LocalError.message(error.toString()) }

@@ -68,9 +68,11 @@ node tools/js-logic-tests.cjs
 node tools/battery-analysis-tests.cjs
 node tools/data-consistency-tests.cjs
 node tools/stability-runtime-tests.cjs
-swiftc TeslaLocal.swiftpm/Sources/AppModule/LocalRuntime.swift TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift tools/runtime-bridge-tests.swift -o Xcode/RuntimeBridgeTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/AppPerformanceRecorder.swift TeslaLocal.swiftpm/Sources/AppModule/LocalRuntime.swift TeslaLocal.swiftpm/Sources/AppModule/EmbeddedAppResources.swift tools/runtime-bridge-tests.swift -o Xcode/RuntimeBridgeTests
 Xcode/RuntimeBridgeTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift tools/telemetry-display-index-tests.swift -o Xcode/TelemetryDisplayIndexTests
+swiftc TeslaLocal.swiftpm/Sources/AppModule/AppPerformanceRecorder.swift TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift tools/performance-regression-tests.swift -o Xcode/PerformanceRegressionTests
+Xcode/PerformanceRegressionTests
 Xcode/TelemetryDisplayIndexTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.swiftpm/Sources/AppModule/ChargeEventPolicy.swift TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryJournal.swift tools/telemetry-journal-tests.swift -o Xcode/TelemetryJournalTests
 Xcode/TelemetryJournalTests

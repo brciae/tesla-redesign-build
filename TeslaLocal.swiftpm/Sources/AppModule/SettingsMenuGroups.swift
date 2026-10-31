@@ -15,6 +15,7 @@ enum Page: String, Hashable {
     case parking = "주차 기록"
     case displaySettings = "화면·표시 단위"
     case releaseNotes = "릴리즈 노트"
+    case performance = "성능 진단"
     case character = "캐릭터"
 }
 
@@ -120,6 +121,7 @@ struct SettingsMenuGroups: View {
             .init(.spotify, "music.note", "Spotify 연결", "휴대폰 재생 정보 · 음악 제어", [.green, .mint]),
             .init(.recordSettings, "externaldrive", "기록·백업", "내보내기 · 복원", [.blue, .cyan])]),
         .init(title: "화면·앱", items: [
+            .init(.performance, "speedometer", "성능 진단", "응답 지연 기록 · 3D 비교", [.blue, .cyan]),
             .init(.displaySettings, "textformat.size", "화면·표시 단위", "배경 · 거리 · 온도 단위", [.gray, .secondary]),
             .init(.appearance, "paintbrush.fill", "3D 차꾸미기", "외장 · 휠 · 실내", [.purple, .pink]),
             .init(.character, "figure.wave", "캐릭터", "", [.pink, .purple]),
