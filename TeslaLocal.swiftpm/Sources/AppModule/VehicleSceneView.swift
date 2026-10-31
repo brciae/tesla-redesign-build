@@ -64,6 +64,7 @@ struct RealityVehicleView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(runtime: runtime, onError: onError) }
     func makeUIView(context: Context) -> VehicleARView {
         let view = VehicleARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        view.renderOptions.formUnion([.disableMotionBlur, .disableDepthOfField, .disableCameraGrain])
         view.accessibilityIdentifier = "vehicle.scene"
         view.isAccessibilityElement = true
         view.accessibilityLabel = "3D 차량"

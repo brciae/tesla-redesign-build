@@ -325,6 +325,7 @@ struct Character3DView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { let c = Coordinator(); c.slot = slot; return c }
     func makeUIView(context: Context) -> ARView {
         let v = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        v.renderOptions.formUnion([.disableMotionBlur, .disableDepthOfField, .disableCameraGrain])
         v.environment.background = .color(.clear); v.backgroundColor = .clear; v.isOpaque = false
         context.coordinator.attach(v, yaw: yaw)
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
@@ -608,6 +609,7 @@ private struct CharacterPreview: UIViewRepresentable {
     func makeCoordinator() -> Coord { Coord() }
     func makeUIView(context: Context) -> ARView {
         let v = ARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        v.renderOptions.formUnion([.disableMotionBlur, .disableDepthOfField, .disableCameraGrain])
         v.environment.background = .color(.clear); v.backgroundColor = .clear; v.isOpaque = false
         context.coordinator.setup(v)
         v.addGestureRecognizer(UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coord.pan(_:))))

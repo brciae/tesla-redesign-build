@@ -34,6 +34,7 @@ final class AppModel: ObservableObject {
             DispatchQueue.main.async {
                 guard let self, self.telemetryIndexRevision == revision else { return }
                 self.telemetryDisplayIndex = index
+                self.observeParkingTelemetry(); self.updateTripEnergy(); self.updateLiveActivity()
             }
         }
     }
@@ -309,7 +310,7 @@ final class AppModel: ObservableObject {
         }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.archiveObservation = FleetTelemetryStore.shared.$records.dropFirst().sink { [weak self] records in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = records; self.observeParkingTelemetry(); self.updateLiveActivity() } }
+            self.archiveObservation = FleetTelemetryStore.shared.$records.dropFirst().sink { [weak self] records in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = records } }
             self.archiveReadings = FleetTelemetryStore.shared.records
             self.observeParkingTelemetry()
             self.repairSavedHistoryIfNeeded()
@@ -470,9 +471,13 @@ final class AppModel: ObservableObject {
             if let n = r.number { value["number"] = n }; if let origin = r.origin { value["origin"] = origin }; return value
         }
         guard !rows.isEmpty else { return }
-        output = try runtime.call("ingestArchive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000]) as? Object ?? output
+        _ = try runtime.call("ingestArchiveLive", ["vin": vin, "rows": rows, "replayFrom": window.start.timeIntervalSince1970 * 1000])
+        output["state"] = try runtime.call("export")
+        applyLiveOutput(try runtime.call("liveView") as? Object ?? [:])
+        analysisRevision &+= 1
         archiveReadings = store.records
         try enrichLocalChargeSOC()
+        scheduleDetailedAnalysis()
     }
     @MainActor private func repairSavedHistoryIfNeeded() {
         guard UIApplication.shared.applicationState == .active, !demo, !recoveryLock else { return }
@@ -508,7 +513,7 @@ final class AppModel: ObservableObject {
         analyticsVisible = visible
         if visible && UIApplication.shared.applicationState == .active && Date().timeIntervalSince(lastAnalytics) >= 30 { refresh(detailed: true) }
     }
-    func refresh(detailed: Bool = false) {
+    func refresh(detailed: Bool = false, replacingHistory: Bool = false) {
         if detailed { analysisRevision &+= 1 }
         defer {
             if detailed { tripEnergy.invalidateProfile() }
@@ -518,7 +523,7 @@ final class AppModel: ObservableObject {
         }
         do {
             // Read loaded settings before migrating the older standalone preference.
-            if output.isEmpty { output = ["state": try runtime.call("export")] }
+            if output.isEmpty || replacingHistory { output = ["state": try runtime.call("export")] }
             applyLiveOutput(try runtime.call("liveView") as? Object ?? [:])
             if !demo && !recoveryLock {
                 let defaults = UserDefaults.standard
@@ -595,7 +600,7 @@ final class AppModel: ObservableObject {
             guard !self.demo, !self.recoveryLock, self.settings.string("vin") == vin, args.count > 3 else { return }
             do {
                 let result = try self.runtime.call("updateTripPlaces", args) as? Object ?? [:]
-                if result.flag("changed") { self.refresh(detailed: true); self.saveRecordsWhenAvailable(force: true) }
+                if result.flag("changed") { self.refresh(detailed: true, replacingHistory: true); self.saveRecordsWhenAvailable(force: true) }
             } catch { /* A later replay/vehicle switch invalidates this lookup; retry from current endpoints. */ }
         }
     }
@@ -618,7 +623,7 @@ final class AppModel: ObservableObject {
                 return row
             }
             if (try? self.runtime.call("enrichChargeSites", ["vin": vin, "sites": rows])) as? Bool == true {
-                self.refresh(detailed: true); self.saveRecordsWhenAvailable(force: true)
+                self.refresh(detailed: true, replacingHistory: true); self.saveRecordsWhenAvailable(force: true)
             }
         }
     }
@@ -638,9 +643,9 @@ final class AppModel: ObservableObject {
     private func loadProtectedRecordsIfNeeded() {
         guard protectedLoadPending, UIApplication.shared.isProtectedDataAvailable else { return }
         do {
-            _ = try runtime.call("load", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true])
+            _ = try runtime.call("loadLive", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true])
             protectedLoadPending = false; recoveryLock = false; storageStatus = nil
-            refresh(detailed: true); resume()
+            refresh(detailed: true, replacingHistory: true); resume()
         } catch {
             protectedLoadPending = false; recoveryLock = true
             errorMessage = "저장 자료를 읽지 못함. 원본 보호를 위해 저장을 잠금. 백업 복원 필요. \(error.localizedDescription)"
@@ -694,7 +699,11 @@ final class AppModel: ObservableObject {
             if let soc = r.number { value["soc"] = soc }; return value
         }
         guard !rows.isEmpty else { return }
-        output = try runtime.call("enrichChargeSOC", ["vin": vin, "rows": rows]) as? Object ?? output
+        _ = try runtime.call("enrichChargeSOCLive", ["vin": vin, "rows": rows])
+        output["state"] = try runtime.call("export")
+        applyLiveOutput(try runtime.call("liveView") as? Object ?? [:])
+        analysisRevision &+= 1
+        scheduleDetailedAnalysis()
     }
     func mutate(_ operation: String, _ value: Object = [:]) {
         guard !recoveryLock || demo else { errorMessage = "원본 기록 보호 중. 백업 복원 필요."; return }
@@ -715,7 +724,7 @@ final class AppModel: ObservableObject {
         guard !recoveryLock, !demo else { errorMessage = "기록 보호 또는 예시 모드에서는 가져올 수 없음"; return nil }
         do {
             let summary = try runtime.call("importCharges", ["rows": rows, "vin": settings.string("vin")]) as? Object
-            refresh(detailed: true)
+            refresh(detailed: true, replacingHistory: true)
             saveRecordsWhenAvailable(force: true)
             return summary
         } catch { errorMessage = error.localizedDescription; return nil }
@@ -877,7 +886,7 @@ final class AppModel: ObservableObject {
             let root = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? Object ?? [:]
             guard root.string("kind") == "YLCompanionBackup", root.number("schema") == 1 else { throw LocalError.message("YL Companion JSON 백업만 지원함. Tesla·다른 앱의 내보내기 자료는 형식 확인 후 변환 필요.") }
             let counts = try runtime.call("mergeHistory", root.object("state")) as? Object ?? [:]
-            try persist(); refresh()
+            try persist(); refresh(detailed: true, replacingHistory: true)
             let reference = root.object("vehicleReference")
             let vin = root.object("state").object("settings").string("vin")
             if !vin.isEmpty, reference.string("vin") == vin {
@@ -994,8 +1003,8 @@ final class AppModel: ObservableObject {
             let old = try runtime.call("export")
             navigation.reset(); link.disconnect()
             if wasLocked, FileManager.default.fileExists(atPath: recordFile.path) { try FileManager.default.copyItem(at: recordFile, to: folder.appendingPathComponent("recovery-\(UUID().uuidString).json")) }
-            do { _ = try runtime.call("load", cleaned); recoveryLock = false; try persist(); refresh(detailed: true); errorMessage = "복원 완료. 차량 키는 별도 등록·확인 필요."; resume() }
-            catch { recoveryLock = wasLocked; _ = try? runtime.call("load", old); refresh(detailed: true); throw error }
+            do { _ = try runtime.call("loadLive", cleaned); recoveryLock = false; try persist(); refresh(detailed: true, replacingHistory: true); errorMessage = "복원 완료. 차량 키는 별도 등록·확인 필요."; resume() }
+            catch { recoveryLock = wasLocked; _ = try? runtime.call("loadLive", old); refresh(detailed: true, replacingHistory: true); throw error }
         } catch { errorMessage = error.localizedDescription }
     }
     func fetchWeather() {
