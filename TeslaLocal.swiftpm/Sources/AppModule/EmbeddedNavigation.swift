@@ -812,6 +812,7 @@ struct NavigationSetupView: View {
                 } label: { Label("외부 내비 연동", systemImage: "arrow.up.forward.app") }
             }
         }.navigationTitle("길안내").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { ScreenBriefingControls(scope: .navigation, compact: true) } }
         .onChange(of: navigation.consent) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationConsent") } }
         .onChange(of: navigation.enabled) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationEnabled") } }
     }
