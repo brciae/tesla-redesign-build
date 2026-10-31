@@ -116,6 +116,8 @@ struct BatteryOverview: View {
     }
     private var socChart: some View {
         let trend = usage.rows("trend").sorted { ($0.number("at") ?? 0) < ($1.number("at") ?? 0) }
+        let dates = trend.compactMap { $0.number("at").map { Date(timeIntervalSince1970: $0 / 1000) } }
+        let axisDates = Array(Set([dates.first, dates.last].compactMap { $0 })).sorted()
         return VStack(alignment: .leading, spacing: 10) {
             Text("잔량 변화 · 주행과 충전").font(.headline)
             Text("파랑 = 주행 · 초록 = 충전. 기록이 없는 시간은 연결하지 않음.").font(.caption).foregroundStyle(.secondary)
@@ -131,11 +133,11 @@ struct BatteryOverview: View {
                                 .foregroundStyle(p.string("kind") == "충전" ? Color.green : Color.blue).symbolSize(22)
                         }
                     }
-                }.chartXScale(range: .plotDimension(padding: 40))
+                }.chartXScale(range: .plotDimension(padding: 4))
                     .chartYScale(domain: 0...100)
                     .chartYAxis { AxisMarks(position: .leading, values: [0, 20, 40, 60, 80, 100]) { _ in AxisGridLine(); AxisValueLabel() } }
-                    .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { value in
-                        AxisValueLabel { if let date = value.as(Date.self) { Text(Self.batteryChartDateFormatter.string(from: date)).font(.caption2) } }
+                    .chartXAxis { AxisMarks(values: axisDates) { value in
+                        AxisValueLabel(anchor: value.index == 0 ? .topLeading : .topTrailing) { if let date = value.as(Date.self) { Text(Self.batteryChartDateFormatter.string(from: date)).font(.caption2) } }
                     } }
                     .frame(height: 180).accessibilityIdentifier("battery.soc.chart")
             }
