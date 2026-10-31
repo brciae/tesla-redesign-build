@@ -157,10 +157,14 @@ final class ProductionReviewTests: XCTestCase {
                 app.navigationBars["주행·안내"].buttons.element(boundBy: 0).tap()
             }
             else if screen == "month" { XCTAssertTrue(app.navigationBars["월간 결산"].waitForExistence(timeout: 10)) }
+            // Accessibility state changes before disclosure/navigation animations finish.
+            // Capture the settled layout rather than a transient half-collapsed card.
+            Thread.sleep(forTimeInterval: 0.6)
             let portrait = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); portrait.name = "production-" + screen + (appearance == "dark" ? "-dark" : "") + "-portrait"; portrait.lifetime = .keepAlways; add(portrait)
             XCUIDevice.shared.orientation = .landscapeLeft
             let rotation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in let size = XCUIScreen.main.screenshot().image.size; return size.width > size.height }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [rotation], timeout: 10), .completed, screen)
+            Thread.sleep(forTimeInterval: 0.6)
             let landscape = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); landscape.name = "production-" + screen + (appearance == "dark" ? "-dark" : "") + "-landscape"; landscape.lifetime = .keepAlways; add(landscape)
             XCUIDevice.shared.orientation = .portrait
             let reset = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in let size = XCUIScreen.main.screenshot().image.size; return size.height > size.width }, object: nil)
