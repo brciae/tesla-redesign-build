@@ -18,15 +18,21 @@ import Foundation
             let result = try canonical(actual), original = try canonical(legacyLiveActivityCharge(rows, vin: selected, now: now))
             assert(result == original)
         } }
-        let charges: [[String: Any]] = (0..<300).map { ["at": now.timeIntervalSince1970 * 1000 - Double($0 + 1000) * 3600000, "end": now.timeIntervalSince1970 * 1000 - Double($0 + 1000) * 3600000 + 1800000] }
-        let records = (0..<50000).map { i in row(i % 3 == 0 ? "Soc" : i % 3 == 1 ? "BatteryLevel" : "Gear", -Double(i), Double(i % 100), invalid: i % 13 == 0) }
+        let charges: [[String: Any]] = (0..<300).map { i -> [String: Any] in
+            let start = now.timeIntervalSince1970 * 1000 - Double(i + 1000) * 3600000
+            return ["at": start, "end": start + 1800000]
+        }
+        let records: [FleetTelemetryReading] = (0..<50000).map { i -> FleetTelemetryReading in
+            let field: String = i % 3 == 0 ? "Soc" : (i % 3 == 1 ? "BatteryLevel" : "Gear")
+            return row(field, -Double(i), Double(i % 100), invalid: i % 13 == 0)
+        }
         let start = Date(); let expected = legacySOC(records, vin: vin, charges: charges); let oldTime = Date().timeIntervalSince(start)
         let next = Date(); let actual = FleetTelemetryData.chargeSOCReadings(records, vin: vin, charges: charges); let newTime = Date().timeIntervalSince(next)
-        assert(expected.map(\.identity) == actual.map(\.identity))
+        assert(expected.map(\.id) == actual.map(\.id))
         for stamp in [0.0, -120001, -120000, 120000, 120001, 500000] {
             let special = [row("Soc", stamp / 1000, 50), row("BatteryLevel", stamp / 1000, 60, invalid: true), row("Soc", stamp / 1000, 70, vehicle: "OTHER")]
             for endpoints in [[], [["end": now.timeIntervalSince1970 * 1000]], [["at": now.timeIntervalSince1970 * 1000, "end": now.timeIntervalSince1970 * 1000 + 1000000]]] as [[[String: Any]]] {
-                assert(legacySOC(special, vin: vin, charges: endpoints).map(\.identity) == FleetTelemetryData.chargeSOCReadings(special, vin: vin, charges: endpoints).map(\.identity))
+                assert(legacySOC(special, vin: vin, charges: endpoints).map(\.id) == FleetTelemetryData.chargeSOCReadings(special, vin: vin, charges: endpoints).map(\.id))
             }
         }
         let worker = LatestTelemetryIndexWorker { rows in Thread.sleep(forTimeInterval: 0.04); return FleetTelemetryDisplayIndex(rows) }

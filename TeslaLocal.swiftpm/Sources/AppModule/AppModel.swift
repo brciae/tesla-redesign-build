@@ -688,7 +688,8 @@ final class AppModel: ObservableObject {
         guard !demo else { return }
         let vin = settings.string("vin")
         // Read the authoritative just-ingested records; display-index publication is asynchronous.
-        let rows: [Object] = FleetTelemetryData.chargeSOCReadings(FleetTelemetryStore.shared.records, vin: vin, charges: state.rows("charges")).map { r in
+        let sourceRecords = MainActor.assumeIsolated { FleetTelemetryStore.shared.records }
+        let rows: [Object] = FleetTelemetryData.chargeSOCReadings(sourceRecords, vin: vin, charges: state.rows("charges")).map { r in
             var value: Object = ["at": r.at.timeIntervalSince1970 * 1000, "invalid": r.invalid]
             if let soc = r.number { value["soc"] = soc }; return value
         }

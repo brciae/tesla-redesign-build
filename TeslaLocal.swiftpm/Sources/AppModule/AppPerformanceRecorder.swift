@@ -176,11 +176,11 @@ struct PerformanceDiagnosticsView: View {
                 if let exportURL { PerformanceShare(url: exportURL).accessibilityIdentifier("performance.share") }
             }
     }
-    private func export() {
+    @MainActor private func export() {
         exporting = true
         let context: [String: Any] = ["device": UIDevice.current.model, "iOS": UIDevice.current.systemVersion,
             "thermalState": ProcessInfo.processInfo.thermalState.rawValue, "lowPower": ProcessInfo.processInfo.isLowPowerModeEnabled,
-            "suspended3D": suspend3D, "archiveRecords": model.archiveReadings.count,
+            "suspended3D": suspend3D, "archiveRecords": FleetTelemetryStore.shared.records.count,
             "tripRecords": model.state.rows("trips").count, "chargeRecords": model.state.rows("charges").count]
         AppPerformanceWatchdog.shared.export(context: context) { result in
             exporting = false
