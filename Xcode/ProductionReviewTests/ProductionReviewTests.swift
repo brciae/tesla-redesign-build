@@ -2,6 +2,9 @@ import XCTest
 final class ProductionReviewTests: XCTestCase {
     func testLaunch() { review("launch") }
     func testHomeNavigation() { review("home") }
+    func testHomeDark() { review("home", appearance: "dark") }
+    func testBatterySummary() { review("batterySummary") }
+    func testMenuHierarchy() { review("menu") }
     func testHealth() { review("health") }
     func testTariffs() { review("tariffs") }
     func testMonthClosing() { review("month") }
@@ -14,12 +17,13 @@ final class ProductionReviewTests: XCTestCase {
     func testUnifiedAutomationVoiceSettings() { review("voice") }
     func testDriving() { review("driving") }
     func testDrivingFocus() { review("focus") }
-    private func review(_ screen: String) {
+    private func review(_ screen: String, appearance: String = "light") {
         continueAfterFailure = false
             let app = XCUIApplication()
             defer { app.terminate(); XCUIDevice.shared.orientation = .portrait }
-            app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", screen, "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-navigation.focusMode", screen == "focus" ? "YES" : "NO"]
+            app.launchArguments = ["--ui-review-fixture", "--ui-review-screen", screen, "-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR", "-appearance", appearance, "-navigation.focusMode", screen == "focus" ? "YES" : "NO"]
             XCUIDevice.shared.orientation = .portrait
+            let launched = Date()
             app.launch()
             XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20), screen)
             if ["navigation", "driving", "focus"].contains(screen) { allowLocationIfRequested() }
@@ -27,6 +31,14 @@ final class ProductionReviewTests: XCTestCase {
             if screen == "home" {
                 XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
                 XCTAssertTrue(app.descendants(matching: .any)["app.launch.brand"].waitForNonExistence(timeout: 5))
+                let scene = app.descendants(matching: .any).matching(identifier: "vehicle.scene").firstMatch
+                XCTAssertTrue(scene.waitForExistence(timeout: 20))
+                let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (scene.value as? String)?.hasPrefix("yaw") == true }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+                print("PERF home scene ready seconds: \(Date().timeIntervalSince(launched))")
+                let beforeRotation = scene.value as? String
+                scene.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).press(forDuration: 0.1, thenDragTo: scene.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)))
+                XCTAssertNotEqual(scene.value as? String, beforeRotation, "Home car must respond to horizontal rotation")
                 for tab in ["에너지", "운행", "메뉴", "홈"] { app.tabBars.buttons[tab].tap(); allowLocationIfRequested() }
                 XCTAssertTrue(app.descendants(matching: .any)["home.readiness"].waitForExistence(timeout: 10))
                 XCUIDevice.shared.press(.home); app.activate()
@@ -89,13 +101,44 @@ final class ProductionReviewTests: XCTestCase {
                 setup.tap()
                 XCTAssertTrue(app.navigationBars["운전 화면 설정"].waitForExistence(timeout: 5))
                 app.buttons["완료"].tap()
-            } else if screen == "navigation" { XCTAssertTrue(app.switches["주행 집중 모드"].waitForExistence(timeout: 10)) }
+            } else if screen == "navigation" {
+                let display = app.buttons["navigation.display.settings"]
+                XCTAssertTrue(display.waitForExistence(timeout: 10))
+                XCTAssertFalse(app.switches["주행 집중 모드"].exists)
+                let overview = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); overview.name = "production-navigation-overview"; overview.lifetime = .keepAlways; add(overview)
+                display.tap()
+                let focus = app.switches["주행 집중 모드"]
+                for _ in 0..<3 where !focus.exists || !focus.isHittable { app.swipeUp() }
+                XCTAssertTrue(focus.waitForExistence(timeout: 10))
+            } else if screen == "batterySummary" {
+                XCTAssertTrue(app.descendants(matching: .any)["battery.overview.compact"].waitForExistence(timeout: 10))
+                XCTAssertFalse(app.descendants(matching: .any)["battery.parking.count"].exists)
+                let capacity = app.buttons["battery.capacity.detail"]
+                for _ in 0..<3 where !capacity.exists || !capacity.isHittable { app.swipeUp() }
+                XCTAssertTrue(capacity.waitForExistence(timeout: 5)); capacity.tap()
+                XCTAssertTrue(app.descendants(matching: .any)["battery.health.reason"].waitForExistence(timeout: 5))
+                app.navigationBars["배터리 용량"].buttons.element(boundBy: 0).tap()
+                let usage = app.buttons["battery.usage.detail"]
+                for _ in 0..<3 where !usage.exists || !usage.isHittable { app.swipeUp() }
+                usage.tap()
+                let parking = app.descendants(matching: .any)["battery.parking.count"]
+                for _ in 0..<6 where !parking.exists || !parking.isHittable { app.swipeUp() }
+                XCTAssertTrue(parking.waitForExistence(timeout: 5))
+                app.navigationBars["사용량·주차 분석"].buttons.element(boundBy: 0).tap()
+                for _ in 0..<5 { app.swipeDown() }
+            } else if screen == "menu" {
+                XCTAssertTrue(app.buttons["주행·안내"].waitForExistence(timeout: 10))
+                XCTAssertFalse(app.buttons["음성·내비 안내"].exists)
+                app.buttons["주행·안내"].tap()
+                XCTAssertTrue(app.buttons["음성·내비 안내"].waitForExistence(timeout: 5))
+                app.navigationBars["주행·안내"].buttons.element(boundBy: 0).tap()
+            }
             else if screen == "month" { XCTAssertTrue(app.navigationBars["월간 결산"].waitForExistence(timeout: 10)) }
-            let portrait = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); portrait.name = "production-" + screen + "-portrait"; portrait.lifetime = .keepAlways; add(portrait)
+            let portrait = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); portrait.name = "production-" + screen + (appearance == "dark" ? "-dark" : "") + "-portrait"; portrait.lifetime = .keepAlways; add(portrait)
             XCUIDevice.shared.orientation = .landscapeLeft
             let rotation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in let size = XCUIScreen.main.screenshot().image.size; return size.width > size.height }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [rotation], timeout: 10), .completed, screen)
-            let landscape = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); landscape.name = "production-" + screen + "-landscape"; landscape.lifetime = .keepAlways; add(landscape)
+            let landscape = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); landscape.name = "production-" + screen + (appearance == "dark" ? "-dark" : "") + "-landscape"; landscape.lifetime = .keepAlways; add(landscape)
             XCUIDevice.shared.orientation = .portrait
             let reset = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in let size = XCUIScreen.main.screenshot().image.size; return size.height > size.width }, object: nil)
             XCTAssertEqual(XCTWaiter.wait(for: [reset], timeout: 10), .completed, screen)

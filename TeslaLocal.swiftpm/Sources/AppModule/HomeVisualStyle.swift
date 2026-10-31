@@ -6,6 +6,6 @@ enum HomeVisualStyle {
     static let contentWidth: CGFloat = 520
     static let gutter: CGFloat = 20
     static let headerTop: CGFloat = 20
-    static let vehicleAspect: CGFloat = 39 / 27
+    static let vehicleAspect: CGFloat = 1.9
     static let heroBottom: CGFloat = 8
 }

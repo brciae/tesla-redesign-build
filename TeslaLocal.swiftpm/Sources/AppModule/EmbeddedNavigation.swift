@@ -787,65 +787,56 @@ struct NavigationSetupView: View {
     @AppStorage("handOffToNaver") private var handOffToNaver = false
     @State private var nativeKey = ""
     var body: some View {
-        PageBody(title: "길안내", briefing: .navigation) {
-            // v39: an honest route to a licensed celebrity guidance voice. This app cannot synthesise a
-            // real person's voice, but Naver Map already ships those voices, so the destination can be
-            // handed to it and Naver speaks the turns.
-            InfoCard {
-                CardTitle(title: "외부 내비게이션으로 목적지 전송", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                HStack(spacing: 10) {
-                    Button { model.openInTMap() } label: {
-                        Label("티맵", systemImage: "arrow.turn.up.right").frame(maxWidth: .infinity, minHeight: 40)
-                    }.buttonStyle(.bordered).disabled(model.demo)
-                    
-                    Button { model.openInNaverMap() } label: {
-                        Label("네이버 지도", systemImage: "paperplane.fill").frame(maxWidth: .infinity, minHeight: 40)
-                    }.buttonStyle(.bordered).disabled(model.demo)
-                }
-                Toggle("새 목적지를 받으면 자동으로 네이버 지도로 넘기기", isOn: $handOffToNaver)
-            }
-            InfoCard {
-                Label("앱 안에서 바로 길안내", systemImage: "arrow.triangle.turn.up.right.diamond.fill").font(.title3)
-                Text(navigation.status)
+        Form {
+            Section {
+                Button { navigation.activateWorkspace(model: model) } label: { Label("운전 화면 열기", systemImage: "car.fill") }
                 if navigation.guiding { Button("진행 중인 내비 보기") { navigation.presented = true } }
-                Button("최신 목적지로 다시 시도") { navigation.retry(); model.refreshVehicle() }.disabled(navigation.ownsAudio || model.demo)
-                Button {
-                    navigation.activateWorkspace(model: model)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "car.fill")
-                        Text("운전 대시보드 열기")
-                    }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 46)
-                    .background(Color(red: 0.15, green: 0.45, blue: 0.95), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .buttonStyle(.plain)
+                Text(navigation.status).font(.caption).foregroundStyle(.secondary)
             }
-            InfoCard { NavigationDisplaySettings(navigation: navigation) }
-            InfoCard {
-                Label("위치 권한과 정확도", systemImage: "location.circle").font(.headline)
-                Text(navigation.locationPermission)
-                Caption("항상 허용은 백그라운드 접근 권한이며 정확도 설정과 별개임. 실행 중인 길안내는 화면을 잠가도 위치 수신을 이어가며, 길안내 종료 시 백그라운드 수신을 중단함.")
-                Button("항상 허용 요청") { navigation.requestAlwaysLocation() }.buttonStyle(.bordered)
-                Button("정확한 위치 요청") { navigation.requestPreciseLocation() }.buttonStyle(.bordered)
-                Button("아이폰 위치 설정 열기") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                }.buttonStyle(.borderless)
-                Caption("처음에는 앱 사용 중 허용을 선택한 뒤 다시 요청할 수 있음. 한 번 허용을 선택했거나 시스템 창이 나오지 않으면 아이폰 설정에서 확인 필요. 앱 강제 종료 후 지속 동작을 보장하지 않음.")
-            }.onAppear { navigation.updateLocationPermission() }
-            InfoCard {
-                Text("카카오 SDK 설정").font(.headline)
-                Text(navigation.bundleID).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
-                SecureField(navigation.hasKey ? "키 저장됨 · 변경할 때만 입력" : "Native App Key", text: $nativeKey).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Toggle("카카오에 현재 GPS·목적지 전달 동의", isOn: $navigation.consent)
-                Toggle("경로 선택 시 내비모드 자동 켜기", isOn: $navigation.enabled)
-                Toggle("하이패스 사용", isOn: $navigation.hipass)
-                Button("설정 저장") { navigation.saveSetup(key: nativeKey); nativeKey = ""; model.refreshVehicle() }
+            Section("설정") {
+                NavigationLink { Form { NavigationDisplaySettings(navigation: navigation) }.navigationTitle("지도·주행 화면").navigationBarTitleDisplayMode(.inline) } label: {
+                    Label("지도·주행 화면", systemImage: "map")
+                }.accessibilityIdentifier("navigation.display.settings")
+                NavigationLink { locationSettings } label: { Label("위치 권한", systemImage: "location") }
+                NavigationLink { connectionSettings } label: { Label("카카오 연결", systemImage: "link") }
             }
-        }
+            Section {
+                NavigationLink {
+                    Form {
+                        Section {
+                            Button("티맵으로 목적지 전송") { model.openInTMap() }.disabled(model.demo)
+                            Button("네이버지도로 목적지 전송") { model.openInNaverMap() }.disabled(model.demo)
+                            Toggle("목적지를 네이버지도로 자동 전송", isOn: $handOffToNaver)
+                        }
+                    }.navigationTitle("외부 내비 연동").navigationBarTitleDisplayMode(.inline)
+                } label: { Label("외부 내비 연동", systemImage: "arrow.up.forward.app") }
+            }
+        }.navigationTitle("길안내").navigationBarTitleDisplayMode(.inline)
         .onChange(of: navigation.consent) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationConsent") } }
         .onChange(of: navigation.enabled) { _, value in if !value { navigation.stop(); UserDefaults.standard.set(false, forKey: "embeddedNavigationEnabled") } }
+    }
+    private var locationSettings: some View {
+        Form {
+            Section {
+                Text(navigation.locationPermission).font(.subheadline)
+                Button("항상 허용 요청") { navigation.requestAlwaysLocation() }
+                Button("정확한 위치 요청") { navigation.requestPreciseLocation() }
+                Button("아이폰 위치 설정 열기") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
+            }
+            Section { Text("실행 중인 길안내만 백그라운드 위치를 수신함. 항상 허용과 정확한 위치는 별도 권한임.").font(.footnote).foregroundStyle(.secondary) }
+        }.navigationTitle("위치 권한").navigationBarTitleDisplayMode(.inline).onAppear { navigation.updateLocationPermission() }
+    }
+    private var connectionSettings: some View {
+        Form {
+            Section("카카오 SDK") {
+                SecureField(navigation.hasKey ? "키 저장됨 · 변경할 때 입력" : "Native App Key", text: $nativeKey).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Toggle("현재 GPS·목적지 전달 동의", isOn: $navigation.consent)
+                Toggle("경로 선택 시 내비모드 자동 켜기", isOn: $navigation.enabled)
+                Toggle("하이패스 사용", isOn: $navigation.hipass)
+                Button("저장") { navigation.saveSetup(key: nativeKey); nativeKey = ""; model.refreshVehicle() }
+                Button("최신 목적지로 다시 시도") { navigation.retry(); model.refreshVehicle() }.disabled(navigation.ownsAudio || model.demo)
+            }
+            Section("앱 식별자") { Text(navigation.bundleID).font(.footnote).textSelection(.enabled) }
+        }.navigationTitle("카카오 연결").navigationBarTitleDisplayMode(.inline)
     }
 }

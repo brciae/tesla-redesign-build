@@ -469,9 +469,9 @@ struct Caption: View {
         } else {
             Button { open = true } label: {
                 // v1.55: long notes are hidden behind an ⓘ button — no cut-off sentence with "…"
-                Label("설명", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
+                Image(systemName: "info.circle").font(.footnote).foregroundStyle(.secondary).padding(6)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).accessibilityLabel("설명")
             .popover(isPresented: $open) {
                 SupportingDetail(text: text)
             }

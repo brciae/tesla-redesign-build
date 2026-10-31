@@ -20,7 +20,9 @@ struct ProductionReviewRoot: View {
                 case "month": MonthClosingView()
                 case "battery": BatteryEvidenceView()
                 case "health": CompanionHealthView(link: model.link, voice: model.voice)
-                case "navigation": Form { NavigationDisplaySettings(navigation: model.navigation) }
+                case "navigation": NavigationSetupView(navigation: model.navigation)
+                case "batterySummary": BatteryView()
+                case "menu": MenuTabRootView(link: model.link, navigation: model.navigation).modifier(AppDestinations(link: model.link, navigation: model.navigation))
                 default: Text("Unknown review screen")
                 }
             } }

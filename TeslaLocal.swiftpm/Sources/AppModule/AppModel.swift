@@ -47,7 +47,7 @@ final class AppModel: ObservableObject {
         let vin = fleet.selectedVin.isEmpty ? settings.string("vin") : fleet.selectedVin
         guard !vin.isEmpty, !demo else { return drive }
         let key = "motion.last." + vin
-        if let previous = UserDefaults.standard.dictionary(forKey: key) { preserveMainMotion(previous, vin: vin) }
+        if drive.string("gear").isEmpty, let previous = UserDefaults.standard.dictionary(forKey: key) { preserveMainMotion(previous, vin: vin) }
         if !drive.string("gear").isEmpty, let at = drive.number("at") {
             preserveMainMotion(drive, vin: vin)
             let stored: [String: Any] = ["gear": drive.string("gear"), "at": at,
@@ -68,7 +68,12 @@ final class AppModel: ObservableObject {
         merged["motionFromMemory"] = true
         return merged
     }
+    private var queuedMotion: [String: (at: Double, gear: String)] = [:]
     private func preserveMainMotion(_ observation: Object, vin: String) {
+        guard let at = observation.number("at"), !observation.string("gear").isEmpty else { return }
+        let gear = observation.string("gear")
+        if let prior = queuedMotion[vin], prior.at > at || (prior.at == at && prior.gear == gear) { return }
+        queuedMotion[vin] = (at, gear)
         Task { @MainActor [weak self] in
             guard let self, !self.demo, !self.recoveryLock,
                   (self.fleet.selectedVin.isEmpty ? self.settings.string("vin") : self.fleet.selectedVin) == vin else { return }
@@ -79,7 +84,7 @@ final class AppModel: ObservableObject {
                     self.saveRecordsWhenAvailable(force: true)
                     FleetTelemetryStore.shared.historySaved(vin: vin)
                 }
-            } catch { self.storageStatus = "메인 상태 이력 보완 대기: " + error.localizedDescription }
+            } catch { self.queuedMotion[vin] = nil; self.storageStatus = "메인 상태 이력 보완 대기: " + error.localizedDescription }
         }
     }
     var isSpeaking: Bool { voice.speaking }
@@ -274,7 +279,7 @@ final class AppModel: ObservableObject {
             FleetTelemetryStore.shared.historySaved(vin: vin)
         }
         }
-        archiveObservation = FleetTelemetryStore.shared.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = FleetTelemetryStore.shared.records; self.observeParkingTelemetry(); self.updateLiveActivity() } }
+        archiveObservation = FleetTelemetryStore.shared.$records.dropFirst().sink { [weak self] records in DispatchQueue.main.async { guard let self else { return }; self.archiveReadings = records; self.observeParkingTelemetry(); self.updateLiveActivity() } }
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.archiveReadings = FleetTelemetryStore.shared.records
@@ -473,7 +478,7 @@ final class AppModel: ObservableObject {
     }
     func setAnalysisVisible(_ visible: Bool) {
         analyticsVisible = visible
-        if visible && UIApplication.shared.applicationState == .active { refresh(detailed: true) }
+        if visible && UIApplication.shared.applicationState == .active && Date().timeIntervalSince(lastAnalytics) >= 30 { refresh(detailed: true) }
     }
     func refresh(detailed: Bool = false) {
         defer {

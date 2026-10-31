@@ -83,22 +83,21 @@ struct HomeView: View {
                 HStack {
                     connectionChip
                     Spacer()
-                    ScreenBriefingControls(scope: .home, compact: true)
+                    NavigationLink { CompanionHealthView(link: link, voice: model.voice) } label: {
+                        Image(systemName: "checkmark.shield").frame(width: 44, height: 44)
+                    }.accessibilityLabel("출발 전 상태 확인").accessibilityIdentifier("home.readiness")
+                    Button { model.refreshVehicle() } label: { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44) }
+                        .accessibilityLabel("차량 새로고침")
                 }
-                if !model.demo, model.fleet.isAuthenticated, !model.fleet.isReadingVehicle, model.fleet.vehicleSnapshot == nil { fleetStatusCard }
-                CompanionReadinessCard(link: link, voice: model.voice)
                 vehicleCard(p)
                 batteryCard(c, charging: isCharging)
                 HStack(spacing: 12) {
-                    tile(Page.security, lockIcon, lockTitle, lockSubtitle, tint: lockTint)
-                    tile(Page.climate, "fanblades.fill", climate.number("insideC").map { "실내 \(Int($0.rounded()))°" } ?? "실내 온도",
-                         climateSubtitle(climate), tint: climate.flag("isOn") ? .cyan : .secondary)
-                }
+                    quickControlTile(.security, lockIcon, lockTitle, highlight: lockState == false)
+                    quickControlTile(.climate, "fanblades", "공조", highlight: climate.flag("isOn"))
+                    quickControlTile(.controls, "car.side.rear.open", "트렁크")
+                    quickControlTile(.parking, "parkingsign.circle", "내 차 찾기")
+                }.padding(.vertical, 12)
                 weekCard
-                NavigationLink(value: Page.parking) {
-                    Label("주차 위치·메모·사진", systemImage: "parkingsign.circle").font(.subheadline.bold())
-                        .frame(maxWidth: .infinity, minHeight: 48).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
-                }.buttonStyle(.plain)
                 driveButton
                 VStack(spacing: 4) {
                     Caption("YL COMPANION · v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") (Build \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"))")
@@ -152,38 +151,20 @@ struct HomeView: View {
 
     private func batteryCard(_ c: Object, charging: Bool) -> some View {
         let soc = c.number("soc"), frac = min(1, max(0, (soc ?? 0) / 100))
-        let color: Color = (soc ?? 100) <= 20 ? .red : (soc ?? 100) <= 50 ? .orange : .green
+        let color: Color = (soc ?? 100) <= 20 ? .orange : .green
         return NavigationLink(value: Page.charging) {
-            HStack(spacing: 20) {
-                ZStack {
-                    Circle().stroke(Color(uiColor: .tertiarySystemFill), lineWidth: 12)
-                    Circle().trim(from: 0, to: frac).stroke(color, style: StrokeStyle(lineWidth: 12, lineCap: .round)).rotationEffect(.degrees(-90))
-                        .animation(.smooth(duration: 0.8), value: frac)
-                    VStack(spacing: 2) {
-                        Text(soc.map { "\(Int($0.rounded()))%" } ?? "—").font(.system(size: 30, weight: .bold)).monospacedDigit()
-                        Text(c.number("rangeKm").map { "\(Int($0)) km" } ?? "").font(.caption).foregroundStyle(.secondary)
-                    }
-                }.frame(width: 118, height: 118)
-                VStack(alignment: .leading, spacing: 6) {
-                    if charging {
-                        Label("충전 중", systemImage: "bolt.fill").font(.subheadline.weight(.semibold)).foregroundStyle(color)
-                            .symbolEffect(.pulse)
-                        Text(c.number("chargerKW").map { String(format: "%.1f kW", $0) } ?? "—").font(.system(size: 28, weight: .bold)).monospacedDigit()
-                        if let m = c.number("minutesToLimit"), m > 0 {
-                            Text("\(Int(c.number("limit") ?? 80))%까지 \(Int(m) / 60)시간 \(Int(m) % 60)분").font(.footnote).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Label(c.flag("plugged") ? "연결됨 · 대기" : "배터리", systemImage: c.flag("plugged") ? "powerplug.fill" : "battery.75percent")
-                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(c.number("rangeKm").map { "\(Int($0)) km" } ?? "—").font(.system(size: 28, weight: .bold)).monospacedDigit()
-                        Text("충전 한도 \(Int(c.number("limit") ?? 80))%").font(.footnote).foregroundStyle(.secondary)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label(soc.map { "\(Int($0.rounded()))%" } ?? "—", systemImage: charging ? "bolt.fill" : "battery.75percent")
+                        .font(.title2.bold()).foregroundStyle(color)
+                    Spacer()
+                    Text(c.number("rangeKm").map { "\(Int($0)) km" } ?? "잔량 미수신").font(.headline)
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 0)
-            }
-            .padding(18)
-            .background(card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        }.buttonStyle(MotionButtonStyle())
+                ProgressView(value: frac).tint(color)
+                if charging { Text("충전 중 · " + valueText(c.number("chargerKW"), digits: 1, suffix: " kW")).font(.caption).foregroundStyle(.secondary) }
+            }.padding(16).background(card, in: RoundedRectangle(cornerRadius: 18))
+        }.buttonStyle(.plain)
     }
 
     private var lockState: Bool? {

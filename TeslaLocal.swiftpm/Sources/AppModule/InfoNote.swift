@@ -85,12 +85,8 @@ extension View {
     @ViewBuilder func zoomDestination(_ id: String, in namespace: Namespace.ID) -> some View {
         if #available(iOS 18.0, *) { self.navigationTransition(.zoom(sourceID: id, in: namespace)) } else { self }
     }
-    /// Cards settle in as they scroll into view: slight scale, fade and blur at the edges.
+    /// Keep scrolled cards readable and avoid an offscreen blur pass for every card.
     func cardScrollEffect() -> some View {
-        scrollTransition(.interactive, axis: .vertical) { content, phase in
-            content.opacity(phase.isIdentity ? 1 : 0.55)
-                .scaleEffect(phase.isIdentity ? 1 : 0.95)
-                .blur(radius: phase.isIdentity ? 0 : 1.5)
-        }
+        self
     }
 }

@@ -1292,11 +1292,16 @@
     }
     view(now=Date.now()){
       if(this._liveOnly)return this.liveView(now);
-      this._viewAudit=auditCharges(reconciledCharges(this.state.charges));
+      const saved=new Map(),memo=new Map();
+      for(const name of ['energyEstimates','parkingSummary','chargeSummary','health','healthIndex']){
+        const fn=this[name];saved.set(name,fn);
+        this[name]=(...args)=>{const key=name+JSON.stringify(args);if(memo.has(key))return memo.get(key);const value=fn.apply(this,args);memo.set(key,value);return value;};
+      }
       try {
+      this._viewAudit=auditCharges(reconciledCharges(this.state.charges));
       const s=this.state,charging=this.chargeSummary(),energy=this.energyEstimates(now);
-      return {state:s,charging,parking:this.parkingSummary(now),energy:this.energyEstimates(now),energyPeriods:Object.fromEntries([1,7,30,90,36500].map(days=>[String(days),this.energyEstimates(now,Math.max(0,now-days*DAY))])),health:this.health(),healthIndex:this.healthIndex(now),target:this.target(),battery:Object.fromEntries([7,30,90].map(days=>[String(days),this.batteryUsage(now,days)])),briefing:this.briefing(now),fresh:Object.fromEntries(Object.entries(s.groups).map(([k,g])=>[k,k==='location'?freshLocation(g,now):fresh(g,now)])),totals:{trips:energy.trips.filter(t=>!t.duplicate).length,distanceKm:energy.totalDistanceKm,charges:charging.count,cost:charging.cost,supplyKWh:charging.supplyKWh,vehicleReportedKWh:charging.vehicleReportedKWh}};
-      } finally { this._viewAudit=null; }
+      return {state:s,charging,parking:this.parkingSummary(now),energy,energyPeriods:Object.fromEntries([1,7,30,90,36500].map(days=>[String(days),this.energyEstimates(now,Math.max(0,now-days*DAY))])),health:this.health(),healthIndex:this.healthIndex(now),target:this.target(),battery:Object.fromEntries([7,30,90].map(days=>[String(days),this.batteryUsage(now,days)])),briefing:this.briefing(now),fresh:Object.fromEntries(Object.entries(s.groups).map(([k,g])=>[k,k==='location'?freshLocation(g,now):fresh(g,now)])),totals:{trips:energy.trips.filter(t=>!t.duplicate).length,distanceKm:energy.totalDistanceKm,charges:charging.count,cost:charging.cost,supplyKWh:charging.supplyKWh,vehicleReportedKWh:charging.vehicleReportedKWh}};
+      } finally { this._viewAudit=null; for(const [name,fn] of saved)this[name]=fn; }
     }
     csv(){
       const summary=this.chargeSummary(),priced=new Map(summary.rows.map(c=>[c.id,c]));

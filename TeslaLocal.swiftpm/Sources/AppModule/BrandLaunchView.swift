@@ -3,12 +3,12 @@ import SwiftUI
 struct BrandLaunchArtwork: View {
     var body: some View {
         ZStack {
-            Theme.bg.ignoresSafeArea()
+            Color.white.ignoresSafeArea()
             VStack(spacing: 20) {
                 Image("LaunchLogo").resizable().scaledToFit().frame(width: 148, height: 148)
                     .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                     .accessibilityHidden(true)
-                Text("YL Companion").font(.system(size: 20, weight: .semibold, design: .rounded)).tracking(1)
+                Text("YL Companion").font(.system(size: 20, weight: .semibold, design: .rounded)).tracking(1).foregroundStyle(.black)
             }
         }.accessibilityElement(children: .combine).accessibilityLabel("YL Companion 시작")
             .accessibilityIdentifier("app.launch.brand")

@@ -23,7 +23,7 @@ struct YLCompanionApp: App {
     }
     var body: some Scene {
         WindowGroup {
-            if let model = owner.model { BrandLaunchContainer { appContent(model).environmentObject(model) }.preferredColorScheme(colorScheme) }
+            if let model = owner.model { appContent(model).environmentObject(model).preferredColorScheme(colorScheme) }
             else { ContentUnavailableView("앱 준비 실패", systemImage: "exclamationmark.triangle", description: Text(owner.failure)).preferredColorScheme(colorScheme) }
         }
     }
@@ -143,7 +143,7 @@ struct MainView: View {
             .alert("확인", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) { Button("확인", role: .cancel) { model.errorMessage = nil } } message: { Text(model.errorMessage ?? "") }
             .sheet(isPresented: Binding(get: { model.sharedFile != nil }, set: { if !$0 { model.sharedFile = nil } })) { if let url = model.sharedFile { SheetShare(url: url) } }
             .onChange(of: selectedTab) { _, newTab in
-                model.setAnalysisVisible(newTab == .energy || newTab == .drive)
+                model.setAnalysisVisible(newTab == .energy)
                 if newTab == .menu { menuPath = NavigationPath() }
             }
     }
@@ -153,15 +153,15 @@ struct MainView: View {
             NavigationPipSource(manager: .shared).frame(width: 360, height: 210)
                 .allowsHitTesting(false).accessibilityHidden(true)
             Commercial5TabScaffold(selection: tabBinding) {
-                NavigationStack(path: $homePath) { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $homePath) { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .home && !navigation.presented && !model.chargingPresented)
             } controls: {
-                NavigationStack(path: $controlsPath) { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $controlsPath) { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .controls && !navigation.presented && !model.chargingPresented)
             } energy: {
-                NavigationStack(path: $energyPath) { EnergyTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $energyPath) { EnergyTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .energy && !navigation.presented && !model.chargingPresented)
             } drive: {
-                NavigationStack(path: $drivePath) { DriveTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $drivePath) { DriveTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .drive && !navigation.presented && !model.chargingPresented)
             } menu: {
-                NavigationStack(path: $menuPath) { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }
+                NavigationStack(path: $menuPath) { MenuTabRootView(link: link, navigation: navigation).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .menu && !navigation.presented && !model.chargingPresented)
             }
             .environment(\.vehicleRenderingActive, !navigation.presented && !model.chargingPresented)
             .opacity(navigation.presented || model.chargingPresented ? 0 : 1).allowsHitTesting(!navigation.presented && !model.chargingPresented).accessibilityHidden(navigation.presented || model.chargingPresented)
@@ -569,8 +569,12 @@ struct BatteryView: View {
     var body: some View {
         let charges = model.output.object("charging").rows("rows")
         PageBody(title: "배터리·충전", briefing: .batteryAndCharging, briefingText: { model.screenBriefing(.batteryAndCharging, days: days) }, briefingAtBottom: true) {
-            BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days)
-            TripEnergyHistoryView(vin: model.energyVehicleVIN)
+            BatteryOverview(index: model.output.object("healthIndex"), usage: model.output.object("battery").object(String(days)), days: $days, compact: true)
+            InfoCard {
+                NavigationLink { PageBody(title: "도착 잔량 예측") { TripEnergyHistoryView(vin: model.energyVehicleVIN) } } label: {
+                    Label("도착 잔량 예측 비교", systemImage: "chart.xyaxis.line").frame(minHeight: 44)
+                }.accessibilityIdentifier("battery.predictions.detail")
+            }
             InfoCard {
                 NavigationLink("집 충전 범위·주소 변경") { HomeChargingSettingsView() }
                 NavigationLink("배터리 용량 비교 기준·교체일") { BatteryHealthReferenceSettingsView() }

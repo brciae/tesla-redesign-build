@@ -2,11 +2,12 @@ import SwiftUI
 import RealityKit
 import UIKit
 import simd
+import Combine
 
 struct VehicleCameraCommand { var serial = 0; var action = "reset"; var yaw: Float = .pi/4; var pitch: Float = atan(0.34); var zoom: Float? = nil }
 
-private struct VehicleSceneAsset: Decodable {
-    struct Part: Decodable {
+private struct VehicleSceneAsset: Decodable, Sendable {
+    struct Part: Decodable, Sendable {
         let id: String; let pivot: [Float]; let axis: [Float]; let openAngle: Float
         // v1.28: the model faces +Z, so the left-hand driver side is +X. The source asset labelled the
         // sides the other way round, which opened the passenger door for a driver-door state.
@@ -21,8 +22,8 @@ private struct VehicleSceneAsset: Decodable {
     static func sideFix(_ s: String) -> String {
         s.hasPrefix("driver") ? "passenger" + s.dropFirst(6) : s.hasPrefix("passenger") ? "driver" + s.dropFirst(9) : s
     }
-    struct Surface: Decodable { let color: [Float]; let roughness: Float; let metallic: Float; let unlit: Bool? }
-    struct Mesh: Decodable {
+    struct Surface: Decodable, Sendable { let color: [Float]; let roughness: Float; let metallic: Float; let unlit: Bool? }
+    struct Mesh: Decodable, Sendable {
         let name: String; let parent: String; let material: String; let positions: [Float]; let normals: [Float]; let triangles: [UInt32]
         enum CodingKeys: String, CodingKey { case name, parent, material, positions, normals, triangles }
         init(from d: Decoder) throws {
@@ -36,6 +37,7 @@ private struct VehicleSceneAsset: Decodable {
     let parts: [Part]
     let materials: [String: Surface]
     let meshes: [Mesh]
+    static let prepared = Task.detached(priority: .utility) { try load() }
     static func load() throws -> Self {
         let asset = try JSONDecoder().decode(Self.self, from: EmbeddedAppResources.data(named: "vehicle3d.json"))
         guard asset.schema == 1, asset.parts.count == 6, asset.meshes.count < 500 else { throw LocalError.message("3D 모델 형식 오류") }
@@ -62,13 +64,15 @@ struct RealityVehicleView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(runtime: runtime, onError: onError) }
     func makeUIView(context: Context) -> VehicleARView {
         let view = VehicleARView(frame: .zero, cameraMode: .nonAR, automaticallyConfigureSession: false)
+        view.accessibilityIdentifier = "vehicle.scene"
+        view.isAccessibilityElement = true
+        view.accessibilityLabel = "3D 차량"
         view.environment.background = .color(backgroundColor)
         if backgroundColor.cgColor.alpha < 1 {
             view.backgroundColor = backgroundColor
             view.isOpaque = false
         }
-        do { try context.coordinator.build(in: view); DispatchQueue.main.async { onSceneReady?() } }
-        catch { DispatchQueue.main.async { onError(error.localizedDescription) } }
+        context.coordinator.beginBuild(in: view, onReady: onSceneReady)
         view.didLayout = { [weak coordinator = context.coordinator] size in coordinator?.layout(size) }
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:))); pan.maximumNumberOfTouches = 1; pan.delegate = context.coordinator; view.addGestureRecognizer(pan)
         let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pinch(_:))); pinch.delegate = context.coordinator; view.addGestureRecognizer(pinch)
@@ -83,8 +87,7 @@ struct RealityVehicleView: UIViewRepresentable {
         }
         // v29: a display-only car (driving screens) must not swallow touches or cover overlays for hit testing.
         view.isUserInteractionEnabled = presentation.flag("allowInteraction")
-        context.coordinator.applyAppearance(appearance)
-        context.coordinator.apply(presentation, command: command, reduced: reducedMotion)
+        context.coordinator.update(presentation, command: command, reduced: reducedMotion, appearance: appearance)
     }
     static func dismantleUIView(_ view: VehicleARView, coordinator: Coordinator) {
         view.didLayout = nil
@@ -94,6 +97,38 @@ struct RealityVehicleView: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        private static var meshCache: [String: MeshResource] = [:]
+        private var buildTask: Task<Void, Never>?
+        private var ready = false
+        private weak var displayView: ARView?
+        private var pending: (Object, VehicleCameraCommand, Bool, VehicleAppearance)?
+        func beginBuild(in view: ARView, onReady: (() -> Void)?) {
+            buildTask = Task { @MainActor [weak self, weak view] in
+                guard let self, let view else { return }
+                do {
+                    try await self.build(in: view)
+                    try Task.checkCancellation()
+                    self.ready = true
+                    if let p = self.pending { self.update(p.0, command: p.1, reduced: p.2, appearance: p.3) }
+                    onReady?()
+                } catch is CancellationError { }
+                catch { self.onError(error.localizedDescription) }
+            }
+        }
+        func update(_ p: Object, command: VehicleCameraCommand, reduced: Bool, appearance: VehicleAppearance) {
+            pending = (p, command, reduced, appearance)
+            guard ready else { return }
+            applyAppearance(appearance)
+            apply(p, command: command, reduced: reduced)
+        }
+        private static func mesh(_ descriptor: MeshDescriptor, key: String) async throws -> MeshResource {
+            if let cached = meshCache[key] { return cached }
+            for try await mesh in MeshResource.generateAsync(from: [descriptor]).values {
+                meshCache[key] = mesh
+                return mesh
+            }
+            throw LocalError.message("3D 메시 로딩 중단")
+        }
         private let runtime: LocalRuntime
         private let onError: (String?) -> Void
         private let root = AnchorEntity(world: .zero)
@@ -163,8 +198,10 @@ struct RealityVehicleView: UIViewRepresentable {
             // Recentre the hub on the tyre's axle once the first mesh lands.
             return box.node
         }
-        func build(in view: ARView) throws {
-            let asset = try VehicleSceneAsset.load()
+        func build(in view: ARView) async throws {
+            displayView = view
+            let asset = try await VehicleSceneAsset.prepared.value
+            try Task.checkCancellation()
             guard asset.meshes.allSatisfy({ !$0.positions.isEmpty && $0.positions.count % 3 == 0 && $0.positions.count < 300000 && $0.positions.allSatisfy({ $0.isFinite }) }) else { throw LocalError.message("3D 메시 좌표 형식 오류") }
             root.addChild(vehicle)
             prepareWheels(asset)
@@ -173,7 +210,8 @@ struct RealityVehicleView: UIViewRepresentable {
                 guard part.pivot.count == 3, part.axis.count == 3, part.pivot.allSatisfy({ $0.isFinite }), part.axis.allSatisfy({ $0.isFinite }), part.openAngle.isFinite, (abs(part.openAngle) < 0.0001 || part.axis.contains(where: { abs($0) > 0.0001 })) else { throw LocalError.message("3D 힌지 형식 오류") }
                 let node = Entity(); node.name = part.id; node.position = SIMD3(part.pivot[0], part.pivot[1], part.pivot[2]); vehicle.addChild(node); hinges[part.id] = node; definitions[part.id] = part
             }
-            for item in asset.meshes {
+            for (meshIndex, item) in asset.meshes.enumerated() {
+                try Task.checkCancellation()
                 guard item.positions.count % 3 == 0, item.normals.count == item.positions.count, item.triangles.count % 3 == 0,
                       item.positions.count < 300000, item.positions.allSatisfy({ $0.isFinite }), item.normals.allSatisfy({ $0.isFinite }),
                       item.triangles.allSatisfy({ Int($0) < item.positions.count/3 }), let surface = asset.materials[item.material], surface.color.count == 3 else { throw LocalError.message("3D 메시 형식 오류: \(item.name)") }
@@ -188,7 +226,7 @@ struct RealityVehicleView: UIViewRepresentable {
                 let material: RealityKit.Material
                 if surface.unlit == true { material = UnlitMaterial(color: color) }
                 else { material = SimpleMaterial(color: color, roughness: .float(surface.roughness), isMetallic: surface.metallic > 0.5) }
-                let mesh = try MeshResource.generate(from: [descriptor]), entity = ModelEntity(mesh: mesh, materials: [material]); entity.name = item.name
+                let mesh = try await Self.mesh(descriptor, key: String(meshIndex)), entity = ModelEntity(mesh: mesh, materials: [material]); entity.name = item.name
                 surfaces.append((entity, item.material, material, item))
                 if item.parent == "body", let wheel = wheelNode(for: positions) { entity.position = -wheel.position; wheel.addChild(entity) }
                 else if item.parent == "body" { vehicle.addChild(entity) }
@@ -354,6 +392,7 @@ struct RealityVehicleView: UIViewRepresentable {
                 // Chase views look past the car so the road ahead fills the frame (car sits lower).
                 let lead = SIMD3<Float>(0, 0, lookAhead)
                 camera.look(at: SIMD3(t[0].floatValue, t[1].floatValue, t[2].floatValue) + lead, from: SIMD3(p[0].floatValue, p[1].floatValue, p[2].floatValue) + lead * 0.35, relativeTo: root)
+                displayView?.accessibilityValue = String(format: "yaw %.3f zoom %.3f", yaw, zoom)
                 if reportedCameraError { reportedCameraError = false; DispatchQueue.main.async { self.onError(nil) } }
             } catch {
                 if !reportedCameraError { reportedCameraError = true; let message = error.localizedDescription; DispatchQueue.main.async { self.onError(message) } }
@@ -397,6 +436,7 @@ struct RealityVehicleView: UIViewRepresentable {
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { gestureRecognizer is UIPinchGestureRecognizer || otherGestureRecognizer is UIPinchGestureRecognizer }
         func stop() {
+            buildTask?.cancel(); buildTask = nil; ready = false; pending = nil
             lifecycleObservers.forEach(NotificationCenter.default.removeObserver); lifecycleObservers = []
             controllers.values.forEach { $0.stop() }; controllers = [:]
             surfaces = []

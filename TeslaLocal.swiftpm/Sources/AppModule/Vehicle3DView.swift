@@ -33,9 +33,9 @@ struct Vehicle3DPanel: View {
     @State private var camera = VehicleCameraCommand()
     @State private var sceneError: String?
     @State private var sceneVisible = false
+    @State private var sceneReady = false
     private var presentation: Object {
         var base = (try? model.runtime.call("vehicle3D", ["connected": link.connected, "authenticated": link.authentic && link.closuresSupported, "sessionStartedAt": link.sessionStartedAt, "demo": model.demo, "preview": preview, "overrides": overrides, "reduceMotion": reduced || energySaving || AppEnergyPolicy.saving])) as? Object ?? ["states": [:], "restricted": true, "note": "3D 상태 처리 오류"]
-        if chargingMode { base["allowInteraction"] = false }
         if chargingMode {
             if isPlugged || isCharging {
                 base["chargingPlugged"] = true
@@ -55,7 +55,7 @@ struct Vehicle3DPanel: View {
                     .overlay {
                         GeometryReader { geometry in
                             if sceneVisible && renderingActive {
-                                RealityVehicleView(runtime: model.runtime, presentation: p, command: chargingMode ? VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95) : camera, reducedMotion: reduced || energySaving || AppEnergyPolicy.saving, appearance: appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo))) { sceneError = $0 }
+                                RealityVehicleView(runtime: model.runtime, presentation: p, command: camera, reducedMotion: reduced || energySaving || AppEnergyPolicy.saving, appearance: appearanceStore.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)), onSceneReady: { sceneReady = true }) { sceneError = $0 }
                                     .frame(width: geometry.size.width, height: geometry.size.height)
                             }
                         }
@@ -67,6 +67,7 @@ struct Vehicle3DPanel: View {
                         .padding(8).background(Theme.bg.opacity(0.92), in: Capsule()).padding(.top, 6)
                 }
                 if let sceneError { Text("3D 장면을 열지 못함\n\(sceneError)").font(.caption).foregroundStyle(.orange).padding().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.bg) }
+                else if !sceneReady { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).allowsHitTesting(false) }
             }.clipped()
             if !compact {
                 NavigationLink(value: Page.appearance) { Label("차꾸미기", systemImage: "paintpalette") }.buttonStyle(.bordered)
@@ -118,12 +119,12 @@ struct Vehicle3DPanel: View {
             sceneError = nil
             // v1.55: the charge-port (rear) angle only while a cable is actually connected; otherwise the
             // normal front three-quarter view. Before this every home card opened from behind.
-            if chargingMode {
+            if chargingMode && (isPlugged || isCharging) {
                 camera = VehicleCameraCommand(serial: 100, action: "angle", yaw: 2.38, pitch: 0.32, zoom: 0.95)
             }
             sceneVisible = true
         }
-        .onDisappear { sceneVisible = false }
+        .onDisappear { sceneVisible = false; sceneReady = false }
         .onChange(of: focus?.serial ?? -1) { _, _ in if let focus { var c = focus; c.serial = camera.serial + 1; camera = c } }
     }
     private func cameraButton(_ title: String, yaw: Float) -> some View { Button(title) { camera.serial += 1; camera.action = "angle"; camera.yaw = yaw } }

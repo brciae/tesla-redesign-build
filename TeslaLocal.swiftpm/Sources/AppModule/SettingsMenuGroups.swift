@@ -124,19 +124,25 @@ struct SettingsMenuGroups: View {
             .init(.releaseNotes, "doc.text.fill", "릴리즈 노트", "버전별 변경 내역", [.orange, .pink])])
     ]
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             ForEach(groups) { group in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(group.title).font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color.primary.opacity(0.6)).padding(.leading, 6)
-                    GlassMenuCard {
+                NavigationLink {
+                    List {
                         ForEach(group.items) { item in
-                            glassMenuItem(item.page, item.symbol, title: item.title, subtitle: nil,
-                                colors: item.colors, isLast: group.items.last?.page == item.page)
+                            NavigationLink(value: item.page) { Label(item.title, systemImage: item.symbol) }
                         }
-                    }
-                }
+                    }.navigationTitle(group.title).navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: group.items.first?.symbol ?? "gearshape").font(.title3)
+                            .foregroundStyle(.blue).frame(width: 42, height: 42)
+                            .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                        Text(group.title).font(.headline)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }.padding(16).background(Theme.surface, in: RoundedRectangle(cornerRadius: 18))
+                }.buttonStyle(.plain)
             }
-        }
+        }.accessibilityIdentifier("menu.groups")
     }
 }

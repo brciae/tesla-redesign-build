@@ -25,7 +25,7 @@ struct SmartParkingCard: View {
                 Button { manager.saveCurrentFleetParking() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "mappin.and.ellipse").font(.system(size: 14, weight: .semibold))
-                        Text("확인된 차량 위치를 주차 위치로 저장").font(.system(size: 14, weight: .semibold))
+                        Text("차량 위치 저장").font(.system(size: 14, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(ready ? Color(red: 0.18, green: 0.50, blue: 0.95) : Color.primary.opacity(0.07),
@@ -134,6 +134,12 @@ struct SmartParkingCard: View {
 
                 LinearGradient(colors: [.clear, Color.primary.opacity(0.18), .clear], startPoint: .leading, endPoint: .trailing).frame(height: 1)
 
+                HStack {
+                    Label(elapsedTimeString(since: record.timestamp), systemImage: "clock")
+                    Spacer()
+                    Text(distanceToCarString(record: record))
+                }.font(.subheadline).foregroundStyle(.secondary)
+                DisclosureGroup("저장된 차량 상태") {
                 // 6-Tile Comprehensive Synthesis Grid
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     // Tile 1: Elapsed Parking Time
@@ -206,6 +212,8 @@ struct SmartParkingCard: View {
                     )
                 }
 
+                }.font(.subheadline).accessibilityIdentifier("parking.telemetry.details")
+
                 // Action Buttons
                 HStack(spacing: 10) {
                     if let lat = record.effectiveLatitude, let lng = record.effectiveLongitude, !(lat == 0 && lng == 0) {
@@ -214,7 +222,7 @@ struct SmartParkingCard: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "figure.walk")
-                                Text("내 차 찾기 (도보 길안내)")
+                                Text("내 차 찾기")
                             }
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.white)
@@ -287,7 +295,7 @@ struct SmartParkingCard: View {
                         lineWidth: 1
                     )
             )
-            .shadow(color: .black.opacity(0.45), radius: 20, y: 10)
+            .shadow(color: .black.opacity(0.06), radius: 6, y: 3)
             .sheet(isPresented: $showCamera) {
                 CameraPicker { data in
                     if let image = AttachmentSafety.image(data) {

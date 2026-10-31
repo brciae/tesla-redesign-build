@@ -6,6 +6,7 @@ struct BatteryOverview: View {
     let index: Object
     let usage: Object
     @Binding var days: Int
+    var compact = false
     private let accent = Color(red: 0.30, green: 0.86, blue: 0.65)
     private static let batteryChartDateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -22,6 +23,9 @@ struct BatteryOverview: View {
     }()
 
     var body: some View {
+        if compact { overview } else { detailed }
+    }
+    private var detailed: some View {
         VStack(alignment: .leading, spacing: 20) {
             Picker("분석 기간", selection: $days) {
                 Text("7일").tag(7); Text("30일").tag(30); Text("90일").tag(90)
@@ -52,6 +56,30 @@ struct BatteryOverview: View {
                 }.padding(.top, 8)
             }
         }.padding(18).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
+    }
+    private var overview: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Picker("분석 기간", selection: $days) {
+                Text("7일").tag(7); Text("30일").tag(30); Text("90일").tag(90)
+            }.pickerStyle(.segmented).accessibilityIdentifier("battery.period")
+            HStack { measure("주행 전비", usage.object("energy").number("drivingKmPerKWh"), "km/kWh"); measure("주행 거리", usage.number("distanceKm"), "km") }
+            socChart
+            NavigationLink {
+                ScrollView { healthCard.padding() }.navigationTitle("배터리 용량").navigationBarTitleDisplayMode(.inline)
+            } label: {
+                HStack {
+                    Label("배터리 용량 · 참고값", systemImage: "battery.100percent")
+                    Spacer()
+                    Text(valueText(index.number("capacityMedianKWh") ?? index.number("recentCapacityKWh"), digits: 1, suffix: " kWh")).bold()
+                    Image(systemName: "chevron.right").font(.caption)
+                }.font(.subheadline).frame(minHeight: 44)
+            }.accessibilityIdentifier("battery.capacity.detail")
+            NavigationLink {
+                ScrollView { detailed.padding() }.navigationTitle("사용량·주차 분석").navigationBarTitleDisplayMode(.inline)
+            } label: { Label("사용량·주차·계산 근거", systemImage: "chart.bar.xaxis").frame(minHeight: 44) }
+                .accessibilityIdentifier("battery.usage.detail")
+        }.padding(18).background(Theme.surface, in: RoundedRectangle(cornerRadius: 20))
+            .accessibilityIdentifier("battery.overview.compact")
     }
     private var healthCard: some View {
         let full = index.object("fullChargeRange")
