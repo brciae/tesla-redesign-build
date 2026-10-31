@@ -22,11 +22,23 @@ struct ProductionReviewRoot: View {
                 case "health": CompanionHealthView(link: model.link, voice: model.voice)
                 case "navigation": NavigationSetupView(navigation: model.navigation)
                 case "batterySummary": BatteryView()
+                case "climate": TeslaInteractiveClimateView(link: model.link).navigationTitle("실내 공조").navigationBarTitleDisplayMode(.inline)
+                case "parking": ScrollView { SmartParkingCard(link: model.link).padding() }.navigationTitle("주차 기록").navigationBarTitleDisplayMode(.inline)
                 case "menu": MenuTabRootView(link: model.link, navigation: model.navigation).modifier(AppDestinations(link: model.link, navigation: model.navigation))
                 default: Text("Unknown review screen")
                 }
             } }
         }.environmentObject(model)
+        .onAppear {
+            if screen == "parking" {
+                var record = SmartParkingRecord()
+                record.timestamp = Date().addingTimeInterval(-3600)
+                record.mobile.buildingName = "검증용 주차장"
+                record.mobile.address = "예시 주차 위치"
+                record.mobile.mobileLatitude = 37.5; record.mobile.mobileLongitude = 127
+                SmartParkingManager.shared.latestRecord = record
+            }
+        }
     }
 }
 #endif

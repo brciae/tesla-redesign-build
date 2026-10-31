@@ -43,6 +43,7 @@ struct CardTitle: View {
                 .font(.headline)
                 .foregroundStyle(.primary)
             Spacer(minLength: 4)
+            if let info, !info.isEmpty { InfoNote(infoTitle ?? title, info) }
         }
     }
 }

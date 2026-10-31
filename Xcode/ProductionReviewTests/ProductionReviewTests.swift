@@ -3,6 +3,8 @@ final class ProductionReviewTests: XCTestCase {
     func testLaunch() { review("launch") }
     func testHomeNavigation() { review("home") }
     func testHomeDark() { review("home", appearance: "dark") }
+    func testClimateHelp() { review("climate") }
+    func testParkingSummary() { review("parking") }
     func testBatterySummary() { review("batterySummary") }
     func testMenuHierarchy() { review("menu") }
     func testHealth() { review("health") }
@@ -126,6 +128,16 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(parking.waitForExistence(timeout: 5))
                 app.navigationBars["사용량·주차 분석"].buttons.element(boundBy: 0).tap()
                 for _ in 0..<5 { app.swipeDown() }
+            } else if screen == "climate" {
+                XCTAssertTrue(app.buttons["공조 제어 안내 설명"].waitForExistence(timeout: 10))
+                XCTAssertEqual(app.buttons.matching(identifier: "설명").count, 0)
+            } else if screen == "parking" {
+                XCTAssertTrue(app.staticTexts["검증용 주차장"].waitForExistence(timeout: 10))
+                XCTAssertFalse(app.staticTexts["온도 대기 중"].exists)
+                let details = app.buttons["parking.telemetry.details"]
+                XCTAssertTrue(details.waitForExistence(timeout: 5)); details.tap()
+                XCTAssertTrue(app.staticTexts["온도 대기 중"].waitForExistence(timeout: 5))
+                details.tap()
             } else if screen == "menu" {
                 XCTAssertTrue(app.buttons["주행·안내"].waitForExistence(timeout: 10))
                 XCTAssertFalse(app.buttons["음성·내비 안내"].exists)

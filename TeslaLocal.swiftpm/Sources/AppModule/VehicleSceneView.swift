@@ -211,6 +211,7 @@ struct RealityVehicleView: UIViewRepresentable {
                 let node = Entity(); node.name = part.id; node.position = SIMD3(part.pivot[0], part.pivot[1], part.pivot[2]); vehicle.addChild(node); hinges[part.id] = node; definitions[part.id] = part
             }
             for (meshIndex, item) in asset.meshes.enumerated() {
+                await Task.yield()
                 try Task.checkCancellation()
                 guard item.positions.count % 3 == 0, item.normals.count == item.positions.count, item.triangles.count % 3 == 0,
                       item.positions.count < 300000, item.positions.allSatisfy({ $0.isFinite }), item.normals.allSatisfy({ $0.isFinite }),

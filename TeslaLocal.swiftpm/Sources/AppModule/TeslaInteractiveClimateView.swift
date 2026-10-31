@@ -33,10 +33,12 @@ struct TeslaInteractiveClimateView: View {
                 modeControls
                 if !result.isEmpty { Text(result).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading) }
                 Text(model.fleet.commandStatus).font(.caption).foregroundStyle(Theme.muted)
-                Caption("숫자는 최근 수신 단계이며, 명령 직후에는 승인된 요청값을 표시합니다. 미수신은 —로 표시합니다.")
-                Caption("자동·A/C·풍량·송풍 방향·내외기 순환·뒷좌석 공조는 차량 화면에서 조절해 주세요.")
+
             }.padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 32)
         }.background(Theme.bg)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) {
+            InfoNote("공조 제어 안내", "숫자는 최근 수신 단계이며, 명령 직후에는 승인된 요청값을 표시함. 미수신은 —로 표시함. 유지·반려동물·캠핑은 하차 후에도 공조를 유지하는 모드임. 자동·A/C·풍량·송풍 방향·내외기 순환·뒷좌석 공조는 차량 화면에서 조절 필요.")
+        } }
         .onAppear {
             if let target = climate.number("targetC"), target.isFinite, (16...28).contains(target) { requestedTemperature = target }
         }
@@ -158,7 +160,7 @@ struct TeslaInteractiveClimateView: View {
                 modeButton("반려동물", icon: "pawprint.fill", index: 2)
                 modeButton("캠핑", icon: "tent.fill", index: 3)
             }
-            Caption("차량에서 내린 후에도 공조를 유지하는 모드입니다. 차량 수신 상태를 확인해 주세요.")
+
         }.padding(10).background(Theme.surface, in: RoundedRectangle(cornerRadius: 16)).disabled(blocked)
     }
     private func modeButton(_ title: String, icon: String, index: Int) -> some View {
