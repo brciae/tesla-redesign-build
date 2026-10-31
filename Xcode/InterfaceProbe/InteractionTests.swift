@@ -382,14 +382,16 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["200%"].exists)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "Live activity shared views compact expanded and stale"; shot.lifetime = .keepAlways; add(shot)
-        for _ in 0..<3 {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for cycle in 0..<3 {
             XCUIDevice.shared.press(.home)
-            let background = NSPredicate { _, _ in
-                app.state == .runningBackground || app.state == .runningBackgroundSuspended
-            }
-            let entered = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: background, object: app)], timeout: 8) == .completed
+            // Application state is asynchronous. Use XCTest's state wait rather than an element expectation that captures app descriptions.
+            let entered = app.wait(for: .runningBackground, timeout: 4) || app.wait(for: .runningBackgroundSuspended, timeout: 4)
             XCTAssertTrue(entered, "App did not enter background; state=\(app.state.rawValue)")
+            XCTAssertTrue(springboard.wait(for: .runningForeground, timeout: 3), "Home screen must actually be foreground")
+            captureSystemCard("Live activity home screen cycle \(cycle + 1)")
             app.activate()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 3))
             XCTAssertTrue(app.staticTexts["300미터 앞 우회전"].waitForExistence(timeout: 5))
             XCTAssertTrue(app.staticTexts["200%"].exists, "Background return must preserve the local slider state without a relaunch")
         }
