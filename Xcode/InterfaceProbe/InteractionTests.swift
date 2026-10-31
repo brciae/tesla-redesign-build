@@ -729,7 +729,7 @@ final class InteractionTests: XCTestCase {
         let top = XCTAttachment(screenshot: app.screenshot()); top.name = "Battery summary and missing same-method reference"; top.lifetime = .keepAlways; add(top)
         let exclusions = app.buttons["battery.health.exclusions"]
         XCTAssertEqual(app.buttons.matching(identifier: "battery.health.exclusions").count, 1, "Disclosure control must not share its identifier with its evidence link"); XCTAssertTrue(exclusions.exists); exclusions.tap()
-        XCTAssertTrue(app.staticTexts["SOC 변화 20%p 미만"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "battery.health.exclusions").count, 1, "Expanded evidence link must remain separately identified"); XCTAssertTrue(app.staticTexts["SOC 변화 20%p 미만"].exists)
         captureSystemCard("Battery degradation qualifying charges and exclusion reasons")
         exclusions.tap()
         app.buttons["같은 종류 기준 등록 예시"].tap()

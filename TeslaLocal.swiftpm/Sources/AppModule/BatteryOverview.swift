@@ -7,6 +7,7 @@ struct BatteryOverview: View {
     let usage: Object
     @Binding var days: Int
     var compact = false
+    @State private var healthEvidenceExpanded = false
     private let accent = Color(red: 0.30, green: 0.86, blue: 0.65)
     private static let batteryChartDateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -132,7 +133,12 @@ struct BatteryOverview: View {
             if let baseline = index.number("baselineCapacityKWh") {
                 HStack { Text(registered ? "등록한 기준 용량" : "초기 3회 기준 용량"); Spacer(); Text(String(format: "%.1f kWh", baseline)).bold().monospacedDigit() }.font(.subheadline)
             }
-            DisclosureGroup("계산 근거와 관측 기록") {
+            Button { healthEvidenceExpanded.toggle() } label: {
+                HStack { Text("계산 근거와 관측 기록"); Spacer(); Image(systemName: healthEvidenceExpanded ? "chevron.down" : "chevron.right").font(.caption) }
+            }.buttonStyle(.plain).font(.subheadline)
+                .accessibilityIdentifier("battery.health.exclusions")
+                .accessibilityValue(healthEvidenceExpanded ? "펼쳐짐" : "접힘")
+            if healthEvidenceExpanded {
                 VStack(alignment: .leading, spacing: 12) {
                     NavigationLink { BatteryEvidenceView() } label: { Label("충전량·계산 근거 확인", systemImage: "doc.text.magnifyingglass") }.accessibilityIdentifier("battery.health.evidence")
                     Text("전체 충전 \(Int(index.number("totalChargeCount") ?? 0))회 · 용량 계산 가능 \(Int(index.number("qualifiedChargeCount") ?? index.number("sampleCount") ?? 0))회")
@@ -148,7 +154,7 @@ struct BatteryOverview: View {
                     Text(index.string("note")).foregroundStyle(.secondary)
                     Text("온도·BMS 보정에 따라 변동하는 참고값이며 Tesla 배터리 상태검사와 동일한 진단이 아님.").foregroundStyle(.secondary)
                 }.font(.caption).padding(.top, 12)
-            }.font(.subheadline).accessibilityIdentifier("battery.health.exclusions")
+            }
         }.padding(20).background(Theme.surface, in: RoundedRectangle(cornerRadius: 22))
     }
     private var capacityTimeline: some View {
