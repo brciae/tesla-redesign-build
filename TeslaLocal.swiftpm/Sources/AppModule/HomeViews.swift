@@ -1246,9 +1246,9 @@ struct ControlsTabRootView: View {
                 } else {
                     ClimateStatusView(link: link)
                 }
-            }.id(selectedSection).transition(.blurReplace)
+            }.id(selectedSection)
         }
-        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .animation(nil, value: selectedSection)
         .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
@@ -1277,9 +1277,9 @@ struct EnergyTabRootView: View {
                     // Battery analysis, cost, calendar and all history live under one TeslaMate section.
                     TeslaMateView()
                 }
-            }.id(selectedSection).transition(.blurReplace)
+            }.id(selectedSection)
         }
-        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .animation(nil, value: selectedSection)
         .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }
@@ -1308,9 +1308,9 @@ struct DriveTabRootView: View {
                 } else {
                     LocationStatusView(link: link)
                 }
-            }.id(selectedSection).transition(.blurReplace)
+            }.id(selectedSection)
         }
-        .animation(.smooth(duration: 0.35), value: selectedSection)
+        .animation(nil, value: selectedSection)
         .sensoryFeedback(.selection, trigger: selectedSection)
         .background(Theme.bg)
     }

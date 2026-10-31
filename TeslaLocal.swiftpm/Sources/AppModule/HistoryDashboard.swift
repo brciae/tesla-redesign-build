@@ -482,7 +482,7 @@ struct TeslaMateView: View {
             }.padding(4).background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 13)).padding(.horizontal, 16).padding(.vertical, 8)
             Divider()
             content.frame(maxHeight: .infinity)
-                .id(raw).transition(.blurReplace.animation(.smooth(duration: 0.3)))
+                .id(raw).animation(nil, value: raw)
         }
         .sensoryFeedback(.selection, trigger: raw)
         .navigationTitle("TeslaMate").navigationBarTitleDisplayMode(.inline)

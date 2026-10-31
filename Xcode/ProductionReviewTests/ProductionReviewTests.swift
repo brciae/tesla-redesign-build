@@ -43,6 +43,16 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertNotEqual(scene.value as? String, beforeRotation, "Home car must respond to horizontal rotation")
                 for tab in ["에너지", "운행", "메뉴", "홈"] {
                     app.tabBars.buttons[tab].tap(); allowLocationIfRequested()
+                    if tab == "에너지" && appearance == "light" {
+                        app.segmentedControls.buttons["TeslaMate"].tap()
+                        app.buttons["배터리"].tap()
+                        let capacity = app.buttons["battery.capacity.detail"]
+                        for _ in 0..<4 where !capacity.exists || !capacity.isHittable { app.swipeUp() }
+                        XCTAssertTrue(capacity.waitForExistence(timeout: 10)); capacity.tap()
+                        XCTAssertTrue(app.staticTexts["battery.health.ratio"].waitForExistence(timeout: 10))
+                        let integrated = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); integrated.name = "production-main-battery-health"; integrated.lifetime = .keepAlways; add(integrated)
+                        app.navigationBars["배터리 용량"].buttons.element(boundBy: 0).tap()
+                    }
                     if tab == "메뉴" && appearance == "light" {
                         let menu = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); menu.name = "production-main-menu-portrait"; menu.lifetime = .keepAlways; add(menu)
                         app.buttons["주행·안내"].tap()

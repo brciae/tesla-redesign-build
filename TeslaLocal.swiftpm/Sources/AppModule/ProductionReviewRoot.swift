@@ -31,7 +31,7 @@ struct ProductionReviewRoot: View {
             } }
         }.environmentObject(model)
         .onAppear {
-            if screen == "batterySummary", !healthPrepared {
+            if ["home", "batterySummary"].contains(screen), !healthPrepared {
                 healthPrepared = true
                 do {
                     var state = try model.runtime.call("export") as? Object ?? [:]
