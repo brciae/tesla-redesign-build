@@ -373,8 +373,10 @@
     for(const key of ['memberPricing','roamingPricing'])if(c[key]!=null&&typeof c[key]!=='boolean')throw Error('충전 회원·로밍 조건 오류');
     if(!num(c.at,0,1e14)||!optional(c.startSOC,0,100)||!optional(c.endSOC,0,100)||!optional(c.supplyKWh,0,300)||!optional(c.storedKWh,0,300)||!optional(c.cost,0,10000000))throw Error('충전 기록 수치 오류');
     if(!optional(c.durationMinutes,0,10080))throw Error('충전 소요시간 오류');
-    if(!optional(c.observedStartSOC,0,100)||!optional(c.observedStartAddedKWh,0,300)||!optional(c.observedStartTelemetryAt,Math.max(0,c.at-15000),1e14))throw Error('충전 관측 구간 오류');
-    if(!optional(c.observedEndSOC,0,100)||!optional(c.observedEndAddedKWh,0,300)||!optional(c.observedEndTelemetryAt,Math.max(0,c.at-15000),1e14))throw Error('충전 관측 종료 오류');
+    // Archive replay accepts a paired SOC/energy sample up to 120s before the
+    // completion snapshot. Loading our own saved output must use the same age.
+    if(!optional(c.observedStartSOC,0,100)||!optional(c.observedStartAddedKWh,0,300)||!optional(c.observedStartTelemetryAt,Math.max(0,c.at-120000),1e14))throw Error('충전 관측 구간 오류');
+    if(!optional(c.observedEndSOC,0,100)||!optional(c.observedEndAddedKWh,0,300)||!optional(c.observedEndTelemetryAt,Math.max(0,c.at-120000),1e14))throw Error('충전 관측 종료 오류');
     if(c.end!=null&&!num(c.end,c.at,Math.min(1e14,c.at+7*DAY)))throw Error('충전 종료 시각은 시작 이후 7일 이내여야 합니다.');
     if(c.startSOC!=null&&c.endSOC!=null&&c.endSOC<c.startSOC)throw Error('충전 종료 잔량이 시작보다 작음');
   }

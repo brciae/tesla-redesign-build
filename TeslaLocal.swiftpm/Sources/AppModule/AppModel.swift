@@ -221,8 +221,8 @@ final class AppModel: ObservableObject {
         if FileManager.default.fileExists(atPath: recordFile.path) {
             let lockedReadable = ((try? FileManager.default.attributesOfItem(atPath: recordFile.path)[.protectionKey]) as? FileProtectionType) == .completeUntilFirstUserAuthentication
             if UIApplication.shared.isProtectedDataAvailable || lockedReadable {
-                do { _ = try runtime.call("loadLive", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true]) }
-                catch { recoveryLock = true; errorMessage = "저장 자료를 읽지 못함. 원본 보호를 위해 저장을 잠금. 백업 복원 필요. \(error.localizedDescription)" }
+                do { try preserveRecordsBeforeRecovery(); _ = try runtime.call("loadLive", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true]) }
+                catch { recoveryLock = true; errorMessage = "저장 자료를 불러오지 못해 원본 보호 중. 초기화·복원 전 기록 메뉴에서 복구용 저장 원본 공유 필요. \(error.localizedDescription)" }
             } else {
                 protectedLoadPending = true; recoveryLock = true
                 storageStatus = "기록 불러오기 대기 · 기기 잠금 해제 후 기존 자료를 엶"
@@ -640,12 +640,13 @@ final class AppModel: ObservableObject {
     private func loadProtectedRecordsIfNeeded() {
         guard protectedLoadPending, UIApplication.shared.isProtectedDataAvailable else { return }
         do {
+            try preserveRecordsBeforeRecovery()
             _ = try runtime.call("loadLive", ["state": decodeJSON(String(contentsOf: recordFile, encoding: .utf8)), "resume": true])
             protectedLoadPending = false; recoveryLock = false; storageStatus = nil
             refresh(detailed: true, replacingHistory: true); resume()
         } catch {
             protectedLoadPending = false; recoveryLock = true
-            errorMessage = "저장 자료를 읽지 못함. 원본 보호를 위해 저장을 잠금. 백업 복원 필요. \(error.localizedDescription)"
+            errorMessage = "저장 자료를 불러오지 못해 원본 보호 중. 초기화·복원 전 기록 메뉴에서 복구용 저장 원본 공유 필요. \(error.localizedDescription)"
         }
     }
     // Storage failure must not cancel live telemetry, navigation or automation.
@@ -942,6 +943,30 @@ final class AppModel: ObservableObject {
                 }
             } catch { DispatchQueue.main.async { guard let self else { return }; self.recognitionInFlight = false; guard self.receiptRequest == requestID else { return }; self.ocrBusy = false; self.errorMessage = error.localizedDescription } }
         }
+    }
+    // Preserve bytes before the compatibility repair can resume normal saves.
+    // Fail closed if the original cannot be copied; never replace this snapshot.
+    private func preserveRecordsBeforeRecovery() throws {
+        let snapshot = folder.appendingPathComponent("recovery-before-build181.json")
+        try RecordRecoverySafety.preserve(source: recordFile, snapshot: snapshot)
+    }
+    func exportRecoveryOriginal() {
+        guard !demo else { errorMessage = "예시 자료는 복구용으로 내보내지 않음"; return }
+        do {
+            let snapshot = folder.appendingPathComponent("recovery-before-build181.json")
+            let source = FileManager.default.fileExists(atPath: snapshot.path) ? snapshot : recordFile
+            let exports = folder.appendingPathComponent("Exports", isDirectory: true)
+            try FileManager.default.createDirectory(at: exports, withIntermediateDirectories: true)
+            var version = 1
+            var destination: URL
+            repeat {
+                destination = exports.appendingPathComponent("Recovery-YL Companion 저장 원본 v" + String(format: "%02d", version) + " Review (20261101).json")
+                version += 1
+            } while FileManager.default.fileExists(atPath: destination.path)
+            // No decode, JS export or validation: even an unreadable database is shareable.
+            try FileManager.default.copyItem(at: source, to: destination)
+            sharedFile = destination
+        } catch { errorMessage = "원본 공유 실패. 앱을 삭제하거나 초기화하지 말고 다시 확인 필요. \(error.localizedDescription)" }
     }
     func exportBackup() {
         guard !recoveryLock else { errorMessage = "원본 기록 보호 중. 빈 자료로 백업하지 않음. 정상 백업 복원 필요."; return }

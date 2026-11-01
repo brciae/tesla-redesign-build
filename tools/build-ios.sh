@@ -78,6 +78,9 @@ swiftc TeslaLocal.swiftpm/Sources/AppModule/FleetTelemetryData.swift TeslaLocal.
 Xcode/TelemetryJournalTests
 node tools/gps-loss-tests.cjs
 node tools/charge-integrity-tests.cjs
+node tools/charge-restart-regression-tests.cjs
+swiftc TeslaLocal.swiftpm/Sources/AppModule/RecordRecoverySafety.swift tools/record-recovery-tests.swift -o Xcode/RecordRecoveryTests
+Xcode/RecordRecoveryTests
 node tools/charge-cost-tests.cjs
 node tools/published-tariff-tests.cjs
 node tools/charge-enrichment-tests.cjs

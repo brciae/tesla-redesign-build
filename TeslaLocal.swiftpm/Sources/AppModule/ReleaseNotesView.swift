@@ -10,6 +10,11 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.81 (181)", date: "2026-11-01", items: [
+            "NAS 충전 관측 시각의 저장·불러오기 허용 범위 불일치를 수정하여 재실행 시 과거 기록 전체가 차단되는 오류 해결",
+            "기존 저장 파일을 먼저 별도 보존한 뒤 불러오며, 검증 실패 상태에서도 복구용 원본 파일 공유 가능",
+            "기기 원본을 직접 확인하기 전에는 실제 기록 복구와 데이터 무결성 완료를 단정하지 않음"
+        ]),
         ReleaseNote(version: "1.80 (180)", date: "2026-10-31", items: [
             "차량 표본 인덱스의 중복 대기를 합치고 충전 SOC 보완·실시간 현황의 반복 전체 검색을 줄임",
             "실기기 응답 지연과 작업 시간을 기록하는 성능 진단 및 3D 렌더링 비교 옵션 추가",

@@ -440,6 +440,7 @@ struct ConnectionView: View {
                 // whichever source is actually collecting.
                 LabeledContent("자동 누적", value: autoCollectionStatus)
                 DisclosureGroup("내보내기·복원") {
+                    Button("복구용 저장 원본 공유") { model.exportRecoveryOriginal() }.disabled(model.demo)
                     Button("사진 포함 JSON 백업") { model.exportBackup() }
                     Button("운행·충전 CSV 내보내기") { model.exportCSV() }
                     Button("백업 파일 선택") { importer = true }.disabled(model.demo)

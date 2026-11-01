@@ -30,6 +30,18 @@ import Foundation
         precondition(member.number("estimatedCost") == 2920 && member.flag("memberPricingApplied"))
         let liveRestore = try runtime.call("loadLive", ["state": restored, "resume": true]) as! Object
         precondition(liveRestore.flag("liveDelta"), "Startup restore must not calculate period analysis on the UI thread")
+        var legacy = restored
+        legacy["charges"] = [["id": "completion-cached-observation", "at": now - 86400000,
+            "end": now - 86400000, "endSOC": 80, "vehicleReportedKWh": 15,
+            "observedStartSOC": 80, "observedEndSOC": 80,
+            "observedStartAddedKWh": 15, "observedEndAddedKWh": 15,
+            "observedStartTelemetryAt": now - 86460000, "observedEndTelemetryAt": now - 86460000]]
+        let compatibility = try LocalRuntime()
+        _ = try compatibility.call("loadLive", ["state": legacy, "resume": true])
+        let compatibilitySaved = try compatibility.call("export") as! Object
+        precondition(compatibilitySaved.rows("trips").count == 100)
+        precondition(compatibilitySaved.rows("charges").first?.string("id") == "completion-cached-observation")
+        print("PASS native JSCore: cached 60s charge observation reload retains 100 historical trips")
         let before = try runtime.call("view") as! Object
         let worker = BackgroundAnalysis()
         var completed = false, ticks = 0
