@@ -15,8 +15,9 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
     @Published private(set) var connected = false
     @Published private(set) var packetCount: Int?
     @Published private(set) var lastVehicleReceivedAt: Date?
-    @Published private(set) var status = "NAS 연결 주소를 등록하면 저장된 차량 기록을 가져옵니다."
+    @Published private(set) var status = "NAS 연결 필요"
     var address: String { UserDefaults.standard.string(forKey: "fleet.archive.address") ?? "" }
+    var isConfigured: Bool { !address.isEmpty && (try? token(address)) != nil }
     var onHistoryReady: ((String) throws -> Void)?
     private let redirectGuard = ArchiveRedirectGuard()
     private lazy var session: URLSession = {
@@ -119,7 +120,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
             }
             guard let onHistoryReady else { throw FleetTelemetryData.failure("기록 분석 준비 중입니다. 다시 가져오면 저장된 기록부터 처리합니다.") }
             try onHistoryReady(vin)
-            status += " · 이어 가져오기를 누르면 남은 기록부터 계속합니다."
+            status += " · 실행 중 자동 이어받기"
         } catch is CancellationError { status = "다음에 기록 가져오기를 누르면 이어집니다." }
         catch let error as URLError {
             switch error.code {

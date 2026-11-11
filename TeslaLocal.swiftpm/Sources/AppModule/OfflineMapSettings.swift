@@ -20,7 +20,7 @@ struct OfflineMapSettings: View {
                 .disabled(!downloaded || navigation.guiding)
             Button("실시간 지도 사용") { navigation.controller?.useOfflineMap(false) }
                 .disabled(navigation.controller == nil || navigation.guiding)
-            Text("지도 표시용 저장 기능임. 새 경로 탐색·재탐색과 교통정보에는 통신이 필요할 수 있음. 진행 중인 경로는 통신 소실만으로 종료하지 않음.")
+            Caption("지도 표시용 저장 기능임. 새 경로 탐색·재탐색과 교통정보에는 통신이 필요할 수 있음. 진행 중인 경로는 통신 소실만으로 종료하지 않음.")
                 .font(.caption).foregroundStyle(.secondary)
             if navigation.controller == nil { Text("카카오 지도를 먼저 열어 준비해야 함").font(.caption) }
             }.buttonStyle(.borderless)

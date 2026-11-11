@@ -354,6 +354,7 @@ enum ConnectionSection: String { case connection = "차량·NAS 연결", chargin
 struct ConnectionView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
+    @ObservedObject private var archive = FleetArchiveClient.shared
     var section: ConnectionSection = .connection
     @State private var vin = ""
     @State private var name = ""
@@ -367,6 +368,7 @@ struct ConnectionView: View {
     @State private var enroll = false
     @State private var controlEnroll = false
     @State private var fleetSetup = false
+    @State private var archiveSetup = false
     @AppStorage("backgroundBLERead") private var backgroundRead = true
     @State private var importer = false
     @State private var restoreURL: URL?
@@ -434,17 +436,38 @@ struct ConnectionView: View {
             }
             if section == .records {
             Section {
+                Button {
+                    if archiveVIN.isEmpty { fleetSetup = true }
+                    else if !archive.isConfigured { archiveSetup = true }
+                    else { Task { await archive.sync(vin: archiveVIN) } }
+                } label: {
+                    HStack {
+                        Label(archive.busy ? "동기화 중…" : "NAS 동기화", systemImage: "arrow.triangle.2.circlepath")
+                        Spacer()
+                        if archive.busy { ProgressView() }
+                    }
+                }.disabled(model.demo || archive.busy)
+                    .accessibilityIdentifier("records.nasSync")
+                Text(archive.status).font(.caption).foregroundStyle(Theme.muted)
+                DisclosureGroup("연결 설정") {
+                    Button("NAS 연결 변경") { archiveSetup = true }.disabled(model.demo || archive.busy)
+                }
+            } header: {
+                HStack {
+                    Text("NAS")
+                    Spacer()
+                    InfoNote("동기화", "처음에는 NAS에 저장된 차량 기록을 받고, 이후에는 새 기록을 이어 받습니다. 앱 실행 중에는 자동으로 갱신됩니다. 사진·수기 메모·앱 설정은 별도 파일 백업이 필요합니다.")
+                }
+            }
+            Section {
                 LabeledContent("저장된 기록", value: "운행 \(model.state.rows("trips").count)회 · 충전 \(model.state.rows("charges").count)회")
-                // v91: this read "연결 대기" whenever BLE was down, directly under a
-                // record count the NAS sync was incrementing every 30 seconds. Name
-                // whichever source is actually collecting.
-                LabeledContent("자동 누적", value: autoCollectionStatus)
-                DisclosureGroup("내보내기·복원") {
+                LabeledContent("현재 연결 상태", value: autoCollectionStatus)
+                DisclosureGroup("파일 백업·복원") {
                     Button("복구용 저장 원본 공유") { model.exportRecoveryOriginal() }.disabled(model.demo)
-                    Button("사진 포함 JSON 백업") { model.exportBackup() }
-                    Button("운행·충전 CSV 내보내기") { model.exportCSV() }
-                    Button("백업 파일 선택") { importer = true }.disabled(model.demo)
-                    Button("과거 운행·충전 기록 합치기") { historyImporter = true }.disabled(model.demo)
+                    Button("파일 백업") { model.exportBackup() }
+                    Button("CSV 내보내기") { model.exportCSV() }
+                    Button("백업 파일로 전체 교체") { importer = true }.disabled(model.demo)
+                    Button("백업 파일에서 운행·충전 합치기") { historyImporter = true }.disabled(model.demo)
                     Link("Tesla 개인정보 사본 요청 안내", destination: URL(string: "https://www.tesla.com/support/privacy")!)
                 }
             } header: {
@@ -462,6 +485,13 @@ struct ConnectionView: View {
         }.scrollContentBackground(.hidden).background(Theme.bg).navigationTitle(section.rawValue).navigationBarTitleDisplayMode(.inline).toolbar(.visible, for: .navigationBar)
             .onAppear { populate() }
             .sheet(isPresented: $fleetSetup) { TeslaFleetTokenSheet(fleet: model.fleet).environmentObject(model) }
+            .sheet(isPresented: $archiveSetup) {
+                NavigationStack {
+                    FleetTelemetryView(vin: archiveVIN, connectionSettings: true)
+                        .environmentObject(model)
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("닫기") { archiveSetup = false } } }
+                }
+            }
             .confirmationDialog("차량 제어 키 등록 요청", isPresented: $controlEnroll) { Button("제어 키 등록 요청") { link.enrollControlKey() } }
             .confirmationDialog("차량에 조회용 공개키 등록을 요청함. 차량에서 키카드 승인 필요.", isPresented: $enroll) { Button("조회 키 등록 요청") { link.enrollMonitorKey() } }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.json]) { result in
@@ -472,11 +502,15 @@ struct ConnectionView: View {
             }
             .confirmationDialog("현재 기록을 선택한 백업으로 교체함. 먼저 현재 자료 백업 필요.", isPresented: Binding(get: { restoreURL != nil }, set: { if !$0 { restoreURL = nil } })) { Button("검사 후 복원", role: .destructive) { if let url = restoreURL { model.restore(url) }; restoreURL = nil; populate() } }
     }
+    private var archiveVIN: String {
+        model.fleet.selectedVin
+    }
     private var autoCollectionStatus: String {
         if model.demo { return "예시 모드" }
         if link.authentic { return "BLE 수신 중" }
-        if model.fleet.isAuthenticated { return "서버 수집 중" }
-        return "연결 대기"
+        if archive.busy { return "NAS 기록 동기화 중" }
+        if archive.connected { return "NAS 연결됨" }
+        return "수집 상태 미확인"
     }
     private func populate() { let s = model.settings; assumedCapacity = s.number("assumedCapacityKWh") ?? 75; vin = s.string("vin"); name = s.string("name"); km = s.number("plannedKm").map { String($0) } ?? ""; reserve = s.number("reserveSOC").map { String($0) } ?? "20"; daily = s.number("dailyLimit").map { String($0) } ?? ""; tariff = s.number("tariff").map { String($0) } ?? UserDefaults.standard.string(forKey: "cost.electricity") ?? "" }
     private func saveSettings() {

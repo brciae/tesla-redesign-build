@@ -629,10 +629,14 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.secureTextFields["archive.token"].isHittable)
         XCTAssertTrue(app.staticTexts["NAS 연결 키"].exists)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "NAS labeled connection fields"; shot.lifetime = .keepAlways; add(shot)
-        for _ in 0..<3 where !app.buttons["NAS 전체 다시 받기"].isHittable { app.swipeUp() }
-        XCTAssertTrue(app.buttons["NAS 전체 다시 받기"].isHittable)
-        XCTAssertTrue(app.buttons["신규·누락 기록 가져오기"].exists)
-        XCTAssertFalse(app.buttons["NAS 전체 다시 받기"].isEnabled, "No NAS credentials must never start a recovery")
+        XCTAssertFalse(app.buttons["전체 다시 받기"].exists, "Recovery controls stay in advanced settings")
+        let advanced = app.buttons["고급·도움말"]
+        for _ in 0..<3 where !advanced.isHittable { app.swipeUp() }
+        XCTAssertTrue(advanced.isHittable); advanced.tap()
+        for _ in 0..<3 where !app.buttons["전체 다시 받기"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["전체 다시 받기"].isHittable)
+        XCTAssertFalse(app.buttons["신규·누락 기록 가져오기"].exists)
+        XCTAssertFalse(app.buttons["전체 다시 받기"].isEnabled, "No NAS credentials must never start a recovery")
         let recovery = XCTAttachment(screenshot: app.screenshot()); recovery.name = "NAS history recovery controls"; recovery.lifetime = .keepAlways; add(recovery)
     }
     func testDestinationSearchEntry() {

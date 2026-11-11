@@ -514,7 +514,7 @@ struct NavigationDisplaySettings: View {
                                 Text(String(format: "%.1f×", markerScale)).monospacedDigit().frame(width: 44)
                             }
                         }
-                        Text("배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.").font(.caption).foregroundStyle(.secondary)
+                        InfoNote("지도", "배경 지도를 선택합니다. 앱 내 길안내는 카카오 경로와 타입캐스트 음성을 사용합니다.")
                     }
                     Section("경로 탐색") {
                         Picker("카카오 탐색 기준", selection: $routePriority) {
@@ -528,7 +528,7 @@ struct NavigationDisplaySettings: View {
                     }
                     Section("내비 화면") {
                         Toggle("주행 집중 모드", isOn: $focusMode)
-                        Text("3D 차량 표시를 줄이고 지도·회전·차선·경고를 우선 표시함. 길안내와 차량 데이터 수신은 계속됨.").font(.caption).foregroundStyle(.secondary)
+                        InfoNote("주행 집중 모드", "3D 차량 표시를 줄이고 지도·회전·차선·경고를 우선 표시함. 길안내와 차량 데이터 수신은 계속됨.")
                         DashboardShadeControl()
                         Toggle("교통 변화 시 자동 재탐색", isOn: $autoTrafficReroute)
                             .onChange(of: autoTrafficReroute) { _, _ in navigation.applyTrafficPreferences() }

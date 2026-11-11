@@ -61,6 +61,7 @@ jobs:
         if: inputs.ui_screens_only != true
         with:
           name: App-Tesla ${{ steps.version.outputs.version }} Build${{ steps.version.outputs.build }} v01 Review
+          retention-days: 1
           path: Xcode/BuildOutput/*.ipa
   production-ui:
     needs: build
@@ -86,6 +87,7 @@ jobs:
         if: always()
         with:
           name: production-screens
+          retention-days: 1
           path: |
             Xcode/ProductionResults.xcresult
             Xcode/BuildOutput/InterfaceScreens/**
@@ -119,6 +121,7 @@ jobs:
         if: always()
         with:
           name: interface-screens
+          retention-days: 1
           path: |
             Xcode/InterfaceResults.xcresult
             Xcode/BuildOutput/InterfaceScreens/**

@@ -122,7 +122,7 @@ struct BatteryOverview: View {
                     let comparisonCount = min(3, Int(index.number("comparisonSampleCount") ?? 0))
                     HStack { Text("기준 \(baselineCount)/3"); Spacer(); Text("비교 \(comparisonCount)/3") }.font(.caption.weight(.medium))
                     ProgressView(value: Double(baselineCount + comparisonCount), total: 6).tint(.blue)
-                    Text("신차 대비 열화율은 확인된 동일 종류의 신차 기준이 있어야 비교 가능함.").font(.caption).foregroundStyle(.secondary)
+                    InfoNote("비교 기준", "신차 대비 열화율은 확인된 동일 종류의 신차 기준이 있어야 비교 가능함.")
                 }.accessibilityIdentifier("battery.health.progress")
             }
             NavigationLink { BatteryHealthReferenceSettingsView() } label: {
@@ -207,7 +207,7 @@ struct BatteryOverview: View {
         let rows = usage.rows("tripRows").filter { ($0.number("km") ?? 0) >= 2 && ($0.number("whPerKm") ?? 0) > 0 }.sorted { ($0.number("at") ?? 0) < ($1.number("at") ?? 0) }.suffix(20)
         return VStack(alignment: .leading, spacing: 10) {
             Text("트립별 소비량 · Wh/km").font(.headline)
-            Text("막대 하나 = 한 번의 주행. 낮을수록 적게 소비함 · 최근 20회, 2km 이상.").font(.caption).foregroundStyle(.secondary)
+            Caption("막대 하나 = 한 번의 주행. 낮을수록 적게 소비함 · 최근 20회, 2km 이상.")
             if rows.isEmpty { Text("전비 계산 가능한 트립 없음").font(.caption) }
             else {
                 Chart(Array(rows.enumerated()), id: \.offset) { i, t in

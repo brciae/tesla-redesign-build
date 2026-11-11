@@ -212,7 +212,7 @@ struct ParkingDrainView: View {
         List {
             Section {
                 Text(avg.map { String(format: "하루 %.1f%% 감소 (중앙값)", $0) } ?? "하루 환산에 충분한 잔량 변화 자료가 아직 없음").font(.headline)
-                Text("P 주차 구간은 짧아도 기록. 하루 환산 중앙값은 6시간·1%p 이상 변화 구간만 사용. 이는 측정 정밀도 조건이며 주차 판별 기준이 아님.").font(.caption).foregroundStyle(.secondary)
+                Caption("P 주차 구간은 짧아도 기록. 하루 환산 중앙값은 6시간·1%p 이상 변화 구간만 사용. 이는 측정 정밀도 조건이며 주차 판별 기준이 아님.")
             }
             if list.count > 1 {
                 Section("하루 환산 감소 (%)") {
@@ -358,8 +358,8 @@ struct TeslaExportImportView: View {
     var body: some View {
         List {
             Section {
-                Text("Tesla 요청 자료와 표준 충전 CSV·JSON을 먼저 검사한 뒤 가져옴. 파일을 고르는 것만으로 기존 기록이 바뀌지 않음.")
-                Text("시간대가 없는 시각은 UTC로 읽음. 원화가 확인되지 않은 금액과 의미가 불명확한 kWh는 계산에서 제외하고 원문 값을 보관함.").font(.caption).foregroundStyle(.secondary)
+                Text("파일 선택 → 미리보기 → 가져오기").font(.caption)
+                InfoNote("파일 가져오기", "Tesla 요청 자료와 표준 충전 CSV·JSON을 검사한 뒤 가져옴. 파일 선택만으로 기록이 바뀌지 않음. 시간대가 없으면 UTC로 읽음. 원화 미확인 금액과 의미가 불명확한 kWh는 계산에서 제외하고 원문 값을 보관함.")
             }
             if model.demo { Caption("예시 모드에서는 미리보기만 확인 가능함. 실제 기록에는 반영하지 않음.") }
             Button { picking = true } label: { Label("파일 선택·미리보기", systemImage: "doc.badge.plus") }

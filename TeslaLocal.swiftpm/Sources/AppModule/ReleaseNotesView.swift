@@ -10,6 +10,11 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.82 (182)", date: "2026-11-12", items: [
+            "기록 화면에서 NAS 동기화 버튼으로 서버 기록 가져오기",
+            "NAS 연결·파일 복원 메뉴 정리",
+            "기록·배터리·지도 화면의 긴 설명을 도움말로 이동"
+        ]),
         ReleaseNote(version: "1.81 (181)", date: "2026-11-01", items: [
             "NAS 충전 관측 시각의 저장·불러오기 허용 범위 불일치를 수정하여 재실행 시 과거 기록 전체가 차단되는 오류 해결",
             "기존 저장 파일을 먼저 별도 보존한 뒤 불러오며, 검증 실패 상태에서도 복구용 원본 파일 공유 가능",

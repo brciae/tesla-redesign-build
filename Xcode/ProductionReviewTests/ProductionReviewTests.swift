@@ -42,6 +42,9 @@ final class ProductionReviewTests: XCTestCase {
     func testMonthClosing() { review("month") }
     func testBatteryEvidence() { review("battery") }
     func testCoverage() { review("coverage") }
+    func testNASRecordSync() { review("records") }
+    func testNASConnectionHelp() { review("nas") }
+    func testOfflineMapHelp() { review("offlineMap") }
     func testImportPreview() { review("import") }
     func testInvalidImportBlocked() { review("importInvalid") }
     func testManualAutomationDraft() { review("automation") }
@@ -96,6 +99,35 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(app.descendants(matching: .any)["home.readiness"].waitForExistence(timeout: 10))
                 XCUIDevice.shared.press(.home); app.activate()
                 XCTAssertTrue(app.descendants(matching: .any)["app.launch.brand"].waitForNonExistence(timeout: 5))
+            } else if screen == "records" {
+                let sync = app.buttons["records.nasSync"]
+                XCTAssertTrue(sync.waitForExistence(timeout: 10))
+                XCTAssertTrue(sync.isHittable)
+                XCTAssertFalse(sync.isEnabled, "Demo data must not trigger real synchronization")
+                XCTAssertFalse(app.buttons["백업 파일로 전체 교체"].exists)
+                let files = app.buttons["파일 백업·복원"]
+                XCTAssertTrue(files.exists); files.tap()
+                let replace = app.buttons["백업 파일로 전체 교체"]
+                for _ in 0..<2 where !replace.isHittable { app.swipeUp() }
+                XCTAssertTrue(replace.exists); XCTAssertFalse(replace.isEnabled)
+                for _ in 0..<3 where !files.isHittable { app.swipeDown() }
+                files.tap()
+                for _ in 0..<3 where !sync.isHittable { app.swipeDown() }
+            } else if screen == "nas" {
+                XCTAssertTrue(app.textFields["archive.address"].waitForExistence(timeout: 10))
+                XCTAssertFalse(app.buttons["전체 다시 받기"].exists)
+                let advanced = app.buttons["고급·도움말"]
+                for _ in 0..<3 where !advanced.isHittable { app.swipeUp() }
+                XCTAssertTrue(advanced.exists); advanced.tap()
+                let full = app.buttons["전체 다시 받기"]
+                for _ in 0..<2 where !full.isHittable { app.swipeUp() }
+                XCTAssertTrue(full.exists); XCTAssertFalse(full.isEnabled)
+                for _ in 0..<3 where !advanced.isHittable { app.swipeDown() }
+                advanced.tap()
+                for _ in 0..<4 { app.swipeDown() }
+            } else if screen == "offlineMap" {
+                XCTAssertTrue(app.staticTexts["전체 지도 미다운로드"].waitForExistence(timeout: 10))
+                XCTAssertTrue(app.buttons["전체 지도 다운로드"].exists)
             } else if screen == "import" {
                 XCTAssertTrue(app.staticTexts["검증용 예시.csv"].waitForExistence(timeout: 10))
                 let overview = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); overview.name = "production-import-preview-overview"; overview.lifetime = .keepAlways; add(overview)

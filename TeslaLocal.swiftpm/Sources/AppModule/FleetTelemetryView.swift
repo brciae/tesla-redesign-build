@@ -72,14 +72,12 @@ struct FleetTelemetryView: View {
                     }
                     if !connectionError.isEmpty { Caption(connectionError) }
                 }
-                DisclosureGroup("기록 가져오기·연결 상태") {
-                    Text("배터리·차량 심층 분석").font(.headline)
-                    Caption("수신된 배터리 온도·전기 상태와 변화 추이를 모아 봅니다. 차량 데이터 수집 서버를 연결하면 앱을 닫은 동안의 기록도 이어갈 수 있습니다.")
+                DisclosureGroup("파일 가져오기") {
                     Text(store.status).font(.caption)
-                    Button("Telemetry 기록 가져오기") { importing = true }.disabled(vin.isEmpty)
+                    Button("파일 선택") { importing = true }.disabled(vin.isEmpty)
                     if !error.isEmpty { Caption(error) }
                 }
-                DisclosureGroup("NAS 차량 기록 서버 설정", isExpanded: $serverExpanded) {
+                DisclosureGroup("NAS 연결", isExpanded: $serverExpanded) {
                     Text("서버 주소").font(.subheadline.bold()).frame(maxWidth: .infinity, alignment: .leading)
                     TextField("https://차량서버주소", text: $serverAddress)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
@@ -88,8 +86,7 @@ struct FleetTelemetryView: View {
                     SecureField("서버 전용 키 입력", text: $serverToken)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .textFieldStyle(.roundedBorder).accessibilityIdentifier("archive.token")
-                    Text("타입캐스트 키·Tesla 토큰·NAS 비밀번호와 다릅니다. 저장 후에는 다시 입력하지 않아도 됩니다.").font(.caption).foregroundStyle(Theme.muted)
-                    Button(archive.busy ? "기록 가져오는 중…" : "연결 저장 · 기록 가져오기") {
+                    Button(archive.busy ? "동기화 중…" : "저장·동기화") {
                         do {
                             try archive.configure(address: serverAddress, token: serverToken)
                             serverToken = ""; error = ""
@@ -97,12 +94,13 @@ struct FleetTelemetryView: View {
                         } catch { self.error = error.localizedDescription }
                     }.disabled(archive.busy || vin.isEmpty)
                     Caption(archive.status)
-                    Button("신규·누락 기록 가져오기") { Task { await archive.sync(vin: vin) } }
-                        .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
-                    Button("NAS 전체 다시 받기") { confirmFullDownload = true }
-                        .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
-                    Caption("평소에는 마지막 저장 지점 이후의 데이터만 받습니다. 처음 연결하거나 전체 다시 받기를 확인한 경우에만 전체 자료를 조회합니다. 중복 검증은 원본을 보존하며 집계에서 제외합니다.")
-                    Caption("QuickConnect 관리 화면과 별도의 차량 기록 서버 주소를 사용합니다. 연결 키는 기기의 보안 저장소에 보관됩니다.")
+                    DisclosureGroup("고급·도움말") {
+                        Button("전체 다시 받기") { confirmFullDownload = true }
+                            .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
+                        Text("NAS 전용 연결 키를 사용하며 기기 보안 저장소에 보관됩니다. Tesla 토큰·NAS 비밀번호와 다릅니다.").font(.caption)
+                        Text("QuickConnect 대신 차량 기록 서버 주소를 입력하세요.").font(.caption)
+                        Text("처음에는 전체 기록, 이후에는 새 기록을 받습니다. 전체 다시 받기는 누락을 조사할 때만 사용하세요.").font(.caption)
+                    }
                 }
                 } else {
                 NavigationLink { FleetTelemetryView(vin: vin, connectionSettings: true) } label: { Label("기록 서버 연결 설정", systemImage: "externaldrive") }

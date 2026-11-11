@@ -10,4 +10,5 @@ xcodebuild test -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
   CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- || test_status=$?
 mkdir -p Xcode/BuildOutput/InterfaceScreens/Production
 xcrun xcresulttool export attachments --path Xcode/ProductionResults.xcresult --output-path Xcode/BuildOutput/InterfaceScreens/Production || true
+xcrun xcresulttool get test-results summary --path Xcode/ProductionResults.xcresult > Xcode/BuildOutput/InterfaceScreens/Production/summary.json || true
 exit "$test_status"
