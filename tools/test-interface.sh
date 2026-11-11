@@ -9,7 +9,13 @@ xcodegen generate --spec Xcode/InterfaceProbe.json --project Xcode
 # Pick an installed available iPhone simulator, not a guessed model/runtime identifier.
 device_id="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for a in d["devices"].values() for v in a if v["isAvailable"] and v["name"].startswith("iPhone")))')"
 test_filter=(-only-testing:InterfaceProbeTests)
-if [[ "${1:-}" == fullscreen ]]; then
+if [[ "${1:-}" == backup ]]; then
+  test_filter=(
+    -only-testing:InterfaceProbeTests/InteractionTests/testNASConnectionFieldsVisible
+    -only-testing:InterfaceProbeTests/InteractionTests/testSupportingCopyCollapsedDetailScrollableAndFullAddress
+    -only-testing:InterfaceProbeTests/InteractionTests/testBatteryBaselineAndPeriods
+  )
+elif [[ "${1:-}" == fullscreen ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testFullscreenChromeAcrossThemesAndRotation)
 elif [[ "${1:-}" == junction ]]; then
   test_filter=(-only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit)

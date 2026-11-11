@@ -7,6 +7,11 @@ on:
         type: choice
         options: [macos-15, macos-15-intel]
         default: macos-15
+      ui_focus:
+        description: Production screen validation scope
+        type: choice
+        options: [all, backup]
+        default: all
       skip_shared_interface:
         description: Reuse a completed interface run only when Probe sources are unchanged
         type: boolean
@@ -30,7 +35,7 @@ on:
       probe_focus:
         description: Focus for screenshot-only diagnostic runs (full builds always run all tests)
         type: choice
-        options: [all, fullscreen, junction, new, island, regression, menu, performance]
+        options: [all, fullscreen, junction, new, island, regression, menu, performance, backup]
         default: fullscreen
   push:
     branches: [main]
@@ -87,7 +92,7 @@ jobs:
           xcodegen generate --spec Xcode/project.json --project Xcode
           xcodebuild -resolvePackageDependencies -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion -clonedSourcePackagesDirPath Xcode/SourcePackages
       - name: Test actual production screens
-        run: bash tools/test-production-ui.sh
+        run: bash tools/test-production-ui.sh "${{ inputs.ui_focus || 'all' }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
