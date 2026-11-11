@@ -2,6 +2,11 @@ name: iOS Build
 on:
   workflow_dispatch:
     inputs:
+      runner_image:
+        description: Standard macOS build image
+        type: choice
+        options: [macos-15, macos-15-intel]
+        default: macos-15
       skip_shared_interface:
         description: Reuse a completed interface run only when Probe sources are unchanged
         type: boolean
@@ -32,7 +37,7 @@ on:
 jobs:
   build:
     if: inputs.ui_screens_only != true && !inputs.artifact_run_id && inputs.production_ui_only != true
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner_image || 'macos-15' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +71,7 @@ jobs:
   production-ui:
     needs: build
     if: always() && !cancelled() && inputs.skip_production_ui != true && !inputs.artifact_run_id && inputs.ui_screens_only != true && (inputs.production_ui_only == true || needs.build.result == 'success')
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner_image || 'macos-15' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +100,7 @@ jobs:
   interface:
     needs: build
     if: always() && inputs.skip_shared_interface != true && (inputs.ui_screens_only == true || needs.build.result == 'success')
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner_image || 'macos-15' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +133,7 @@ jobs:
           if-no-files-found: ignore
   extract-production-artifacts:
     if: inputs.artifact_run_id != ''
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner_image || 'macos-15' }}
     timeout-minutes: 15
     permissions:
       actions: read
