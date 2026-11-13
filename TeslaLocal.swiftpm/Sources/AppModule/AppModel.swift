@@ -297,6 +297,18 @@ final class AppModel: ObservableObject {
             }
         }
         Task { @MainActor [weak self] in
+        FleetArchiveClient.shared.captureConfiguration = { [weak self] in
+            guard let self, !self.demo else { throw CancellationError() }
+            return try NASConfigurationVault.capture(settings: self.settings)
+        }
+        FleetArchiveClient.shared.applyConfiguration = { [weak self] snapshot in
+            guard let self, !self.demo else { throw CancellationError() }
+            try NASConfigurationVault.apply(snapshot) { settings in
+                self.mutate("settings", settings)
+                if let error = self.errorMessage { throw NASConfigurationVault.failure(error) }
+            }
+            self.navigation.refreshSavedKey()
+        }
         FleetArchiveClient.shared.onHistoryReady = { [weak self] vin in
             guard let self, !self.demo, self.fleet.selectedVin == vin else { throw CancellationError() }
             try self.mergeArchiveHistory(vin: vin)

@@ -5,6 +5,7 @@ test_status=0
 test_filter=(-only-testing:ProductionReviewTests)
 if [[ "${1:-all}" == backup ]]; then
   test_filter=(
+    -only-testing:ProductionReviewTests/ProductionReviewTests/testMenuHierarchy
     -only-testing:ProductionReviewTests/ProductionReviewTests/testNASRecordSync
     -only-testing:ProductionReviewTests/ProductionReviewTests/testNASConnectionHelp
     -only-testing:ProductionReviewTests/ProductionReviewTests/testOfflineMapHelp

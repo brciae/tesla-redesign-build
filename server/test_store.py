@@ -18,6 +18,47 @@ def payload(vin=VIN, value=40):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_encrypted_vault_persists_with_compare_and_swap_without_touching_records(self):
+        import base64
+        sealed = base64.b64encode(b"opaque-encrypted-fixture" * 3).decode()
+        self.archive.ingest("tesla_V", 0, 1, VIN.encode(), payload())
+        self.assertEqual(self.archive.vault(), {"revision": 0, "sealed": ""})
+        self.assertEqual(self.archive.save_vault(0, sealed), {"revision": 1})
+        self.assertIsNone(self.archive.save_vault(0, sealed))
+        reopened = Archive(self.path)
+        self.assertEqual(reopened.vault(), {"revision": 1, "sealed": sealed})
+        self.assertEqual(len(reopened.page(VIN, 0)["payloads"]), 1)
+        for value in ("bad base64!", "", base64.b64encode(b"x" * 262145).decode()):
+            with self.assertRaises(ValueError):
+                reopened.save_vault(1, value)
+        self.assertEqual(reopened.vault()["revision"], 1)
+
+    def test_vault_http_authentication_and_conflict(self):
+        import base64
+        token = "fixture-archive-token-that-is-not-a-real-secret"
+        server = HTTPServer(("127.0.0.1", 0), handler_for(self.archive, token, {"ready": True}))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        url = "http://127.0.0.1:" + str(server.server_port) + "/v1/app-vault"
+        body = json.dumps({"revision": 0, "sealed": base64.b64encode(b"fixture" * 8).decode()}).encode()
+        try:
+            for method, data in (("GET", None), ("PUT", body)):
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    urllib.request.urlopen(urllib.request.Request(url, data=data, method=method))
+                self.assertEqual(denied.exception.code, 401)
+                denied.exception.close()
+            headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as response:
+                self.assertEqual(json.load(response)["revision"], 0)
+            with urllib.request.urlopen(urllib.request.Request(url, data=body, headers=headers, method="PUT")) as response:
+                self.assertEqual(json.load(response)["revision"], 1)
+            with self.assertRaises(urllib.error.HTTPError) as conflict:
+                urllib.request.urlopen(urllib.request.Request(url, data=body, headers=headers, method="PUT"))
+            self.assertEqual(conflict.exception.code, 409)
+            conflict.exception.close()
+        finally:
+            server.shutdown(); server.server_close(); thread.join()
+
     def test_incremental_cursor_includes_late_packets_without_full_rescan(self):
         for i in range(81):
             self.archive.ingest("tesla_V", 0, i, VIN.encode(), payload(value=i))

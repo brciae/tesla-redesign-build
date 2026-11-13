@@ -206,6 +206,10 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
         do { return try runtime.call("navGate", args) }
         catch { status = "내비 상태 처리 실패 · 안내 중단"; return nil }
     }
+    func refreshSavedKey() {
+        do { hasKey = !(try NavigationKey.read()).isEmpty }
+        catch { status = "내비 보안 키 읽기 실패" }
+    }
     deinit { networkMonitor.cancel() }
     private func current(_ value: Double) -> Bool { ticket == value && (gate("check", ["ticket": value]) as? Bool == true) }
     func saveSetup(key: String) {

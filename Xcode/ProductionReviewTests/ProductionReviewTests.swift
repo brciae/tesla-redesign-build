@@ -88,11 +88,10 @@ final class ProductionReviewTests: XCTestCase {
                     }
                     if tab == "메뉴" && appearance == "light" {
                         let menu = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); menu.name = "production-main-menu-portrait"; menu.lifetime = .keepAlways; add(menu)
-                        app.buttons["주행·안내"].tap()
+                        for _ in 0..<5 where !app.buttons["음성·내비 안내"].isHittable { app.swipeUp() }
                         app.buttons["음성·내비 안내"].tap()
                         XCTAssertTrue(app.navigationBars["음성·내비 안내"].waitForExistence(timeout: 5))
                         app.navigationBars["음성·내비 안내"].buttons.element(boundBy: 0).tap()
-                        app.navigationBars["주행·안내"].buttons.element(boundBy: 0).tap()
                     }
                 }
                 XCTAssertTrue(app.buttons["home.chat"].exists)
@@ -239,11 +238,12 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["온도 대기 중"].waitForExistence(timeout: 5))
                 details.tap()
             } else if screen == "menu" {
-                XCTAssertTrue(app.buttons["주행·안내"].waitForExistence(timeout: 10))
-                XCTAssertFalse(app.buttons["음성·내비 안내"].exists)
-                app.buttons["주행·안내"].tap()
-                XCTAssertTrue(app.buttons["음성·내비 안내"].waitForExistence(timeout: 5))
-                app.navigationBars["주행·안내"].buttons.element(boundBy: 0).tap()
+                XCTAssertTrue(app.buttons["NAS 동기화"].waitForExistence(timeout: 10))
+                XCTAssertEqual(app.buttons.matching(identifier: "NAS 동기화").count, 1)
+                XCTAssertFalse(app.buttons["주행·안내"].exists, "Categories must not add a navigation level")
+                app.buttons["NAS 동기화"].tap()
+                XCTAssertTrue(app.buttons["records.nasSync"].waitForExistence(timeout: 5))
+                app.navigationBars["NAS 동기화"].buttons.element(boundBy: 0).tap()
             }
             else if screen == "month" { XCTAssertTrue(app.navigationBars["월간 결산"].waitForExistence(timeout: 10)) }
             // Accessibility state changes before disclosure/navigation animations finish.

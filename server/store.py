@@ -33,6 +33,9 @@ class Archive:
                 CREATE TABLE IF NOT EXISTS offsets (
                     topic TEXT NOT NULL, partition INTEGER NOT NULL,
                     offset INTEGER NOT NULL, PRIMARY KEY(topic,partition));
+                CREATE TABLE IF NOT EXISTS app_vault (
+                    id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+                    sealed TEXT NOT NULL);
             """)
 
     @contextmanager
@@ -89,6 +92,30 @@ class Archive:
                 "last_vehicle_received_at": last,
                 "connectivity_events": counts.get("tesla_connectivity", 0),
                 "error_events": counts.get("tesla_errors", 0)}
+
+    def vault(self):
+        with self.connect() as db:
+            row = db.execute("SELECT revision,sealed FROM app_vault WHERE id=1").fetchone()
+        return {"revision": row[0], "sealed": row[1]} if row else {"revision": 0, "sealed": ""}
+
+    def save_vault(self, revision, sealed):
+        # The server stores only the client's authenticated AES-GCM envelope.
+        if type(revision) is not int or revision < 0 or not isinstance(sealed, str):
+            raise ValueError("invalid vault")
+        import base64
+        try:
+            raw = base64.b64decode(sealed, validate=True)
+        except (ValueError, TypeError):
+            raise ValueError("invalid vault")
+        if not 29 <= len(raw) <= 262144:
+            raise ValueError("invalid vault size")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT revision FROM app_vault WHERE id=1").fetchone()
+            if (row[0] if row else 0) != revision:
+                return None
+            db.execute("INSERT INTO app_vault VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,sealed=excluded.sealed", (revision + 1, sealed))
+        return {"revision": revision + 1}
 
     def page(self, vin, after, limit=40):
         if not VIN.fullmatch(vin) or after < 0 or not 1 <= limit <= 40:
@@ -161,6 +188,11 @@ def handler_for(archive, token, health, dashboard_token=None, dashboard_vin=None
                     return self.reply(503, {"error": "storage_unavailable"})
             if not hmac.compare_digest(auth.encode(), ("Bearer " + token).encode()):
                 return self.reply(401, {"error": "authentication_required"})
+            if route.path == "/v1/app-vault":
+                try:
+                    return self.reply(200, archive.vault())
+                except sqlite3.Error:
+                    return self.reply(503, {"error": "storage_unavailable"})
             if route.path not in ("/v1/telemetry", "/v1/status"):
                 return self.reply(404, {"error": "not_found"})
             try:
@@ -173,6 +205,26 @@ def handler_for(archive, token, health, dashboard_token=None, dashboard_vin=None
                 return self.reply(200, page)
             except (ValueError, TypeError):
                 return self.reply(400, {"error": "invalid_request"})
+            except sqlite3.Error:
+                return self.reply(503, {"error": "storage_unavailable"})
+
+        def do_PUT(self):
+            if not hmac.compare_digest(self.headers.get("Authorization", "").encode(), ("Bearer " + token).encode()):
+                return self.reply(401, {"error": "authentication_required"})
+            if self.path != "/v1/app-vault":
+                return self.reply(404, {"error": "not_found"})
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if not 1 <= size <= 360000 or self.headers.get("Transfer-Encoding"):
+                    return self.reply(413, {"error": "invalid_size"})
+                raw = self.rfile.read(size)
+                if len(raw) != size:
+                    raise ValueError("incomplete body")
+                obj = json.loads(raw)
+                result = archive.save_vault(obj["revision"], obj["sealed"])
+                return self.reply(200 if result else 409, result or {"error": "revision_conflict"})
+            except (ValueError, TypeError, KeyError):
+                return self.reply(400, {"error": "invalid_vault"})
             except sqlite3.Error:
                 return self.reply(503, {"error": "storage_unavailable"})
     return Handler

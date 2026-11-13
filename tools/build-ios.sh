@@ -39,6 +39,8 @@ Xcode/NavigationPipLifecycleTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/SpotifyPlaybackPolicy.swift tools/spotify-policy-tests.swift -o Xcode/SpotifyPolicyTests
 Xcode/SpotifyPolicyTests
 xcrun swiftc -frontend -parse TeslaLocal.swiftpm/Sources/AppModule/*.swift
+swiftc TeslaLocal.swiftpm/Sources/AppModule/NASConfigurationVault.swift tools/nas-vault-tests.swift -o Xcode/NASVaultTests
+Xcode/NASVaultTests
 swiftc Xcode/LiveActivityShared/NavigationCardFormat.swift Xcode/LiveActivityShared/GuidanceCardLabel.swift Xcode/LiveActivityShared/VehicleActivitySessionPolicy.swift tools/guidance-card-tests.swift -o Xcode/GuidanceCardTests
 Xcode/GuidanceCardTests
 swiftc TeslaLocal.swiftpm/Sources/AppModule/MediaPlaybackSource.swift tools/media-source-tests.swift -o Xcode/MediaSourceTests

@@ -90,10 +90,11 @@ struct FleetTelemetryView: View {
                         do {
                             try archive.configure(address: serverAddress, token: serverToken)
                             serverToken = ""; error = ""
-                            Task { await archive.sync(vin: vin) }
+                            Task { await archive.syncAll(vin: vin) }
                         } catch { self.error = error.localizedDescription }
-                    }.disabled(archive.busy || vin.isEmpty)
+                    }.disabled(archive.busy)
                     Caption(archive.status)
+                    Caption(archive.configurationStatus)
                     DisclosureGroup("고급·도움말") {
                         Button("전체 다시 받기") { confirmFullDownload = true }
                             .disabled(archive.busy || vin.isEmpty || archive.address.isEmpty)
@@ -103,7 +104,7 @@ struct FleetTelemetryView: View {
                     }
                 }
                 } else {
-                NavigationLink { FleetTelemetryView(vin: vin, connectionSettings: true) } label: { Label("기록 서버 연결 설정", systemImage: "externaldrive") }
+                NavigationLink("NAS 동기화", value: Page.recordSettings)
                 if ["ModuleTempMin", "ModuleTempMax", "PackVoltage", "PackCurrent", "EnergyRemaining", "NominalFullPackEnergyKwh"].contains(where: { latest[$0]?.number != nil && latest[$0]?.invalid == false }) { InfoCard {
                     Text("배터리 열관리·전기 상태").font(.headline)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {

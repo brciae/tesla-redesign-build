@@ -350,7 +350,7 @@ struct AutomationUtilitiesView: View {
     }
 
 }
-enum ConnectionSection: String { case connection = "차량·NAS 연결", charging = "충전 계획·요금", records = "기록·백업" }
+enum ConnectionSection: String { case connection = "차량 연결", charging = "충전 계획·요금", records = "NAS 동기화" }
 struct ConnectionView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
@@ -380,11 +380,6 @@ struct ConnectionView: View {
             Section("Tesla 계정·차량") {
                 Button("Tesla 계정 로그인·차량 선택") { fleetSetup = true }
                 Text(model.fleet.vehicleDisplayStatus).font(.caption)
-            }
-            Section("인터넷 차량 기록") {
-                NavigationLink { FleetTelemetryView(vin: model.fleet.selectedVin, connectionSettings: true) } label: {
-                    Label("NAS 연결·차량 수집 설정", systemImage: "externaldrive.connected.to.line.below")
-                }
             }
             Section {
                 TextField("표시 이름", text: $name)
@@ -437,9 +432,8 @@ struct ConnectionView: View {
             if section == .records {
             Section {
                 Button {
-                    if archiveVIN.isEmpty { fleetSetup = true }
-                    else if !archive.isConfigured { archiveSetup = true }
-                    else { Task { await archive.sync(vin: archiveVIN) } }
+                    if !archive.isConfigured { archiveSetup = true }
+                    else { Task { await archive.syncAll(vin: archiveVIN) } }
                 } label: {
                     HStack {
                         Label(archive.busy ? "동기화 중…" : "NAS 동기화", systemImage: "arrow.triangle.2.circlepath")
@@ -449,14 +443,14 @@ struct ConnectionView: View {
                 }.disabled(model.demo || archive.busy)
                     .accessibilityIdentifier("records.nasSync")
                 Text(archive.status).font(.caption).foregroundStyle(Theme.muted)
-                DisclosureGroup("연결 설정") {
-                    Button("NAS 연결 변경") { archiveSetup = true }.disabled(model.demo || archive.busy)
-                }
+                Text(archive.configurationStatus).font(.caption).foregroundStyle(Theme.muted)
+                Button("NAS 설정") { archiveSetup = true }.disabled(model.demo || archive.busy)
+                if archiveVIN.isEmpty { Button("Tesla 로그인") { fleetSetup = true } }
             } header: {
                 HStack {
                     Text("NAS")
                     Spacer()
-                    InfoNote("동기화", "처음에는 NAS에 저장된 차량 기록을 받고, 이후에는 새 기록을 이어 받습니다. 앱 실행 중에는 자동으로 갱신됩니다. 사진·수기 메모·앱 설정은 별도 파일 백업이 필요합니다.")
+                    InfoNote("동기화", "차량 기록과 키·설정을 NAS와 동기화합니다. 처음에는 NAS 설정을 복원하며, 이후 기기에서 바꾼 설정을 저장합니다. NAS 주소·연결 키는 처음 한 번 입력해야 합니다. Tesla·Spotify 로그인과 휴대폰 BLE 키는 다시 등록해야 합니다. 사진·수기 메모는 파일 백업을 사용하세요. 키·설정은 이 버튼으로 동기화하며 차량 기록은 앱 실행 중 자동 갱신됩니다.")
                 }
             }
             Section {
