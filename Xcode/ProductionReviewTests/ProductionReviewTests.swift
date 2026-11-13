@@ -238,6 +238,8 @@ final class ProductionReviewTests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["온도 대기 중"].waitForExistence(timeout: 5))
                 details.tap()
             } else if screen == "menu" {
+                XCTAssertTrue(app.tabBars.buttons["메뉴"].waitForExistence(timeout: 10))
+                app.tabBars.buttons["메뉴"].tap()
                 XCTAssertTrue(app.buttons["NAS 동기화"].waitForExistence(timeout: 10))
                 XCTAssertEqual(app.buttons.matching(identifier: "NAS 동기화").count, 1)
                 XCTAssertFalse(app.buttons["주행·안내"].exists, "Categories must not add a navigation level")

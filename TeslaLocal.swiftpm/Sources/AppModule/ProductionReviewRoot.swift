@@ -7,7 +7,7 @@ struct ProductionReviewRoot: View {
     private var screen: String { let args = ProcessInfo.processInfo.arguments; guard let i = args.firstIndex(of: "--ui-review-screen"), i + 1 < args.count else { return "home" }; return args[i + 1] }
     var body: some View {
         Group {
-            if screen == "home" { MainView(model: model, link: model.link, navigation: model.navigation) }
+            if screen == "home" || screen == "menu" { MainView(model: model, link: model.link, navigation: model.navigation) }
             else if screen == "driving" || screen == "focus" { DrivingWorkspace(navigation: model.navigation, link: model.link).environment(\.colorScheme, .dark) }
             else { NavigationStack {
                 switch screen {
@@ -28,7 +28,6 @@ struct ProductionReviewRoot: View {
                 case "batterySummary": BatteryView()
                 case "climate": TeslaInteractiveClimateView(link: model.link).navigationTitle("실내 공조").navigationBarTitleDisplayMode(.inline)
                 case "parking": ScrollView { SmartParkingCard(link: model.link).padding() }.navigationTitle("주차 기록").navigationBarTitleDisplayMode(.inline)
-                case "menu": MenuTabRootView(link: model.link, navigation: model.navigation)
                 default: Text("Unknown review screen")
                 }
             } }
