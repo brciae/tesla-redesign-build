@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 typealias Object = [String: Any]
 // No vendor client or external API is used by this executable.
@@ -51,6 +52,22 @@ final class TypecastClient {
         let firstOrder = try NASConfigurationVault.encodePreference(["tariff": 245.75, "radius": 150.0])
         let otherOrder = try NASConfigurationVault.encodePreference(["radius": 150.0, "tariff": 245.75])
         assert(firstOrder == otherOrder, "Equivalent settings must not look dirty")
+        let compact = NASConfigurationVault.makeBaseline(saved, token: key)
+        assert(!NASConfigurationVault.hasChanges(saved, baseline: compact, token: key))
+        assert(NASConfigurationVault.hasChanges(changed, baseline: compact, token: key))
+        assert(NASConfigurationVault.merge(local: changed, remote: saved, baseline: compact, baselineToken: key).entries["key.kakao"] == "changed")
+        assert(NASConfigurationVault.merge(local: .init(), remote: saved, baseline: compact, baselineToken: key).entries.isEmpty)
+        let large = NASConfigurationVault.Snapshot(entries: ["appearance.asset.fixture": String(repeating: "x", count: 2_000_000)])
+        let largeBaseline = try JSONEncoder().encode(NASConfigurationVault.makeBaseline(large, token: key))
+        assert(largeBaseline.count < 512)
+        let baseSettings = NASConfigurationVault.Snapshot(entries: ["setting.tariff": "100", "setting.homePoint": "old-address"])
+        let feeEdit = NASConfigurationVault.Snapshot(entries: ["setting.tariff": "200", "setting.homePoint": "old-address"])
+        let addressEdit = NASConfigurationVault.Snapshot(entries: ["setting.tariff": "100", "setting.homePoint": "new-address"])
+        let combined = NASConfigurationVault.merge(local: feeEdit, remote: addressEdit,
+            baseline: NASConfigurationVault.makeBaseline(baseSettings, token: key), baselineToken: key)
+        assert(combined.entries["setting.tariff"] == "200" && combined.entries["setting.homePoint"] == "new-address")
+        assert(NASConfigurationVault.credentials.first { $0.id == "tesla.secret" }!.accessibility as String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        assert(NASConfigurationVault.credentials.first { $0.id == "kakao" }!.accessibility as String == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
         print("NAS vault merge, fresh install, multi-device, encryption and integrity tests passed")
     }
 }

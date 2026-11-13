@@ -13,6 +13,9 @@ enum NASConfigurationVault {
         let id: String
         let service: String?
         let account: String
+        var accessibility: CFString {
+            account.hasPrefix("TeslaFleetClient.") ? kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly : kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        }
         var query: [String: Any] {
             var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: account]
             if let service { q[kSecAttrService as String] = service }
@@ -78,9 +81,9 @@ enum NASConfigurationVault {
             if name == "typecastApiKeys", let keys = value as? [String], keys.allSatisfy({ $0.isEmpty }) { continue }
             result.entries["pref." + name] = try encodePreference(value)
         }
-        if !settings.isEmpty {
-            let data = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])
-            result.entries["vehicle.settings"] = String(decoding: data, as: UTF8.self)
+        for (name, value) in settings {
+            let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys])
+            result.entries["setting." + name] = String(decoding: data, as: UTF8.self)
         }
         return result
     }
@@ -96,10 +99,9 @@ enum NASConfigurationVault {
             guard validPreference(name, value) else { throw failure("설정 백업 형식을 확인하세요.") }
             decoded[name] = value
         }
-        var vehicle: Object?
-        if let text = snapshot.entries["vehicle.settings"] {
-            guard let value = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? Object else { throw failure("차량 설정 백업 형식 오류") }
-            vehicle = value
+        var vehicle: Object = [:]
+        for (name, text) in snapshot.entries where name.hasPrefix("setting.") {
+            vehicle[String(name.dropFirst(8))] = try JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed])
         }
         for item in credentials {
             guard let text = snapshot.entries["key." + item.id], !text.isEmpty else { continue }
@@ -111,7 +113,7 @@ enum NASConfigurationVault {
                 guard code == errSecSuccess || code == errSecItemNotFound else { throw failure("키 변경 반영 실패 · 다시 동기화하세요.") }
                 continue
             }
-            let attrs: [String: Any] = [kSecValueData as String: Data(text.utf8), kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+            let attrs: [String: Any] = [kSecValueData as String: Data(text.utf8), kSecAttrAccessible as String: item.accessibility]
             var code = SecItemUpdate(item.query as CFDictionary, attrs as CFDictionary)
             if code == errSecItemNotFound {
                 var q = item.query; attrs.forEach { q[$0.key] = $0.value }
@@ -123,7 +125,7 @@ enum NASConfigurationVault {
             UserDefaults.standard.removeObject(forKey: name)
         }
         decoded.forEach { UserDefaults.standard.set($0.value, forKey: $0.key) }
-        if let vehicle { try settings(vehicle) }
+        if !vehicle.isEmpty { try settings(vehicle) }
         // These clients cache their setup while the app is running. Refresh without API requests.
         if let keys = decoded["typecastApiKeys"] as? [String], !keys.isEmpty {
             TypecastClient.shared.apiKeys = keys
@@ -138,12 +140,35 @@ enum NASConfigurationVault {
         if name == "typecastEnabled" { return value is Bool }
         return PropertyListSerialization.propertyList(["value": value], isValidFor: .binary)
     }
-    static func merge(local: Snapshot, remote: Snapshot, baseline: Snapshot?) -> Snapshot {
+    private static let baselineMarker = "__baseline.hmac.v1"
+    private static func fingerprint(_ name: String, _ value: String, token: String) -> String {
+        Data(HMAC<SHA256>.authenticationCode(for: Data((name + "\0" + value).utf8), using: key(token: token, purpose: "comparison"))).base64EncodedString()
+    }
+    static func makeBaseline(_ snapshot: Snapshot, token: String) -> Snapshot {
+        var result = Snapshot()
+        for (name, value) in snapshot.entries { result.entries[name] = fingerprint(name, value, token: token) }
+        result.entries[baselineMarker] = "1"
+        return result
+    }
+    private static func differs(_ name: String, local: Snapshot, baseline: Snapshot, token: String?) -> Bool {
+        if baseline.entries[baselineMarker] == "1", let token {
+            return local.entries[name].map { fingerprint(name, $0, token: token) } != baseline.entries[name]
+        }
+        return local.entries[name] != baseline.entries[name]
+    }
+    static func hasChanges(_ local: Snapshot, baseline: Snapshot?, token: String) -> Bool {
+        guard let baseline else { return true }
+        return Set(local.entries.keys).union(baseline.entries.keys).filter { $0 != baselineMarker }.contains {
+            differs($0, local: local, baseline: baseline, token: token)
+        }
+    }
+    static func merge(local: Snapshot, remote: Snapshot, baseline: Snapshot?, baselineToken: String? = nil) -> Snapshot {
         var result = remote
         // A fresh installation cannot erase NAS values. After a baseline exists, explicit
         // edits and removals propagate; unchanged local values follow the latest NAS state.
         if let baseline {
-            for key in Set(local.entries.keys).union(baseline.entries.keys) where local.entries[key] != baseline.entries[key] {
+            if baseline.entries[baselineMarker] == "1" && baselineToken == nil { return remote }
+            for key in Set(local.entries.keys).union(baseline.entries.keys) where key != baselineMarker && differs(key, local: local, baseline: baseline, token: baselineToken) {
                 result.entries[key] = local.entries[key]
             }
         } else {
@@ -151,9 +176,9 @@ enum NASConfigurationVault {
         }
         return result
     }
-    private static func key(token: String) -> SymmetricKey {
+    private static func key(token: String, purpose: String = "configuration") -> SymmetricKey {
         HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data(token.utf8)),
-                              salt: Data("YLCompanion.NAS.vault.v1".utf8), info: Data("configuration".utf8), outputByteCount: 32)
+                              salt: Data("YLCompanion.NAS.vault.v1".utf8), info: Data(purpose.utf8), outputByteCount: 32)
     }
     static func seal(_ snapshot: Snapshot, token: String) throws -> String {
         let data = try JSONEncoder().encode(snapshot)

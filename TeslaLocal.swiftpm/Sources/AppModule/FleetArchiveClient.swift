@@ -155,7 +155,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
             let baselineKey = "fleet.archive.vault.baseline." + SHA256.hash(data: Data(base.utf8)).map { String(format: "%02x", $0) }.joined()
             let baseline = UserDefaults.standard.string(forKey: baselineKey).flatMap { try? NASConfigurationVault.open($0, token: key) }
             let local = try captureConfiguration()
-            if !force, local == baseline, Date().timeIntervalSince(lastConfigurationRead) < 300 { return }
+            if !force, !NASConfigurationVault.hasChanges(local, baseline: baseline, token: key), Date().timeIntervalSince(lastConfigurationRead) < 300 { return }
             lastConfigurationAttempt = Date()
             guard let url = URL(string: base + "/v1/app-vault") else { throw NASConfigurationVault.failure("NAS 주소 확인 필요") }
             var request = URLRequest(url: url)
@@ -169,7 +169,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
             guard envelope.revision >= 0, (envelope.revision == 0) == envelope.sealed.isEmpty else { throw NASConfigurationVault.failure("설정 백업 응답 오류") }
             let remote = envelope.sealed.isEmpty ? NASConfigurationVault.Snapshot() : try NASConfigurationVault.open(envelope.sealed, token: key)
             guard try captureConfiguration() == local else { throw NASConfigurationVault.failure("동기화 중 설정이 바뀜 · 다시 동기화하세요.") }
-            let merged = NASConfigurationVault.merge(local: local, remote: remote, baseline: baseline)
+            let merged = NASConfigurationVault.merge(local: local, remote: remote, baseline: baseline, baselineToken: key)
             // Never apply an obsolete read if another device wrote while this request ran.
             if merged != remote {
                 request.httpMethod = "PUT"
@@ -186,7 +186,8 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
             }
             if merged != local { try applyConfiguration(merged) }
             // Store only encrypted synchronization metadata on this device.
-            UserDefaults.standard.set(try NASConfigurationVault.seal(try captureConfiguration(), token: key), forKey: baselineKey)
+            let nextBaseline = NASConfigurationVault.makeBaseline(try captureConfiguration(), token: key)
+            UserDefaults.standard.set(try NASConfigurationVault.seal(nextBaseline, token: key), forKey: baselineKey)
             lastConfigurationRead = Date()
             configurationStatus = "키·설정 동기화됨"
         } catch {

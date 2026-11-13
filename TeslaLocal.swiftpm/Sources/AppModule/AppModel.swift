@@ -315,7 +315,9 @@ final class AppModel: ObservableObject {
                 try self.automations.restoreConfiguration(data)
             }
             try NASConfigurationVault.apply(snapshot) { settings in
-                self.mutate("settings", settings)
+                var restored = settings
+                for name in self.settings.keys where settings[name] == nil { restored[name] = NSNull() }
+                self.mutate("settings", restored)
                 if let error = self.errorMessage { throw NASConfigurationVault.failure(error) }
             }
             self.navigation.refreshSavedKey()

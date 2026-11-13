@@ -21,7 +21,7 @@ assert.deepEqual(missing, [], 'Every UI input must be synchronized or have an ex
 for (const key of ['navigation.home', 'charging.favorites.v1', 'cost.gasoline', 'warranty.start.', 'vehicle.reference.', 'appearance.v1.', 'automationAPI.model.']) {
   assert(allowed.has(key), 'Missing independently persisted entered data: ' + key);
 }
-assert(vault.includes('vehicle.settings'), 'Tariff tables, home geofences and battery references must be included');
+assert(vault.includes('"setting."'), 'Tariff tables, home geofences and battery references must be included per field');
 const model = fs.readFileSync(path.join(root, 'AppModel.swift'), 'utf8');
 assert(model.includes('automation.rules') && model.includes('appearance.asset.'), 'Rule files and referenced appearance assets must be included');
 console.log(`PASS: ${count} UI setting declarations covered; tariffs, addresses, favorites, warranty, automation and appearance assets included`);
