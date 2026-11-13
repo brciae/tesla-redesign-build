@@ -57,6 +57,8 @@ final class TypecastClient {
         assert(NASConfigurationVault.hasChanges(changed, baseline: compact, token: key))
         assert(NASConfigurationVault.merge(local: changed, remote: saved, baseline: compact, baselineToken: key).entries["key.kakao"] == "changed")
         assert(NASConfigurationVault.merge(local: .init(), remote: saved, baseline: compact, baselineToken: key).entries.isEmpty)
+        assert(NASConfigurationVault.merge(local: saved, remote: .init(), baseline: compact, baselineToken: key, remoteRevision: 0) == saved,
+               "An empty NAS must not erase the remaining phone configuration after server recovery")
         let large = NASConfigurationVault.Snapshot(entries: ["appearance.asset.fixture": String(repeating: "x", count: 2_000_000)])
         let largeBaseline = try JSONEncoder().encode(NASConfigurationVault.makeBaseline(large, token: key))
         assert(largeBaseline.count < 512)

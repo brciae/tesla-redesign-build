@@ -169,7 +169,7 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
             guard envelope.revision >= 0, (envelope.revision == 0) == envelope.sealed.isEmpty else { throw NASConfigurationVault.failure("설정 백업 응답 오류") }
             let remote = envelope.sealed.isEmpty ? NASConfigurationVault.Snapshot() : try NASConfigurationVault.open(envelope.sealed, token: key)
             guard try captureConfiguration() == local else { throw NASConfigurationVault.failure("동기화 중 설정이 바뀜 · 다시 동기화하세요.") }
-            let merged = NASConfigurationVault.merge(local: local, remote: remote, baseline: baseline, baselineToken: key)
+            let merged = NASConfigurationVault.merge(local: local, remote: remote, baseline: baseline, baselineToken: key, remoteRevision: envelope.revision)
             // Never apply an obsolete read if another device wrote while this request ran.
             if merged != remote {
                 request.httpMethod = "PUT"

@@ -194,11 +194,11 @@ enum NASConfigurationVault {
             differs($0, local: local, baseline: baseline, token: token)
         }
     }
-    static func merge(local: Snapshot, remote: Snapshot, baseline: Snapshot?, baselineToken: String? = nil) -> Snapshot {
+    static func merge(local: Snapshot, remote: Snapshot, baseline: Snapshot?, baselineToken: String? = nil, remoteRevision: Int? = nil) -> Snapshot {
         var result = remote
         // A fresh installation cannot erase NAS values. After a baseline exists, explicit
         // edits and removals propagate; unchanged local values follow the latest NAS state.
-        if let baseline {
+        if let baseline, remoteRevision != 0 {
             if baseline.entries[baselineMarker] == "1" && baselineToken == nil { return remote }
             for key in Set(local.entries.keys).union(baseline.entries.keys) where key != baselineMarker && differs(key, local: local, baseline: baseline, token: baselineToken) {
                 result.entries[key] = local.entries[key]
