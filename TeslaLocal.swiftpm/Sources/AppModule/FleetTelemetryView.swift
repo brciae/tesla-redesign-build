@@ -92,7 +92,7 @@ struct FleetTelemetryView: View {
                             serverToken = ""; error = ""
                             Task { await archive.syncAll(vin: vin) }
                         } catch { self.error = error.localizedDescription }
-                    }.disabled(archive.busy)
+                    }.disabled(model.demo || archive.busy)
                     Caption(archive.status)
                     Caption(archive.configurationStatus)
                     DisclosureGroup("고급·도움말") {
