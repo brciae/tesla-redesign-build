@@ -1,5 +1,6 @@
 // v29 regression tests: route gate (stop / jitter / absence) and per-group freshness.
 const path = require('path');
+require('./nas-settings-coverage-tests.cjs');
 require('./v166-regression-tests.cjs');
 const C = require(path.join(__dirname, '../TeslaLocal.swiftpm/Sources/AppModule/Resources/analysis.js'));
 const chargeAssert = require('node:assert/strict');

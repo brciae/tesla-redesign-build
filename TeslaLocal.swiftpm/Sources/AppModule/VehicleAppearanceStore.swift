@@ -44,6 +44,34 @@ final class VehicleAppearanceStore: ObservableObject {
         guard let id, UUID(uuidString: id) != nil else { return nil }
         return folder.appendingPathComponent(id + ".png")
     }
+    func configurationAssets() throws -> [String: String] {
+        var result: [String: String] = [:]
+        var total = 0
+        for (key, data) in defaults.dictionaryRepresentation() where key.hasPrefix("appearance.v1.") {
+            guard let data = data as? Data else { continue }
+            let appearance = try JSONDecoder().decode(VehicleAppearance.self, from: data)
+            guard let id = appearance.imageID, let url = imageURL(id), result[id] == nil else { continue }
+            let image = try Data(contentsOf: url)
+            total += image.count
+            guard total <= 12_000_000, image.count <= 8_000_000 else { throw LocalError.message("차꾸미기 이미지 백업 크기 초과") }
+            result[id] = image.base64EncodedString()
+        }
+        return result
+    }
+    func restoreConfigurationAssets(_ assets: [String: String]) throws {
+        var decoded: [(URL, Data)] = []
+        var total = 0
+        for (id, text) in assets {
+            guard let url = imageURL(id), let data = Data(base64Encoded: text), data.count <= 8_000_000,
+                  data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]), UIImage(data: data) != nil else { throw LocalError.message("차꾸미기 이미지 백업 형식 오류") }
+            total += data.count
+            guard total <= 12_000_000 else { throw LocalError.message("차꾸미기 이미지 백업 크기 초과") }
+            decoded.append((url, data))
+        }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for (url, data) in decoded { try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+        revision += 1
+    }
     // Downsample before decoding a full camera image; no metadata/location retained.
     func importImage(_ data: Data) throws -> String {
         guard data.count <= 12_000_000, let source = CGImageSourceCreateWithData(data as CFData, nil),

@@ -66,6 +66,23 @@ final class AutomationCoordinator: ObservableObject {
         do { try persist(); publish(); settingsDidChange?() }
         catch { policy.document = old; throw error }
     }
+    func configurationData() throws -> Data {
+        guard !blocked else { throw AutomationError.invalid }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(rules)
+    }
+    func restoreConfiguration(_ data: Data) throws {
+        let restored = try JSONDecoder().decode([AutomationRule].self, from: data)
+        guard restored.count <= 40, Set(restored.map(\.id)).count == restored.count else { throw AutomationError.invalid }
+        for rule in restored { try rule.validate() }
+        guard restored != rules else { return }
+        let old = policy.document
+        policy.document.rules = restored
+        // Keep this device's execution journal and suppress replay of historical triggers.
+        policy.settingsChanged(); sample = nil
+        do { try persist(); publish(); settingsDidChange?() }
+        catch { policy.document = old; throw error }
+    }
     func enable(_ id: String, _ enabled: Bool) {
         guard var rule = rules.first(where: { $0.id == id }) else { return }
         rule.enabled = enabled

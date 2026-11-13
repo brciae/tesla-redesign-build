@@ -11,6 +11,11 @@ import SwiftUI
         }
     }
     func contains(_ id: String) -> Bool { favorites.contains { $0.id == id } }
+    func reloadConfiguration() {
+        let data = UserDefaults.standard.data(forKey: "charging.favorites.v1") ?? Data()
+        favorites = Array(((try? JSONDecoder().decode([Favorite].self, from: data)) ?? []).prefix(100))
+        policy = ChargingAvailabilityPolicy()
+    }
     func watches(_ id: String) -> Bool { favorites.first { $0.id == id }?.watching == true }
     func toggleFavorite(_ site: NearbyChargingSite) {
         if contains(site.id) { favorites.removeAll { $0.id == site.id }; policy.reset(site.id) }

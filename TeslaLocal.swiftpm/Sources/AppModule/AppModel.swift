@@ -299,15 +299,28 @@ final class AppModel: ObservableObject {
         Task { @MainActor [weak self] in
         FleetArchiveClient.shared.captureConfiguration = { [weak self] in
             guard let self, !self.demo else { throw CancellationError() }
-            return try NASConfigurationVault.capture(settings: self.settings)
+            guard !self.recoveryLock else { throw NASConfigurationVault.failure("기기 저장 원본 보호 중 · 설정 백업 보류") }
+            var snapshot = try NASConfigurationVault.capture(settings: self.settings)
+            snapshot.entries["automation.rules"] = try self.automations.configurationData().base64EncodedString()
+            for (id, data) in try VehicleAppearanceStore.shared.configurationAssets() { snapshot.entries["appearance.asset." + id] = data }
+            return snapshot
         }
         FleetArchiveClient.shared.applyConfiguration = { [weak self] snapshot in
             guard let self, !self.demo else { throw CancellationError() }
+            guard !self.recoveryLock else { throw NASConfigurationVault.failure("기기 저장 원본 보호 중 · 설정 복원 보류") }
+            let assets = Dictionary(uniqueKeysWithValues: snapshot.entries.filter { $0.key.hasPrefix("appearance.asset.") }.map { (String($0.key.dropFirst("appearance.asset.".count)), $0.value) })
+            try VehicleAppearanceStore.shared.restoreConfigurationAssets(assets)
+            if let text = snapshot.entries["automation.rules"] {
+                guard let data = Data(base64Encoded: text) else { throw NASConfigurationVault.failure("자동화 설정 백업 형식 오류") }
+                try self.automations.restoreConfiguration(data)
+            }
             try NASConfigurationVault.apply(snapshot) { settings in
                 self.mutate("settings", settings)
                 if let error = self.errorMessage { throw NASConfigurationVault.failure(error) }
             }
             self.navigation.refreshSavedKey()
+            ChargingWatchStore.shared.reloadConfiguration()
+            if let name = snapshot.entries["key.tesla.region"], let region = FleetRegion(rawValue: name) { self.fleet.saveRegion(region) }
         }
         FleetArchiveClient.shared.onHistoryReady = { [weak self] vin in
             guard let self, !self.demo, self.fleet.selectedVin == vin else { throw CancellationError() }
@@ -457,10 +470,12 @@ final class AppModel: ObservableObject {
         let active = UIApplication.shared.applicationState == .active
         guard !demo,
               Date().timeIntervalSince(lastArchiveSync) >= (active ? 30 : 120), !FleetArchiveClient.shared.address.isEmpty,
-              !fleet.selectedVin.isEmpty else { return }
+              FleetArchiveClient.shared.isConfigured else { return }
         lastArchiveSync = Date()
         let vin = fleet.selectedVin
-            await FleetArchiveClient.shared.sync(vin: vin)
+            if active { await FleetArchiveClient.shared.syncAll(vin: vin, forceConfiguration: false) }
+            else if !vin.isEmpty { await FleetArchiveClient.shared.sync(vin: vin) }
+            guard !vin.isEmpty else { return }
             if let observation = FleetTelemetryData.chargeObservation(FleetTelemetryStore.shared.records, vin: vin) {
                 ChargeNotificationManager.shared.observe(observation)
                 self.automations.observeTelemetryCharge(observation, voice: self.voice, bleActive: self.link.authentic)

@@ -209,6 +209,11 @@ final class EmbeddedNavigation: NSObject, ObservableObject, CLLocationManagerDel
     func refreshSavedKey() {
         do { hasKey = !(try NavigationKey.read()).isEmpty }
         catch { status = "내비 보안 키 읽기 실패" }
+        let defaults = UserDefaults.standard
+        theme = NavigationTheme(rawValue: defaults.string(forKey: "navigationTheme") ?? "cluster") ?? .cluster
+        orientation = NavigationDirection(rawValue: defaults.string(forKey: "navigationOrientation") ?? "auto") ?? .auto
+        enabled = defaults.object(forKey: "embeddedNavigationEnabled") as? Bool ?? true
+        hipass = defaults.bool(forKey: "navigationHipass")
     }
     deinit { networkMonitor.cancel() }
     private func current(_ value: Double) -> Bool { ticket == value && (gate("check", ["ticket": value]) as? Bool == true) }

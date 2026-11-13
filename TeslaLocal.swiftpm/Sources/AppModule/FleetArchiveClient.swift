@@ -17,8 +17,10 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
     @Published private(set) var lastVehicleReceivedAt: Date?
     @Published private(set) var status = "NAS 연결 필요"
     @Published private(set) var configurationStatus = "키·설정 동기화 대기"
-    var captureConfiguration: (() throws -> NASConfigurationVault.Snapshot)?
-    var applyConfiguration: ((NASConfigurationVault.Snapshot) throws -> Void)?
+    var captureConfiguration: (@MainActor () throws -> NASConfigurationVault.Snapshot)?
+    var applyConfiguration: (@MainActor (NASConfigurationVault.Snapshot) throws -> Void)?
+    private var lastConfigurationRead = Date.distantPast
+    private var lastConfigurationAttempt = Date.distantPast
     var address: String { UserDefaults.standard.string(forKey: "fleet.archive.address") ?? "" }
     var isConfigured: Bool { !address.isEmpty && (try? token(address)) != nil }
     var onHistoryReady: ((String) throws -> Void)?
@@ -137,18 +139,24 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
     }
 
     /// Does not require Tesla login or VIN: restore developer setup before OAuth login.
-    func syncAll(vin: String) async {
+    func syncAll(vin: String, forceConfiguration: Bool = true) async {
         guard !busy else { return }
-        await syncConfiguration()
+        await syncConfiguration(force: forceConfiguration)
         if !vin.isEmpty { await sync(vin: vin) }
         else { status = "키·설정 확인 후 차량 로그인 필요" }
     }
 
-    private func syncConfiguration() async {
+    private func syncConfiguration(force: Bool) async {
         guard !busy, let captureConfiguration, let applyConfiguration else { return }
+        if !force && Date().timeIntervalSince(lastConfigurationAttempt) < 30 { return }
         busy = true; defer { busy = false }
         do {
             let base = address, key = try token(base)
+            let baselineKey = "fleet.archive.vault.baseline." + SHA256.hash(data: Data(base.utf8)).map { String(format: "%02x", $0) }.joined()
+            let baseline = UserDefaults.standard.string(forKey: baselineKey).flatMap { try? NASConfigurationVault.open($0, token: key) }
+            let local = try captureConfiguration()
+            if !force, local == baseline, Date().timeIntervalSince(lastConfigurationRead) < 300 { return }
+            lastConfigurationAttempt = Date()
             guard let url = URL(string: base + "/v1/app-vault") else { throw NASConfigurationVault.failure("NAS 주소 확인 필요") }
             var request = URLRequest(url: url)
             request.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
@@ -156,13 +164,11 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             if code == 404 { throw NASConfigurationVault.failure("NAS 서버 업데이트 필요 · 차량 기록은 동기화 가능") }
             guard code == 200 else { throw Self.responseError(code) }
-            guard address == base, data.count <= 360000 else { throw NASConfigurationVault.failure("설정 백업 응답 확인 필요") }
+            guard address == base, data.count <= 27_000_000 else { throw NASConfigurationVault.failure("설정 백업 응답 확인 필요") }
             let envelope = try JSONDecoder().decode(NASConfigurationVault.Envelope.self, from: data)
             guard envelope.revision >= 0, (envelope.revision == 0) == envelope.sealed.isEmpty else { throw NASConfigurationVault.failure("설정 백업 응답 오류") }
             let remote = envelope.sealed.isEmpty ? NASConfigurationVault.Snapshot() : try NASConfigurationVault.open(envelope.sealed, token: key)
-            let baselineKey = "fleet.archive.vault.baseline." + SHA256.hash(data: Data(base.utf8)).map { String(format: "%02x", $0) }.joined()
-            let baseline = UserDefaults.standard.string(forKey: baselineKey).flatMap { try? NASConfigurationVault.open($0, token: key) }
-            let local = try captureConfiguration()
+            guard try captureConfiguration() == local else { throw NASConfigurationVault.failure("동기화 중 설정이 바뀜 · 다시 동기화하세요.") }
             let merged = NASConfigurationVault.merge(local: local, remote: remote, baseline: baseline)
             // Never apply an obsolete read if another device wrote while this request ran.
             if merged != remote {
@@ -178,13 +184,14 @@ private final class ArchiveRedirectGuard: NSObject, URLSessionTaskDelegate, @unc
             guard try captureConfiguration() == local else {
                 throw NASConfigurationVault.failure("동기화 중 설정이 바뀜 · 다시 동기화하세요.")
             }
-            try applyConfiguration(merged)
+            if merged != local { try applyConfiguration(merged) }
             // Store only encrypted synchronization metadata on this device.
             UserDefaults.standard.set(try NASConfigurationVault.seal(try captureConfiguration(), token: key), forKey: baselineKey)
+            lastConfigurationRead = Date()
             configurationStatus = "키·설정 동기화됨"
         } catch {
             // Do not echo a response body, decoded setting, or credential in diagnostics.
-            configurationStatus = (error as NSError).domain == "NASConfigurationVault" ? error.localizedDescription : "키·설정 동기화 실패 · NAS 연결 확인 필요"
+            configurationStatus = (error as NSError).domain == "NASConfigurationVault" ? error.localizedDescription : "키·설정 동기화 실패 · 설정 원본과 NAS 연결 확인 필요"
         }
     }
 

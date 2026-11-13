@@ -107,7 +107,7 @@ class Archive:
             raw = base64.b64decode(sealed, validate=True)
         except (ValueError, TypeError):
             raise ValueError("invalid vault")
-        if not 29 <= len(raw) <= 262144:
+        if not 29 <= len(raw) <= 20_000_028:
             raise ValueError("invalid vault size")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -215,7 +215,7 @@ def handler_for(archive, token, health, dashboard_token=None, dashboard_vin=None
                 return self.reply(404, {"error": "not_found"})
             try:
                 size = int(self.headers.get("Content-Length", "0"))
-                if not 1 <= size <= 360000 or self.headers.get("Transfer-Encoding"):
+                if not 1 <= size <= 27_000_000 or self.headers.get("Transfer-Encoding"):
                     return self.reply(413, {"error": "invalid_size"})
                 raw = self.rfile.read(size)
                 if len(raw) != size:

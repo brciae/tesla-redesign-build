@@ -28,7 +28,7 @@ class ArchiveTests(unittest.TestCase):
         reopened = Archive(self.path)
         self.assertEqual(reopened.vault(), {"revision": 1, "sealed": sealed})
         self.assertEqual(len(reopened.page(VIN, 0)["payloads"]), 1)
-        for value in ("bad base64!", "", base64.b64encode(b"x" * 262145).decode()):
+        for value in ("bad base64!", "", base64.b64encode(b"x" * 20_000_029).decode()):
             with self.assertRaises(ValueError):
                 reopened.save_vault(1, value)
         self.assertEqual(reopened.vault()["revision"], 1)
