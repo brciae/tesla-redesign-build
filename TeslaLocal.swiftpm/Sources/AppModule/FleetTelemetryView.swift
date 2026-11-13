@@ -162,7 +162,7 @@ struct FleetTelemetryView: View {
         .task(id: vin) {
             serverAddress = archive.address
             serverExpanded = archive.address.isEmpty
-            await archive.sync(vin: vin)
+            if !model.demo, !vin.isEmpty, archive.isConfigured { await archive.sync(vin: vin) }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             let selectedVIN = vin

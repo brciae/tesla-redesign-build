@@ -10,7 +10,7 @@ on:
       ui_focus:
         description: Production screen validation scope
         type: choice
-        options: [all, backup]
+        options: [all, backup, nas]
         default: all
       skip_shared_interface:
         description: Reuse a completed interface run only when Probe sources are unchanged

@@ -44,6 +44,9 @@ final class ProductionReviewTests: XCTestCase {
     func testCoverage() { review("coverage") }
     func testNASRecordSync() { review("records") }
     func testNASConnectionHelp() { review("nas") }
+    func testNASConnectionDark() { review("nas", appearance: "dark") }
+    func testNASRecordSyncDark() { review("records", appearance: "dark") }
+    func testMenuDark() { review("menu", appearance: "dark") }
     func testOfflineMapHelp() { review("offlineMap") }
     func testImportPreview() { review("import") }
     func testInvalidImportBlocked() { review("importInvalid") }
@@ -114,6 +117,8 @@ final class ProductionReviewTests: XCTestCase {
                 for _ in 0..<3 where !sync.isHittable { app.swipeDown() }
             } else if screen == "nas" {
                 XCTAssertTrue(app.textFields["archive.address"].waitForExistence(timeout: 10))
+                XCTAssertFalse(app.staticTexts["Tesla 계정에서 차량을 먼저 선택해 주세요."].exists,
+                               "NAS setup must not require Tesla login before restoring developer configuration")
                 XCTAssertFalse(app.buttons["전체 다시 받기"].exists)
                 let advanced = app.buttons["고급·도움말"]
                 for _ in 0..<3 where !advanced.isHittable { app.swipeUp() }

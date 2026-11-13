@@ -16,6 +16,15 @@ if [[ "${1:-all}" == backup ]]; then
     -only-testing:ProductionReviewTests/ProductionReviewTests/testDriving
     -only-testing:ProductionReviewTests/ProductionReviewTests/testDrivingFocus
   )
+elif [[ "${1:-all}" == nas ]]; then
+  test_filter=(
+    -only-testing:ProductionReviewTests/ProductionReviewTests/testMenuHierarchy
+    -only-testing:ProductionReviewTests/ProductionReviewTests/testMenuDark
+    -only-testing:ProductionReviewTests/ProductionReviewTests/testNASRecordSync
+    -only-testing:ProductionReviewTests/ProductionReviewTests/testNASRecordSyncDark
+    -only-testing:ProductionReviewTests/ProductionReviewTests/testNASConnectionHelp
+    -only-testing:ProductionReviewTests/ProductionReviewTests/testNASConnectionDark
+  )
 fi
 xcodebuild test -project Xcode/YLCompanion.xcodeproj -scheme YLCompanion \
   -destination "platform=iOS Simulator,id=$device_id" -destination-timeout 90 \
