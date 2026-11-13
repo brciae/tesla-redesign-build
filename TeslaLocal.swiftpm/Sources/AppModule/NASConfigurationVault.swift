@@ -53,11 +53,43 @@ enum NASConfigurationVault {
     static func allowedPreference(_ name: String) -> Bool {
         preferences.contains(name) || preferencePrefixes.contains(where: name.hasPrefix)
     }
+    private enum PreferenceValue: Codable {
+        case text(String), data(Data), date(Date), boolean(Bool), integer(Int64), number(Double)
+        case array([PreferenceValue]), object([String: PreferenceValue])
+        init(_ value: Any) throws {
+            if let text = value as? String { self = .text(text) }
+            else if let data = value as? Data { self = .data(data) }
+            else if let date = value as? Date { self = .date(date) }
+            else if let value = value as? NSNumber {
+                if CFGetTypeID(value) == CFBooleanGetTypeID() { self = .boolean(value.boolValue) }
+                else if ["f", "d"].contains(String(cString: value.objCType)) { self = .number(value.doubleValue) }
+                else { self = .integer(value.int64Value) }
+            }
+            else if let array = value as? [Any] { self = .array(try array.map { try Self($0) }) }
+            else if let object = value as? [String: Any] { self = .object(try object.mapValues { try Self($0) }) }
+            else { throw NASConfigurationVault.failure("설정 저장 형식 오류") }
+        }
+        var value: Any {
+            switch self {
+            case .text(let v): return v
+            case .data(let v): return v
+            case .date(let v): return v
+            case .boolean(let v): return v
+            case .integer(let v): return NSNumber(value: v)
+            case .number(let v): return NSNumber(value: v)
+            case .array(let v): return v.map(\.value)
+            case .object(let v): return v.mapValues(\.value)
+            }
+        }
+    }
     static func encodePreference(_ value: Any) throws -> String {
-        let data = try PropertyListSerialization.data(fromPropertyList: ["value": value], format: .binary, options: 0)
-        return "plist:" + data.base64EncodedString()
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return "json:" + String(decoding: try encoder.encode(PreferenceValue(value)), as: UTF8.self)
     }
     static func decodePreference(_ text: String) throws -> Any {
+        if text.hasPrefix("json:") {
+            return try JSONDecoder().decode(PreferenceValue.self, from: Data(text.dropFirst(5).utf8)).value
+        }
         if text.hasPrefix("plist:"), let data = Data(base64Encoded: String(text.dropFirst(6))),
            let root = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any], let value = root["value"] {
             return value
