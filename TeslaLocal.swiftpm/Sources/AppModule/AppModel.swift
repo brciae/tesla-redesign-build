@@ -193,7 +193,6 @@ final class AppModel: ObservableObject {
     private var lastArchiveSync = Date.distantPast
     private var lastFleetPoll = Date.distantPast
     private var protectedDataObserver: NSObjectProtocol?
-    private var memoryPressureObserver: NSObjectProtocol?
     private var savePending = false
     private var handedOffRoute = ""
     private var protectedLoadPending = false
@@ -438,9 +437,6 @@ final class AppModel: ObservableObject {
             self?.nextSaveAttempt = .distantPast
             if self?.savePending == true { self?.saveRecordsWhenAvailable() }
         }
-        memoryPressureObserver = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
-            Task { @MainActor in CharacterRig.trimInactiveCaches() }
-        }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             if let self {
                 let interval = AppEnergyPolicy.refreshInterval(active: UIApplication.shared.applicationState == .active,
@@ -463,7 +459,6 @@ final class AppModel: ObservableObject {
     deinit {
         timer?.invalidate()
         if let protectedDataObserver { NotificationCenter.default.removeObserver(protectedDataObserver) }
-        if let memoryPressureObserver { NotificationCenter.default.removeObserver(memoryPressureObserver) }
     }
     private func syncArchiveIfNeeded() {
         Task { @MainActor in
