@@ -97,7 +97,6 @@ final class ProductionReviewTests: XCTestCase {
                         app.navigationBars["음성·내비 안내"].buttons.element(boundBy: 0).tap()
                     }
                 }
-                XCTAssertTrue(app.buttons["home.chat"].exists)
                 XCTAssertTrue(app.descendants(matching: .any)["home.readiness"].waitForExistence(timeout: 10))
                 XCUIDevice.shared.press(.home); app.activate()
                 XCTAssertTrue(app.descendants(matching: .any)["app.launch.brand"].waitForNonExistence(timeout: 5))

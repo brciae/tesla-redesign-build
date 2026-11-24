@@ -48,9 +48,7 @@ struct PreferencesView: View {
     @AppStorage("overspeed.beep") private var overspeedBeep = true
     @AppStorage("overspeed.distance") private var overspeedDistance = 500.0
     @AppStorage("overspeed.sound") private var overspeedSound = 0
-    @AppStorage("characterFloat.voice") private var floatVoice = ""
-    @AppStorage("characterChat.enabled") private var characterEnabled = true
-    @State private var floatVoicePicker = false
+    @AppStorage("fallbackSystemVoice") private var fallbackSystemVoice = SystemKoreanVoice.defaultTag
     @AppStorage("navVoiceDetail") private var navDetail = 0
     @AppStorage("voiceBriefDetail") private var detail = false
     @ObservedObject private var typecast = TypecastClient.shared
@@ -61,6 +59,12 @@ struct PreferencesView: View {
                 Toggle("음성 안내", isOn: $enabled)
                 VoiceOutputSettings()
                 VoiceSelectionControls(identifier: $identifier, style: $deliveryStyle)
+                Picker("만료·오류 시 대체 음성", selection: $fallbackSystemVoice) {
+                    ForEach(SystemKoreanVoice.all) { voice in
+                        Text(voice.title).tag(voice.storageIdentifier)
+                    }
+                }
+                .accessibilityIdentifier("voice.fallback")
 
                 // Moderate thumbnail portrait card (38pt, clean and sleek)
                 selectedVoiceCard
@@ -120,18 +124,6 @@ struct PreferencesView: View {
                 } label: { Label("길안내·안전 경고", systemImage: "arrow.triangle.turn.up.right.diamond") }
                     .accessibilityIdentifier("preferences.navigationVoice")
             }
-            // v1.55: the floating character's own voice sits with the other voices (its look/size is in 캐릭터).
-            if characterEnabled { Section("캐릭터 목소리") {
-                Button { floatVoicePicker = true } label: {
-                    HStack(spacing: 10) {
-                        TypecastVoiceThumbnail(voice: floatVoice.isEmpty ? currentVoiceName : floatVoice, size: 30)
-                        Text("대화 목소리").foregroundStyle(.primary)
-                        Spacer()
-                        Text(floatVoice.isEmpty ? "안내 음성과 같음" : floatVoice).foregroundStyle(.secondary)
-                    }
-                }
-                if !floatVoice.isEmpty { Button("안내 음성과 같게", role: .destructive) { floatVoice = "" } }
-            } }
             Section("음량") {
                 VoiceVolumeControl(title: "일반 안내 음량", value: $volume)
                 VoiceVolumeControl(title: "길안내 음량", value: $navigationVolume)
@@ -165,7 +157,6 @@ struct PreferencesView: View {
         }.navigationTitle("음성·내비 안내").navigationBarTitleDisplayMode(.inline)
             // v1.48: presented from the screen root so row updates (cache count, status) can't rebuild it mid-use.
             .sheet(isPresented: $typecast.showVoicePicker) { TypecastCharacterPickerSheet() }
-            .sheet(isPresented: $floatVoicePicker) { TypecastCharacterPickerSheet(target: .floatingCharacter) }
             .onChange(of: enabled) { _, value in if !value { model.stopSpeech() } }
             .onChange(of: identifier) { _, newId in
                 if newId.hasPrefix("typecast:") {
@@ -177,7 +168,9 @@ struct PreferencesView: View {
             .onChange(of: deliveryStyle) { _, _ in model.stopSpeech() }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in model.navigation.applyAudioPreferences() }
             .onAppear {
-                if identifier.isEmpty || identifier.hasPrefix("recorded:") || identifier.hasPrefix("offline:") || (!identifier.hasPrefix("typecast:") && !TypecastClient.presetVoices.contains(where: { $0.id == identifier })) {
+                let isValidSystem = identifier.hasPrefix("system:") && SystemKoreanVoice.find(identifier) != nil
+                let isValidTypecast = identifier.hasPrefix("typecast:") || TypecastClient.presetVoices.contains(where: { $0.id == identifier })
+                if identifier.isEmpty || identifier.hasPrefix("recorded:") || identifier.hasPrefix("offline:") || (!isValidSystem && !isValidTypecast) {
                     identifier = "typecast:은경"
                 }
                 if identifier.hasPrefix("typecast:") {
@@ -187,11 +180,20 @@ struct PreferencesView: View {
     }
 
     private var selectedVoiceCard: some View {
-        let name = currentVoiceName
-        let desc = currentVoiceDesc
+        let sysVoice = identifier.hasPrefix("system:") ? SystemKoreanVoice.find(identifier) : nil
+        let name = sysVoice?.title ?? currentVoiceName
+        let desc = sysVoice?.subtitle ?? currentVoiceDesc
+        let isSystem = sysVoice != nil
 
         return HStack(spacing: 12) {
-            TypecastVoiceThumbnail(voice: name, size: 38)
+            if isSystem {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(.green)
+                    .frame(width: 38, height: 38)
+            } else {
+                TypecastVoiceThumbnail(voice: name, size: 38)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -199,12 +201,12 @@ struct PreferencesView: View {
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(.primary)
 
-                    Text("타입캐스트 AI")
+                    Text(isSystem ? "기본 한국어" : "타입캐스트 AI")
                         .font(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.blue)
+                        .background((isSystem ? Color.green : Color.blue).opacity(0.15), in: Capsule())
+                        .foregroundStyle(isSystem ? .green : .blue)
                 }
 
                 Text(desc)
@@ -219,6 +221,9 @@ struct PreferencesView: View {
     }
 
     private var currentVoiceName: String {
+        if let sys = SystemKoreanVoice.find(identifier) {
+            return sys.title
+        }
         let clean = identifier.replacingOccurrences(of: "typecast:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         if clean.isEmpty { return TypecastClient.defaultVoiceId }
         if let char = TypecastCatalog.find(clean) {
@@ -231,6 +236,9 @@ struct PreferencesView: View {
     }
 
     private var currentVoiceDesc: String {
+        if let sys = SystemKoreanVoice.find(identifier) {
+            return sys.subtitle
+        }
         let clean = identifier.replacingOccurrences(of: "typecast:", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
         if let char = TypecastCatalog.find(clean) {
             return char.desc

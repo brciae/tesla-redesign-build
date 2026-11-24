@@ -66,8 +66,6 @@ func homePresentation(_ model: AppModel, _ link: VehicleLink) -> Object {
 struct HomeView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var link: VehicleLink
-    var openChat: () -> Void = {}
-    @AppStorage("characterChat.enabled") private var chatEnabled = true
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var summaryOpen = false
 
@@ -88,10 +86,6 @@ struct HomeView: View {
                     NavigationLink { CompanionHealthView(link: link, voice: model.voice) } label: {
                         Image(systemName: "checkmark.shield").frame(width: 44, height: 44)
                     }.accessibilityLabel("출발 전 상태 확인").accessibilityIdentifier("home.readiness")
-                    if chatEnabled {
-                        Button(action: openChat) { Image(systemName: "bubble.left.and.text.bubble.right").frame(width: 44, height: 44) }
-                            .accessibilityLabel("캐릭터 대화").accessibilityIdentifier("home.chat")
-                    }
                     Button { model.refreshVehicle() } label: { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44) }
                         .accessibilityLabel("차량 새로고침")
                 }

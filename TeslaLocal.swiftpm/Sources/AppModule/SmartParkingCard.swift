@@ -488,7 +488,7 @@ struct SmartParkingCard: View {
     }
 
     private func openWalkingDirections(lat: Double, lng: Double) {
-        if let url = URL(string: "http://maps.apple.com/?daddr=\(lat),\(lng)&dirflg=w"), UIApplication.shared.canOpenURL(url) {
+        if let url = URL(string: "https://maps.apple.com/?daddr=\(lat),\(lng)&dirflg=w"), UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
         }
     }

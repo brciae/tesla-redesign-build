@@ -219,7 +219,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "long-guidance-probe"]; app.launch()
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
-            for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+            for title in ["클러스터"] {
                 app.segmentedControls.buttons[title].tap()
                 let named = app.staticTexts["동작대교 오른쪽 진출"].firstMatch
                 let action = app.staticTexts["오른쪽 진출"].firstMatch
@@ -287,7 +287,7 @@ final class InteractionTests: XCTestCase {
             let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); shot.name = "Playback source \(source)"; shot.lifetime = .keepAlways; add(shot)
             app.buttons["media.source.next"].tap()
         }
-        for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+        for title in ["클러스터"] {
             app.segmentedControls.buttons[title].tap()
             XCTAssertTrue(icon.waitForExistence(timeout: 5))
             XCTAssertEqual(icon.label, "재생 소스: Spotify")
@@ -326,23 +326,10 @@ final class InteractionTests: XCTestCase {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "Traffic refresh control failure preserves existing route fixture"; shot.lifetime = .keepAlways; add(shot)
     }
-    func testRobotWithoutFootRodsSurvivesAppSwitching() {
-        XCUIDevice.shared.orientation = .portrait
-        let app = XCUIApplication(); app.launchArguments = ["robot-probe"]; app.launch()
-        XCTAssertTrue(app.staticTexts["로봇 모델 로드됨"].waitForExistence(timeout: 15))
-        for title in ["대기", "비행"] {
-            if title == "비행" { app.buttons["비행"].tap() }
-            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            shot.name = "Robot removed foot rods \(title)"; shot.lifetime = .keepAlways; add(shot)
-            XCUIDevice.shared.press(.home)
-            app.activate()
-            XCTAssertTrue(app.otherElements["robot.scene"].waitForExistence(timeout: 5))
-        }
-    }
     func testJunctionStaysInGuidanceAndDisappearsAfterExit() {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication(); app.launchArguments = ["fullscreen-navigation-probe", "junction-probe"]; app.launch()
-        for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+        for title in ["클러스터"] {
             XCTAssertTrue(app.buttons["navigation.chrome.open"].waitForExistence(timeout: 5))
             app.buttons["navigation.chrome.open"].tap()
             app.buttons[title].tap()
@@ -462,7 +449,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["fullscreen-navigation-probe"]; app.launch()
         for orientation in [UIDeviceOrientation.landscapeLeft, .landscapeRight, .portrait] {
             XCUIDevice.shared.orientation = orientation
-            for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+            for title in ["클러스터"] {
                 let open = app.buttons["navigation.chrome.open"]
                 XCTAssertTrue(open.waitForExistence(timeout: 5))
                 let canvas = app.staticTexts["navigation.canvas.size"]
@@ -787,9 +774,9 @@ final class InteractionTests: XCTestCase {
     func testRouteMotionDirections() {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "motion-probe"]; app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
-        let minimal = app.segmentedControls.buttons["미니멀"]
-        XCTAssertTrue(minimal.waitForExistence(timeout: 8))
-        minimal.tap()
+        let cluster = app.segmentedControls.buttons["클러스터"]
+        XCTAssertTrue(cluster.waitForExistence(timeout: 8))
+        cluster.tap()
         for direction in ["left", "right"] {
             let btn = app.buttons["motion." + direction]
             XCTAssertTrue(btn.waitForExistence(timeout: 8))
@@ -848,7 +835,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["navigation-probe", "energy-forecast-probe"]; app.launch()
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
             XCUIDevice.shared.orientation = orientation
-            for theme in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+            for theme in ["클러스터"] {
                 let button = app.segmentedControls.buttons[theme]
                 XCTAssertTrue(button.waitForExistence(timeout: 8)); button.tap()
                 let forecast = app.staticTexts["energy.forecast.arrival"].firstMatch
@@ -856,12 +843,6 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(forecast.label.contains("도착 예상 65.8%"))
                 XCTAssertTrue(forecast.isHittable, "forecast clipped: \(theme)")
                 XCTAssertTrue(app.staticTexts["energy.forecast.consumption"].firstMatch.label.contains("1.6 kWh"))
-                if theme == "파노라마", orientation == .portrait {
-                    let gear = app.descendants(matching: .any).matching(identifier: "navigation.panorama.gear").firstMatch
-                    XCTAssertTrue(gear.waitForExistence(timeout: 3))
-                    XCTAssertGreaterThan(gear.frame.minY, app.staticTexts["energy.forecast.consumption"].firstMatch.frame.maxY + 4,
-                                         "Forecast must not cover the panorama gear selector")
-                }
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Trip energy forecast \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }
@@ -887,7 +868,7 @@ final class InteractionTests: XCTestCase {
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
             XCUIDevice.shared.orientation = orientation
             Thread.sleep(forTimeInterval: 1.0)
-            for theme in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+            for theme in ["클러스터"] {
                 let button = app.segmentedControls.buttons[theme]
                 XCTAssertTrue(button.waitForExistence(timeout: 8)); button.tap()
                 XCTAssertTrue(app.staticTexts["34"].waitForExistence(timeout: 8), "speed missing: \(theme) \(orientation.rawValue)")
@@ -897,8 +878,6 @@ final class InteractionTests: XCTestCase {
                 XCTAssertTrue(media.exists, "media dock missing: \(theme)")
                 XCTAssertTrue(app.otherElements["navigation.modeling"].exists, "theme composition must be preserved")
                 XCTAssertTrue(button.isSelected, "selected theme must match the visible composition")
-                if theme == "투어링" { XCTAssertTrue(app.staticTexts["실내"].exists && app.staticTexts["외기"].exists) }
-                if theme == "관제" { XCTAssertTrue(app.staticTexts["경로 진행"].exists && app.staticTexts["남은 거리"].exists) }
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = "Navigation \(theme) \(orientation.rawValue)"; shot.lifetime = .keepAlways; add(shot)
             }
@@ -916,7 +895,7 @@ final class InteractionTests: XCTestCase {
         app.launch()
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
-            for title in ["클러스터", "투어링", "미니멀", "파노라마", "포커스", "관제"] {
+            for title in ["클러스터"] {
             let stop = app.buttons["navigation.parked.stop"]
             XCTAssertTrue(stop.waitForExistence(timeout: 8)); XCTAssertTrue(stop.isHittable)
             XCTAssertGreaterThanOrEqual(stop.frame.height + 0.01, 44, "44pt target with subpixel coordinate tolerance")

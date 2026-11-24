@@ -139,38 +139,40 @@
     const s=text(value,20000);
     const lines=s.split(/[\n\r]+/).map(l=>l.trim()).filter(Boolean);
     const digits=t=>Number(String(t).replace(/[,\s]/g,''));
-    const findLabeled=(labels,unit,lo,hi,skip)=>{
+    const parseDecimal=t=>{const x=String(t).replace(/\s/g,'');return Number(/^\d+,\d{1,2}$/.test(x)?x.replace(',','.'):x.replace(/,/g,''));};
+    const findLabeled=(labels,unit,lo,hi,skip,parseFn=digits)=>{
       for(let i=0;i<lines.length;i++){
         const line=lines[i];
         if(!labels.some(l=>line.includes(l)))continue;
         if(skip&&skip.test(line))continue;
         for(const probe of [line,lines[i+1]||'']){
           const m=probe.match(unit);
-          if(m){const v=digits(m[1]);if(num(v,lo,hi))return v;}
+          if(m){const v=parseFn(m[1]);if(num(v,lo,hi))return v;}
         }
       }
       return null;
     };
     // Fallback candidates are collected per line so a cumulative/odometer line cannot win.
     const noise=/누적|잔량|총\s*주행|주행거리|포인트|할인|적립|단가|원\s*\/\s*kWh/;
-    const all=(re,lo,hi)=>lines.filter(l=>!noise.test(l))
-      .flatMap(l=>[...l.matchAll(re)].map(m=>digits(m[1]))).filter(v=>num(v,lo,hi));
+    const all=(re,lo,hi,parseFn=digits)=>lines.filter(l=>!noise.test(l))
+      .flatMap(l=>[...l.matchAll(re)].map(m=>parseFn(m[1]))).filter(v=>num(v,lo,hi));
     const kwhRe=/(\d+(?:[.,]\d+)?)\s*kWh/i, wonRe=/([\d,]+)\s*원/;
     const unitPrice=(()=>{
-      const m=s.match(/([\d,]+(?:\.\d+)?)\s*원\s*\/\s*kWh/i)||s.match(/단가[^\d]{0,8}([\d,]+(?:\.\d+)?)/);
-      const v=m?digits(m[1]):null; return num(v,10,2000)?v:null;
+      const m=s.match(/([\d,]+(?:[.,]\d+)?)\s*원\s*\/\s*kWh/i)||s.match(/단가[^\d]{0,8}([\d,]+(?:[.,]\d+)?)/);
+      const v=m?parseDecimal(m[1]):null; return num(v,10,2000)?v:null;
     })();
-    const kwhAll=all(/(\d+(?:[.,]\d+)?)\s*kWh/gi,0.1,300);
+    const kwhAll=all(/(\d+(?:[.,]\d+)?)\s*kWh/gi,0.1,300,parseDecimal);
     const wonAll=all(/([\d,]+)\s*원(?!\s*\/)/g,0,1000000);
-    let supplyKWh=findLabeled(['충전량','사용량','전력량','공급량','충전전력','충전 전력','판매량'],kwhRe,0.1,300,/단가|누적|잔량/);
+    let supplyKWh=findLabeled(['충전량','사용량','전력량','공급량','충전전력','충전 전력','판매량'],kwhRe,0.1,300,/단가|누적|잔량/,parseDecimal);
     let guessed=false;
     if(supplyKWh==null&&kwhAll.length){supplyKWh=kwhAll.length===1?kwhAll[0]:Math.max(...kwhAll);guessed=guessed||kwhAll.length>1;}
     let cost=findLabeled(['결제금액','승인금액','총액','합계','총 금액','결제 금액','이용금액','요금','금액','결제'],wonRe,0,1000000,/단가|원\/kWh|포인트|할인/);
     if(cost==null&&wonAll.length){cost=wonAll.length===1?wonAll[0]:Math.max(...wonAll);guessed=guessed||wonAll.length>1;}
     if(cost==null&&unitPrice!=null&&supplyKWh!=null)cost=Math.round(unitPrice*supplyKWh);
     if(supplyKWh==null&&unitPrice!=null&&cost!=null&&cost>0)supplyKWh=round(cost/unitPrice,2);
-    const date=s.match(/(20\d{2})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})/);
-    const time=s.match(/(?:^|[^\d:])([01]?\d|2[0-3])\s*[:시]\s*([0-5]\d)/);
+    const rawDate=s.match(/(20\d{2})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})(?!\d)/);
+    const date=(()=>{if(!rawDate)return null;const y=+rawDate[1],m=+rawDate[2],d=+rawDate[3];if(m<1||m>12||d<1||d>31)return null;const dt=new Date(Date.UTC(y,m-1,d));return dt.getUTCFullYear()===y&&dt.getUTCMonth()===m-1&&dt.getUTCDate()===d?rawDate:null;})();
+    const time=s.match(/(?:^|[^\d:])([01]?\d|2[0-3])\s*[:시]\s*([0-5]\d)(?!\d)/);
     // SOC either as a range ("45% → 80%") or as labelled start/end values.
     const range=s.match(/(\d{1,3})\s*%\s*(?:→|->|~|–|-|>|에서)\s*(\d{1,3})\s*%/);
     let startSOC=range?Number(range[1]):findLabeled(['시작 SOC','시작','충전 시작','개시'],/(\d{1,3})\s*%/,0,100);
@@ -563,7 +565,7 @@
       this.charge({...input,source:'Fleet'},now);return this.view(now);
     }
     charge(g,now){
-      if(!fresh(g,now)||this.lastCharge&&g.at<=this.lastCharge.at)return;
+      if(!fresh(g,now,TTL.charge)||this.lastCharge&&g.at<=this.lastCharge.at)return;
       if(this.state.activeCharge?.lastAt!=null&&g.at<=this.state.activeCharge.lastAt)return;
       const s=this.state,prev=this.lastCharge;
       if(s.activeCharge&&(!prev||g.at-prev.at>30000))s.activeCharge.partial=true;
@@ -713,10 +715,12 @@
       const key=text(v?.id,80);if(!key)throw Error('삭제할 기록을 찾을 수 없음');
       const before=this.state.charges.length;
       const linked=this.chargeSummary().rows.find(c=>c.id===key)?.linkedRecordIDs??[key];
-      this.state.charges=this.state.charges.filter(c=>!linked.includes(c.id));
-      if(this.state.charges.length===before)throw Error('삭제할 기록을 찾을 수 없음');
-      if(this.state.batteryBaseline)this.state.batteryBaseline.referenceIds=(this.state.batteryBaseline.referenceIds||[]).filter(x=>x!==key);
-      return {removed:1};
+      const drop=new Set(linked);drop.add(key);
+      this.state.charges=this.state.charges.filter(c=>!drop.has(c.id));
+      const removed=before-this.state.charges.length;
+      if(!removed)throw Error('삭제할 기록을 찾을 수 없음');
+      if(this.state.batteryBaseline)this.state.batteryBaseline.referenceIds=(this.state.batteryBaseline.referenceIds||[]).filter(x=>!drop.has(x));
+      return {removed};
     }
     deleteTrip(v){
       const key=text(v?.id,80);if(!key)throw Error('삭제할 기록을 찾을 수 없음');
@@ -777,7 +781,10 @@
         for(const row of byTime.get(at))latest[row.field]=row;
         if(num(input.replayFrom,1,Date.now()+5000)&&at<input.replayFrom){
           const k=['DetailedChargeState','ChargeState'].filter(k=>latest[k]).sort((a,b)=>latest[b].at-latest[a].at)[0];
-          previousCharge={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[String(scalar(k)??'').replace('DetailedChargeState','')];
+          const nextCharge={Disconnected:2,NoPower:3,Starting:4,Charging:5,Complete:6,Stopped:7}[String(scalar(k)??'').replace('DetailedChargeState','')];
+          if(nextCharge===5&&previousCharge!==5)chargeBegan=at;
+          else if(nextCharge!=null&&nextCharge!==5)chargeBegan=null;
+          previousCharge=nextCharge;
           const gear=String(scalar('Gear')??'').replace('ShiftState','');
           if(['D','R','N'].includes(gear))replay.state.lastPark=null;
           else if(gear==='P'&&!replay.state.lastPark){
@@ -1011,19 +1018,21 @@
     enrichChargeSites(v){
       if(!this.state.settings.vin||v.vin!==this.state.settings.vin)return false;
       const sites=(v.sites??[]).slice(0,20000).filter(p=>validCoordinates(p.latitude,p.longitude)&&typeof p.id==='string'&&p.id.length<100&&typeof p.operator==='string'&&p.operator.trim());
-      const grid=new Map(),cell=(lat,lon)=>Math.floor(lat*100)+','+Math.floor(lon*100);
-      for(const p of sites){const key=cell(p.latitude,p.longitude);if(!grid.has(key))grid.set(key,[]);grid.get(key).push(p);}
+      const grid=new Map(),cell=(lat,lon)=>Math.floor(lat*500)+','+Math.floor(lon*500);
+      for(const p of sites){const key=cell(p.latitude,p.longitude);let byId=grid.get(key);if(!byId){byId=new Map();grid.set(key,byId);}byId.set(p.id,p);}
       let changed=false;
       for(const c of [...this.state.charges.slice(-1000),this.state.activeCharge].filter(Boolean)){
         if(c.chargeOperator||c.siteMatch||!validCoordinates(c.latitude,c.longitude))continue;
-        const local=[];let dense=false;
-        for(let y=-1;y<=1;y++)for(let x=-1;x<=1;x++){
-          const bucket=grid.get((Math.floor(c.latitude*100)+y)+','+(Math.floor(c.longitude*100)+x))??[];
-          if(bucket.length>200){dense=true;continue;}local.push(...bucket);
+        const cy=Math.floor(c.latitude*500),cx=Math.floor(c.longitude*500),groups=new Map();
+        search:for(let y=-1;y<=1;y++)for(let x=-1;x<=1;x++){
+          const bucket=grid.get((cy+y)+','+(cx+x));
+          if(!bucket)continue;
+          for(const p of bucket.values()){
+            if(!nearby(c,p,75)||(c.chargeType&&p.kind!==c.chargeType))continue;
+            groups.set(p.id,p);
+            if(groups.size>1)break search;
+          }
         }
-        if(dense)continue;
-        const candidates=local.filter(p=>nearby(c,p,75)&&(!c.chargeType||p.kind===c.chargeType));
-        const groups=new Map();for(const p of candidates)groups.set(p.id,p);
         if(groups.size!==1)continue; // Several operators/places in a basement cannot be distinguished by GPS.
         const p=[...groups.values()][0];
         c.siteMatch={id:p.id,name:text(p.name,120),operator:canonicalOperator(p.operator),ratedKW:num(p.ratedKW,0.1,1000)?p.ratedKW:null,matchedAt:Date.now(),source:'공공 충전소 위치 대조 · 추정'};
@@ -1033,11 +1042,19 @@
       return changed;
     }
     reconcileStoredHistory(){
-      const trips=[];
+      const trips=[],tripById=new Map(),tripBySpan=new Map();
       for(const row of [...this.state.trips].sort((a,b)=>a.start-b.start||a.end-b.end)){
-        const existing=trips.find(t=>t.id===row.id||(t.start===row.start&&t.end===row.end&&
-          (t.distanceKm===row.distanceKm||(num(t.startOdo,0,1e7)&&t.startOdo===row.startOdo&&t.endOdo===row.endOdo))));
-        if(!existing){trips.push(row);continue;}
+        const spanKey=row.start+'|'+row.end;
+        let existing=tripById.get(row.id);
+        if(!existing){
+          const bucket=tripBySpan.get(spanKey);
+          if(bucket)existing=bucket.find(t=>t.distanceKm===row.distanceKm||(num(t.startOdo,0,1e7)&&t.startOdo===row.startOdo&&t.endOdo===row.endOdo));
+        }
+        if(!existing){
+          trips.push(row);tripById.set(row.id,row);
+          if(!tripBySpan.has(spanKey))tripBySpan.set(spanKey,[]);tripBySpan.get(spanKey).push(row);
+          continue;
+        }
         mergeTripRoute(existing,row);
         for(const key of ['startSOC','endSOC','startOdo','endOdo','observedMotorNetKWh','observedMotorDistanceKm'])if(existing[key]==null&&row[key]!=null)existing[key]=row[key];
         existing.missing=!!existing.missing&&!!row.missing;
@@ -1045,12 +1062,19 @@
       this.state.trips=trips;
       // Only exact duplicate boundaries are safe to consolidate automatically.
       // Ambiguous completion-only counters still require independent session evidence.
-      const charges=[];
+      const charges=[],chargeById=new Map(),chargeBySig=new Map(),metaKeys=['supplyKWh','storedKWh','cost','place','note','memberPricing','receiptText'];
       for(const row of reconciledCharges(this.state.charges)){
-        const existing=charges.find(c=>c.id===row.id||(!c.collectedAfterEnd&&!row.collectedAfterEnd&&
-          num(c.vehicleReportedKWh,0,300)&&c.at===row.at&&c.end===row.end&&c.startSOC===row.startSOC&&c.endSOC===row.endSOC&&c.vehicleReportedKWh===row.vehicleReportedKWh&&
-          !c.chargeReviewConfirmed&&!row.chargeReviewConfirmed&&['supplyKWh','storedKWh','cost','place','note','memberPricing','receiptText'].every(k=>c[k]===row[k])));
-        if(!existing){charges.push(row);continue;}
+        let existing=chargeById.get(row.id);
+        const sigKey=!row.collectedAfterEnd&&!row.chargeReviewConfirmed&&num(row.vehicleReportedKWh,0,300)?[row.at,row.end,row.startSOC,row.endSOC,row.vehicleReportedKWh].join('|'):null;
+        if(!existing&&sigKey){
+          const bucket=chargeBySig.get(sigKey);
+          if(bucket)existing=bucket.find(c=>metaKeys.every(k=>c[k]===row[k]));
+        }
+        if(!existing){
+          charges.push(row);chargeById.set(row.id,row);
+          if(sigKey){if(!chargeBySig.has(sigKey))chargeBySig.set(sigKey,[]);chargeBySig.get(sigKey).push(row);}
+          continue;
+        }
         for(const [key,value]of Object.entries(row))if(existing[key]==null&&value!=null)existing[key]=value;
       }
       this.state.charges=charges;
@@ -1162,14 +1186,18 @@
     energyEstimates(now=Date.now(),from=0,to=now){
       // Estimates are derived views: never overwrite observed evidence or historical records.
       const s=this.state,health=this.health(),capacity=health.capacity??s.settings.assumedCapacityKWh??75;
-      const capacityAssumed=health.capacity==null,overlap=(a,b,c,d)=>a<d&&c<b;
+      const capacityAssumed=health.capacity==null;
+      const mergeIntervals=list=>{if(!list.length)return list;const sorted=[...list].sort((a,b)=>a.start-b.start),out=[{start:sorted[0].start,end:sorted[0].end}];for(let i=1;i<sorted.length;i++){const last=out[out.length-1],cur=sorted[i];if(cur.start<last.end)last.end=Math.max(last.end,cur.end);else out.push({start:cur.start,end:cur.end});}return out;};
+      const hasOverlap=(merged,a,b)=>{let lo=0,hi=merged.length-1;while(lo<=hi){const mid=(lo+hi)>>1,iv=merged[mid];if(iv.start<b&&a<iv.end)return true;if(iv.end<=a)lo=mid+1;else hi=mid-1;}return false;};
       const charges=this.chargeSummary().rows.filter(c=>!c.active&&num(c.at,0,now)),all=s.trips.filter(t=>num(t.start,0,now)&&num(t.end,t.start,now)&&num(t.distanceKm,0,100000)).sort((a,b)=>a.start-b.start);
+      const chargeIntervals=mergeIntervals(charges.map(c=>chargeWindow(c,now)));
+      const tripIntervals=mergeIntervals(all.map(t=>({start:t.start,end:t.end})));
       const history=[];let occupied=-1,duplicateCount=0;
       const rows=[];
       for(const t of all){
         const duplicate=t.start<occupied;if(duplicate)duplicateCount++;occupied=Math.max(occupied,t.end);
         const km=t.distanceKm,delta=num(t.startSOC,0,100)&&num(t.endSOC,0,100)?t.startSOC-t.endSOC:null;
-        const mixed=charges.some(c=>{const w=chargeWindow(c,now);return overlap(t.start,t.end,w.start,w.end);});
+        const mixed=hasOverlap(chargeIntervals,t.start,t.end);
         const observed=num(t.observedMotorDistanceKm,0.05,100000)&&num(t.observedMotorNetKWh,-1e5,1e5)?t.observedMotorNetKWh/t.observedMotorDistanceKm*1000:null;
         const own=observed!=null&&observed>20&&observed<1500?observed:null;
         const personal=median(history.slice(-30));
@@ -1190,9 +1218,9 @@
       for(const p of this.parkingSummary(now).rows){
         if(!num(p.start,0,now)||!num(p.end,p.start,now)||p.end<from||p.end>to||p.start<parkingEnd)continue;
         parkingEnd=p.end;
-        if(all.some(t=>overlap(p.start,p.end,t.start,t.end)))continue;
+        if(all.length&&hasOverlap(tripIntervals,p.start,p.end))continue;
         const delta=num(p.deltaSOC,0,100)?p.deltaSOC:0,kwh=delta/100*capacity;
-        const mixed=charges.some(c=>{const w=chargeWindow(c,now);return overlap(p.start,p.end,w.start,w.end);});
+        const mixed=hasOverlap(chargeIntervals,p.start,p.end);
         if(p.classification==='parking'&&!mixed){parkingKWh+=kwh;parkingCount++;}else unclassifiedKWh+=kwh;
       }
       const unique=rows.filter(t=>!t.duplicate),distance=unique.reduce((n,t)=>n+t.distanceKm,0),driving=unique.reduce((n,t)=>n+t.estimatedKWh,0),total=driving+parkingKWh+unclassifiedKWh;
@@ -1272,7 +1300,7 @@
         observedUsedKWh:power.length?round(sum(power,t=>t.powerUsedKWh),2):null,observedRecoveredKWh:power.length?round(sum(power,t=>t.powerRecoveredKWh),2):null,
         powerCoverage:duration>0?round(Math.min(1,observedSeconds/duration)*100,1):null,
         trend:cleanTrendList.slice(-120),
-        parking:{rows:parking,count:unmixed.length,excludedCount:parking.length-unmixed.length,medianPerDay:round(median(unmixed.filter(p=>!p.precisionLimited).map(p=>p.perDay)),2)},tripRows:this.energyEstimates(now,since).trips.filter(t=>!t.duplicate&&t.distanceKm>.01).slice(-30).map(t=>({id:t.id,at:t.end,start:t.start,km:t.distanceKm,startSOC:t.startSOC,endSOC:t.endSOC,soc:num(t.startSOC,0,100)&&num(t.endSOC,0,100)?round(soc(t),1):null,kwh:t.estimatedKWh,whPerKm:t.estimatedWhPerKm,kmPerKWh:t.estimatedKmPerKWh,method:t.estimateMethod,partial:!!t.missing})),
+        parking:{rows:parking,count:unmixed.length,excludedCount:parking.length-unmixed.length,medianPerDay:round(median(unmixed.filter(p=>!p.precisionLimited).map(p=>p.perDay)),2)},tripRows:trips.filter(t=>t.distanceKm>.01).slice(-30).map(t=>({id:t.id,at:t.end,start:t.start,km:t.distanceKm,startSOC:t.startSOC,endSOC:t.endSOC,soc:num(t.startSOC,0,100)&&num(t.endSOC,0,100)?round(soc(t),1):null,kwh:t.estimatedKWh,whPerKm:t.estimatedWhPerKm,kmPerKWh:t.estimatedKmPerKWh,method:t.estimateMethod,partial:!!t.missing})),
         note:'관측 기록 기준. 주차 전후 변화는 미관측 충전·이동·온도 영향을 포함할 수 있으며 대기 소모로 단정하지 않음. 공조·감시모드·열관리 사용량은 미분리.'};
     }
     briefing(now=Date.now()){
@@ -1300,7 +1328,7 @@
         }else if(key==='activeTrip'&&value){state[key]=Object.fromEntries(Object.entries(value).filter(([k])=>k!=='points'));}
         else state[key]=value;
       }
-      return {liveDelta:true,state,history,briefing:this.briefing(now),fresh:Object.fromEntries(Object.entries(s.groups).map(([k,g])=>[k,k==='location'?freshLocation(g,now):fresh(g,now)]))};
+      return {liveDelta:true,state,history,briefing:this.briefing(now),fresh:Object.fromEntries(Object.entries(s.groups).map(([k,g])=>[k,k==='location'?freshLocation(g,now):fresh(g,now,TTL[k])]))};
     }
     view(now=Date.now()){
       if(this._liveOnly)return this.liveView(now);
@@ -1312,12 +1340,12 @@
       try {
       this._viewAudit=auditCharges(reconciledCharges(this.state.charges));
       const s=this.state,charging=this.chargeSummary(),energy=this.energyEstimates(now);
-      return {state:s,charging,parking:this.parkingSummary(now),energy,energyPeriods:Object.fromEntries([1,7,30,90,36500].map(days=>[String(days),this.energyEstimates(now,Math.max(0,now-days*DAY))])),health:this.health(),healthIndex:this.healthIndex(now),target:this.target(),battery:Object.fromEntries([7,30,90].map(days=>[String(days),this.batteryUsage(now,days)])),briefing:this.briefing(now),fresh:Object.fromEntries(Object.entries(s.groups).map(([k,g])=>[k,k==='location'?freshLocation(g,now):fresh(g,now)])),totals:{trips:energy.trips.filter(t=>!t.duplicate).length,distanceKm:energy.totalDistanceKm,charges:charging.count,cost:charging.cost,supplyKWh:charging.supplyKWh,vehicleReportedKWh:charging.vehicleReportedKWh}};
+      return {state:s,charging,parking:this.parkingSummary(now),energy,energyPeriods:Object.fromEntries([1,7,30,90,36500].map(days=>[String(days),this.energyEstimates(now,Math.max(0,now-days*DAY))])),health:this.health(),healthIndex:this.healthIndex(now),target:this.target(),battery:Object.fromEntries([7,30,90].map(days=>[String(days),this.batteryUsage(now,days)])),briefing:this.briefing(now),fresh:Object.fromEntries(Object.entries(s.groups).map(([k,g])=>[k,k==='location'?freshLocation(g,now):fresh(g,now,TTL[k])])),totals:{trips:energy.trips.filter(t=>!t.duplicate).length,distanceKm:energy.totalDistanceKm,charges:charging.count,cost:charging.cost,supplyKWh:charging.supplyKWh,vehicleReportedKWh:charging.vehicleReportedKWh}};
       } finally { this._viewAudit=null; for(const [name,fn] of saved)this[name]=fn; }
     }
     csv(){
       const summary=this.chargeSummary(),priced=new Map(summary.rows.map(c=>[c.id,c]));
-      const esc=v=>'"'+String(v??'').replace(/"/g,'""').replace(/^[=+@-]/,"'")+'"';
+      const esc=v=>'"'+String(v??'').replace(/"/g,'""').replace(/^[=+@-]/,"'$&")+'"';
       return '\uFEFF'+[['종류','시각UTC','거리km','시작SOC','종료SOC','공급kWh','금액','출처','누락','집계 검증','예상금액','예상단가','단가근거','배터리충전kWh','충전량추정','총충전비','종료UTC'],...this.state.trips.map(t=>['운행',new Date(t.start).toISOString(),t.distanceKm,t.startSOC,t.endSOC,'','','BLE',t.missing]),...[...summary.rows,...summary.reviewRows].map(c=>['충전',new Date(c.at).toISOString(),'',c.startSOC,c.endSOC,c.supplyKWh,c.cost,c.source,!c.complete,c.chargeExcluded?'제외: '+c.chargeReviewReason:'집계 포함',priced.get(c.id)?.estimatedCost,priced.get(c.id)?.estimatedUnitPrice,priced.get(c.id)?.costRateSource,c.chargedKWh,c.chargeEnergyEstimated,c.totalCost,c.end?new Date(c.end).toISOString():null])].map(r=>r.map(esc).join(',')).join('\r\n');
     }
     demo(now=Date.now()){

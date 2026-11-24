@@ -5,8 +5,8 @@ let controlSessions={},verifiedGroups={},readFence=Infinity;
 const gate=new TeslaWire.ControlGate(()=>cryptoCall('random',{count:16}));
 function cryptoCall(op,args){const r=JSON.parse(nativeCrypto(op,JSON.stringify(args)));if(!r.ok)throw Error(r.error);return r.value;}
 function controlCrypto(op,args){const r=JSON.parse(nativeControlCrypto(op,JSON.stringify(args)));if(!r.ok)throw Error(r.error);return r.value;}
-function clearLive(){verifiedGroups={};readFence=Infinity;gate.reset();controlSessions={};engine.observed={};engine.parked=false;}
-function liveFresh(key,now){const g=engine.state.groups[key],v=verifiedGroups[key];return !!wireSession?.info&&!!v&&!!g&&g.at===v.at&&g.receivedAt===v.receivedAt&&v.receivedAt>=readFence&&v.receivedAt<=now&&now-v.receivedAt<=(YLCore.TTL[key]||30000)&&YLCore.fresh(g,now,YLCore.TTL[key]||30000);}
+function clearLive(){const en=gate.enabled,fg=gate.foreground;verifiedGroups={};readFence=Infinity;gate.reset();gate.enabled=en;gate.foreground=fg;controlSessions={};engine.observed={};engine.parked=false;}
+function liveFresh(key,now){const g=engine.state.groups[key],v=verifiedGroups[key];return !!wireSession?.info&&!!v&&!!g&&g.at===v.at&&g.receivedAt===v.receivedAt&&v.receivedAt>=readFence&&v.receivedAt<=now+5000&&now-v.receivedAt<=(YLCore.TTL[key]||30000)&&YLCore.fresh(g,now,YLCore.TTL[key]||30000);}
 function present(value,now){
   if(value?.state&&value.fresh){
     value.fresh=Object.fromEntries(Object.keys(engine.state.groups).map(k=>[k,liveFresh(k,now)]));
@@ -27,7 +27,7 @@ function hostCallObject(op,json){
       case 'vehicleCamera':value=YL3D.fitCamera(a);break;
       case 'homeMotion':value=YLHome.motion(a);break;
       case 'home':value=YLHome.presentation({...a,sessionStartedAt:Math.max(a.sessionStartedAt||0,readFence),groups:engine.state.groups},now);break;
-      case 'loadLive':case 'load':value=engine.load(a.state??a,{resumeActive:a.resume===true});clearLive();navigationGate.reset();break;
+      case 'load':value=engine.load(a.state??a,{resumeActive:a.resume===true});clearLive();navigationGate.reset();break;
       case 'validate':value=YLCore.validateState(a);break;
       case 'weather':engine.state.weather=a;value=a;break;
       case 'export':value=engine.state;break;
@@ -35,11 +35,11 @@ function hostCallObject(op,json){
       case 'chargeTariffCatalog':value=YLCore.tariffCatalog;break;
       case 'chargeTariffQuote':value=engine.chargeTariffQuote(a);break;
       case 'enrichChargeSites':value=engine.enrichChargeSites(a);break;
-      case 'ingestLive':case 'ingest':value=engine.ingest(a,now);break;
+      case 'ingest':value=engine.ingest(a,now);break;
       case 'enrichChargeSOC':value=engine.enrichChargeSOC(a);break;
       case 'ingestArchive':value=engine.ingestArchive(a);break;
-      case 'ingestFleetDriveLive':case 'ingestFleetDrive':value=engine.ingestFleetDrive(a,now);break;
-      case 'ingestFleetChargeLive':case 'ingestFleetCharge':value=engine.ingestFleetCharge(a,now);break;
+      case 'ingestFleetDrive':value=engine.ingestFleetDrive(a,now);break;
+      case 'ingestFleetCharge':value=engine.ingestFleetCharge(a,now);break;
       case 'finish':value=engine.finish(now,true);break;
       case 'addCharge':value=engine.addCharge(a);break;
       case 'importCharges':value=engine.importCharges(a);break;

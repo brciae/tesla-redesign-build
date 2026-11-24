@@ -58,7 +58,6 @@ elif [[ "${1:-}" == new ]]; then
     -only-testing:InterfaceProbeTests/InteractionTests/testDashboardShadeSliderAndWhiteGuidance
     -only-testing:InterfaceProbeTests/InteractionTests/testJunctionStaysInGuidanceAndDisappearsAfterExit
     -only-testing:InterfaceProbeTests/InteractionTests/testLiveActivityViewsAndBackgroundReturn
-    -only-testing:InterfaceProbeTests/InteractionTests/testRobotWithoutFootRodsSurvivesAppSwitching
     -only-testing:InterfaceProbeTests/InteractionTests/testTrafficRefreshBlocksRepeatedTapAndKeepsRouteOnFailure
   )
 fi

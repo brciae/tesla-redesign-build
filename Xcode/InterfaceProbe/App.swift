@@ -31,7 +31,6 @@ import MapKit
             else if ProcessInfo.processInfo.arguments.contains("system-navigation-probe") || ProcessInfo.processInfo.arguments.contains("system-charging-probe") { SystemActivityProbe() }
             else if ProcessInfo.processInfo.arguments.contains("lock-screen-navigation-probe") { LockScreenNavigationProbe() }
             else if ProcessInfo.processInfo.arguments.contains("live-activity-probe") { LiveActivityProbe() }
-            else if ProcessInfo.processInfo.arguments.contains("robot-probe") { RobotProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charging-energy-probe") { ChargingEnergyProbe() }
             else if ProcessInfo.processInfo.arguments.contains("traffic-refresh-probe") { TrafficRefreshProbe() }
             else if ProcessInfo.processInfo.arguments.contains("charging-map-probe") { ChargingMapProbe() }
@@ -236,7 +235,7 @@ struct FullscreenNavigationProbe: View {
         } controls: {
             ScrollView(.horizontal) {
                 HStack {
-                    ForEach(NavigationTheme.allCases.filter { $0 != .running }) { value in
+                    ForEach(NavigationTheme.allCases) { value in
                         Button(value.title) { theme = value }.frame(minHeight: 44)
                     }
                 }
@@ -277,14 +276,9 @@ struct NavigationProbe: View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
-                    Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases.filter { $0 != .running }) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                    Picker("테마", selection: $theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
                     Button(blank ? "수신됨" : "미수신") { blank.toggle() }
                         .buttonStyle(.bordered).accessibilityIdentifier("navigation.empty")
-                    if theme == .minimal && ProcessInfo.processInfo.arguments.contains("motion-probe") {
-                        Button("좌") { bend = -0.7 }.accessibilityIdentifier("motion.left")
-                        Button("우") { bend = 0.7 }.accessibilityIdentifier("motion.right")
-                        Button(moving ? "정지" : "이동") { moving.toggle() }.accessibilityIdentifier("motion.toggle")
-                    }
                 }.padding(.horizontal, 8)
             }.frame(height: 44)
             if ProcessInfo.processInfo.arguments.contains("shade-probe") { DashboardShadeControl().padding(8) }
@@ -324,7 +318,7 @@ struct NavigationProbe: View {
         if ProcessInfo.processInfo.arguments.contains("roundabout-probe") { r.exitClock = 9; r.turn = "회전교차로"; r.highway = "" }
         r.next = "1.3 km · 좌회전"; r.nextSymbol = "arrow.turn.up.left"; r.remaining = "22분 남음"; r.remainingDistance = "8.7 km"; r.arrival = "19:02"; r.speedFraction = 34 / 140
         r.destination = "반포대교 남단"; r.speedLimit = 80; r.speedLimitDistance = "2.1 km"; r.clock = "18:40"; r.routeProgress = 0.42; r.odometer = "12,450 km"; r.powerKW = 18; r.laneCount = 4; r.laneSuggested = [1, 2]; r.laneDistance = "416 m"
-        r.currentRoadLanes = 3; r.currentRoadClass = "urban"; r.arrivalSOC = 61; r.braking = !moving; r.night = theme != .touring
+        r.currentRoadLanes = 3; r.currentRoadClass = "urban"; r.arrivalSOC = 61; r.braking = !moving; r.night = true
         if ProcessInfo.processInfo.arguments.contains("energy-forecast-probe") {
             let profile = TripEnergyProfile.make(samples: Array(repeating: .init(distanceKm: 40, startSOC: 80, endSOC: 70), count: 8), usableKWh: 72)
             r.energyPrediction = TripEnergyEstimate.calculate(profile: profile, soc: 68, remainingKm: 8.7)
@@ -693,7 +687,13 @@ struct VoicePlaybackProbe: View {
         let hour = Calendar.current.component(.hour, from: Date())
         guard await blocked("방해 금지", configure: { d.set(true, forKey: "voiceQuietEnabled"); d.set(hour, forKey: "voiceQuietStart"); d.set((hour + 1) % 24, forKey: "voiceQuietEnd") }, invoke: request, restore: { d.set(false, forKey: "voiceQuietEnabled") }) else { return }
         guard await blocked("음량 0", configure: { d.set(0, forKey: "voiceVolume") }, invoke: request, restore: { d.set(0.8, forKey: "voiceVolume") }) else { return }
-        guard await blocked("타입캐스트 OFF", configure: { TypecastClient.shared.isEnabled = false }, invoke: request, restore: { TypecastClient.shared.isEnabled = true }) else { return }
+        voice.stop(); let fallbackCount = voice.playbackStarts
+        TypecastClient.shared.isEnabled = false; request()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let fallbackStarted = voice.playbackStarts > fallbackCount
+        TypecastClient.shared.isEnabled = true; voice.stop()
+        guard fallbackStarted else { eventResult = "실패 · 타입캐스트 OFF 대체 음성"; return }
+        passed += 1
         guard await blocked("길안내 OFF", configure: { d.set(false, forKey: "navVoiceEnabled") }, invoke: { voice.navigationGuide(text, safety: false) }, restore: { d.set(true, forKey: "navVoiceEnabled") }) else { return }
         guard await blocked("안전 안내 OFF", configure: { d.set(false, forKey: "navSafetyVoice") }, invoke: { voice.navigationGuide(text, safety: true) }, restore: { d.set(true, forKey: "navSafetyVoice") }) else { return }
         guard await blocked("이미 지난 안내", configure: {}, invoke: {

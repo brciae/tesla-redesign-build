@@ -11,8 +11,43 @@
     if (typeof s !== 'string' || s.length % 2 || !/^[0-9a-f]*$/i.test(s)) throw Error('Invalid hex');
     return bytes(s.match(/../g)?.map(x => parseInt(x, 16)) || []);
   }
-  const utf8 = s => bytes(Array.from(unescape(encodeURIComponent(s)), c => c.charCodeAt(0)));
-  const text = b => decodeURIComponent(Array.from(b, v => '%' + v.toString(16).padStart(2, '0')).join(''));
+  function utf8(s) {
+    const str = String(s), out = [];
+    for (let i = 0; i < str.length; i++) {
+      let cp = str.charCodeAt(i);
+      if (cp >= 0xd800 && cp <= 0xdbff) {
+        const lo = i + 1 < str.length ? str.charCodeAt(i + 1) : 0;
+        if (lo >= 0xdc00 && lo <= 0xdfff) { cp = 0x10000 + ((cp - 0xd800) << 10) + (lo - 0xdc00); i++; }
+        else cp = 0xfffd;
+      } else if (cp >= 0xdc00 && cp <= 0xdfff) {
+        cp = 0xfffd;
+      }
+      if (cp < 0x80) out.push(cp);
+      else if (cp < 0x800) out.push(0xc0 | (cp >> 6), 0x80 | (cp & 63));
+      else if (cp < 0x10000) out.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+      else out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    }
+    return bytes(out);
+  }
+  function text(b) {
+    if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8', {fatal: false}).decode(b);
+    let out = '', i = 0;
+    while (i < b.length) {
+      const c = b[i++];
+      if (c < 0x80) out += String.fromCharCode(c);
+      else if ((c & 0xe0) === 0xc0 && i < b.length && (b[i] & 0xc0) === 0x80) {
+        const cp = ((c & 0x1f) << 6) | (b[i++] & 0x3f);
+        out += cp >= 0x80 ? String.fromCharCode(cp) : '\ufffd';
+      } else if ((c & 0xf0) === 0xe0 && i + 1 < b.length && (b[i] & 0xc0) === 0x80 && (b[i + 1] & 0xc0) === 0x80) {
+        const cp = ((c & 0x0f) << 12) | ((b[i++] & 0x3f) << 6) | (b[i++] & 0x3f);
+        out += cp >= 0x800 && (cp < 0xd800 || cp > 0xdfff) ? String.fromCharCode(cp) : '\ufffd';
+      } else if ((c & 0xf8) === 0xf0 && i + 2 < b.length && (b[i] & 0xc0) === 0x80 && (b[i + 1] & 0xc0) === 0x80 && (b[i + 2] & 0xc0) === 0x80) {
+        const cp = ((c & 0x07) << 18) | ((b[i++] & 0x3f) << 12) | ((b[i++] & 0x3f) << 6) | (b[i++] & 0x3f);
+        out += cp >= 0x10000 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '\ufffd';
+      } else out += '\ufffd';
+    }
+    return out;
+  }
   function varint(n) {
     let v = BigInt(n); if (v < 0n) v = BigInt.asUintN(64, v);
     const out = []; do { let b = Number(v & 127n); v >>= 7n; out.push(b | (v ? 128 : 0)); } while (v);
@@ -235,6 +270,7 @@
       return hex(this.envelope(this.domain, bfield(14, bfield(1, unhex(this.c('publicKey',{})))), id));
     }
     body(now) {
+      if(this.pending&&now-this.pending.at<(this.pending.type==='query'?3500:15000))throw Error('Previous request pending');
       const id = this.c('random', {count:16}); this.pending = {id,at:now,type:'body'};
       return hex(this.envelope(2, bfield(10, bfield(1, bytes())), id));
     }
@@ -251,11 +287,11 @@
       if (!this.info) throw Error('No authenticated session');
       const ttl = this.pending?.type === 'query' ? 3500 : 15000;
       if (this.pending && now-this.pending.at < ttl) throw Error('Previous request pending');
-      if(now<this.info.local)throw Error('Local clock rollback');
+      if(now+5000<this.info.local)throw Error('Local clock rollback');
       if(this.domain===2)this.routing=this.c('random',{count:16});
       const s = this.info, id = this.c('random',{count:16}), nonce = this.c('random',{count:12});
       if (s.counter >= 0xffffffff) throw Error('Session counter exhausted');
-      const counter = ++s.counter, expiry = Math.floor(s.clock + (now-s.local)/1000 + 10), flags=2;
+      const counter = ++s.counter, expiry = Math.floor(s.clock + Math.max(0, (now-s.local)/1000) + 10), flags=2;
       const meta = metadata([[0,bytes([5])],[1,bytes([this.domain])],[2,utf8(this.vin)],[3,unhex(s.epoch)],[4,be32(expiry)],[5,be32(counter)],[7,be32(flags)]]);
       const sealed = this.c('seal',{key:s.key,nonce,plain:hex(payload),aad:this.c('sha256',{data:hex(meta)})});
       const sig = join(bfield(1,bfield(1,unhex(this.c('publicKey',{})))), bfield(5,join(bfield(1,unhex(s.epoch)),bfield(2,unhex(nonce)),vfield(3,counter),f32field(4,expiry),bfield(5,unhex(sealed.tag)))));
@@ -292,51 +328,56 @@
       if (!to || hex(raw(to,2)||bytes()) !== this.routing) return {type:'ignored',reason:'routing'};
       const rid=raw(m,50);
       if ((rid && hex(rid)!==p.id) || (this.domain!==2 && p.type!=='body' && !rid)) return {type:'ignored',reason:'request'};
-      const domain = from ? uint(from,1) : null;
-      if (domain !== (p.type==='body'?2:this.domain)) throw Error('Reply domain mismatch');
-      const status=sub(m,12), fault=status?uint(status,2,0):0;
-      // Tesla may attach authenticated session updates to rejected requests.
-      // Validate against THIS request UUID before using the update. Never replay
-      // a physical command after resync, even if it was probably rejected.
-      const updated=p.type!=='body'&&this.updateSession(m,p,now);
-      if(updated&&p.type!=='handshake'){this.pending=null;return {type:'resync',group:p.group??null,code:fault,command:p.type==='command'};}
-      if (fault) { this.pending=null; throw Error(fault===3 ? '키 미등록 · 차량에서 키카드 승인 필요 (3)' : fault===7?'키 권한 부족 (7)':'Tesla protocol error '+fault); }
-      if (p.type==='body') {
-        const payload=raw(m,10); if (!payload) throw Error('Missing body status');
-        const vs=sub(parse(payload),1); if (!vs) throw Error('Body status not available');
-        this.pending=null;
-        return {type:'body',at:now,sleep:uint(vs,3,0),locked:uint(vs,2,0)===1,unverified:true};
-      }
-      if (p.type==='handshake') {
-        if(!updated)throw Error('No session info');
-        this.pending=null; return {type:'session'};
-      }
-      const sig=sub(sub(m,13)||{},9); if (!sig) throw Error('Encrypted reply required');
-      const counter=uint(sig,2,0); if (p.counters.includes(counter)) throw Error('Replayed response');
-      const nonce=raw(sig,1), tag=raw(sig,3), payload=raw(m,10)??bytes();
-      if (!nonce || !tag) throw Error('Incomplete encrypted response');
-      const meta=metadata([[0,bytes([9])],[1,bytes([this.domain])],[2,utf8(this.vin)],[5,be32(counter)],[7,be32(uint(m,52,0))],[8,unhex(p.hash)],[9,be32(fault)]]);
-      const plain=this.c('open',{key:this.info.key,nonce:hex(nonce),cipher:hex(payload),tag:hex(tag),aad:this.c('sha256',{data:hex(meta)})});
-      p.counters.push(counter);
-      if(p.type==='command'){
-        const result=parse(unhex(plain));
-        if(this.domain===2){
-          const nominal=sub(result,46);
-          if(nominal){this.pending=null;return {type:'commandRejected',reason:'차량 제어 거절 ('+uint(nominal,1,0)+')'};}
-          const cs=sub(result,4);
-          if(cs&&uint(cs,1,0)===1){this.pending=null;return {type:'commandRejected',reason:'차량 처리 중 · 자동 재전송 안함'};}
-          if(Object.keys(result).length)return {type:'progress'};
-        }else{
-          const st=sub(result,1);
-          if(!st&&Object.keys(result).length)throw Error('제어 응답 형식 미확인');
-          if(st&&uint(st,1,0)!==0){this.pending=null;return {type:'commandRejected',reason:'차량이 명령을 거절함 · '+(str(sub(st,2)||{},1)||'상세 사유 미제공').slice(0,200)};}
+      try {
+        const domain = from ? uint(from,1) : null;
+        if (domain !== (p.type==='body'?2:this.domain)) throw Error('Reply domain mismatch');
+        const status=sub(m,12), fault=status?uint(status,2,0):0;
+        // Tesla may attach authenticated session updates to rejected requests.
+        // Validate against THIS request UUID before using the update. Never replay
+        // a physical command after resync, even if it was probably rejected.
+        const updated=p.type!=='body'&&this.updateSession(m,p,now);
+        if(updated&&p.type!=='handshake'){this.pending=null;return {type:'resync',group:p.group??null,code:fault,command:p.type==='command'};}
+        if (fault) { this.pending=null; throw Error(fault===3 ? '키 미등록 · 차량에서 키카드 승인 필요 (3)' : fault===7?'키 권한 부족 (7)':'Tesla protocol error '+fault); }
+        if (p.type==='body') {
+          const payload=raw(m,10); if (!payload) throw Error('Missing body status');
+          const vs=sub(parse(payload),1); if (!vs) throw Error('Body status not available');
+          this.pending=null;
+          return {type:'body',at:now,sleep:uint(vs,3,0),locked:uint(vs,2,0)===1,unverified:true};
         }
-        this.pending=null;return {type:'commandAck',action:p.action,verify:p.verify};
+        if (p.type==='handshake') {
+          if(!updated)throw Error('No session info');
+          this.pending=null; return {type:'session'};
+        }
+        const sig=sub(sub(m,13)||{},9); if (!sig) throw Error('Encrypted reply required');
+        const counter=uint(sig,2,0); if (p.counters.includes(counter)) throw Error('Replayed response');
+        const nonce=raw(sig,1), tag=raw(sig,3), payload=raw(m,10)??bytes();
+        if (!nonce || !tag) throw Error('Incomplete encrypted response');
+        const meta=metadata([[0,bytes([9])],[1,bytes([this.domain])],[2,utf8(this.vin)],[5,be32(counter)],[7,be32(uint(m,52,0))],[8,unhex(p.hash)],[9,be32(fault)]]);
+        const plain=this.c('open',{key:this.info.key,nonce:hex(nonce),cipher:hex(payload),tag:hex(tag),aad:this.c('sha256',{data:hex(meta)})});
+        p.counters.push(counter);
+        if(p.type==='command'){
+          const result=parse(unhex(plain));
+          if(this.domain===2){
+            const nominal=sub(result,46);
+            if(nominal){this.pending=null;return {type:'commandRejected',reason:'차량 제어 거절 ('+uint(nominal,1,0)+')'};}
+            const cs=sub(result,4);
+            if(cs&&uint(cs,1,0)===1){this.pending=null;return {type:'commandRejected',reason:'차량 처리 중 · 자동 재전송 안함'};}
+            if(Object.keys(result).length)return {type:'progress'};
+          }else{
+            const st=sub(result,1);
+            if(!st&&Object.keys(result).length)throw Error('제어 응답 형식 미확인');
+            if(st&&uint(st,1,0)!==0){this.pending=null;return {type:'commandRejected',reason:'차량이 명령을 거절함 · '+(str(sub(st,2)||{},1)||'상세 사유 미제공').slice(0,200)};}
+          }
+          this.pending=null;return {type:'commandAck',action:p.action,verify:p.verify};
+        }
+        const verifiedStatus=sub(parse(unhex(plain)),1);
+        if(verifiedStatus&&uint(verifiedStatus,1,0)){this.pending=null;return {type:'queryRejected',group:p.group};}
+        const snapshot=decodeVehicle(unhex(plain),now);
+        this.pending=null; return {type:'data',snapshot};
+      } catch (e) {
+        if (this.pending === p) this.pending = null;
+        throw e;
       }
-      const verifiedStatus=sub(parse(unhex(plain)),1);
-      if(verifiedStatus&&uint(verifiedStatus,1,0)){this.pending=null;return {type:'queryRejected',group:p.group};}
-      const snapshot=decodeVehicle(unhex(plain),now);
-      this.pending=null; return {type:'data',snapshot};
     }
   }
   const api={bytes,join,hex,unhex,utf8,varint,vfield,bfield,f32field,floatfield,parse,raw,uint,int,float,sub,metadata,be32,frame,FrameBuffer,Session,decodeVehicle,monitorEnrollment,driverEnrollment,commandSpec,ControlGate,dataRequest};

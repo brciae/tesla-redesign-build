@@ -9,7 +9,6 @@ struct YLCompanionApp: App {
     @StateObject private var owner = AppOwner()
     @AppStorage("appearance") private var appearance = "dark"
     private var colorScheme: ColorScheme? { appearance == "light" ? .light : (appearance == "system" ? nil : .dark) }
-    init() { CharacterHooks.floatingVoicePicker = { AnyView(TypecastCharacterPickerSheet(target: .floatingCharacter)) } }
     @ViewBuilder private func appContent(_ model: AppModel) -> some View {
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-review-fixture") {
@@ -75,8 +74,6 @@ struct MainView: View {
     @AppStorage("unitTemperature") private var temperature = "C"
     @AppStorage("unitPressure") private var pressure = "bar"
     @State private var selectedTab: AppTab = .home
-    @StateObject private var characterChat = CharacterChat()
-    @AppStorage("characterChat.floatingCharacter") private var floatingCharacter = false
     @State private var homePath = NavigationPath()
     @State private var controlsPath = NavigationPath()
     @State private var energyPath = NavigationPath()
@@ -154,7 +151,7 @@ struct MainView: View {
             NavigationPipSource(manager: .shared).frame(width: 360, height: 210)
                 .allowsHitTesting(false).accessibilityHidden(true)
             Commercial5TabScaffold(selection: tabBinding) {
-                NavigationStack(path: $homePath) { HomeView(link: link, openChat: { characterChat.presented = true }).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .home && !navigation.presented && !model.chargingPresented)
+                NavigationStack(path: $homePath) { HomeView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .home && !navigation.presented && !model.chargingPresented)
             } controls: {
                 NavigationStack(path: $controlsPath) { ControlsTabRootView(link: link).modifier(AppDestinations(link: link, navigation: navigation)) }.environment(\.vehicleRenderingActive, selectedTab == .controls && !navigation.presented && !model.chargingPresented)
             } energy: {
@@ -166,12 +163,6 @@ struct MainView: View {
             }
             .environment(\.vehicleRenderingActive, !navigation.presented && !model.chargingPresented)
             .opacity(navigation.presented || model.chargingPresented ? 0 : 1).allowsHitTesting(!navigation.presented && !model.chargingPresented).accessibilityHidden(navigation.presented || model.chargingPresented)
-            .overlay(alignment: .bottomTrailing) {
-                if floatingCharacter && !navigation.presented && !model.chargingPresented {
-                    CharacterChatButton(chat: characterChat).padding(.trailing, 16).padding(.bottom, 96)
-                }
-            }
-            .sheet(isPresented: $characterChat.presented) { CharacterChatView(chat: characterChat).environmentObject(model) }
 
             if navigation.presented { DrivingWorkspace(navigation: navigation, link: link).environment(\.colorScheme, .dark).transition(.opacity).zIndex(1) }
             if model.chargingPresented { ChargingWorkspace(link: link, isPresented: $model.chargingPresented).environment(\.colorScheme, .dark).transition(.opacity).zIndex(2) }
@@ -234,7 +225,6 @@ private struct AppDestinations: ViewModifier {
         case .spotify: SpotifySettingsView()
         case .releaseNotes: ReleaseNotesView()
         case .performance: PerformanceDiagnosticsView()
-        case .character: CharacterSelectView()
         case .appearance: VehicleAppearanceView()
         case .fleetInsights: FleetInsightsView(fleet: model.fleet)
         case .notifications: NotificationSettingsView()

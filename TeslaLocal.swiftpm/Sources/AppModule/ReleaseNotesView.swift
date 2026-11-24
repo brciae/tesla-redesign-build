@@ -10,6 +10,13 @@ struct ReleaseNote: Identifiable {
 
 enum ReleaseNotes {
     static let all: [ReleaseNote] = [
+        ReleaseNote(version: "1.84 (184)", date: "2026-11-24", items: [
+            "캐릭터 대화·3D 캐릭터 및 관련 리소스 전체 제거로 앱 용량과 메모리 사용량 대폭 절감",
+            "주행 내비 화면을 클러스터 테마 단일 구성으로 경량화",
+            "타입캐스트 만료·키 미설정·네트워크 오류 시 iOS 기본 한국어 음성 5종(유나·또렷함·차분함·중저음·경쾌함)으로 자동 전환 및 직접 선택 지원",
+            "BLE 패킷 수신 예외·UTF-8 디코딩·시계 역전·영수증 파싱·충전 기록 삭제·분석 계산 성능 등 코어 안정성 개선",
+            "PrivacyInfo.xcprivacy·권한 설명 보강, 릴리즈 심볼 스트리핑 적용, vehicle3d.json zlib 번들 분리 및 프로필 이미지 최적화"
+        ]),
         ReleaseNote(version: "1.82 (182)", date: "2026-11-12", items: [
             "기록 화면에서 NAS 동기화 버튼으로 서버 기록 가져오기",
             "NAS 연결·파일 복원 메뉴 정리",

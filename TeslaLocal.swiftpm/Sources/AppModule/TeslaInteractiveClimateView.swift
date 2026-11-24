@@ -191,8 +191,7 @@ struct TeslaInteractiveClimateView: View {
                 model.voice.say(title + " 요청이 승인되었으며, 차량 상태를 다시 확인합니다.", category: "voiceControl", manual: true)
                 await model.fleet.refreshVehicleSnapshot(force: true)
                 acceptedLevels.removeAll(); acceptedMode = nil
-                CharacterReact.send("nod")
-            } catch { result = error.localizedDescription; CharacterReact.send("shake") }
+            } catch { result = error.localizedDescription }
         }
     }
 }

@@ -30,6 +30,11 @@ struct VoiceSelectionControls: View {
 
     var body: some View {
         Picker("안내 음성", selection: $identifier) {
+            Section("기본 한국어 음성 (오프라인·무료)") {
+                ForEach(SystemKoreanVoice.all) { voice in
+                    Text("🎙️ \(voice.title)").tag(voice.storageIdentifier)
+                }
+            }
             Section("타입캐스트 AI 고품질 음성") {
                 ForEach(TypecastClient.presetVoices, id: \.id) { preset in
                     let label = "✨ \(preset.name) (\(preset.desc))"
@@ -46,6 +51,9 @@ struct VoiceSelectionControls: View {
     }
 
     private var selectionListed: Bool {
+        if identifier.hasPrefix("system:") {
+            return SystemKoreanVoice.find(identifier) != nil
+        }
         if identifier.hasPrefix("typecast:") {
             let vId = String(identifier.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
             return TypecastClient.presetVoices.contains(where: { $0.id == vId || $0.name == vId })
@@ -179,43 +187,23 @@ struct TypecastVoiceThumbnail: View {
         if let char = TypecastCatalog.find(name) {
             // Check Asset Catalog by actor_id
             if let img = UIImage(named: "typecast_portrait_\(char.id)") { return img }
-            // Check bundle resource path typecast_portraits/[actor_id].png
-            if let path = Bundle.main.path(forResource: char.id, ofType: "png", inDirectory: "typecast_portraits"),
-               let img = UIImage(contentsOfFile: path) {
-                return img
-            }
-            if let resourceURL = Bundle.main.resourceURL {
-                let direct = resourceURL.appendingPathComponent("typecast_portraits/\(char.id).png")
-                if let img = UIImage(contentsOfFile: direct.path) { return img }
-            }
         }
 
         // 3. English alias check
         let alias: String
-        let folder: String
         switch name {
-        case "은경": alias = "eunkyung"; folder = "yumi"
-        case "서현": alias = "seohyun"; folder = "seohee"
-        case "아엘": alias = "ael"; folder = "hyeonji"
-        case "한영": alias = "hanyoung"; folder = "subin"
+        case "은경": alias = "eunkyung"
+        case "서현": alias = "seohyun"
+        case "아엘": alias = "ael"
+        case "한영": alias = "hanyoung"
         default:
-            if name.contains("은경") { alias = "eunkyung"; folder = "yumi" }
-            else if name.contains("서현") { alias = "seohyun"; folder = "seohee" }
-            else if name.contains("아엘") { alias = "ael"; folder = "hyeonji" }
-            else if name.contains("한영") { alias = "hanyoung"; folder = "subin" }
+            if name.contains("은경") { alias = "eunkyung" }
+            else if name.contains("서현") { alias = "seohyun" }
+            else if name.contains("아엘") { alias = "ael" }
+            else if name.contains("한영") { alias = "hanyoung" }
             else { return nil }
         }
         if let img = UIImage(named: "typecast_portrait_\(alias)") { return img }
-
-        // 4. Bundled resource folder fallback
-        if let path = Bundle.main.path(forResource: "portrait", ofType: "png", inDirectory: "recorded/\(folder)"),
-           let img = UIImage(contentsOfFile: path) {
-            return img
-        }
-        if let resourceURL = Bundle.main.resourceURL {
-            let direct = resourceURL.appendingPathComponent("recorded/\(folder)/portrait.png")
-            if let img = UIImage(contentsOfFile: direct.path) { return img }
-        }
         return nil
     }
 }

@@ -7,10 +7,6 @@
 import SwiftUI
 
 struct TypecastCharacterPickerSheet: View {
-    /// v1.48: the same browser picks either the app's guidance voice or the floating character's own voice.
-    enum Target { case app, floatingCharacter }
-    var target: Target = .app
-    @AppStorage("characterFloat.voice") private var floatVoice = ""
     @State private var previewing: String?
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
@@ -189,7 +185,7 @@ struct TypecastCharacterPickerSheet: View {
     // MARK: - Character Row
 
     private func characterRow(_ char: TypecastCharacter) -> some View {
-        let current = target == .floatingCharacter ? floatVoice : typecast.selectedVoiceId
+        let current = typecast.selectedVoiceId
         let isSelected = current == char.nameKo || current == char.id || current == char.nameEn
 
         return HStack(spacing: 12) {
@@ -281,11 +277,6 @@ struct TypecastCharacterPickerSheet: View {
 
     private func selectCharacter(_ char: TypecastCharacter) {
         typecast.stop(); previewing = nil
-        if target == .floatingCharacter {
-            floatVoice = char.nameKo
-            model.voice.say("안녕하세요, 이제 제가 이 목소리로 말할게요.", category: "voiceControl", manual: true, voice: char.nameKo)
-            dismiss(); return
-        }
         typecast.selectedVoiceId = char.nameKo
         UserDefaults.standard.set("typecast:\(char.nameKo)", forKey: "voiceIdentifier")
         model.voice.say("\(char.nameKo) 음성을 선택했습니다.", category: "voiceControl", manual: true)

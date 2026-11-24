@@ -163,7 +163,7 @@ struct PerformanceDiagnosticsView: View {
     var body: some View {
         Form {
             Section("렌더링 비교") {
-                Toggle("차량·캐릭터 3D 일시 중지", isOn: $suspend3D).accessibilityIdentifier("performance.suspend3D")
+                Toggle("차량 3D 일시 중지", isOn: $suspend3D).accessibilityIdentifier("performance.suspend3D")
                 Text("켜고 홈·탭 이동·스크롤 속도를 비교한 뒤 다시 끄면 3D가 복구됨.").font(.footnote).foregroundStyle(.secondary)
             }
             Section("실기기 진단 기록") {

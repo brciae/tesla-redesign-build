@@ -3,10 +3,14 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const app = path.join(root, 'TeslaLocal.swiftpm/Sources/AppModule');
-const forbidden = /\b(?:AVSpeechSynthesizer|AVSpeechUtterance|AVSpeechSynthesisVoice|RecordedVoice|OfflineSpeechEngine|OfflineVoicePack|VoicePackManifest|VoiceLibrary|VoiceProfile|VoicePlaybackEngine|OnnxRuntimeBindings)\b/;
+const forbiddenLegacy = /\b(?:RecordedVoice|OfflineSpeechEngine|OfflineVoicePack|VoicePackManifest|VoiceLibrary|VoiceProfile|VoicePlaybackEngine|OnnxRuntimeBindings)\b/;
+const systemSpeech = /\b(?:AVSpeechSynthesizer|AVSpeechUtterance|AVSpeechSynthesisVoice)\b/;
 for (const file of fs.readdirSync(app).filter(f => f.endsWith('.swift'))) {
   const text = fs.readFileSync(path.join(app, file), 'utf8');
-  assert(!forbidden.test(text), `Legacy voice path in ${file}`);
+  assert(!forbiddenLegacy.test(text), `Legacy voice path in ${file}`);
+  if (systemSpeech.test(text)) {
+    assert(['VoiceCoordinator.swift', 'SystemKoreanVoice.swift'].includes(file), `Unexpected system speech path in ${file}`);
+  }
   if (/AVAudioPlayer\s*\(/.test(text)) {
     assert(['TypecastClient.swift', 'VoiceCoordinator.swift'].includes(file), `Unexpected playback path in ${file}`);
   }

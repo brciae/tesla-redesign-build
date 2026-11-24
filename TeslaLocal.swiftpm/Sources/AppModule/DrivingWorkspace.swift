@@ -14,7 +14,6 @@ struct DrivingWorkspace: View {
     @AppStorage("navigation.focusMode") private var focusMode = false
     @State private var settings = false
     @State private var destinationSearch = false
-    @State private var carError: String?
     var body: some View {
         VStack(spacing: 0) {
         GeometryReader { proxy in
@@ -26,16 +25,7 @@ struct DrivingWorkspace: View {
                             LiveStandbyMapView(navigation: navigation)
                         }
                     } car: {
-                        ZStack {
-                            if !focusMode, let camera = navigation.theme.carCamera {
-                                RealityVehicleView(runtime: model.runtime, presentation: readout.scenePresentation(theme: navigation.theme),
-                                    command: VehicleCameraCommand(serial: NavigationTheme.allCases.firstIndex(of: navigation.theme) ?? 0, action: "angle", yaw: camera.yaw, pitch: camera.pitch, zoom: navigation.theme.carZoom),
-                                    reducedMotion: true, appearance: appearance.value(for: VehicleAppearanceStore.vehicleKey(vin: model.settings.string("vin"), demo: model.demo)),
-                                    backgroundColor: .clear) { carError = $0 }
-                                    .id(navigation.renderEpoch)
-                                if carError != nil { Text("차량 모델 표시 불가").font(.caption).foregroundStyle(.orange) }
-                            }
-                        }
+                        EmptyView()
                     } onMedia: { action in
                         if readout.phoneSpotify && !["mediaVolumeUp", "mediaVolumeDown"].contains(action) {
                             spotify.command(action); return
@@ -88,7 +78,6 @@ struct DrivingWorkspace: View {
             }
         }
         .onDisappear { navigation.screenDisappeared() }
-        .onChange(of: navigation.renderEpoch) { _, _ in carError = nil }
     }
 
     private var endGuidanceAction: (() -> Void)? {
@@ -532,7 +521,6 @@ struct NavigationDisplaySettings: View {
                         DashboardShadeControl()
                         Toggle("교통 변화 시 자동 재탐색", isOn: $autoTrafficReroute)
                             .onChange(of: autoTrafficReroute) { _, _ in navigation.applyTrafficPreferences() }
-                        Picker("테마", selection: $navigation.theme) { ForEach(NavigationTheme.allCases) { Text($0.title).tag($0) } }
                         DirectionPicker(navigation: navigation)
                     }
                     Section("저장 지도") { OfflineMapSettings(navigation: navigation) }

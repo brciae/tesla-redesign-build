@@ -16,7 +16,6 @@ enum Page: String, Hashable {
     case displaySettings = "화면·표시 단위"
     case releaseNotes = "릴리즈 노트"
     case performance = "성능 진단"
-    case character = "캐릭터"
 }
 
 struct GlassMenuCard<Content: View>: View {
@@ -123,7 +122,6 @@ struct SettingsMenuGroups: View {
             .init(.performance, "speedometer", "성능 진단", "응답 지연 기록 · 3D 비교", [.blue, .cyan]),
             .init(.displaySettings, "textformat.size", "화면·표시 단위", "배경 · 거리 · 온도 단위", [.gray, .secondary]),
             .init(.appearance, "paintbrush.fill", "3D 차꾸미기", "외장 · 휠 · 실내", [.purple, .pink]),
-            .init(.character, "figure.wave", "캐릭터", "", [.pink, .purple]),
             .init(.releaseNotes, "doc.text.fill", "릴리즈 노트", "버전별 변경 내역", [.orange, .pink])])
     ]
     var body: some View {

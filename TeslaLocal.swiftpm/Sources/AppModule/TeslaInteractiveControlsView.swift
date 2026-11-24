@@ -599,13 +599,11 @@ struct TeslaInteractiveControlsView: View {
                     isExecutingRemote = false
                     statusToast = "\(title) 승인 응답 수신"
                     model.voice.say("\(title) 승인 응답을 받았습니다.", category: "voiceControl", manual: true)
-                    CharacterReact.send("nod")
                 }
             } catch {
                 await MainActor.run {
                     isExecutingRemote = false
                     statusToast = "원격 실패: \(error.localizedDescription)"
-                    CharacterReact.send("shake")
                 }
             }
         }

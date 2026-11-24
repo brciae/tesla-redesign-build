@@ -273,3 +273,45 @@ console.log('PASS: receipt parsing');
  chargeAssert.equal(e.state.trips.length,1,'repeated P cannot duplicate completion');
  console.log('PASS: immediate P completion, red-light stop, missing gear and disconnect protection');
 }
+
+// v1.84 regression tests: YL3D parked null speed, TeslaWire utf8/pending/rollback, analysis receipt/csv/deleteCharge/TTL.
+{
+ const YL3D = require(path.join(__dirname, '../TeslaLocal.swiftpm/Sources/AppModule/Resources/vehicle3d.js'));
+ const W = require(path.join(__dirname, '../TeslaLocal.swiftpm/Sources/AppModule/Resources/protocol.js'));
+ const now = Date.now();
+ const pRes = YL3D.presentation({connected:true, authenticated:true, sessionStartedAt:now-1000, groups:{drive:{at:now, receivedAt:now, gear:'P', speedKmh:null}}}, now);
+ chargeAssert.equal(pRes.parked, true, 'P with null speedKmh must be parked');
+ chargeAssert.equal(pRes.restricted, false, 'P with null speedKmh must allow interaction');
+
+ chargeAssert.equal(W.hex(W.utf8('A\ud800B')), '41efbfbd42', 'lone surrogate converts to U+FFFD without throwing');
+ const cryptoFn = (op, {count}={}) => op==='random' ? '11'.repeat(count||16) : op==='publicKey' ? '04'+'11'.repeat(64) : op==='sha256' ? '22'.repeat(32) : op==='seal' ? {cipher:'aa', tag:'33'.repeat(16)} : '00'.repeat(32);
+ const sess = new W.Session('5YJYGDEE0LF000001', cryptoFn);
+ sess.info = { key:'00'.repeat(16), epoch:'00'.repeat(16), clock:100, local:now, counter:1 };
+ chargeAssert.doesNotThrow(() => sess.query('drive', now - 4000), 'clock jitter < 5s tolerated');
+ // Matched reply that throws during domain check must clear pending rather than wedging session.
+ const badDomain = W.hex(W.join(W.bfield(6, W.bfield(2, W.unhex(sess.routing))), W.bfield(7, W.vfield(1, 9)), W.bfield(50, W.unhex(sess.pending.id))));
+ chargeAssert.throws(() => sess.receive(badDomain, now - 3000), /Reply domain mismatch/);
+ chargeAssert.equal(sess.pending, null, 'failed matched receive clears pending');
+
+ const r = C.parseReceipt('충전량 12,34 kWh\n결제금액 4,500원\n2026-02-31 14:20');
+ chargeAssert.equal(r.supplyKWh, 12.34, 'comma decimal parsed cleanly');
+ chargeAssert.equal(r.cost, 4500);
+ chargeAssert.equal(r.dateText, null, 'impossible calendar date rejected');
+
+ const eng = new C.Engine();
+ eng.state.trips.push({id:'t-csv', start:now-10000, end:now-5000, distanceKm:5, startSOC:80, endSOC:79, missing:'=CMD()', points:[]});
+ const csvOut = eng.csv();
+ chargeAssert.ok(csvOut.includes('"\'=CMD()"'), 'CSV formula neutralization preserves prefix character');
+
+ eng.state.charges.push({id:'c1', at:now-60000, startSOC:30, endSOC:50, vehicleReportedKWh:12});
+ eng.state.batteryBaseline = {referenceIds:['c1','other']};
+ const del = eng.deleteCharge({id:'c1'});
+ chargeAssert.equal(del.removed, 1);
+ chargeAssert.deepEqual(eng.state.batteryBaseline.referenceIds, ['other']);
+
+ const ce = new C.Engine();
+ ce.state.groups.charge = {at:now-120000, receivedAt:now-120000, soc:75};
+ chargeAssert.equal(ce.liveView(now).fresh.charge, true, 'liveView honors TTL.charge (180s)');
+ chargeAssert.equal(ce.view(now).fresh.charge, true, 'view honors TTL.charge (180s)');
+ console.log('PASS: v1.84 regression checks (YL3D, TeslaWire, receipt, csv, deleteCharge, TTL.charge)');
+}

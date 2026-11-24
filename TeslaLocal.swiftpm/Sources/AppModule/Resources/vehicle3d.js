@@ -4,9 +4,9 @@
   const parts=['driverFront','driverRear','passengerFront','passengerRear','frunk','trunk'];
   const recent=(g,now)=>{if(!g||!Number.isFinite(g.at)||g.at>now+120000)return false;const r=Number.isFinite(g.receivedAt)?g.receivedAt:g.at;return now-r<=90000&&r<=now+5000;};
   function presentation(a,now=Date.now()){
-    const groups=a.groups||{},drive=groups.drive,closure=groups.closures;
-    const knownDrive=recent(drive,now)&&typeof drive.gear==='string'&&Number.isFinite(drive.speedKmh);
-    const parked=knownDrive&&drive.gear==='P'&&drive.speedKmh<=0.5&&drive.speedKmh>=0;
+    const groups=a.groups||{},drive=groups.drive,closure=groups.closures,speed=drive?.speedKmh;
+    const knownDrive=recent(drive,now)&&typeof drive.gear==='string'&&(Number.isFinite(speed)||(drive.gear==='P'&&speed==null));
+    const parked=knownDrive&&drive.gear==='P'&&(speed==null||(speed<=0.5&&speed>=0));
     const moving=knownDrive&&!parked;
     const restricted=moving||(a.connected===true&&!parked);
     const preview=(a.demo===true||a.preview===true)&&!restricted;

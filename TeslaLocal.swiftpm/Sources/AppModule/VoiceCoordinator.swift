@@ -2,9 +2,8 @@ import SwiftUI
 import AVFoundation
 
 /// Single selected-voice output for navigation, safety and vehicle announcements.
-/// Exclusively powered by Typecast AI with permanent local audio caching,
-/// with instant button-preemption (0ms interruption latency) and zero default-voice clutter.
-final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate {
+/// Uses Typecast AI with local audio caching and automatically falls back to built-in Korean voices when unavailable.
+final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
     @Published private(set) var speaking = false
     @Published private(set) var lastText = ""
     @Published private(set) var notice = ""
@@ -23,6 +22,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private let audioOwner = UUID().uuidString
     private var typecastPlayer: AVAudioPlayer?
+    private let systemSynthesizer = AVSpeechSynthesizer()
+    private var systemSpeakingTicket: UUID?
+    private var systemUtteranceTickets: [ObjectIdentifier: UUID] = [:]
     private var activeTicket: UUID?
     private var synthesisTask: Task<Void, Never>?
     private var releaseWork: DispatchWorkItem?
@@ -64,10 +66,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     /// Pre-synthesizes a predictable automatic announcement (e.g. the boarding greeting) into the Typecast cache.
     func prepareAutomatic(_ text: String, category: String) {
         let tc = TypecastClient.shared, d = UserDefaults.standard
-        guard tc.isEnabled, !tc.synthesisPaused, d.bool(forKey: "voiceEnabled") else { return }
+        let selection = d.string(forKey: "voiceIdentifier") ?? ""
+        guard !selection.hasPrefix("system:"), tc.isEnabled, !tc.synthesisPaused, !tc.validApiKeys.isEmpty, d.bool(forKey: "voiceEnabled") else { return }
         let prepared = SpeechText.prepare(BriefingStyle.selected.phrase(text, category: category))
         guard !prepared.isEmpty else { return }
-        let selection = d.string(forKey: "voiceIdentifier") ?? ""
         let voice = selection.hasPrefix("typecast:") ? String(selection.dropFirst(9))
             : (tc.selectedVoiceId.isEmpty ? TypecastClient.defaultVoiceId : tc.selectedVoiceId)
         let key = voice + "|" + prepared
@@ -82,10 +84,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     func prepareNavigation(_ message: String) {
         let tc = TypecastClient.shared, d = UserDefaults.standard
-        guard navigationPreparation == nil, !navigationSpeaking, tc.isEnabled, !tc.synthesisPaused,
+        let selected = d.string(forKey: "voiceIdentifier") ?? ""
+        guard !selected.hasPrefix("system:"), navigationPreparation == nil, !navigationSpeaking, tc.isEnabled, !tc.synthesisPaused, !tc.validApiKeys.isEmpty,
               d.bool(forKey: "voiceEnabled"), d.double(forKey: "navVoiceVolume") > 0, let data = message.data(using: .utf8),
               let phrases = try? JSONDecoder().decode([String].self, from: data) else { return }
-        let selected = d.string(forKey: "voiceIdentifier") ?? ""
         let voice = selected.hasPrefix("typecast:") ? String(selected.dropFirst(9)) : tc.selectedVoiceId
         navigationPreparation = Task { @MainActor in
             defer { self.navigationPreparation = nil }
@@ -105,11 +107,14 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     override init() {
         super.init()
+        systemSynthesizer.delegate = self
         let defaults = UserDefaults.standard
 
-        // Migrate voice selection to Typecast default (은경)
+        // Preserve valid Typecast or 5 built-in Korean system voices; migrate legacy ids.
         let currentVoice = defaults.string(forKey: "voiceIdentifier") ?? ""
-        if currentVoice.isEmpty || currentVoice.hasPrefix("recorded:") || currentVoice.hasPrefix("offline:") || (!currentVoice.hasPrefix("typecast:") && !TypecastClient.presetVoices.contains(where: { $0.id == currentVoice })) {
+        let isValidSystem = currentVoice.hasPrefix("system:") && SystemKoreanVoice.find(currentVoice) != nil
+        let isValidTypecast = currentVoice.hasPrefix("typecast:") || TypecastClient.presetVoices.contains(where: { $0.id == currentVoice })
+        if currentVoice.isEmpty || currentVoice.hasPrefix("recorded:") || currentVoice.hasPrefix("offline:") || (!isValidSystem && !isValidTypecast) {
             defaults.set("typecast:은경", forKey: "voiceIdentifier")
         }
 
@@ -117,7 +122,8 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             "voiceAutomations": true, "voiceEnabled": true, "voiceConnection": true, "voiceTrip": true,
             "voiceCharge": true, "voiceBattery": true, "voiceDestination": true, "voiceControl": true,
             "voiceRate": 0.47, "voicePitch": 1.0, "voiceVolume": 0.8, "voiceQuietStart": 22,
-            "voiceQuietEnd": 7, "voiceDuck": true, "navVoiceEnabled": true, "navSafetyVoice": true, "navVoiceVolume": 1.0
+            "voiceQuietEnd": 7, "voiceDuck": true, "navVoiceEnabled": true, "navSafetyVoice": true, "navVoiceVolume": 1.0,
+            "fallbackSystemVoice": SystemKoreanVoice.defaultTag
         ])
 
         let tick = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -269,7 +275,6 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             }
             return
         }
-        CharacterReact.say(text)
         let styled = BriefingStyle.selected.phrase(text, category: category)
         let prepared = SpeechText.prepare(styled)
 
@@ -292,7 +297,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             interrupted = false
             automaticTrace("오디오 중단 해제 · 안내 재개")
         }
-        guard !interrupted, !callActive, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, Date() >= quietUntil else { return }
+        guard !interrupted, !callActive, !nativeSpeaking, activeTicket == nil, typecastPlayer == nil, systemSpeakingTicket == nil, Date() >= quietUntil else { return }
         guard Date() >= navigationReadyAt else { return }
         guard let item = queue.next(now: Date()) else { return }
         navigationSpeaking = item.key.hasPrefix("navigation.")
@@ -327,16 +332,17 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         if !item.manual && d.bool(forKey: "voiceQuietEnabled") && VoiceQueue.quiet(hour: Calendar.current.component(.hour, from: Date()), start: d.integer(forKey: "voiceQuietStart"), end: d.integer(forKey: "voiceQuietEnd")) { return }
 
         let tc = TypecastClient.shared
+        let selection = d.string(forKey: "voiceIdentifier") ?? ""
+        if item.voice == nil && selection.hasPrefix("system:") {
+            let profile = SystemKoreanVoice.find(selection) ?? SystemKoreanVoice.fallback(from: d)
+            _ = playSystemVoice(item, profile: profile, fallbackReason: nil)
+            return
+        }
         guard tc.isEnabled else {
-            notice = "타입캐스트 AI 음성을 켜 주세요."
-            playbackState = "타입캐스트 꺼짐"
-            activeTicket = nil
-            navigationSpeaking = false
-            activePriority = 0
+            _ = playSystemVoice(item, profile: SystemKoreanVoice.fallback(from: d), fallbackReason: "타입캐스트 꺼짐 · 기본 한국어 음성 사용")
             return
         }
 
-        let selection = d.string(forKey: "voiceIdentifier") ?? ""
         let targetVoice: String
         if let own = item.voice {
             targetVoice = own
@@ -355,15 +361,10 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     private func playTypecast(_ item: VoiceItem, voiceId: String? = nil) -> Bool {
         let tc = TypecastClient.shared
-        guard tc.isEnabled else {
-            notice = "타입캐스트 AI 음성을 켜 주세요."
-            playbackState = "타입캐스트 꺼짐"
-            activeTicket = nil
-            navigationSpeaking = false
-            activePriority = 0
-            return false
-        }
         let defaults = UserDefaults.standard
+        guard tc.isEnabled else {
+            return playSystemVoice(item, profile: SystemKoreanVoice.fallback(from: defaults), fallbackReason: "타입캐스트 꺼짐 · 기본 한국어 음성 사용")
+        }
         guard defaults.double(forKey: item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume") > 0 else {
             notice = "브리핑 음량이 0임"
             playbackState = "음량 0"
@@ -396,6 +397,16 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             return true
         }
 
+        // Fallback immediately when no API key is configured or synthesis is paused/quota-expired.
+        if tc.validApiKeys.isEmpty || tc.synthesisPaused {
+            activeTicket = nil
+            activeNavigationID = nil
+            activeText = ""
+            activeManual = false
+            let reason = tc.validApiKeys.isEmpty ? "타입캐스트 키 없음 · 기본 한국어 음성 사용" : "타입캐스트 만료·중단 · 기본 한국어 음성 사용"
+            return playSystemVoice(item, profile: SystemKoreanVoice.fallback(from: defaults), fallbackReason: reason)
+        }
+
         // 2. Online fetch via Typecast API
         playbackState = "타입캐스트 음성 생성 중…"
         if !item.manual || item.key.hasPrefix("navigation.") { automaticTrace("안내 요청 수신 · 타입캐스트 합성 중") }
@@ -412,10 +423,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
                     self.activeTicket = nil
                     self.activeNavigationID = nil
                     self.activeText = ""
+                    self.activeManual = false
                     self.speaking = false
                     self.navigationSpeaking = false
                     self.activePriority = 0
                     let expired = !item.canStartPlayback(at: Date()) || error is CancellationError
+                    if !expired, item.navigationID.map({ self.navigationTargetIsAhead?($0) == true }) ?? true,
+                       self.playSystemVoice(item, profile: SystemKoreanVoice.fallback(from: defaults), fallbackReason: "타입캐스트 오류 · 기본 한국어 음성 전환") {
+                        return
+                    }
                     self.notice = expired ? "" : "타입캐스트 안내 실패: \(error.localizedDescription)"
                     self.playbackState = expired ? "지난 안내 건너뜀" : "합성 실패"
                     if !item.manual || item.key.hasPrefix("navigation.") { self.automaticTrace(expired ? "합성 후 안내 기한 만료 또는 요청 취소" : "합성 실패 · " + error.localizedDescription) }
@@ -424,6 +440,80 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
             }
         }
         return true
+    }
+
+    private func playSystemVoice(_ item: VoiceItem, profile: SystemKoreanVoice, fallbackReason: String?) -> Bool {
+        let defaults = UserDefaults.standard
+        let volumeKey = item.key.hasPrefix("navigation.") ? "navVoiceVolume" : "voiceVolume"
+        let rawVolume = defaults.double(forKey: volumeKey)
+        guard rawVolume > 0 else {
+            notice = "브리핑 음량이 0임"
+            playbackState = "음량 0"
+            automaticTrace("안내 차단 · 앱 안내 음량 0")
+            navigationSpeaking = false; activePriority = 0; drain()
+            return true
+        }
+        guard item.canStartPlayback(at: Date()), item.navigationID.map({ navigationTargetIsAhead?($0) == true }) ?? true else {
+            playbackState = "안내 기한 만료"
+            automaticTrace(item.canStartPlayback(at: Date()) ? "길안내 보류 · 현재 위치 또는 안내 지점 확인 필요" : "자동 안내 기한 만료")
+            navigationSpeaking = false; activePriority = 0
+            drain()
+            return true
+        }
+
+        let ticket = UUID()
+        synthesisTask?.cancel()
+        synthesisTask = nil
+        typecastPlayer?.stop()
+        typecastPlayer = nil
+        systemSynthesizer.stopSpeaking(at: .immediate)
+
+        activeTicket = ticket
+        systemSpeakingTicket = ticket
+        activeManual = item.manual
+        activeText = item.text
+        activeNavigationID = item.navigationID
+        lastText = item.text
+
+        do {
+            try activateAudio(defaults)
+            let gain = VoiceGainPolicy.gain(rawVolume)
+            let storedRate = defaults.double(forKey: "voiceRate")
+            let baseRate = storedRate > 0 ? Float(storedRate / 0.47) : 1.0
+            let utterance = profile.utterance(for: item.text, baseRate: baseRate, volume: Float(min(1.0, gain)))
+            systemUtteranceTickets[ObjectIdentifier(utterance)] = ticket
+            if let vehicle = item.arrivalVehicle { arrivalPolicy.markPlayed(vehicle: vehicle, now: Date()) }
+            if let cue = item.navigationCue, let detail = item.navigationDetail { navigationPolicy.markPlayed(cue: cue, detail: detail, now: Date()) }
+            playbackStarts += 1
+            if !item.manual || item.key.hasPrefix("navigation.") {
+                GuidanceJournal.shared.append(vin: spokenVehicleIdentity(), text: item.text, navigation: item.key.hasPrefix("navigation."))
+            }
+            speaking = true
+            notice = fallbackReason ?? ""
+            playbackState = fallbackReason == nil ? "읽는 중 · \(profile.title)" : "대체 음성 · \(profile.title)"
+            if !item.manual || item.key.hasPrefix("navigation.") {
+                automaticTrace(fallbackReason ?? "\(profile.title) 안내 재생 시작")
+            }
+            refreshOutput()
+            lastPlaybackOutput = "최근 재생 " + outputDescription
+            systemSynthesizer.speak(utterance)
+            return true
+        } catch {
+            systemSpeakingTicket = nil
+            activeTicket = nil
+            activeManual = false
+            activeText = ""
+            activeNavigationID = nil
+            speaking = false
+            navigationSpeaking = false
+            activePriority = 0
+            releaseAudio()
+            notice = "시스템 음성 재생 실패: \(error.localizedDescription)"
+            playbackState = "재생 실패"
+            automaticTrace("시스템 음성 재생 실패 · " + error.localizedDescription)
+            drain()
+            return false
+        }
     }
 
     private func playTypecastAudio(_ url: URL, ticket: UUID, item: VoiceItem, defaults: UserDefaults) {
@@ -479,11 +569,15 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         } catch {
             activeTicket = nil
             activeText = ""
+            activeNavigationID = nil
             typecastPlayer = nil
             activeManual = false
             speaking = false
             navigationSpeaking = false
             activePriority = 0
+            if playSystemVoice(item, profile: SystemKoreanVoice.fallback(from: defaults), fallbackReason: "타입캐스트 오디오 오류 · 기본 한국어 음성 전환") {
+                return
+            }
             releaseAudio()
             notice = "타입캐스트 오디오 재생 실패: \(error.localizedDescription)"
             playbackState = "재생 실패"
@@ -497,6 +591,25 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
         if flag { playbackCompletions += 1 }
         finishPlayback(success: flag)
         if !flag { playbackState = "재생 중단"; notice = "오디오가 정상 완료되지 않았습니다." }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let key = ObjectIdentifier(utterance)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let ticket = self.systemUtteranceTickets.removeValue(forKey: key), self.systemSpeakingTicket == ticket else { return }
+            self.systemSpeakingTicket = nil
+            self.playbackCompletions += 1
+            self.finishPlayback(success: true)
+        }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        let key = ObjectIdentifier(utterance)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let ticket = self.systemUtteranceTickets.removeValue(forKey: key), self.systemSpeakingTicket == ticket else { return }
+            self.systemSpeakingTicket = nil
+            self.finishPlayback(success: false)
+        }
     }
 
     private func finishPlayback(success: Bool) {
@@ -558,6 +671,9 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
         typecastPlayer?.stop()
         typecastPlayer = nil
+        systemSpeakingTicket = nil
+        systemUtteranceTickets.removeAll()
+        systemSynthesizer.stopSpeaking(at: .immediate)
 
         releaseAudio()
     }
@@ -583,7 +699,7 @@ final class VoiceCoordinator: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func releaseAudio() {
         releaseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.activeTicket == nil, self.typecastPlayer == nil, self.queue.items.isEmpty else { return }
+            guard let self, self.activeTicket == nil, self.typecastPlayer == nil, self.systemSpeakingTicket == nil, self.queue.items.isEmpty else { return }
             VoiceAudioRouting.release(owner: self.audioOwner)
         }
         releaseWork = work
