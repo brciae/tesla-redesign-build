@@ -363,6 +363,7 @@ struct NavigationDashboard<MapContent: View, CarContent: View>: View {
         }
         .frame(width: m.w, height: m.h, alignment: .topLeading)
     }
+}
 
 // MARK: - Shared components
 
